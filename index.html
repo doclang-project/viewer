@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocLang Viewer</title>
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="assets/doclang_v3_sail.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header>
+    <a href="#" class="header-logo-link" id="home-link" title="Back to start">
+      <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo">
+    </a>
+    <div>
+      <h1>DocLang Viewer</h1>
+      <div class="subtitle" id="doc-subtitle">See your documents in a new way</div>
+    </div>
+    <div class="toolbar">
+      <label class="file-btn">
+        Open file
+        <input type="file" id="input-archive" accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
+      </label>
+      <button type="button" id="btn-demo">Load demo</button>
+    </div>
+  </header>
+
+  <nav class="page-nav" id="page-nav" hidden>
+    <button type="button" id="btn-prev" disabled>Previous</button>
+    <span id="page-indicator">Page 1 of 1</span>
+    <button type="button" id="btn-next" disabled>Next</button>
+    <label class="page-nav-toggle" id="show-all-bboxes-label" hidden>
+      <input type="checkbox" id="show-all-bboxes" checked>
+      Show all bboxes
+    </label>
+  </nav>
+
+  <div class="empty-state" id="empty-state">
+    <div class="empty-state-inner">
+      <p class="empty-state-title">Drop a DocLang file here</p>
+      <p class="empty-state-meta">Supported file types: <code>.dclx</code>, <code>.dclg</code>, <code>.xml</code></p>
+      <p class="empty-state-action">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
+    </div>
+  </div>
+
+  <main class="split" id="main">
+    <section class="pane pane-page-view">
+      <div class="pane-header">Original page</div>
+      <div class="pane-body" id="page-pane"></div>
+    </section>
+    <section class="pane">
+      <div class="pane-header">DocLang</div>
+      <div class="pane-body" id="markup-pane"></div>
+    </section>
+    <section class="pane">
+      <div class="pane-header">Reading view</div>
+      <div class="pane-body" id="rendered-pane"></div>
+    </section>
+  </main>
+
+  <script src="demo-data.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>
