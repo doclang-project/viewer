@@ -4,6 +4,8 @@ Browser-based viewer for DocLang markup and [archives](https://github.com/doclan
 
 Standalone `.dclg` or `.xml` files show markup and the reading view only. `.dclx` archives may also include page images and assets; layout and page-alignment rules are in the [DocLang specification](https://github.com/doclang-project/doclang) ([archive format section](https://github.com/doclang-project/doclang/blob/main/spec.md#doclang-archive-format)).
 
+<img src="assets/viewer.png" alt="DocLang Viewer showing original page, markup, and reading view" width="1400" />
+
 ## Quick start
 
 Serve this directory over HTTP so the demo can fetch example files:
