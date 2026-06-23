@@ -1,5 +1,8 @@
 /* DocLang Archive Viewer — archive format: github.com/doclang-project/doclang spec.md#doclang-archive-format */
 
+const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
+const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
+const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
 const DOCLANG_NS = "https://www.doclang.ai/ns/v0";
 const PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
 const NO_MARKUP = "(No markup to be shown.)";
@@ -44,9 +47,9 @@ function markupAttributes(el) {
     .map((a) => ({ name: a.name, value: a.value }));
 }
 
-function xmlSpan(className, text) {
+function xmlSpan(className, text, { ghost = false } = {}) {
   const span = document.createElement("span");
-  span.className = className;
+  span.className = ghost ? `${className} markup-ghost-tag-part` : className;
   span.textContent = text;
   return span;
 }
@@ -99,11 +102,11 @@ function createMarkupLine() {
   return line;
 }
 
-function appendOpenTagContent(line, tag, attributes) {
-  line.appendChild(xmlSpan("xml-bracket", "<"));
-  line.appendChild(xmlSpan("xml-tag", tag));
+function appendOpenTagContent(line, tag, attributes, ghost = false) {
+  line.appendChild(xmlSpan("xml-bracket", "<", { ghost }));
+  line.appendChild(xmlSpan("xml-tag", tag, { ghost }));
   appendMarkupAttributes(line, attributes);
-  line.appendChild(xmlSpan("xml-bracket", ">"));
+  line.appendChild(xmlSpan("xml-bracket", ">", { ghost }));
 }
 
 function createMarkupFoldToggle() {
@@ -115,26 +118,28 @@ function createMarkupFoldToggle() {
   return btn;
 }
 
-function appendMarkupFoldableOpen(parent, depth, tag, attributes) {
+function appendMarkupFoldableOpen(parent, depth, tag, attributes, tagHint) {
+  const ghost = Boolean(tagHint);
   const { line, content } = createMarkupLineRow(depth, { foldToggle: true });
   line.classList.add("markup-line-open");
-  appendOpenTagContent(content, tag, attributes);
+  appendOpenTagContent(content, tag, attributes, ghost);
 
   const suffix = document.createElement("span");
   suffix.className = "markup-fold-suffix";
-  suffix.appendChild(xmlSpan("xml-bracket", "..."));
-  suffix.appendChild(xmlSpan("xml-bracket", "</"));
-  suffix.appendChild(xmlSpan("xml-tag", tag));
-  suffix.appendChild(xmlSpan("xml-bracket", ">"));
+  suffix.appendChild(xmlSpan("xml-bracket", "...", { ghost }));
+  suffix.appendChild(xmlSpan("xml-bracket", "</", { ghost }));
+  suffix.appendChild(xmlSpan("xml-tag", tag, { ghost }));
+  suffix.appendChild(xmlSpan("xml-bracket", ">", { ghost }));
   content.appendChild(suffix);
   parent.appendChild(line);
 }
 
-function appendMarkupCloseTag(parent, depth, tag) {
+function appendMarkupCloseTag(parent, depth, tag, tagHint) {
+  const ghost = Boolean(tagHint);
   const { line, content } = createMarkupLineRow(depth);
-  content.appendChild(xmlSpan("xml-bracket", "</"));
-  content.appendChild(xmlSpan("xml-tag", tag));
-  content.appendChild(xmlSpan("xml-bracket", ">"));
+  content.appendChild(xmlSpan("xml-bracket", "</", { ghost }));
+  content.appendChild(xmlSpan("xml-tag", tag, { ghost }));
+  content.appendChild(xmlSpan("xml-bracket", ">", { ghost }));
   parent.appendChild(line);
 }
 
@@ -189,7 +194,9 @@ let selectedElementId = null;
 let showAllBboxes = true;
 
 const els = {
-  subtitle: document.getElementById("doc-subtitle"),
+  openFileBtn: document.getElementById("open-file-btn"),
+  emptyStateFileTypes: document.getElementById("empty-state-file-types"),
+  docLabel: document.getElementById("doc-label"),
   pageNav: document.getElementById("page-nav"),
   pageIndicator: document.getElementById("page-indicator"),
   btnPrev: document.getElementById("btn-prev"),
@@ -202,8 +209,6 @@ const els = {
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
 };
-
-const defaultSubtitle = els.subtitle.textContent;
 
 document.getElementById("btn-demo").addEventListener("click", loadDemo);
 document.getElementById("demo-empty-link").addEventListener("click", (e) => {
@@ -227,14 +232,17 @@ els.showAllBboxes.addEventListener("change", () => {
   showAllBboxes = els.showAllBboxes.checked;
   applyBboxVisibility();
 });
+initFileTypeHints();
+initCursorHints();
 initDragDrop();
 initPageWheelNav();
+loadDemo();
 
 async function loadDemo() {
   try {
     const res = await fetch(DEMO_ARCHIVE_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const label = DEMO_ARCHIVE_URL.split("/").pop().replace(/\.dclx$/i, "") || "demo";
+    const label = DEMO_ARCHIVE_URL.split("/").pop() || "demo.dclx";
     await openArchiveFromZipBuffer(await res.arrayBuffer(), label);
   } catch (err) {
     alert(
@@ -427,6 +435,51 @@ function initPageWheelNav() {
   });
 }
 
+function initFileTypeHints() {
+  const markup = SUPPORTED_FILE_EXTENSIONS.map((ext) => `<code>${ext}</code>`).join(", ");
+  els.emptyStateFileTypes.innerHTML = markup;
+}
+
+function initCursorHints() {
+  const hint = document.getElementById("cursor-hint");
+  const offset = 10;
+  const margin = 8;
+
+  function hideHint() {
+    hint.hidden = true;
+  }
+
+  function showHint(text, clientX, clientY) {
+    hint.textContent = text;
+    hint.hidden = false;
+    let left = clientX + offset;
+    let top = clientY + offset;
+    const rect = hint.getBoundingClientRect();
+    if (left + rect.width > window.innerWidth - margin) {
+      left = clientX - rect.width - offset;
+    }
+    if (top + rect.height > window.innerHeight - margin) {
+      top = clientY - rect.height - offset;
+    }
+    hint.style.left = `${Math.max(margin, left)}px`;
+    hint.style.top = `${Math.max(margin, top)}px`;
+  }
+
+  els.markupPane.addEventListener("mousemove", (e) => {
+    if (!e.target.closest(".markup-ghost-tag-part")) {
+      hideHint();
+      return;
+    }
+    showHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
+  });
+  els.markupPane.addEventListener("mouseleave", hideHint);
+
+  els.openFileBtn.addEventListener("mousemove", (e) => {
+    showHint(OPEN_FILE_HINT, e.clientX, e.clientY);
+  });
+  els.openFileBtn.addEventListener("mouseleave", hideHint);
+}
+
 function initDragDrop() {
   document.body.addEventListener("dragenter", (e) => {
     if (!hasArchiveTransfer(e.dataTransfer)) return;
@@ -526,7 +579,7 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
 
   setPageViewVisible(hasPageView);
 
-  els.subtitle.textContent = label;
+  setDocLabel(label);
   setDocumentOpen(true, { markupOnly });
   renderPage(1);
 }
@@ -537,11 +590,21 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   els.pageNav.hidden = !open || markupOnly;
 }
 
+function setDocLabel(label) {
+  if (label) {
+    els.docLabel.textContent = label;
+    els.docLabel.hidden = false;
+  } else {
+    els.docLabel.textContent = "";
+    els.docLabel.hidden = true;
+  }
+}
+
 function resetViewer() {
   if (state) revokeArchiveUrls();
   state = null;
   selectedElementId = null;
-  els.subtitle.textContent = defaultSubtitle;
+  setDocLabel(null);
   setDocumentOpen(false);
   document.body.classList.remove("has-page-view");
   els.markupPane.innerHTML = "";
@@ -1262,7 +1325,7 @@ function appendMarkupVirtualText(parent, depth, hostEl, contentNodes, elementIds
   const elementId = elementIds.get(hostEl);
   if (elementId) block.setAttribute("data-element-id", elementId);
 
-  appendMarkupFoldableOpen(block, depth, "text", []);
+  appendMarkupFoldableOpen(block, depth, "text", [], VIRTUAL_TEXT_TAG_HINT);
   block.classList.add("markup-el-foldable");
 
   const foldBody = document.createElement("div");
@@ -1271,7 +1334,7 @@ function appendMarkupVirtualText(parent, depth, hostEl, contentNodes, elementIds
   children.className = "markup-children";
   appendMarkupNodesFromSlice(children, depth + 1, contentNodes, elementIds);
   foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, "text");
+  appendMarkupCloseTag(foldBody, depth, "text", VIRTUAL_TEXT_TAG_HINT);
   block.appendChild(foldBody);
   parent.appendChild(block);
 }

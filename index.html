@@ -11,22 +11,27 @@
   <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
+  <div id="cursor-hint" class="cursor-hint" role="tooltip" hidden></div>
+
   <header>
-    <a href="#" class="header-logo-link" id="home-link" title="Back to start">
-      <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo">
-    </a>
-    <div>
+    <div class="header-brand">
+      <a href="#" class="header-logo-link" id="home-link" title="Back to start">
+        <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo">
+      </a>
       <h1>DocLang Viewer</h1>
-      <div class="subtitle" id="doc-subtitle">See your documents in a new way</div>
     </div>
+    <span class="doc-label" id="doc-label" hidden></span>
     <div class="toolbar">
-      <label class="file-btn">
+      <label class="file-btn" id="open-file-btn">
         Open file
         <input type="file" id="input-archive" accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
       </label>
       <button type="button" id="btn-demo">Load demo</button>
+      <a href="https://doclang.ai" class="header-site-link" target="_blank" rel="noopener noreferrer">doclang.ai</a>
     </div>
   </header>
+
+  <p class="drop-banner" id="drop-banner">Drop to open another file</p>
 
   <nav class="page-nav" id="page-nav" hidden>
     <button type="button" id="btn-prev" disabled>Previous</button>
@@ -41,7 +46,7 @@
   <div class="empty-state" id="empty-state">
     <div class="empty-state-inner">
       <p class="empty-state-title">Drop a DocLang file here</p>
-      <p class="empty-state-meta">Supported file types: <code>.dclx</code>, <code>.dclg</code>, <code>.xml</code></p>
+      <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
       <p class="empty-state-action">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
     </div>
   </div>
