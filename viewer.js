@@ -2732,10 +2732,23 @@ function findMarkupElementForSelection(elementId) {
 }
 
 function findRenderedElementForSelection(elementId) {
-  return (
+  const direct =
     els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`)
+    els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
+  if (direct) return direct;
+
+  const xmlEl = state?.idToElement?.get(elementId);
+  const threadId = xmlEl ? elementThreadId(xmlEl) : null;
+  if (!threadId) return null;
+
+  const merged = els.renderedPane.querySelector(
+    `.rendered-fragment-merged[data-thread-id="${threadId}"]`,
   );
+  if (!merged) return null;
+
+  const primaryId = merged.getAttribute("data-element-id");
+  if (!primaryId || primaryId === elementId) return merged;
+  return fragmentPeerElementIds(primaryId).has(elementId) ? merged : null;
 }
 
 function revealRenderedSelectionContext(renderedEl) {
@@ -3052,14 +3065,111 @@ function buildMarkupElement(el, depth, elementIds) {
   return block;
 }
 
+/** @returns {Map<string, Element[]>} */
+function collectIntraPageThreads(segment) {
+  /** @type {Map<string, Element[]>} */
+  const byThread = new Map();
+  for (const el of segment) {
+    if (el.nodeType !== Node.ELEMENT_NODE) continue;
+    if (localName(el) === "page_break") continue;
+    const threadId = elementThreadId(el);
+    if (!threadId) continue;
+    if (!byThread.has(threadId)) byThread.set(threadId, []);
+    byThread.get(threadId).push(el);
+  }
+  for (const [threadId, members] of byThread) {
+    if (members.length < 2) byThread.delete(threadId);
+  }
+  return byThread;
+}
+
+function findLastTextNode(node) {
+  if (isTextLikeNode(node)) return node;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  for (let i = node.childNodes.length - 1; i >= 0; i -= 1) {
+    const found = findLastTextNode(node.childNodes[i]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function trimParentTrailingForFragmentJoin(parent) {
+  const lastText = findLastTextNode(parent);
+  if (!lastText) return;
+  let value = lastText.textContent ?? "";
+  value = value.replace(/\s+$/u, "");
+  if (value.endsWith("-")) value = value.slice(0, -1);
+  if (!value) {
+    lastText.parentNode?.removeChild(lastText);
+    trimParentTrailingForFragmentJoin(parent);
+    return;
+  }
+  lastText.textContent = value;
+}
+
+function appendMergedTextFragments(parent, fragments, elementIds) {
+  for (let i = 0; i < fragments.length; i += 1) {
+    if (i > 0) trimParentTrailingForFragmentJoin(parent);
+    appendRenderedBody(parent, fragments[i], elementIds, {
+      inline: true,
+      trimLeading: i > 0,
+    });
+  }
+}
+
+function renderMergedIntraPageFragments(fragments, elementIds) {
+  const first = fragments[0];
+  const tag = localName(first);
+  const firstId = elementIds.get(first);
+  const threadId = elementThreadId(first);
+
+  let node;
+  if (tag === "text") {
+    node = document.createElement("p");
+    appendMergedTextFragments(node, fragments, elementIds);
+  } else if (tag === "list") {
+    const listClass = first.getAttribute("class") ?? "unordered";
+    node = document.createElement(listClass === "ordered" ? "ol" : "ul");
+    for (const el of fragments) {
+      appendListItemsFromElement(node, el, elementIds);
+    }
+  } else {
+    node = document.createElement("div");
+    node.className = "rendered-fragment-merged-body";
+    for (const el of fragments) {
+      appendRenderedBodyBlocks(node, el, elementIds);
+    }
+  }
+
+  const wrap = wrapRendered(first, node, firstId, "rendered-fragment-merged");
+  if (threadId) wrap.setAttribute("data-thread-id", threadId);
+  return wrap;
+}
+
 function buildRenderedView(segment, elementIds) {
+  const intraPageThreads = collectIntraPageThreads(segment);
+  const skipElements = new Set();
+  /** @type {Map<Element, Element[]>} */
+  const mergeGroups = new Map();
+
+  for (const [, members] of intraPageThreads) {
+    mergeGroups.set(members[0], members);
+    for (let i = 1; i < members.length; i += 1) {
+      skipElements.add(members[i]);
+    }
+  }
+
   const root = document.createElement("article");
   root.className = "rendered-doc";
   for (const el of segment) {
     if (el.nodeType !== Node.ELEMENT_NODE) continue;
-    const tag = localName(el);
-    if (tag === "page_break") continue;
-    const rendered = renderBlockElement(el, elementIds, { inline: false });
+    if (localName(el) === "page_break") continue;
+    if (skipElements.has(el)) continue;
+
+    const mergeGroup = mergeGroups.get(el);
+    const rendered = mergeGroup
+      ? renderMergedIntraPageFragments(mergeGroup, elementIds)
+      : renderBlockElement(el, elementIds, { inline: false });
     if (rendered) root.appendChild(rendered);
   }
   root.addEventListener("click", (e) => {
@@ -3210,8 +3320,13 @@ function renderMarkerElement(el, elementIds, ctx) {
 
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
-    const text = node.textContent;
+    let text = node.textContent;
     if (!text || !text.trim()) return;
+    if (ctx.trimLeading) {
+      text = text.replace(/^\s+/u, "");
+      ctx.trimLeading = false;
+      if (!text) return;
+    }
     parent.appendChild(document.createTextNode(text));
     return;
   }
@@ -3414,9 +3529,7 @@ function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
   return wrap;
 }
 
-function renderList(el, elementIds) {
-  const listClass = el.getAttribute("class") ?? "unordered";
-  const list = document.createElement(listClass === "ordered" ? "ol" : "ul");
+function appendListItemsFromElement(list, el, elementIds) {
   const nodes = [...el.childNodes];
   let i = skipContainerLevelHead(nodes, 0);
 
@@ -3459,7 +3572,12 @@ function renderList(el, elementIds) {
 
     list.appendChild(li);
   }
+}
 
+function renderList(el, elementIds) {
+  const listClass = el.getAttribute("class") ?? "unordered";
+  const list = document.createElement(listClass === "ordered" ? "ol" : "ul");
+  appendListItemsFromElement(list, el, elementIds);
   return wrapRendered(el, list, elementIds.get(el));
 }
 
