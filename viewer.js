@@ -3,11 +3,17 @@
 const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
 const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
 const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
+const FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
+const FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
+const FRAGMENT_NAV_HINT_PREV = "Previous fragment";
+const FRAGMENT_NAV_HINT_NEXT = "Next fragment";
 const DOCLANG_NS = "https://www.doclang.ai/ns/v0";
 const PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
 const NO_MARKUP = "(No markup to be shown.)";
 const NO_IMAGE = "(No page image available.)";
-const HEAD_TAGS = new Set(["label", "thread", "xref", "href", "layer", "location", "caption", "custom"]);
+const HEAD_TAGS = new Set([
+  "label", "thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom",
+]);
 const SEMANTIC_TAGS = new Set([
   "text", "heading", "footnote", "page_header", "page_footer", "field_region", "list", "table", "index",
   "formula", "code", "picture", "marker", "group", "field_heading", "field_item", "key", "value", "hint",
@@ -18,7 +24,7 @@ const CELL_CONTENT_TAGS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow
 const CELL_SPAN_TAGS = new Set(["lcel", "ucel", "xcel"]);
 const OTSL_CONTAINER_TAGS = new Set(["table", "index", "tabular"]);
 const RENDER_BLOCK_TAGS = new Set([
-  "text", "heading", "footnote", "page_header", "page_footer", "list", "code", "formula", "picture", "group",
+  "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "list", "code", "formula", "picture", "group",
   "table", "index", "tabular",
 ]);
 const RENDER_FORMAT_TAGS = new Set([
@@ -184,14 +190,34 @@ function serializeMarkupTextNodes(nodes) {
 const PAGE_WHEEL_COOLDOWN_MS = 200;
 const PAGE_WHEEL_PIXEL_THRESHOLD = 4;
 const PAGE_WHEEL_GESTURE_MS = 100;
+const OVERLAY_BADGE_FONT_SIZE = 11 * 1.5 * 0.8;
+const OVERLAY_BADGE_PAD_X = 3;
+const OVERLAY_BADGE_PAD_Y = 2;
+const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
+const PAGE_ZOOM_DEFAULT = 100;
+const PAGE_PAN_DRAG_THRESHOLD = 5;
+const PAGE_VIEW_BORDER_PX = 2;
 
-/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean } | null} */
+/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
 let state = null;
 /** @type {ResizeObserver | null} */
 let pagePaneResizeObserver = null;
 /** @type {string | null} */
 let selectedElementId = null;
 let showAllBboxes = true;
+let showCaptionLinks = false;
+let showFragmentLinks = false;
+let showXrefLinks = false;
+let showReadingOrder = false;
+let showReadingOrderArrows = true;
+let readingOrderGlobalNumbering = false;
+let settingsSidebarOpen = false;
+let pageZoomPercent = PAGE_ZOOM_DEFAULT;
+/** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
+let pagePanDrag = null;
+let pagePanSuppressClick = false;
+/** @type {{ paneW: number, paneH: number, imgW: number, imgH: number, fitScale: number } | null} */
+let pageLayoutCache = null;
 
 const els = {
   openFileBtn: document.getElementById("open-file-btn"),
@@ -202,7 +228,26 @@ const els = {
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
-  showAllBboxesLabel: document.getElementById("show-all-bboxes-label"),
+  settingsToggle: document.getElementById("btn-settings-toggle"),
+  settingsLayer: document.getElementById("viewer-settings-layer"),
+  settingsScrim: document.getElementById("viewer-settings-scrim"),
+  settingsSidebar: document.getElementById("viewer-settings"),
+  settingsClose: document.getElementById("btn-settings-close"),
+  showCaptionLinks: document.getElementById("show-caption-links"),
+  showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
+  showFragmentLinks: document.getElementById("show-fragment-links"),
+  showFragmentLinksLabel: document.getElementById("show-fragment-links-label"),
+  showXrefLinks: document.getElementById("show-xref-links"),
+  showXrefLinksLabel: document.getElementById("show-xref-links-label"),
+  showReadingOrder: document.getElementById("show-reading-order"),
+  showReadingOrderLabel: document.getElementById("show-reading-order-label"),
+  readingOrderArrows: document.getElementById("reading-order-arrows"),
+  readingOrderArrowsLabel: document.getElementById("reading-order-arrows-label"),
+  readingOrderGlobal: document.getElementById("reading-order-global"),
+  readingOrderGlobalLabel: document.getElementById("reading-order-global-label"),
+  pageZoom: document.getElementById("page-zoom"),
+  pageZoomLabel: document.getElementById("page-zoom-label"),
+  pageZoomReset: document.getElementById("page-zoom-reset"),
   main: document.getElementById("main"),
   emptyState: document.getElementById("empty-state"),
   markupPane: document.getElementById("markup-pane"),
@@ -230,12 +275,50 @@ els.btnPrev.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.btnNext.addEventListener("click", () => goToPage(state.currentPage + 1));
 els.showAllBboxes.addEventListener("change", () => {
   showAllBboxes = els.showAllBboxes.checked;
+  syncLayoutSubtoggles();
+  const img = els.pagePane.querySelector(".page-view img");
+  if (img) syncOverlayBadges(img);
   applyBboxVisibility();
+});
+els.showCaptionLinks.addEventListener("change", () => {
+  showCaptionLinks = els.showCaptionLinks.checked;
+  applyBboxVisibility();
+});
+els.showFragmentLinks.addEventListener("change", () => {
+  showFragmentLinks = els.showFragmentLinks.checked;
+  applyBboxVisibility();
+});
+els.showXrefLinks.addEventListener("change", () => {
+  showXrefLinks = els.showXrefLinks.checked;
+  applyBboxVisibility();
+});
+els.showReadingOrder.addEventListener("change", () => {
+  showReadingOrder = els.showReadingOrder.checked;
+  syncLayoutSubtoggles();
+  const img = els.pagePane.querySelector(".page-view img");
+  if (img) syncOverlayBadges(img);
+  applyBboxVisibility();
+});
+els.readingOrderArrows.addEventListener("change", () => {
+  showReadingOrderArrows = els.readingOrderArrows.checked;
+  applyBboxVisibility();
+});
+els.readingOrderGlobal.addEventListener("change", () => {
+  readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
+  if (state) renderPage(state.currentPage);
+});
+els.settingsToggle.addEventListener("click", () => setSettingsSidebarOpen(!settingsSidebarOpen));
+els.settingsClose.addEventListener("click", () => setSettingsSidebarOpen(false));
+els.settingsScrim.addEventListener("click", () => setSettingsSidebarOpen(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && settingsSidebarOpen) setSettingsSidebarOpen(false);
 });
 initFileTypeHints();
 initCursorHints();
+initBboxHints();
 initDragDrop();
 initPageWheelNav();
+initPageViewControls();
 loadDemo();
 
 async function loadDemo() {
@@ -392,6 +475,12 @@ function initPageWheelNav() {
     "wheel",
     (e) => {
       if (!state?.hasPageView) return;
+      const pane = pageViewScrollPane();
+      const scrollable = pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
+      if (scrollable) {
+        onScrollPaneWheel(e, pane);
+        return;
+      }
       e.preventDefault();
       const dir = wheelDir(e);
       if (dir) tryFlipPage(dir);
@@ -407,7 +496,7 @@ function initPageWheelNav() {
   els.pagePane.setAttribute("role", "region");
   els.pagePane.setAttribute("aria-label", "Original page");
 
-  els.pagePane.addEventListener("pointerdown", () => {
+  els.pagePane.addEventListener("pointerdown", (e) => {
     if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
   });
 
@@ -435,49 +524,327 @@ function initPageWheelNav() {
   });
 }
 
+function pageViewScrollPane() {
+  return els.pagePane.querySelector(".page-view-port") ?? els.pagePane;
+}
+
+function isPagePaneScrollable() {
+  const pane = pageViewScrollPane();
+  return pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
+}
+
+function canStartPagePan(event) {
+  if (!(event.target instanceof Element)) return false;
+  if (!event.target.closest(".page-view")) return false;
+  return isPagePaneScrollable();
+}
+
+function updatePagePanePanCursor() {
+  els.pagePane.classList.toggle("can-pan", isPagePaneScrollable() && !pagePanDrag);
+}
+
+function initPageViewControls() {
+  els.pageZoom.addEventListener("input", () => {
+    pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, Number(els.pageZoom.value));
+    if (Number(els.pageZoom.value) < PAGE_ZOOM_DEFAULT) {
+      els.pageZoom.value = String(pageZoomPercent);
+    }
+    els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
+    updatePageZoomResetButton();
+    refreshPageViewLayout();
+  });
+
+  els.pageZoomReset?.addEventListener("click", () => {
+    if (pageZoomPercent === PAGE_ZOOM_DEFAULT) return;
+    resetPageZoom();
+  });
+
+  els.pagePane.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !canStartPagePan(e)) return;
+    pagePanDrag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: pageViewScrollPane().scrollLeft,
+      scrollTop: pageViewScrollPane().scrollTop,
+      moved: false,
+    };
+  });
+
+  els.pagePane.addEventListener("pointermove", (e) => {
+    if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
+    const dx = e.clientX - pagePanDrag.startX;
+    const dy = e.clientY - pagePanDrag.startY;
+    if (!pagePanDrag.moved && Math.hypot(dx, dy) >= PAGE_PAN_DRAG_THRESHOLD) {
+      pagePanDrag.moved = true;
+      els.pagePane.classList.add("is-panning");
+      els.pagePane.classList.remove("can-pan");
+      els.pagePane.setPointerCapture(e.pointerId);
+    }
+    if (!pagePanDrag.moved) return;
+    const scrollPane = pageViewScrollPane();
+    scrollPane.scrollLeft = pagePanDrag.scrollLeft + pagePanDrag.startX - e.clientX;
+    scrollPane.scrollTop = pagePanDrag.scrollTop + pagePanDrag.startY - e.clientY;
+    e.preventDefault();
+  });
+
+  function endPagePan(e) {
+    if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
+    if (pagePanDrag.moved) pagePanSuppressClick = true;
+    pagePanDrag = null;
+    els.pagePane.classList.remove("is-panning");
+    if (els.pagePane.hasPointerCapture(e.pointerId)) {
+      els.pagePane.releasePointerCapture(e.pointerId);
+    }
+    updatePagePanePanCursor();
+  }
+
+  els.pagePane.addEventListener("pointerup", endPagePan);
+  els.pagePane.addEventListener("pointercancel", endPagePan);
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function headTextPreview(el, maxLen = 72) {
+  const text = el.textContent?.replace(/\s+/g, " ").trim() ?? "";
+  if (!text) return "—";
+  return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+}
+
+function virtualTextHeadLocations(el) {
+  const parent = el.parentElement;
+  if (!parent) return [];
+  const nodes = [...parent.childNodes];
+  const idx = nodes.indexOf(el);
+  if (idx < 0) return [];
+  return parseElementHeadAt(nodes, idx + 1)?.locs ?? [];
+}
+
+function elementHeadLocations(el) {
+  const own = headLocations(el);
+  return own.length === 4 ? own : virtualTextHeadLocations(el);
+}
+
+function firstHeadChild(el, tag) {
+  return childElements(el).find((child) => localName(child) === tag) ?? null;
+}
+
+/** @returns {{ key: string, value: string, isDefault: boolean }[]} */
+function collectElementHeadInfo(el, defaultResolution) {
+  const labelEl = firstHeadChild(el, "label");
+  const threadEl = firstHeadChild(el, "thread");
+  const xrefEl = firstHeadChild(el, "xref");
+  const hrefEl = firstHeadChild(el, "href");
+  const layerEl = firstHeadChild(el, "layer");
+  const captionEl = firstHeadChild(el, "caption");
+  const descriptionEl = firstHeadChild(el, "description");
+  const summaryEl = firstHeadChild(el, "summary");
+  const customEl = firstHeadChild(el, "custom");
+  const locs = elementHeadLocations(el);
+  const rows = [{ key: "element", value: elementLabel(el), isDefault: false }];
+
+  rows.push({
+    key: "label",
+    value: labelEl?.getAttribute("value") ?? "undefined",
+    isDefault: !labelEl?.hasAttribute("value"),
+  });
+
+  if (threadEl) {
+    rows.push({
+      key: "thread_id",
+      value: threadEl.getAttribute("thread_id") ?? "—",
+      isDefault: false,
+    });
+  } else {
+    rows.push({ key: "thread", value: "—", isDefault: true });
+  }
+
+  if (xrefEl) {
+    rows.push({
+      key: "xref",
+      value: `thread_id ${xrefEl.getAttribute("thread_id") ?? "—"}`,
+      isDefault: false,
+    });
+  } else {
+    rows.push({ key: "xref", value: "—", isDefault: true });
+  }
+
+  if (hrefEl) {
+    rows.push({
+      key: "href",
+      value: hrefEl.getAttribute("uri") ?? "—",
+      isDefault: false,
+    });
+  } else {
+    rows.push({ key: "href", value: "—", isDefault: true });
+  }
+
+  rows.push({
+    key: "layer",
+    value: layerEl?.getAttribute("value") ?? "body",
+    isDefault: !layerEl?.hasAttribute("value"),
+  });
+
+  const cornerLabels = ["x_min", "y_min", "x_max", "y_max"];
+  if (locs.length === 4) {
+    for (let idx = 0; idx < 4; idx += 1) {
+      const loc = locs[idx];
+      const axisDefault = idx % 2 === 0 ? defaultResolution.width : defaultResolution.height;
+      const resolution = locationResolution(loc, axisDefault);
+      const value = loc.getAttribute("value") ?? "0";
+      rows.push({
+        key: cornerLabels[idx],
+        value: `${value} @ ${resolution}`,
+        isDefault: false,
+      });
+    }
+  } else {
+    for (const key of cornerLabels) {
+      rows.push({ key, value: "—", isDefault: false });
+    }
+  }
+
+  rows.push({
+    key: "caption",
+    value: captionEl ? headTextPreview(captionEl) : "—",
+    isDefault: !captionEl,
+  });
+  rows.push({
+    key: "description",
+    value: descriptionEl ? headTextPreview(descriptionEl) : "—",
+    isDefault: !descriptionEl,
+  });
+  rows.push({
+    key: "summary",
+    value: summaryEl ? headTextPreview(summaryEl) : "—",
+    isDefault: !summaryEl,
+  });
+  rows.push({
+    key: "custom",
+    value: customEl ? headTextPreview(customEl) : "—",
+    isDefault: !customEl,
+  });
+
+  return rows;
+}
+
+function elementHeadTooltipHtml(el, defaultResolution) {
+  const rows = collectElementHeadInfo(el, defaultResolution);
+  const body = rows
+    .map(({ key, value, isDefault }) => {
+      const rendered = escapeHtml(value);
+      const suffix = isDefault ? ' <span class="head-default">(default)</span>' : "";
+      return `<tr><th scope="row">${escapeHtml(key)}</th><td>${rendered}${suffix}</td></tr>`;
+    })
+    .join("");
+  return `<table class="head-tooltip"><tbody>${body}</tbody></table>`;
+}
+
+const cursorHintEl = document.getElementById("cursor-hint");
+const CURSOR_HINT_OFFSET = 10;
+const CURSOR_HINT_MARGIN = 8;
+
+function hideCursorHint() {
+  cursorHintEl.hidden = true;
+  cursorHintEl.classList.remove("cursor-hint-detail");
+  cursorHintEl.replaceChildren();
+}
+
+function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
+  cursorHintEl.replaceChildren();
+  if (typeof content === "string") {
+    cursorHintEl.textContent = content;
+  } else {
+    cursorHintEl.appendChild(content);
+  }
+  cursorHintEl.classList.toggle("cursor-hint-detail", detail);
+  cursorHintEl.hidden = false;
+
+  let left = clientX + CURSOR_HINT_OFFSET;
+  let top = clientY + CURSOR_HINT_OFFSET;
+  const rect = cursorHintEl.getBoundingClientRect();
+  if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) {
+    left = clientX - rect.width - CURSOR_HINT_OFFSET;
+  }
+  if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) {
+    top = clientY - rect.height - CURSOR_HINT_OFFSET;
+  }
+  cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
+  cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
+}
+
+function showCursorHintHtml(html, clientX, clientY) {
+  cursorHintEl.innerHTML = html;
+  cursorHintEl.classList.add("cursor-hint-detail");
+  cursorHintEl.hidden = false;
+
+  let left = clientX + CURSOR_HINT_OFFSET;
+  let top = clientY + CURSOR_HINT_OFFSET;
+  const rect = cursorHintEl.getBoundingClientRect();
+  if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) {
+    left = clientX - rect.width - CURSOR_HINT_OFFSET;
+  }
+  if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) {
+    top = clientY - rect.height - CURSOR_HINT_OFFSET;
+  }
+  cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
+  cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
+}
+
 function initFileTypeHints() {
   const markup = SUPPORTED_FILE_EXTENSIONS.map((ext) => `<code>${ext}</code>`).join(", ");
   els.emptyStateFileTypes.innerHTML = markup;
 }
 
 function initCursorHints() {
-  const hint = document.getElementById("cursor-hint");
-  const offset = 10;
-  const margin = 8;
-
-  function hideHint() {
-    hint.hidden = true;
-  }
-
-  function showHint(text, clientX, clientY) {
-    hint.textContent = text;
-    hint.hidden = false;
-    let left = clientX + offset;
-    let top = clientY + offset;
-    const rect = hint.getBoundingClientRect();
-    if (left + rect.width > window.innerWidth - margin) {
-      left = clientX - rect.width - offset;
-    }
-    if (top + rect.height > window.innerHeight - margin) {
-      top = clientY - rect.height - offset;
-    }
-    hint.style.left = `${Math.max(margin, left)}px`;
-    hint.style.top = `${Math.max(margin, top)}px`;
-  }
-
   els.markupPane.addEventListener("mousemove", (e) => {
     if (!e.target.closest(".markup-ghost-tag-part")) {
-      hideHint();
+      hideCursorHint();
       return;
     }
-    showHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
+    showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
   });
-  els.markupPane.addEventListener("mouseleave", hideHint);
+  els.markupPane.addEventListener("mouseleave", hideCursorHint);
 
   els.openFileBtn.addEventListener("mousemove", (e) => {
-    showHint(OPEN_FILE_HINT, e.clientX, e.clientY);
+    showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY);
   });
-  els.openFileBtn.addEventListener("mouseleave", hideHint);
+  els.openFileBtn.addEventListener("mouseleave", hideCursorHint);
+}
+
+function initBboxHints() {
+  els.pagePane.addEventListener("mousemove", (e) => {
+    if (pagePanDrag?.moved || els.pagePane.classList.contains("is-panning")) {
+      hideCursorHint();
+      return;
+    }
+    const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
+    if (navBtn) {
+      const hint = navBtn.getAttribute("data-nav") === "prev"
+        ? FRAGMENT_NAV_HINT_PREV
+        : FRAGMENT_NAV_HINT_NEXT;
+      showCursorHint(hint, e.clientX, e.clientY);
+      return;
+    }
+    const badge = e.target.closest(".element-badge[data-element-id]");
+    if (!badge || !state?.idToElement) {
+      hideCursorHint();
+      return;
+    }
+    const elementId = badge.getAttribute("data-element-id");
+    const xmlEl = state.idToElement.get(elementId);
+    if (!xmlEl) {
+      hideCursorHint();
+      return;
+    }
+    showCursorHintHtml(elementHeadTooltipHtml(xmlEl, state.defaultResolution), e.clientX, e.clientY);
+  });
+  els.pagePane.addEventListener("mouseleave", hideCursorHint);
 }
 
 function initDragDrop() {
@@ -565,6 +932,8 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
   const hasPageView = !markupOnly && pageImages.size > 0;
   const maxImagePage = hasPageView ? Math.max(...pageImages.keys()) : 0;
   const pageCount = markupOnly ? 1 : Math.max(segments.length, maxImagePage, 1);
+  const readingOrder = computeReadingOrder(root);
+  const elementPageByEl = buildElementPageMap(segments);
 
   state = {
     pageImages,
@@ -575,7 +944,16 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
     defaultResolution,
     hasPageView,
     markupOnly,
+    docRoot: root,
+    threadPagesById: buildThreadPagesById(root, elementPageByEl),
+    elementPageByEl,
+    threadNavByElement: buildThreadNavByElement(root),
+    pendingSelectElement: null,
+    readingOrder,
+    readingOrderDisplayNumbers: computeReadingOrderDisplayNumbers(readingOrder),
+    pageViewOverlay: null,
   };
+  resetPageLayoutCache();
 
   setPageViewVisible(hasPageView);
 
@@ -600,32 +978,117 @@ function setDocLabel(label) {
   }
 }
 
+function resetPageZoom() {
+  pageZoomPercent = PAGE_ZOOM_DEFAULT;
+  if (els.pageZoom) {
+    els.pageZoom.value = String(PAGE_ZOOM_DEFAULT);
+    els.pageZoom.setAttribute("aria-valuenow", String(PAGE_ZOOM_DEFAULT));
+  }
+  updatePageZoomResetButton();
+  const port = pageViewScrollPane();
+  port.scrollLeft = 0;
+  port.scrollTop = 0;
+  refreshPageViewLayout();
+}
+
+function updatePageZoomResetButton() {
+  if (!els.pageZoomReset) return;
+  els.pageZoomReset.textContent = `${pageZoomPercent}%`;
+  els.pageZoomReset.disabled = pageZoomPercent === PAGE_ZOOM_DEFAULT;
+}
+
 function resetViewer() {
   if (state) revokeArchiveUrls();
   state = null;
   selectedElementId = null;
+  pagePanDrag = null;
+  pagePanSuppressClick = false;
+  resetPageZoom();
   setDocLabel(null);
   setDocumentOpen(false);
   document.body.classList.remove("has-page-view");
+  setSettingsSidebarOpen(false);
   els.markupPane.innerHTML = "";
   els.renderedPane.innerHTML = "";
   els.pagePane.innerHTML = "";
-  els.pageIndicator.textContent = "Page 1 of 1";
+  setPageIndicator(1, 1);
   els.btnPrev.disabled = true;
   els.btnNext.disabled = true;
 }
 
 function setPageViewVisible(visible) {
   document.body.classList.toggle("has-page-view", visible);
-  if (els.showAllBboxesLabel) els.showAllBboxesLabel.hidden = !visible;
+  if (els.settingsToggle) els.settingsToggle.hidden = !visible;
+  if (els.pageZoomLabel) els.pageZoomLabel.hidden = !visible;
+  if (visible) updatePageZoomResetButton();
+  if (!visible) setSettingsSidebarOpen(false);
   els.pagePane.tabIndex = visible ? 0 : -1;
+  syncLayoutSubtoggles();
+}
+
+function setSettingsSidebarOpen(open) {
+  settingsSidebarOpen = open;
+  if (els.settingsLayer) els.settingsLayer.hidden = !open;
+  if (els.settingsToggle) els.settingsToggle.setAttribute("aria-expanded", String(open));
+}
+
+function syncLayoutSubtoggles() {
+  const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
+  for (const label of [
+    els.showFragmentLinksLabel,
+    els.showCaptionLinksLabel,
+    els.showXrefLinksLabel,
+    els.showReadingOrderLabel,
+  ]) {
+    if (!label) continue;
+    label.classList.toggle("settings-option-disabled", !layoutEnabled);
+    const input = label.querySelector("input");
+    if (input) input.disabled = !layoutEnabled;
+  }
+
+  const readingOrderEnabled = layoutEnabled && showReadingOrder;
+  for (const label of [els.readingOrderArrowsLabel, els.readingOrderGlobalLabel]) {
+    if (!label) continue;
+    label.classList.toggle("settings-option-disabled", !readingOrderEnabled);
+    const input = label.querySelector("input");
+    if (input) input.disabled = !readingOrderEnabled;
+  }
 }
 
 function goToPage(n) {
   if (!state) return;
+  setSettingsSidebarOpen(false);
   const page = Math.min(Math.max(1, n), state.pageCount);
   state.currentPage = page;
   renderPage(page);
+}
+
+let pageIndicatorMeasurer = null;
+
+function pageIndicatorTextWidth(text) {
+  if (!pageIndicatorMeasurer) {
+    pageIndicatorMeasurer = document.createElement("span");
+    pageIndicatorMeasurer.setAttribute("aria-hidden", "true");
+    Object.assign(pageIndicatorMeasurer.style, {
+      position: "absolute",
+      visibility: "hidden",
+      pointerEvents: "none",
+      whiteSpace: "nowrap",
+    });
+    document.body.appendChild(pageIndicatorMeasurer);
+  }
+  const ref = getComputedStyle(els.pageIndicator);
+  pageIndicatorMeasurer.style.font = ref.font;
+  pageIndicatorMeasurer.style.fontVariantNumeric = ref.fontVariantNumeric;
+  pageIndicatorMeasurer.style.letterSpacing = ref.letterSpacing;
+  pageIndicatorMeasurer.textContent = text;
+  return Math.ceil(pageIndicatorMeasurer.getBoundingClientRect().width);
+}
+
+function setPageIndicator(pageNum, pageCount) {
+  els.pageIndicator.textContent = `Page ${pageNum} of ${pageCount}`;
+  const widest = `Page ${pageCount} of ${pageCount}`;
+  els.pageIndicator.style.minWidth = `${pageIndicatorTextWidth(widest)}px`;
 }
 
 function renderPage(pageNum) {
@@ -635,7 +1098,7 @@ function renderPage(pageNum) {
   const segment = segments[idx] ?? [];
   selectedElementId = null;
 
-  els.pageIndicator.textContent = `Page ${pageNum} of ${pageCount}`;
+  setPageIndicator(pageNum, pageCount);
   els.btnPrev.disabled = pageNum <= 1;
   els.btnNext.disabled = pageNum >= pageCount;
 
@@ -657,52 +1120,261 @@ function renderPage(pageNum) {
   if (state.hasPageView) {
     const imageUrl = pageImages.get(pageNum);
     if (imageUrl) {
+      const port = document.createElement("div");
+      port.className = "page-view-port";
       const wrap = document.createElement("div");
       wrap.className = "page-view";
       const img = document.createElement("img");
       img.alt = `Page ${pageNum}`;
 
       const onImageReady = () => {
-        fitPageImage(img, els.pagePane);
+        if (img.dataset.layoutGeneration === String(pageNum)) return;
+        img.dataset.layoutGeneration = String(pageNum);
+
+        applyPageImageSize(img, els.pagePane);
+
         const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
         const existing = wrap.querySelector("svg.overlay");
         if (existing) existing.remove();
+        const readingOrderSteps = collectReadingOrderSteps(
+          segment,
+          elementIds,
+          boxes,
+          state.readingOrder,
+          readingOrderGlobalNumbering,
+          state.readingOrderDisplayNumbers,
+        );
+        state.pageViewOverlay = { boxes, readingOrderSteps };
         if (boxes.length) {
-          wrap.appendChild(buildOverlay(img, boxes));
-          applyBboxVisibility();
+          wrap.appendChild(
+            buildOverlay(
+              img,
+              boxes,
+              collectCaptionLinks(segment, elementIds, boxes),
+              collectXrefLinks(segment, elementIds, boxes),
+              readingOrderSteps,
+              collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById),
+              collectFragmentNavItems(segment, elementIds, boxes),
+              defaultResolution,
+            ),
+          );
+        }
+        syncPageViewChrome(img);
+        const pending = state.pendingSelectElement;
+        if (pending) {
+          state.pendingSelectElement = null;
+          const id = findElementIdOnPage(pending);
+          if (id) selectElement(id);
         }
       };
 
-      img.addEventListener("load", onImageReady);
+      img.addEventListener("load", onImageReady, { once: true });
       wrap.appendChild(img);
+      port.appendChild(wrap);
+      els.pagePane.appendChild(port);
       img.src = imageUrl;
       if (img.complete) onImageReady();
 
       if (!pagePaneResizeObserver) {
         pagePaneResizeObserver = new ResizeObserver(() => {
-          const img = els.pagePane.querySelector(".page-view img");
-          if (img?.naturalWidth) fitPageImage(img, els.pagePane);
+          refreshPageViewLayout();
         });
         pagePaneResizeObserver.observe(els.pagePane);
       }
-
-      els.pagePane.appendChild(wrap);
     } else {
       els.pagePane.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
     }
   }
 }
 
-function fitPageImage(img, pane) {
-  if (!img.naturalWidth || !img.naturalHeight) return;
+function pageZoomFactor() {
+  return pageZoomPercent / PAGE_ZOOM_DEFAULT;
+}
+
+function overlayUserLength(baseUserPx) {
+  return baseUserPx / pageZoomFactor();
+}
+
+function computePageFitScale(img, pane) {
+  return getCachedFitScale(img, pane);
+}
+
+function resetPageLayoutCache() {
+  pageLayoutCache = null;
+}
+
+function paneContentSize(pane) {
   const style = getComputedStyle(pane);
   const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
   const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-  const maxW = pane.clientWidth - padX;
-  const maxH = pane.clientHeight - padY;
-  const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
-  img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
-  img.style.height = `${Math.round(img.naturalHeight * scale)}px`;
+  return {
+    w: pane.clientWidth - padX,
+    h: pane.clientHeight - padY,
+  };
+}
+
+function getCachedFitScale(img, pane) {
+  const { w: paneW, h: paneH } = paneContentSize(pane);
+  const imgW = img.naturalWidth;
+  const imgH = img.naturalHeight;
+  if (
+    pageLayoutCache &&
+    pageLayoutCache.paneW === paneW &&
+    pageLayoutCache.paneH === paneH &&
+    pageLayoutCache.imgW === imgW &&
+    pageLayoutCache.imgH === imgH
+  ) {
+    return pageLayoutCache.fitScale;
+  }
+  const fitScale =
+    paneW > 0 && paneH > 0 && imgW > 0 && imgH > 0
+      ? Math.min(
+          (paneW - PAGE_VIEW_BORDER_PX) / imgW,
+          (paneH - PAGE_VIEW_BORDER_PX) / imgH,
+        )
+      : 1;
+  pageLayoutCache = { paneW, paneH, imgW, imgH, fitScale };
+  return fitScale;
+}
+
+function applyPageImageSize(img, pane = els.pagePane) {
+  if (!img?.naturalWidth || !img.naturalHeight) return false;
+  pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, pageZoomPercent);
+  const fitScale = getCachedFitScale(img, pane);
+  const scale = fitScale * (pageZoomPercent / PAGE_ZOOM_DEFAULT);
+  const w = Math.floor(img.naturalWidth * scale);
+  const h = Math.floor(img.naturalHeight * scale);
+  const nextW = `${w}px`;
+  const nextH = `${h}px`;
+  const unchanged = img.style.width === nextW && img.style.height === nextH;
+  if (!unchanged) {
+    img.style.width = nextW;
+    img.style.height = nextH;
+    img.style.maxWidth = "none";
+    img.style.maxHeight = "none";
+  }
+  img.dataset.layoutReady = "1";
+  return !unchanged;
+}
+
+function syncPageViewChrome(img) {
+  syncOverlayBadges(img);
+  updatePagePanePanCursor();
+  applyBboxVisibility();
+}
+
+function applyPageLayout(img, pane = els.pagePane) {
+  applyPageImageSize(img, pane);
+  syncPageViewChrome(img);
+}
+
+let pageLayoutFrame = 0;
+
+function refreshPageViewLayout() {
+  cancelAnimationFrame(pageLayoutFrame);
+  pageLayoutFrame = requestAnimationFrame(() => {
+    pageLayoutFrame = 0;
+    const img = els.pagePane.querySelector(".page-view img");
+    if (img?.naturalWidth) applyPageLayout(img);
+  });
+}
+
+function overlayBadgeLayout(svg, text, fontSizeUser) {
+  const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X);
+  const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y);
+  const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  probe.setAttribute("class", "overlay-badge-label");
+  probe.setAttribute("font-size", String(fontSizeUser));
+  probe.setAttribute("font-weight", "700");
+  probe.setAttribute("text-anchor", "start");
+  probe.setAttribute("dominant-baseline", "text-before-edge");
+  probe.setAttribute("visibility", "hidden");
+  probe.textContent = String(text);
+  svg.appendChild(probe);
+
+  let width;
+  let height;
+  try {
+    const bbox = probe.getBBox();
+    width = bbox.width + padXUser * 2;
+    height = bbox.height + padYUser * 2;
+  } catch {
+    const label = String(text);
+    width = overlayUserLength(label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2);
+    height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + OVERLAY_BADGE_PAD_Y * 2);
+  }
+  probe.remove();
+  return { width, height };
+}
+
+function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }) {
+  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
+  const { width, height } = overlayBadgeLayout(svg, text, fontSize);
+  const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX);
+
+  const badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  badge.setAttribute("class", `overlay-badge ${extraClass}`);
+  badge.setAttribute("data-element-id", elementId);
+
+  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  bg.setAttribute("class", "overlay-badge-bg");
+  bg.setAttribute("x", String(anchorX - width / 2));
+  bg.setAttribute("y", String(anchorY - height / 2));
+  bg.setAttribute("width", String(width));
+  bg.setAttribute("height", String(height));
+  bg.setAttribute("rx", String(radius));
+  bg.setAttribute("ry", String(radius));
+  badge.appendChild(bg);
+
+  const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  label.setAttribute("class", "overlay-badge-label");
+  label.setAttribute("x", String(anchorX));
+  label.setAttribute("y", String(anchorY));
+  label.setAttribute("font-size", String(fontSize));
+  label.textContent = String(text);
+  badge.appendChild(label);
+
+  svg.appendChild(badge);
+  return badge;
+}
+
+function syncOverlayBadges(img) {
+  const svg = img.parentElement?.querySelector("svg.overlay");
+  const meta = state?.pageViewOverlay;
+  if (!svg || !img.naturalWidth || !meta) return;
+
+  svg.querySelectorAll(".element-badge, .reading-order-badge").forEach((badge) => badge.remove());
+
+  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
+  const badgeGap = overlayUserLength(2);
+  const readingOrderByElementId = new Map();
+  if (showAllBboxes && showReadingOrder) {
+    for (const step of meta.readingOrderSteps ?? []) {
+      readingOrderByElementId.set(step.elementId, step);
+    }
+  }
+
+  const boxes = sortedOverlayBoxes(meta.boxes ?? []);
+
+  for (const b of boxes) {
+    const { x, y } = boxPixelRect(b, img);
+    const tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
+    appendOverlayBadge(svg, x, y, b.tag, {
+      extraClass: `element-badge ${kindClassForTag(b.kind)}`,
+      elementId: b.elementId,
+    });
+
+    const step = readingOrderByElementId.get(b.elementId);
+    if (step) {
+      const orderText = String(step.order);
+      const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
+      const orderAnchorX = x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2;
+      appendOverlayBadge(svg, orderAnchorX, y, orderText, {
+        extraClass: "reading-order-badge",
+        elementId: b.elementId,
+      });
+    }
+  }
 }
 
 function splitIntoSegments(root) {
@@ -919,6 +1591,364 @@ function collectBoundingBoxes(segment, defaultResolution, elementIds) {
   return boxes;
 }
 
+/** @returns {{ captionBox: object, hostBox: object, captionElementId: string, hostElementId: string }[]} */
+function collectCaptionLinks(segment, elementIds, boxes) {
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {{ captionBox: object, hostBox: object, captionElementId: string, hostElementId: string }[]} */
+  const links = [];
+  walkElements(segment, (el) => {
+    if (localName(el) !== "caption") return;
+    const captionId = elementIds.get(el);
+    const captionBox = captionId ? boxById.get(captionId) : null;
+    if (!captionBox) return;
+    const host = el.parentElement;
+    if (!host || headLocations(host).length !== 4) return;
+    const hostId = elementIds.get(host);
+    const hostBox = hostId ? boxById.get(hostId) : null;
+    if (!hostBox) return;
+    links.push({
+      captionBox,
+      hostBox,
+      captionElementId: captionId,
+      hostElementId: hostId,
+    });
+  });
+  return links;
+}
+
+/** @returns {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]} */
+function collectXrefLinks(segment, elementIds, boxes) {
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {Map<string, { elementId: string, box: object }[]>} */
+  const threadsById = new Map();
+
+  walkElements(segment, (el) => {
+    const elementId = elementIds.get(el);
+    const box = elementId ? boxById.get(elementId) : null;
+    if (!box) return;
+    for (const thread of childElements(el)) {
+      if (localName(thread) !== "thread") continue;
+      const threadId = thread.getAttribute("thread_id");
+      if (!threadId) continue;
+      if (!threadsById.has(threadId)) threadsById.set(threadId, []);
+      threadsById.get(threadId).push({ elementId, box });
+    }
+  });
+
+  /** @type {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]} */
+  const links = [];
+  walkElements(segment, (el) => {
+    const xrefs = childElements(el).filter((c) => localName(c) === "xref");
+    if (!xrefs.length) return;
+
+    const from = findNearestLocatedBox(el, elementIds, boxById);
+    if (!from) return;
+
+    for (const xref of xrefs) {
+      const threadId = xref.getAttribute("thread_id");
+      if (!threadId) continue;
+      for (const { elementId: toId, box: toBox } of threadsById.get(threadId) ?? []) {
+        if (toId === from.elementId) continue;
+        links.push({
+          fromBox: from.box,
+          toBox,
+          fromElementId: from.elementId,
+          toElementId: toId,
+        });
+      }
+    }
+  });
+  return links;
+}
+
+/** @returns {{ fromBox: object, toBox: object | null, fromElementId: string, toElementId: string | null, threadId: string, targetCorner?: "tl" | "br" }[]} */
+function collectFragmentLinks(segment, elementIds, boxes, pageNum, threadPagesById) {
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {Map<string, { elementId: string, box: object }[]>} */
+  const onPage = new Map();
+
+  walkElements(segment, (el) => {
+    const thread = firstHeadChild(el, "thread");
+    const threadId = thread?.getAttribute("thread_id");
+    if (!threadId) return;
+    const elementId = elementIds.get(el);
+    const box = elementId ? boxById.get(elementId) : null;
+    if (!box) return;
+    if (!onPage.has(threadId)) onPage.set(threadId, []);
+    onPage.get(threadId).push({ elementId, box });
+  });
+
+  const segmentEls = new Set();
+  walkElements(segment, (el) => segmentEls.add(el));
+
+  /** @type {{ fromBox: object, toBox: object | null, fromElementId: string, toElementId: string | null, threadId: string, targetCorner?: "tl" | "br" }[]} */
+  const links = [];
+
+  for (const [threadId, members] of onPage) {
+    if (members.length >= 2) {
+      for (let i = 0; i < members.length - 1; i += 1) {
+        links.push({
+          fromBox: members[i].box,
+          toBox: members[i + 1].box,
+          fromElementId: members[i].elementId,
+          toElementId: members[i + 1].elementId,
+          threadId,
+        });
+      }
+      continue;
+    }
+
+    if (members.length !== 1) continue;
+    const threadPages = threadPagesById.get(threadId);
+    if (!threadPages) continue;
+    const hasPrevious = [...threadPages].some((p) => p < pageNum);
+    const hasFollowing = [...threadPages].some((p) => p > pageNum);
+    if (!hasPrevious && !hasFollowing) continue;
+
+    const base = {
+      fromBox: members[0].box,
+      toBox: null,
+      fromElementId: members[0].elementId,
+      toElementId: null,
+      threadId,
+    };
+    if (hasPrevious) links.push({ ...base, targetCorner: "tl" });
+    if (hasFollowing) links.push({ ...base, targetCorner: "br" });
+  }
+
+  return links;
+}
+
+function isReadingOrderUnit(el) {
+  const tag = localName(el);
+  if (tag === "caption") return true;
+  if (HEAD_TAGS.has(tag) || tag === "location" || tag === "h_thread" || tag === "page_break") return false;
+  if (tag === "nl" || CELL_SPAN_TAGS.has(tag)) return false;
+  if (RENDER_FORMAT_TAGS.has(tag) || tag === "src" || tag === "checkbox") return false;
+  return true;
+}
+
+/** @returns {Map<string, Element[]>} */
+function buildThreadsById(docRoot) {
+  const map = new Map();
+  const roots = childElements(docRoot).filter((el) => localName(el) !== "head");
+  walkElements(roots, (el) => {
+    for (const child of childElements(el)) {
+      if (localName(child) !== "thread") continue;
+      const threadId = child.getAttribute("thread_id");
+      if (!threadId) continue;
+      if (!map.has(threadId)) map.set(threadId, []);
+      map.get(threadId).push(el);
+    }
+  });
+  return map;
+}
+
+/** @returns {Map<Element, number>} */
+function buildElementPageMap(segments) {
+  const elementPage = new Map();
+  segments.forEach((segment, idx) => {
+    const pageNum = idx + 1;
+    walkElements(segment, (el) => elementPage.set(el, pageNum));
+  });
+  return elementPage;
+}
+
+/** @returns {Map<string, Set<number>>} */
+function buildThreadPagesById(docRoot, elementPageByEl) {
+  /** @type {Map<string, Set<number>>} */
+  const threadPagesById = new Map();
+  for (const [threadId, elements] of buildThreadsById(docRoot)) {
+    const pages = new Set();
+    for (const el of elements) {
+      const page = elementPageByEl.get(el);
+      if (page) pages.add(page);
+    }
+    if (pages.size) threadPagesById.set(threadId, pages);
+  }
+  return threadPagesById;
+}
+
+/** @returns {Map<Element, { prev: Element | null, next: Element | null }>} */
+function buildThreadNavByElement(docRoot) {
+  /** @type {Map<Element, { prev: Element | null, next: Element | null }>} */
+  const nav = new Map();
+  for (const [, elements] of buildThreadsById(docRoot)) {
+    for (let i = 0; i < elements.length; i += 1) {
+      nav.set(elements[i], {
+        prev: i > 0 ? elements[i - 1] : null,
+        next: i < elements.length - 1 ? elements[i + 1] : null,
+      });
+    }
+  }
+  return nav;
+}
+
+/** @returns {{ elementId: string, box: object, hasPrev: boolean, hasNext: boolean }[]} */
+function collectFragmentNavItems(segment, elementIds, boxes) {
+  if (!state?.threadNavByElement) return [];
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {{ elementId: string, box: object, hasPrev: boolean, hasNext: boolean }[]} */
+  const items = [];
+  walkElements(segment, (el) => {
+    const nav = state.threadNavByElement.get(el);
+    if (!nav || (!nav.prev && !nav.next)) return;
+    const elementId = elementIds.get(el);
+    const box = elementId ? boxById.get(elementId) : null;
+    if (!box) return;
+    items.push({
+      elementId,
+      box,
+      hasPrev: nav.prev !== null,
+      hasNext: nav.next !== null,
+    });
+  });
+  return items;
+}
+
+function findElementIdOnPage(el) {
+  if (!state?.elementIds) return null;
+  for (const [node, id] of state.elementIds) {
+    if (node === el) return id;
+  }
+  return null;
+}
+
+function navigateThreadFragment(elementId, direction) {
+  const el = state?.idToElement?.get(elementId);
+  if (!el) return;
+  const nav = state?.threadNavByElement?.get(el);
+  if (!nav) return;
+  const target = direction === "prev" ? nav.prev : nav.next;
+  if (!target) return;
+  const page = state.elementPageByEl.get(target);
+  if (!page) return;
+  if (page === state.currentPage) {
+    const id = findElementIdOnPage(target);
+    if (id) selectElement(id);
+    return;
+  }
+  state.pendingSelectElement = target;
+  goToPage(page);
+}
+
+/** @returns {Element[]} */
+function computeReadingOrder(docRoot) {
+  const bodyChildren = childElements(docRoot).filter((el) => localName(el) !== "head");
+  const threadsById = buildThreadsById(docRoot);
+  const consumedViaXref = new Set();
+  /** @type {Element[]} */
+  const order = [];
+
+  function record(el) {
+    if (!isReadingOrderUnit(el)) return;
+    order.push(el);
+  }
+
+  function consumeThread(threadId) {
+    for (const target of threadsById.get(threadId) ?? []) {
+      if (consumedViaXref.has(target)) continue;
+      consumedViaXref.add(target);
+      visitElement(target);
+    }
+  }
+
+  function walkChildren(parent) {
+    for (const child of parent.childNodes) {
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      const tag = localName(child);
+      if (tag === "xref") {
+        const threadId = child.getAttribute("thread_id");
+        if (threadId) consumeThread(threadId);
+        continue;
+      }
+      if (tag === "page_break") continue;
+      visitElement(child);
+    }
+  }
+
+  function visitElement(el) {
+    record(el);
+    walkChildren(el);
+  }
+
+  for (const el of bodyChildren) {
+    if (localName(el) === "page_break") continue;
+    if (consumedViaXref.has(el)) continue;
+    visitElement(el);
+  }
+
+  return order;
+}
+
+function hasVirtualTextLocations(el) {
+  const parent = el.parentElement;
+  if (!parent) return false;
+  const nodes = [...parent.childNodes];
+  const idx = nodes.indexOf(el);
+  if (idx < 0) return false;
+  return parseElementHeadAt(nodes, idx + 1) !== null;
+}
+
+function isVirtualTextOverlayUnit(el) {
+  if (headLocations(el).length === 4) return false;
+  if (!hasVirtualTextLocations(el)) return false;
+  const tag = localName(el);
+  if (tag === "ldiv" && localName(el.parentElement) === "list") return true;
+  if (isCellToken(tag) && tag !== "nl" && !CELL_SPAN_TAGS.has(tag)) {
+    return OTSL_CONTAINER_TAGS.has(localName(el.parentElement));
+  }
+  return false;
+}
+
+function isReadingOrderOverlayUnit(el) {
+  if (!isReadingOrderUnit(el)) return false;
+  if (headLocations(el).length === 4) return true;
+  return isVirtualTextOverlayUnit(el);
+}
+
+/** @returns {Map<Element, number>} */
+function computeReadingOrderDisplayNumbers(readingOrder) {
+  const numbers = new Map();
+  let n = 0;
+  for (const el of readingOrder) {
+    if (!isReadingOrderOverlayUnit(el)) continue;
+    n += 1;
+    numbers.set(el, n);
+  }
+  return numbers;
+}
+
+/** @returns {{ order: number, box: object, elementId: string }[]} */
+function collectReadingOrderSteps(
+  segment,
+  elementIds,
+  boxes,
+  readingOrder,
+  globalNumbering = true,
+  displayNumbers = null,
+) {
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {{ order: number, box: object, elementId: string }[]} */
+  const steps = [];
+  let pageOrder = 0;
+
+  readingOrder.forEach((el) => {
+    const elementId = elementIds.get(el);
+    if (!elementId) return;
+    const box = boxById.get(elementId);
+    if (!box) return;
+    pageOrder += 1;
+    steps.push({
+      order: globalNumbering ? (displayNumbers?.get(el) ?? pageOrder) : pageOrder,
+      box,
+      elementId,
+    });
+  });
+
+  return steps;
+}
+
 function pushBoundingBox(boxes, locs, defaultResolution, kind, tag, elementId) {
   const [x0el, y0el, x1el, y1el] = locs;
   const resW = locationResolution(x0el, defaultResolution.width);
@@ -1067,13 +2097,32 @@ function headLocations(el) {
   return parseElementHeadAt([...el.childNodes], 0)?.locs ?? [];
 }
 
+/** @returns {{ elementId: string, box: object } | null} */
+function findNearestLocatedBox(el, elementIds, boxById) {
+  let node = el;
+  while (node) {
+    const elementId = elementIds.get(node);
+    const box = elementId ? boxById.get(elementId) : null;
+    if (box) return { elementId, box };
+    if (localName(node) === "doclang") break;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 function locationResolution(el, axisDefault) {
   const r = parseInt(el.getAttribute("resolution") ?? String(axisDefault), 10);
   return Number.isFinite(r) && r > 0 ? r : axisDefault;
 }
 
+function headingLevel(el) {
+  return Math.min(Math.max(parseInt(el.getAttribute("level") ?? "1", 10) || 1, 1), 6);
+}
+
 function elementLabel(el) {
+  if (isVirtualTextOverlayUnit(el)) return "text";
   const tag = localName(el);
+  if (tag === "heading" || tag === "field_heading") return `${tag}[${headingLevel(el)}]`;
   const level = el.getAttribute("level");
   if (level) return `${tag}[${level}]`;
   const cls = el.getAttribute("class");
@@ -1081,13 +2130,22 @@ function elementLabel(el) {
   return tag;
 }
 
-function bboxClassForKind(kind) {
+function elementKindKey(kind) {
   if (kind.startsWith("field_") || kind === "key" || kind === "value") return "field";
+  if (kind === "tabular") return "table";
   const known = new Set([
     "text", "heading", "list", "ldiv", "table", "index", "formula", "code", "picture",
     "group", "footnote", "page_header", "page_footer", "caption",
   ]);
   return known.has(kind) ? kind : "default";
+}
+
+function kindClassForTag(tag) {
+  return `kind-${elementKindKey(tag)}`;
+}
+
+function bboxClassForKind(kind) {
+  return elementKindKey(kind);
 }
 
 function boxPixelRect(b, img) {
@@ -1096,6 +2154,325 @@ function boxPixelRect(b, img) {
   const w = ((b.x1 - b.x0) / b.resW) * img.naturalWidth;
   const h = ((b.y1 - b.y0) / b.resH) * img.naturalHeight;
   return { x, y, w, h, area: w * h };
+}
+
+function overlayBoxPaintPriority(box) {
+  if (box.kind === "text") return 0;
+  if (box.kind === "list" || box.kind === "table" || box.kind === "index" || box.kind === "tabular") {
+    return 2;
+  }
+  return 1;
+}
+
+function compareOverlayBoxPaintOrder(a, b) {
+  const byPriority = overlayBoxPaintPriority(a) - overlayBoxPaintPriority(b);
+  if (byPriority !== 0) return byPriority;
+  if (selectedElementId) {
+    const aSelected = a.elementId === selectedElementId;
+    const bSelected = b.elementId === selectedElementId;
+    if (aSelected !== bSelected) return aSelected ? 1 : -1;
+  }
+  return 0;
+}
+
+function sortedOverlayBoxes(boxes) {
+  return [...boxes].sort(compareOverlayBoxPaintOrder);
+}
+
+function anchorOnRect(rect, targetX, targetY) {
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  const dx = targetX - cx;
+  const dy = targetY - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const scale = Math.min(
+    dx !== 0 ? rect.w / 2 / Math.abs(dx) : Infinity,
+    dy !== 0 ? rect.h / 2 / Math.abs(dy) : Infinity,
+  );
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function ensureArrowMarker(defs, markerId) {
+  if (defs.querySelector(`#${markerId}`)) return;
+  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+  marker.setAttribute("id", markerId);
+  marker.setAttribute("viewBox", "0 0 6 6");
+  marker.setAttribute("refX", "6");
+  marker.setAttribute("refY", "3");
+  marker.setAttribute("markerWidth", "5");
+  marker.setAttribute("markerHeight", "5");
+  marker.setAttribute("orient", "auto");
+  const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  arrowPath.setAttribute("d", "M0,0 L6,3 L0,6 Z");
+  arrowPath.setAttribute("fill", "currentColor");
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+}
+
+function alignDashedLineToEnd(line, start, end) {
+  const dash = 6;
+  const gap = 4;
+  const period = dash + gap;
+  const len = Math.hypot(end.x - start.x, end.y - start.y);
+  if (!len) return;
+  line.setAttribute("stroke-dasharray", `${dash} ${gap}`);
+  const offset = len % period;
+  if (offset > 0.01) line.setAttribute("stroke-dashoffset", String(offset));
+}
+
+function ensureOverlayDefs(svg) {
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  return defs;
+}
+
+function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, toIdAttr }) {
+  if (!links.length) return;
+
+  const defs = ensureOverlayDefs(svg);
+  ensureArrowMarker(defs, markerId);
+
+  for (const link of links) {
+    const from = boxPixelRect(link.fromBox ?? link.captionBox, img);
+    const to = boxPixelRect(link.toBox ?? link.hostBox, img);
+    const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+    const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+    const start = anchorOnRect(from, toCenter.x, toCenter.y);
+    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("class", linkClass);
+    line.setAttribute("x1", String(start.x));
+    line.setAttribute("y1", String(start.y));
+    line.setAttribute("x2", String(end.x));
+    line.setAttribute("y2", String(end.y));
+    line.setAttribute("marker-end", `url(#${markerId})`);
+    line.setAttribute(fromIdAttr, link.fromElementId ?? link.captionElementId);
+    line.setAttribute(toIdAttr, link.toElementId ?? link.hostElementId);
+    svg.appendChild(line);
+  }
+}
+
+function appendCaptionLinks(svg, img, captionLinks) {
+  appendOverlayLinks(svg, img, captionLinks, {
+    markerId: "caption-arrowhead",
+    linkClass: "caption-link",
+    fromIdAttr: "data-caption-id",
+    toIdAttr: "data-host-id",
+  });
+}
+
+function appendXrefLinks(svg, img, xrefLinks) {
+  appendOverlayLinks(svg, img, xrefLinks, {
+    markerId: "xref-arrowhead",
+    linkClass: "xref-link",
+    fromIdAttr: "data-xref-from-id",
+    toIdAttr: "data-xref-to-id",
+  });
+}
+
+function docPointToPixel(xDoc, yDoc, resW, resH, img) {
+  return {
+    x: (xDoc / resW) * img.naturalWidth,
+    y: (yDoc / resH) * img.naturalHeight,
+  };
+}
+
+function pageCornerTarget(img, defaultResolution, corner) {
+  const { width: resW, height: resH } = defaultResolution;
+  const inset = overlayUserLength(5);
+  const tl = docPointToPixel(0, 0, resW, resH, img);
+  const br = docPointToPixel(resW, resH, resW, resH, img);
+  if (corner === "tl") {
+    return {
+      x: Math.min(tl.x + inset, br.x - inset),
+      y: Math.min(tl.y + inset, br.y - inset),
+    };
+  }
+  return {
+    x: Math.max(br.x - inset, tl.x + inset),
+    y: Math.max(br.y - inset, tl.y + inset),
+  };
+}
+
+function elementThreadId(el) {
+  return firstHeadChild(el, "thread")?.getAttribute("thread_id") ?? null;
+}
+
+/** @returns {Set<string>} */
+function fragmentPeerElementIds(elementId) {
+  const peers = new Set();
+  if (!elementId || !state?.elementIds || !state.idToElement) return peers;
+  const el = state.idToElement.get(elementId);
+  const threadId = el ? elementThreadId(el) : null;
+  if (!threadId) return peers;
+  for (const [node, id] of state.elementIds) {
+    if (elementThreadId(node) === threadId) peers.add(id);
+  }
+  return peers;
+}
+
+function isFragmentLinkRelevant(linkEl, peerIds) {
+  const fromId = linkEl.getAttribute("data-fragment-from-id");
+  const toId = linkEl.getAttribute("data-fragment-to-id");
+  if (fromId && peerIds.has(fromId)) return true;
+  if (toId && peerIds.has(toId)) return true;
+  return false;
+}
+
+function appendFragmentLinks(svg, img, links, defaultResolution) {
+  if (!links.length) return;
+
+  const defs = ensureOverlayDefs(svg);
+  ensureArrowMarker(defs, "fragment-arrowhead");
+  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
+
+  for (const link of links) {
+    const fromRect = boxPixelRect(link.fromBox, img);
+
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.setAttribute("class", "fragment-link");
+    group.setAttribute("data-thread-id", link.threadId);
+    group.setAttribute("data-fragment-from-id", link.fromElementId);
+    if (link.toElementId) group.setAttribute("data-fragment-to-id", link.toElementId);
+
+    let labelAt;
+    if (link.toBox) {
+      const toRect = boxPixelRect(link.toBox, img);
+      const fromCenter = { x: fromRect.x + fromRect.w / 2, y: fromRect.y + fromRect.h / 2 };
+      const toCenter = { x: toRect.x + toRect.w / 2, y: toRect.y + toRect.h / 2 };
+      const start = anchorOnRect(fromRect, toCenter.x, toCenter.y);
+      const end = anchorOnRect(toRect, fromCenter.x, fromCenter.y);
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      line.setAttribute("marker-end", "url(#fragment-arrowhead)");
+      alignDashedLineToEnd(line, start, end);
+      group.appendChild(line);
+      labelAt = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    } else {
+      const corner = link.targetCorner ?? "br";
+      const cornerPoint = pageCornerTarget(img, defaultResolution, corner);
+      const elementAnchor = anchorOnRect(fromRect, cornerPoint.x, cornerPoint.y);
+      const incoming = corner === "tl";
+      const start = incoming ? cornerPoint : elementAnchor;
+      const end = incoming ? elementAnchor : cornerPoint;
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      line.setAttribute("marker-end", "url(#fragment-arrowhead)");
+      alignDashedLineToEnd(line, start, end);
+      group.appendChild(line);
+      labelAt = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    }
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("class", "fragment-link-label");
+    text.setAttribute("x", String(labelAt.x));
+    text.setAttribute("y", String(labelAt.y));
+    text.setAttribute("font-size", String(fontSize));
+    text.textContent = link.toBox ? FRAGMENT_LINK_LABEL_SAME_PAGE : FRAGMENT_LINK_LABEL_CROSS_PAGE;
+    group.appendChild(text);
+
+    svg.appendChild(group);
+  }
+}
+
+function appendFragmentNavButtons(svg, img, items) {
+  if (!items.length) return;
+
+  const btnSize = overlayUserLength(13 * 1.5);
+  const gap = overlayUserLength(2);
+  const inset = overlayUserLength(3);
+  const fontSize = overlayUserLength(10 * 1.5);
+  const radius = overlayUserLength(2 * 1.5);
+
+  for (const item of items) {
+    const { x, y, w, h } = boxPixelRect(item.box, img);
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.setAttribute("class", "fragment-nav");
+    group.setAttribute("data-element-id", item.elementId);
+
+    const rowY = y + h - inset - btnSize;
+    const nextX = x + w - inset - btnSize;
+    const prevX = nextX - gap - btnSize;
+
+    appendFragmentNavButton(group, prevX, rowY, btnSize, radius, fontSize, "prev", "‹", item.hasPrev);
+    appendFragmentNavButton(group, nextX, rowY, btnSize, radius, fontSize, "next", "›", item.hasNext);
+
+    svg.appendChild(group);
+  }
+}
+
+function appendFragmentNavButton(group, x, y, size, radius, fontSize, direction, label, enabled) {
+  const btn = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  btn.setAttribute("class", `fragment-nav-btn fragment-nav-btn-${direction}${enabled ? "" : " fragment-nav-btn-disabled"}`);
+  btn.setAttribute("data-nav", direction);
+  if (enabled) {
+    btn.setAttribute("role", "button");
+    btn.setAttribute(
+      "aria-label",
+      direction === "prev" ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT,
+    );
+  }
+
+  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  bg.setAttribute("class", "fragment-nav-btn-bg");
+  bg.setAttribute("x", String(x));
+  bg.setAttribute("y", String(y));
+  bg.setAttribute("width", String(size));
+  bg.setAttribute("height", String(size));
+  bg.setAttribute("rx", String(radius));
+  bg.setAttribute("ry", String(radius));
+  btn.appendChild(bg);
+
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  text.setAttribute("class", "fragment-nav-btn-label");
+  text.setAttribute("x", String(x + size / 2));
+  text.setAttribute("y", String(y + size / 2));
+  text.setAttribute("font-size", String(fontSize));
+  text.textContent = label;
+  btn.appendChild(text);
+
+  group.appendChild(btn);
+}
+
+function appendReadingOrderOverlay(svg, img, steps) {
+  if (!steps.length) return;
+
+  if (steps.length >= 2) {
+    const defs = ensureOverlayDefs(svg);
+    ensureArrowMarker(defs, "reading-order-arrowhead");
+
+    for (let i = 0; i < steps.length - 1; i += 1) {
+      const from = boxPixelRect(steps[i].box, img);
+      const to = boxPixelRect(steps[i + 1].box, img);
+      const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+      const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+      const start = anchorOnRect(from, toCenter.x, toCenter.y);
+      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "reading-order-step");
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      line.setAttribute("marker-end", "url(#reading-order-arrowhead)");
+      svg.appendChild(line);
+    }
+  }
 }
 
 function imageCoordsFromEvent(svg, evt) {
@@ -1121,37 +2498,51 @@ function hitTestBoxes(boxes, img, x, y) {
   return best;
 }
 
-function buildOverlay(img, boxes) {
+function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("overlay");
   svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
+  svg.setAttribute("overflow", "hidden");
 
-  for (const b of boxes) {
+  appendCaptionLinks(svg, img, captionLinks);
+  appendXrefLinks(svg, img, xrefLinks);
+  appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
+  appendReadingOrderOverlay(svg, img, readingOrderSteps);
+
+  for (const b of sortedOverlayBoxes(boxes)) {
     const { x, y, w, h } = boxPixelRect(b, img);
     const cls = bboxClassForKind(b.kind);
+    const kindClass = kindClassForTag(b.kind);
 
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("class", `bbox bbox-${cls}`);
+    rect.setAttribute("class", `bbox bbox-${cls} ${kindClass}`);
     rect.setAttribute("x", String(x));
     rect.setAttribute("y", String(y));
     rect.setAttribute("width", String(Math.max(w, 1)));
     rect.setAttribute("height", String(Math.max(h, 1)));
     rect.setAttribute("data-element-id", b.elementId);
     svg.appendChild(rect);
-
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("class", `bbox-label bbox-label-${cls}`);
-    text.setAttribute("x", String(x + 4));
-    text.setAttribute("y", String(y + 14));
-    text.setAttribute("data-element-id", b.elementId);
-    text.textContent = b.tag;
-    svg.appendChild(text);
   }
 
+  appendFragmentNavButtons(svg, img, fragmentNavItems);
+
   svg.addEventListener("click", (e) => {
-    const hitTarget = e.target.closest("[data-element-id]");
-    if (hitTarget) {
-      const elementId = resolveSelectionElementId(hitTarget.getAttribute("data-element-id"));
+    if (pagePanSuppressClick) {
+      pagePanSuppressClick = false;
+      return;
+    }
+    const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
+    if (navBtn) {
+      e.stopPropagation();
+      const navGroup = navBtn.closest(".fragment-nav");
+      const elementId = navGroup?.getAttribute("data-element-id");
+      const direction = navBtn.getAttribute("data-nav");
+      if (elementId && direction) navigateThreadFragment(elementId, direction);
+      return;
+    }
+    const badge = e.target.closest(".overlay-badge[data-element-id]");
+    if (badge) {
+      const elementId = resolveSelectionElementId(badge.getAttribute("data-element-id"));
       if (elementId) selectElement(elementId);
       return;
     }
@@ -1160,6 +2551,14 @@ function buildOverlay(img, boxes) {
     const hit = hitTestBoxes(boxes, img, coords.x, coords.y);
     if (hit) selectElement(hit.elementId);
     else clearSelection();
+  });
+
+  svg.addEventListener("mousemove", (e) => {
+    const coords = imageCoordsFromEvent(svg, e);
+    svg.style.cursor = coords && hitTestBoxes(boxes, img, coords.x, coords.y) ? "pointer" : "";
+  });
+  svg.addEventListener("mouseleave", () => {
+    svg.style.cursor = "";
   });
 
   return svg;
@@ -1179,13 +2578,68 @@ function clearSelection() {
 function applyBboxVisibility() {
   if (!state?.hasPageView) return;
 
-  for (const el of els.pagePane.querySelectorAll(".bbox, .bbox-label")) {
+  const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set();
+
+  for (const el of els.pagePane.querySelectorAll(".bbox, .element-badge")) {
+    el.classList.remove("related");
     if (showAllBboxes) {
       el.classList.remove("bbox-hidden");
       continue;
     }
     const elementId = el.getAttribute("data-element-id");
-    el.classList.toggle("bbox-hidden", elementId !== selectedElementId);
+    if (elementId === selectedElementId) {
+      el.classList.remove("bbox-hidden");
+    } else if (peerIds.has(elementId)) {
+      el.classList.remove("bbox-hidden");
+      if (el.classList.contains("bbox")) el.classList.add("related");
+    } else {
+      el.classList.add("bbox-hidden");
+    }
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".caption-link")) {
+    if (!showAllBboxes || !showCaptionLinks) {
+      el.classList.add("bbox-hidden");
+      continue;
+    }
+    el.classList.remove("bbox-hidden");
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".xref-link")) {
+    if (!showAllBboxes || !showXrefLinks) {
+      el.classList.add("bbox-hidden");
+      continue;
+    }
+    el.classList.remove("bbox-hidden");
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".fragment-link")) {
+    const clickVisible = Boolean(selectedElementId && isFragmentLinkRelevant(el, peerIds));
+    const optionVisible = showAllBboxes && showFragmentLinks;
+    el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".fragment-nav")) {
+    const elementId = el.getAttribute("data-element-id");
+    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
+    const optionVisible = showAllBboxes && showFragmentLinks;
+    el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".reading-order-badge")) {
+    if (!showAllBboxes || !showReadingOrder) {
+      el.classList.add("bbox-hidden");
+      continue;
+    }
+    el.classList.remove("bbox-hidden");
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
+    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
+      el.classList.add("bbox-hidden");
+      continue;
+    }
+    el.classList.remove("bbox-hidden");
   }
 }
 
@@ -1210,11 +2664,13 @@ function applySelection() {
   els.renderedPane.querySelectorAll(".rendered-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
-  els.pagePane.querySelectorAll(".bbox.selected, .bbox-label.selected").forEach((el) => {
+  els.pagePane.querySelectorAll(".bbox.selected, .overlay-badge.selected").forEach((el) => {
     el.classList.remove("selected");
   });
 
   if (!selectedElementId) {
+    const img = els.pagePane.querySelector(".page-view img");
+    if (img) syncOverlayBadges(img);
     applyBboxVisibility();
     return;
   }
@@ -1237,6 +2693,8 @@ function applySelection() {
     }
   }
 
+  const img = els.pagePane.querySelector(".page-view img");
+  if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 }
 
@@ -1340,12 +2798,12 @@ function appendMarkupVirtualText(parent, depth, hostEl, contentNodes, elementIds
 }
 
 function buildMarkupFoldableElement(el, depth, elementIds, buildBody) {
+  const tag = localName(el);
   const block = document.createElement("div");
   block.className = "markup-el";
   const elementId = elementIds.get(el);
   if (elementId) block.setAttribute("data-element-id", elementId);
 
-  const tag = localName(el);
   const attributes = markupAttributes(el);
   appendMarkupFoldableOpen(block, depth, tag, attributes);
   block.classList.add("markup-el-foldable");
@@ -1517,8 +2975,9 @@ function buildRenderedView(segment, elementIds) {
 }
 
 function wrapRendered(el, node, elementId, extraClass) {
+  const tag = localName(el);
   const wrap = document.createElement("div");
-  wrap.className = `rendered-el rendered-${localName(el)}${extraClass ? ` ${extraClass}` : ""}`;
+  wrap.className = `rendered-el rendered-${tag}${extraClass ? ` ${extraClass}` : ""}`;
   if (elementId) wrap.setAttribute("data-element-id", elementId);
   wrap.appendChild(node);
   return wrap;
@@ -1535,8 +2994,13 @@ function renderBlockElement(el, elementIds, ctx) {
       return wrapRendered(el, p, elementId);
     }
     case "heading": {
-      const level = Math.min(Math.max(parseInt(el.getAttribute("level") ?? "1", 10) || 1, 1), 6);
-      const h = document.createElement(`h${level}`);
+      const h = document.createElement(`h${headingLevel(el)}`);
+      appendRenderedBody(h, el, elementIds, { inline: true });
+      return wrapRendered(el, h, elementId);
+    }
+    case "field_heading": {
+      const h = document.createElement(`h${headingLevel(el)}`);
+      h.className = "rendered-field-heading";
       appendRenderedBody(h, el, elementIds, { inline: true });
       return wrapRendered(el, h, elementId);
     }
@@ -1631,6 +3095,15 @@ function appendRenderedBodyBlocks(parent, el, elementIds) {
   }
 }
 
+function renderMarkerElement(el, elementIds, ctx) {
+  const marker = document.createElement("span");
+  marker.className = "rendered-marker rendered-el";
+  const elementId = elementIds.get(el);
+  if (elementId) marker.setAttribute("data-element-id", elementId);
+  appendRenderedBody(marker, el, elementIds, ctx);
+  return marker;
+}
+
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
     const text = node.textContent;
@@ -1660,7 +3133,12 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
     return;
   }
 
-  if (tag === "marker" || tag === "checkbox" || tag === "ldiv") return;
+  if (tag === "marker") {
+    parent.appendChild(renderMarkerElement(node, elementIds, ctx));
+    return;
+  }
+
+  if (tag === "checkbox" || tag === "ldiv") return;
   if (isCellToken(tag) || tag === "src" || tag === "tabular") return;
 
   appendRenderedBody(parent, node, elementIds, ctx);
@@ -1844,10 +3322,7 @@ function renderList(el, elementIds) {
     for (const child of childElements(ldiv)) {
       const childTag = localName(child);
       if (childTag === "marker") {
-        const marker = document.createElement("span");
-        marker.className = "rendered-marker";
-        appendRenderedBody(marker, child, elementIds, { inline: true });
-        li.appendChild(marker);
+        li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
       } else if (childTag === "checkbox") {
         const cb = document.createElement("input");
         cb.type = "checkbox";

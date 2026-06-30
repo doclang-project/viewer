@@ -20,28 +20,27 @@
       </a>
       <h1>DocLang Viewer</h1>
     </div>
-    <span class="doc-label" id="doc-label" hidden></span>
+    <div class="header-center">
+      <span class="doc-label" id="doc-label" hidden></span>
+    </div>
     <div class="toolbar">
-      <label class="file-btn" id="open-file-btn">
-        Open file
-        <input type="file" id="input-archive" accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
-      </label>
+      <nav class="page-nav" id="page-nav" hidden>
+        <button type="button" id="btn-prev" disabled>Previous</button>
+        <span id="page-indicator">Page 1 of 1</span>
+        <button type="button" id="btn-next" disabled>Next</button>
+      </nav>
+      <span class="toolbar-file-group" id="toolbar-file-group">
+        <label class="file-btn" id="open-file-btn">
+          Open file
+          <input type="file" id="input-archive" accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
+        </label>
+      </span>
       <button type="button" id="btn-demo">Load demo</button>
       <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
     </div>
   </header>
 
   <p class="drop-banner" id="drop-banner">Drop to open another file</p>
-
-  <nav class="page-nav" id="page-nav" hidden>
-    <button type="button" id="btn-prev" disabled>Previous</button>
-    <span id="page-indicator">Page 1 of 1</span>
-    <button type="button" id="btn-next" disabled>Next</button>
-    <label class="page-nav-toggle" id="show-all-bboxes-label" hidden>
-      <input type="checkbox" id="show-all-bboxes" checked>
-      Show all bboxes
-    </label>
-  </nav>
 
   <div class="empty-state" id="empty-state">
     <div class="empty-state-inner">
@@ -53,8 +52,107 @@
 
   <main class="split" id="main">
     <section class="pane pane-page-view">
-      <div class="pane-header">Original page</div>
-      <div class="pane-body" id="page-pane"></div>
+      <div class="pane-header pane-page-header">
+        <span class="pane-header-title">Original page</span>
+        <div class="pane-page-controls">
+          <div class="page-zoom-control" id="page-zoom-label" hidden>
+            <label class="page-zoom-control-label" for="page-zoom">
+              <span aria-hidden="true">Zoom</span>
+            </label>
+            <input
+              type="range"
+              id="page-zoom"
+              min="100"
+              max="300"
+              step="10"
+              value="100"
+              aria-valuemin="100"
+              aria-valuemax="300"
+              aria-valuenow="100"
+              aria-label="Page zoom"
+            >
+            <button
+              type="button"
+              id="page-zoom-reset"
+              class="page-zoom-reset"
+              title="Reset zoom"
+              aria-label="Reset zoom"
+              disabled
+            >100%</button>
+          </div>
+          <button
+            type="button"
+            class="pane-settings-toggle"
+            id="btn-settings-toggle"
+            hidden
+            aria-expanded="false"
+            aria-controls="viewer-settings"
+          >
+            Options
+          </button>
+        </div>
+      </div>
+      <div class="pane-page-layout">
+        <div class="pane-body" id="page-pane"></div>
+        <div class="viewer-settings-layer" id="viewer-settings-layer" hidden>
+          <button
+            type="button"
+            class="viewer-settings-scrim"
+            id="viewer-settings-scrim"
+            tabindex="-1"
+            aria-label="Close options"
+          ></button>
+          <aside
+            class="viewer-settings"
+            id="viewer-settings"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="viewer-settings-title"
+          >
+            <div class="viewer-settings-header">
+              <h2 class="viewer-settings-title" id="viewer-settings-title">Options</h2>
+              <button type="button" class="viewer-settings-close" id="btn-settings-close" aria-label="Close options">
+                ×
+              </button>
+            </div>
+            <div class="viewer-settings-body" id="layout-settings">
+            <label class="settings-option settings-option-primary" id="show-all-bboxes-label">
+              <input type="checkbox" id="show-all-bboxes" checked>
+              <span>Layout</span>
+            </label>
+            <div class="settings-subgroup" id="layout-subtoggles">
+              <label class="settings-option settings-option-sub" id="show-reading-order-label">
+                <input type="checkbox" id="show-reading-order">
+                <span>Reading order</span>
+              </label>
+              <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
+                <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
+                  <input type="checkbox" id="reading-order-arrows" checked>
+                  <span>Arrows</span>
+                </label>
+                <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
+                  <input type="checkbox" id="reading-order-global">
+                  <span>Global numbering</span>
+                </label>
+              </div>
+
+              <label class="settings-option settings-option-sub" id="show-fragment-links-label">
+                <input type="checkbox" id="show-fragment-links">
+                <span>Fragments</span>
+              </label>
+              <label class="settings-option settings-option-sub" id="show-xref-links-label">
+                <input type="checkbox" id="show-xref-links">
+                <span>Cross-references</span>
+              </label>
+              <label class="settings-option settings-option-sub" id="show-caption-links-label">
+                <input type="checkbox" id="show-caption-links">
+                <span>Captions</span>
+              </label>
+            </div>
+            </div>
+          </aside>
+        </div>
+      </div>
     </section>
     <section class="pane">
       <div class="pane-header">DocLang</div>

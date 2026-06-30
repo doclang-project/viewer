@@ -1,4 +1,4 @@
-<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.6">
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.7">
   <page_header>
     <layer value="furniture"/>
     <location value="16"/>
@@ -7,7 +7,7 @@
     <location value="362"/>
     arXiv:2501.17887v1  [cs.CL]  27 Jan 2025
   </page_header>
-  <heading level="2">
+  <heading>
     <location value="53"/>
     <location value="64"/>
     <location value="459"/>
@@ -19,7 +19,25 @@
     <location value="80"/>
     <location value="443"/>
     <location value="114"/>
-    Nikolaos Livathinos * , Christoph Auer * , Maksym Lysak, Ahmed Nassar, Michele Dolfi, Panagiotis Vagenas, Cesar Berrospi, Matteo Omenetti, Kasper Dinkla, Yusik Kim, Shubham Gupta, Rafael Teixeira de Lima, Valery Weber, Lucas Morin, Ingmar Meijer, Viktor Kuropiatnyk, Peter W. J. Staar
+    Nikolaos Livathinos
+    <marker>
+      <xref thread_id="1"/>
+      <!-- <location value="157"/>
+      <location value="80"/>
+      <location value="165"/>
+      <location value="86"/> -->
+      *
+    </marker>
+    , Christoph Auer
+    <marker>
+      <xref thread_id="1"/>
+      <!-- <location value="235"/>
+      <location value="80"/>
+      <location value="243"/>
+      <location value="86"/> -->
+      *
+    </marker>
+    , Maksym Lysak, Ahmed Nassar, Michele Dolfi, Panagiotis Vagenas, Cesar Berrospi, Matteo Omenetti, Kasper Dinkla, Yusik Kim, Shubham Gupta, Rafael Teixeira de Lima, Valery Weber, Lucas Morin, Ingmar Meijer, Viktor Kuropiatnyk, Peter W. J. Staar
   </text>
   <text>
     <location value="189"/>
@@ -70,6 +88,7 @@
     Converting documents back into a unified machineprocessable format has been a major challenge for decades due to their huge variability in formats, weak standardization and printing-optimized characteristic, which often discards structural features and metadata. With the advent of LLMs and popular application patterns such as retrieval-augmented generation (RAG), leveraging the rich content embedded in PDFs, Office documents, and scanned document images has become ever more relevant. In the past decade, several powerful document understanding solutions have emerged on the market, most of which are commercial software, SaaS offerings on hyperscalers (Auer et al. 2022) and most recently, multimodal vision-language models. Typically, they incur a cost (e.g., for licensing or LLM inference) and cannot be run easily on local hardware. Meanwhile, only a handful of different open-source tools cover PDF, MS Word, MS PowerPoint, Images, or HTML conversion, leaving a significant feature and quality gap to proprietary solutions.
   </text>
   <footnote>
+    <thread thread_id="1"/>
     <location value="56"/>
     <location value="437"/>
     <location value="162"/>
@@ -77,6 +96,7 @@
     * These authors contributed equally.
   </footnote>
   <footnote>
+    <layer value="furniture"/>
     <location value="45"/>
     <location value="444"/>
     <location value="245"/>
@@ -97,6 +117,10 @@
     The following list summarizes the features currently available on Docling:
   </text>
   <list>
+    <location value="267"/>
+    <location value="288"/>
+    <location value="467"/>
+    <location value="397"/>
     <ldiv/>
     <location value="271"/>
     <location value="288"/>
@@ -142,7 +166,7 @@
     2 State of the Art
   </heading>
   <text>
-    <thread thread_id="1"/>
+    <thread thread_id="3"/>
     <location value="267"/>
     <location value="421"/>
     <location value="467"/>
@@ -151,7 +175,7 @@
   </text>
   <page_break/>
   <text>
-    <thread thread_id="1"/>
+    <thread thread_id="3"/>
     <location value="45"/>
     <location value="208"/>
     <location value="245"/>
@@ -170,7 +194,7 @@
       <location value="192"/>
 <![CDATA[Figure 1: Sketch of Docling's pipelines and usage model. Both PDF pipeline and simple pipeline build up a DoclingDocument representation, which can be further enriched. Downstream applications can utilize Docling's API to inspect, export, or chunk the document for various purposes.]]>    </caption>
     <src uri="assets/image_000000_b4006d9eb2c6546911ca53843a45246f4003231d6c1f712629c127990e4658ce.png"/>
-    <text thread_id="1">
+    <text>
       <location value="194"/>
       <location value="112"/>
       <location value="205"/>
@@ -472,7 +496,7 @@
     A second category of solutions prioritizes on-premises deployment, either as Web APIs or as libraries. Examples include Adobe Acrobat, Grobid, Marker, MinerU, Unstructured, and others. These solutions often rely on multiple specialized models, such as OCR, layout analysis, and table recognition models. Docling falls into this category, leveraging modular, task-specific models which recover document structures and features only. All text content is taken from the programmatic PDF or transcribed through OCR methods. This design ensures faithful conversion, without the risk of generating false content. However, it necessitates maintaining a diverse set of models for different document components, such as formulas or figures.
   </text>
   <text>
-    <thread thread_id="2"/>
+    <thread thread_id="4"/>
     <location value="45"/>
     <location value="428"/>
     <location value="245"/>
@@ -480,7 +504,7 @@
     Within this category, Docling distinguishes itself through its permissive MIT license, allowing organizations to integrate Docling into their solutions without incurring licensing fees or adopting restrictive licenses (e.g., GPL). Addi-
   </text>
   <text>
-    <thread thread_id="2"/>
+    <thread thread_id="4"/>
     <location value="267"/>
     <location value="208"/>
     <location value="467"/>
@@ -523,6 +547,10 @@
     Docling v2 introduces a unified document representation, DoclingDocument , as a Pydantic data model that can express various common document features, such as:
   </text>
   <list>
+    <location value="267"/>
+    <location value="388"/>
+    <location value="467"/>
+    <location value="455"/>
     <ldiv/>
     <location value="271"/>
     <location value="388"/>
@@ -591,6 +619,10 @@
     Document formats can be broadly categorized into two types:
   </text>
   <list class="ordered">
+    <location value="45"/>
+    <location value="253"/>
+    <location value="245"/>
+    <location value="332"/>
     <ldiv/>
     <location value="46"/>
     <location value="253"/>
@@ -612,7 +644,7 @@
     Docling implements several parser backends to read and interpret different formats and it routes their output to a fitting processing pipeline. For PDFs Docling provides backends which: a) retrieve all text content and their geometric properties, b) render the visual representation of each page as it would appear in a PDF viewer. For markup-based formats, the respective backends carry the responsibility of creating a DoclingDocument representation directly. For some formats, such as PowerPoint slides, element locations and page provenance are available, whereas in other formats (for example, MS Word or HTML), this information is unknown unless rendered in a Word viewer or a browser. The DoclingDocument data model handles both cases.
   </text>
   <text>
-    <thread thread_id="3"/>
+    <thread thread_id="5"/>
     <location value="45"/>
     <location value="435"/>
     <location value="245"/>
@@ -620,7 +652,7 @@
     PDF Backends While several open-source PDF parsing Python libraries are available, in practice we ran into various limitations, among which are restrictive licensing (e.g.,
   </text>
   <text>
-    <thread thread_id="3"/>
+    <thread thread_id="5"/>
     <location value="267"/>
     <location value="37"/>
     <location value="467"/>
@@ -683,7 +715,7 @@
     <location value="420"/>
 <![CDATA[The capability to recover detailed structure and content from PDF and image files is one of Docling's defining features. In this section, we outline the underlying methods and models that drive the system.]]>  </text>
   <text>
-    <thread thread_id="4"/>
+    <thread thread_id="6"/>
     <location value="267"/>
     <location value="421"/>
     <location value="467"/>
@@ -692,7 +724,7 @@
   </text>
   <page_break/>
   <text>
-    <thread thread_id="4"/>
+    <thread thread_id="6"/>
     <location value="45"/>
     <location value="37"/>
     <location value="245"/>
@@ -791,6 +823,10 @@
     We schedule our benchmark experiments each on two different systems to create reference numbers:
   </text>
   <list>
+    <location value="267"/>
+    <location value="381"/>
+    <location value="467"/>
+    <location value="424"/>
     <ldiv/>
     <location value="271"/>
     <location value="381"/>
@@ -825,55 +861,147 @@
       Table 1: Versions and configuration options considered for each tested asset. * denotes the default setting.
     </caption>
     <ched/>
+    <location value="132"/>
+    <location value="50"/>
+    <location value="180"/>
+    <location value="59"/>
     Asset
     <ched/>
+    <location value="183"/>
+    <location value="50"/>
+    <location value="211"/>
+    <location value="59"/>
     Version
     <ched/>
+    <location value="214"/>
+    <location value="50"/>
+    <location value="255"/>
+    <location value="59"/>
     OCR
     <ched/>
+    <location value="258"/>
+    <location value="50"/>
+    <location value="313"/>
+    <location value="59"/>
     Layout
     <ched/>
+    <location value="316"/>
+    <location value="50"/>
+    <location value="379"/>
+    <location value="59"/>
     Tables
     <nl/>
     <fcel/>
+    <location value="132"/>
+    <location value="60"/>
+    <location value="180"/>
+    <location value="69"/>
     Docling
     <fcel/>
+    <location value="183"/>
+    <location value="60"/>
+    <location value="211"/>
+    <location value="69"/>
     2.5.2
     <fcel/>
+    <location value="214"/>
+    <location value="60"/>
+    <location value="255"/>
+    <location value="69"/>
     EasyOCR *
     <fcel/>
+    <location value="258"/>
+    <location value="60"/>
+    <location value="313"/>
+    <location value="69"/>
     default
     <fcel/>
+    <location value="316"/>
+    <location value="60"/>
+    <location value="379"/>
+    <location value="69"/>
     TableFormer (fast) *
     <nl/>
     <fcel/>
+    <location value="132"/>
+    <location value="70"/>
+    <location value="180"/>
+    <location value="79"/>
     Marker
     <fcel/>
+    <location value="183"/>
+    <location value="70"/>
+    <location value="211"/>
+    <location value="79"/>
     0.3.10
     <fcel/>
+    <location value="214"/>
+    <location value="70"/>
+    <location value="255"/>
+    <location value="79"/>
     Surya *
     <fcel/>
+    <location value="258"/>
+    <location value="70"/>
+    <location value="313"/>
+    <location value="79"/>
     default
     <fcel/>
+    <location value="316"/>
+    <location value="70"/>
+    <location value="379"/>
+    <location value="79"/>
     default
     <nl/>
     <fcel/>
+    <location value="132"/>
+    <location value="81"/>
+    <location value="180"/>
+    <location value="89"/>
     MinerU
     <fcel/>
+    <location value="183"/>
+    <location value="81"/>
+    <location value="211"/>
+    <location value="89"/>
     0.9.3
     <fcel/>
+    <location value="214"/>
+    <location value="81"/>
+    <location value="255"/>
+    <location value="89"/>
     auto *
     <fcel/>
+    <location value="258"/>
+    <location value="81"/>
+    <location value="313"/>
+    <location value="89"/>
     doclayout yolo
     <fcel/>
+    <location value="316"/>
+    <location value="81"/>
+    <location value="379"/>
+    <location value="89"/>
     rapid table *
     <nl/>
     <fcel/>
+    <location value="132"/>
+    <location value="91"/>
+    <location value="180"/>
+    <location value="99"/>
     Unstructured
     <fcel/>
+    <location value="183"/>
+    <location value="91"/>
+    <location value="211"/>
+    <location value="99"/>
     0.16.5
     <fcel/>
-    hi res with table structure
+    <location value="214"/>
+    <location value="91"/>
+    <location value="380"/>
+    <location value="99"/>
+    hi_res with table structure
     <lcel/>
     <lcel/>
     <nl/>
@@ -1173,6 +1301,11 @@
     We implemented several measures to enable a fair and reproducible benchmark across all tested assets. Specifically, the experimental setup accounts for the following factors:
   </text>
   <list>
+    <thread thread_id="7"/>
+    <location value="45"/>
+    <location value="376"/>
+    <location value="245"/>
+    <location value="455"/>
     <ldiv/>
     <location value="49"/>
     <location value="376"/>
@@ -1185,6 +1318,13 @@
     <location value="245"/>
     <location value="455"/>
     When running experiments on CPU, we inform all assets of the desired CPU thread budget of 8 threads, via the OMP NUM THREADS environment variable and any accepted configuration options. The L4 GPU on our AWS EC2 VM is hidden.
+  </list>
+  <list>
+    <thread thread_id="7"/>
+    <location value="267"/>
+    <location value="115"/>
+    <location value="467"/>
+    <location value="142"/>
     <ldiv/>
     <location value="271"/>
     <location value="115"/>
@@ -1311,7 +1451,7 @@
     <location value="398"/>
 <![CDATA[Runtime Characteristics To analyze Docling's runtime characteristics, we begin by exploring the relationship between document length (in pages) and conversion time. As shown in Figure 3, this relationship is not strictly linear, as documents differ in their frequency of tables and bitmap elements (i.e., scanned content). This requires OCR or table structure recognition models to engage dynamically when layout analysis has detected such elements.]]>  </text>
   <text>
-    <thread thread_id="5"/>
+    <thread thread_id="8"/>
     <location value="267"/>
     <location value="400"/>
     <location value="467"/>
@@ -1320,7 +1460,7 @@
   </text>
   <page_break/>
   <text>
-    <thread thread_id="5"/>
+    <thread thread_id="8"/>
     <location value="45"/>
     <location value="37"/>
     <location value="245"/>
@@ -1423,7 +1563,7 @@
     Docling is quickly evolving into a mainstream package for document conversion. The support for PDF, MS Office formats, Images, HTML, and more makes it a universal choice for downstream applications. Users appreciate the intuitiveness of the library, the high-quality, richly structured conversion output, as well as the permissive MIT license, and the possibility of running entirely locally on commodity hardware.
   </text>
   <text>
-    <thread thread_id="6"/>
+    <thread thread_id="9"/>
     <location value="267"/>
     <location value="372"/>
     <location value="467"/>
@@ -1432,7 +1572,7 @@
   </text>
   <page_break/>
   <text>
-    <thread thread_id="6"/>
+    <thread thread_id="9"/>
     <location value="45"/>
     <location value="405"/>
     <location value="245"/>
@@ -1915,6 +2055,7 @@
     <location value="447"/>
 <![CDATA[Docling's modular architecture allows an easy extension of the model library and pipelines. In the future, we plan to extend Docling with several additional models, such as a figure-classifier model, an equation-recognition model and a code-recognition model. This will help improve the quality of conversion for specific types of content, as well as augment extracted document metadata with additional information. Furthermore, we will focus on building an opensource quality evaluation framework for the tasks performed by Docling, such as layout analysis, table structure recognition, reading order detection, text transcription, etc. This will allow transparent quality comparisons based on publicly available benchmarks such as DP-Bench (Zhong 2020), OmnidDocBench(Ouyang et al. 2024) and others. Results will be published in a future update of this technical report.]]>  </text>
   <text>
+    <thread thread_id="10"/>
     <location value="276"/>
     <location value="450"/>
     <location value="467"/>
@@ -1923,11 +2064,12 @@
   </text>
   <page_break/>
   <text>
+    <thread thread_id="10"/>
     <location value="45"/>
     <location value="37"/>
     <location value="245"/>
     <location value="57"/>
-    license agreement and its roadmap is outlined in the discussions section 1 of our GitHub repository. We encourage everyone to propose improvements and make contributions.
+    license agreement and its roadmap is outlined in the discussions section <marker><xref thread_id="11"/>1</marker> of our GitHub repository. We encourage everyone to propose improvements and make contributions.
   </text>
   <heading level="2">
     <location value="122"/>
@@ -2034,11 +2176,12 @@
     Nassar, A.; Livathinos, N.; Lysak, M.; and Staar, P. 2022. Tableformer: Table structure understanding with transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 4614-4623.
   </text>
   <footnote>
+    <thread thread_id="11"/>
     <location value="45"/>
     <location value="442"/>
     <location value="234"/>
     <location value="455"/>
-    1 https://github.com/DS4SD/docling/discussions/categories/ roadmap
+    <superscript>1</superscript> https://github.com/DS4SD/docling/discussions/categories/roadmap
   </footnote>
   <text>
     <location value="267"/>
