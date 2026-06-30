@@ -206,6 +206,8 @@ let pagePaneResizeObserver = null;
 let selectedElementId = null;
 let showAllBboxes = true;
 let showCaptionLinks = false;
+let showPictureContents = false;
+let showTableContents = false;
 let showFragmentLinks = false;
 let showXrefLinks = false;
 let showReadingOrder = false;
@@ -235,6 +237,10 @@ const els = {
   settingsClose: document.getElementById("btn-settings-close"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
+  showPictureContents: document.getElementById("show-picture-contents"),
+  showPictureContentsLabel: document.getElementById("show-picture-contents-label"),
+  showTableContents: document.getElementById("show-table-contents"),
+  showTableContentsLabel: document.getElementById("show-table-contents-label"),
   showFragmentLinks: document.getElementById("show-fragment-links"),
   showFragmentLinksLabel: document.getElementById("show-fragment-links-label"),
   showXrefLinks: document.getElementById("show-xref-links"),
@@ -282,6 +288,14 @@ els.showAllBboxes.addEventListener("change", () => {
 });
 els.showCaptionLinks.addEventListener("change", () => {
   showCaptionLinks = els.showCaptionLinks.checked;
+  applyBboxVisibility();
+});
+els.showPictureContents.addEventListener("change", () => {
+  showPictureContents = els.showPictureContents.checked;
+  applyBboxVisibility();
+});
+els.showTableContents.addEventListener("change", () => {
+  showTableContents = els.showTableContents.checked;
   applyBboxVisibility();
 });
 els.showFragmentLinks.addEventListener("change", () => {
@@ -1035,6 +1049,8 @@ function setSettingsSidebarOpen(open) {
 function syncLayoutSubtoggles() {
   const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
   for (const label of [
+    els.showPictureContentsLabel,
+    els.showTableContentsLabel,
     els.showFragmentLinksLabel,
     els.showCaptionLinksLabel,
     els.showXrefLinksLabel,
@@ -1901,8 +1917,37 @@ function isVirtualTextOverlayUnit(el) {
   return false;
 }
 
+function isPictureContentElement(el) {
+  if (!el) return false;
+  const tag = localName(el);
+  if (tag === "picture" || tag === "caption") return false;
+  let node = el.parentElement;
+  while (node) {
+    if (localName(node) === "picture") return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function isTableContentElement(el) {
+  if (!el) return false;
+  const tag = localName(el);
+  if (OTSL_CONTAINER_TAGS.has(tag) || tag === "caption") return false;
+  let node = el.parentElement;
+  while (node) {
+    if (OTSL_CONTAINER_TAGS.has(localName(node))) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function isPictureOrTableContentElement(el) {
+  return isPictureContentElement(el) || isTableContentElement(el);
+}
+
 function isReadingOrderOverlayUnit(el) {
   if (!isReadingOrderUnit(el)) return false;
+  if (isPictureOrTableContentElement(el)) return false;
   if (headLocations(el).length === 4) return true;
   return isVirtualTextOverlayUnit(el);
 }
@@ -1934,6 +1979,7 @@ function collectReadingOrderSteps(
   let pageOrder = 0;
 
   readingOrder.forEach((el) => {
+    if (isPictureOrTableContentElement(el)) return;
     const elementId = elementIds.get(el);
     if (!elementId) return;
     const box = boxById.get(elementId);
@@ -2575,6 +2621,21 @@ function clearSelection() {
   applySelection();
 }
 
+function isPictureContentOverlayElement(elementId) {
+  return isPictureContentElement(state?.idToElement?.get(elementId) ?? null);
+}
+
+function isTableContentOverlayElement(elementId) {
+  return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
+}
+
+function isContentsOptionHidden(elementId, clickVisible) {
+  if (clickVisible) return false;
+  if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
+  if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
+  return false;
+}
+
 function applyBboxVisibility() {
   if (!state?.hasPageView) return;
 
@@ -2582,11 +2643,19 @@ function applyBboxVisibility() {
 
   for (const el of els.pagePane.querySelectorAll(".bbox, .element-badge")) {
     el.classList.remove("related");
+    const elementId = el.getAttribute("data-element-id");
+    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
     if (showAllBboxes) {
-      el.classList.remove("bbox-hidden");
+      if (isContentsOptionHidden(elementId, clickVisible)) {
+        el.classList.add("bbox-hidden");
+      } else {
+        el.classList.remove("bbox-hidden");
+        if (peerIds.has(elementId) && el.classList.contains("bbox")) {
+          el.classList.add("related");
+        }
+      }
       continue;
     }
-    const elementId = el.getAttribute("data-element-id");
     if (elementId === selectedElementId) {
       el.classList.remove("bbox-hidden");
     } else if (peerIds.has(elementId)) {
@@ -2627,7 +2696,17 @@ function applyBboxVisibility() {
   }
 
   for (const el of els.pagePane.querySelectorAll(".reading-order-badge")) {
+    const elementId = el.getAttribute("data-element-id");
+    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
     if (!showAllBboxes || !showReadingOrder) {
+      el.classList.add("bbox-hidden");
+      continue;
+    }
+    if (
+      isPictureContentOverlayElement(elementId)
+      || isTableContentOverlayElement(elementId)
+      || isContentsOptionHidden(elementId, clickVisible)
+    ) {
       el.classList.add("bbox-hidden");
       continue;
     }
@@ -2653,8 +2732,15 @@ function findMarkupElementForSelection(elementId) {
 function findRenderedElementForSelection(elementId) {
   return (
     els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.renderedPane.querySelector(`[data-element-id="${elementId}"]`)
+    els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`)
   );
+}
+
+function revealRenderedSelectionContext(renderedEl) {
+  const pictureContents = renderedEl.closest(".rendered-picture-contents");
+  if (pictureContents && !pictureContents.open) {
+    pictureContents.open = true;
+  }
 }
 
 function applySelection() {
@@ -2683,6 +2769,7 @@ function applySelection() {
 
   const renderedEl = findRenderedElementForSelection(selectedElementId);
   if (renderedEl) {
+    revealRenderedSelectionContext(renderedEl);
     renderedEl.classList.add("selected");
     renderedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
@@ -3071,6 +3158,15 @@ function readCaptionElement(el) {
   return childElements(el).find((c) => localName(c) === "caption") ?? null;
 }
 
+function renderEmbeddedCaption(captionEl, elementIds, tagName) {
+  const node = document.createElement(tagName);
+  node.classList.add("rendered-el", "rendered-caption");
+  const elementId = elementIds.get(captionEl);
+  if (elementId) node.setAttribute("data-element-id", elementId);
+  appendRenderedBody(node, captionEl, elementIds, { inline: true });
+  return node;
+}
+
 function appendRenderedBody(parent, el, elementIds, ctx) {
   const nodes = [...el.childNodes];
   let i = skipElementHeadNodes(nodes, 0);
@@ -3228,9 +3324,7 @@ function renderPicture(el, elementIds) {
         figure.appendChild(img);
         imgAppended = true;
         if (captionEl) {
-          const figcaption = document.createElement("figcaption");
-          appendRenderedBody(figcaption, captionEl, elementIds, { inline: true });
-          figure.appendChild(figcaption);
+          figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
         }
       }
       i += 1;
@@ -3246,9 +3340,7 @@ function renderPicture(el, elementIds) {
   }
 
   if (captionEl && !imgAppended) {
-    const figcaption = document.createElement("figcaption");
-    appendRenderedBody(figcaption, captionEl, elementIds, { inline: true });
-    figure.appendChild(figcaption);
+    figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
   }
 
   const bodyInner = document.createElement("div");
@@ -3532,9 +3624,7 @@ function renderOtslContainer(el, elementIds) {
 
   const captionEl = readCaptionElement(el);
   if (captionEl) {
-    const caption = document.createElement("caption");
-    appendRenderedBody(caption, captionEl, elementIds, { inline: true });
-    table.appendChild(caption);
+    table.appendChild(renderEmbeddedCaption(captionEl, elementIds, "caption"));
   }
 
   const grid = buildOtslGrid(parseOtslRows(el));
