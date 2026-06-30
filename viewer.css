@@ -210,8 +210,13 @@ body.viewer-loaded.drag-over .drop-banner {
   display: block;
 }
 
-.header-site-link,
-body.viewer-loaded:not(.markup-only) .toolbar-file-group {
+.header-brand .page-nav {
+  margin-left: 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.header-site-link {
   margin-left: 0.25rem;
   padding-left: 0.75rem;
   border-left: 1px solid var(--border);
@@ -1263,13 +1268,14 @@ pre.markup {
   margin: 0.25rem 0;
 }
 
-.rendered-doc li > .rendered-el {
-  display: inline;
-}
-
-.rendered-doc li > .rendered-el > p {
-  display: inline;
-  margin: 0;
+.rendered-doc li > .rendered-el > p:first-child,
+.rendered-doc li > .rendered-el > h1:first-child,
+.rendered-doc li > .rendered-el > h2:first-child,
+.rendered-doc li > .rendered-el > h3:first-child,
+.rendered-doc li > .rendered-el > h4:first-child,
+.rendered-doc li > .rendered-el > h5:first-child,
+.rendered-doc li > .rendered-el > h6:first-child {
+  margin-top: 0;
 }
 
 .rendered-marker {
@@ -1340,6 +1346,14 @@ pre.markup {
   height: auto;
   border: 1px solid var(--border);
   border-radius: 0.25rem;
+}
+
+.rendered-doc figure img.rendered-picture-unavailable {
+  display: inline-block;
+  min-width: 3rem;
+  min-height: 2.5rem;
+  object-fit: contain;
+  vertical-align: middle;
 }
 
 .rendered-doc figcaption {
@@ -1414,9 +1428,9 @@ pre.markup {
   margin: 0;
 }
 
-.rendered-table .rendered-el > p {
+.rendered-table .rendered-el-virtual-text > p,
+.rendered-table .rendered-el-virtual-text > div {
   margin: 0;
-  display: inline;
 }
 
 .rendered-table .rendered-table {

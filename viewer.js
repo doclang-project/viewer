@@ -11,6 +11,8 @@ const DOCLANG_NS = "https://www.doclang.ai/ns/v0";
 const PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
 const NO_MARKUP = "(No markup to be shown.)";
 const NO_IMAGE = "(No page image available.)";
+const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
+const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
 const HEAD_TAGS = new Set([
   "label", "thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom",
 ]);
@@ -2819,33 +2821,39 @@ function sliceHasMarkupContent(nodes) {
   return false;
 }
 
+function isVirtualTextSkippableNode(node) {
+  if (isWhitespaceOnlyText(node)) return true;
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const tag = localName(node);
+  return tag === "location" || HEAD_TAGS.has(tag);
+}
+
 function shouldWrapVirtualText(contentNodes) {
   if (!sliceHasMarkupContent(contentNodes)) return false;
-  if (contentNodes.some((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n))) return true;
 
-  let i = 0;
-  while (i < contentNodes.length && isWhitespaceOnlyText(contentNodes[i])) i += 1;
-  while (i < contentNodes.length) {
-    const node = contentNodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) break;
-    const tag = localName(node);
-    if (tag === "location") {
-      i += 1;
-      continue;
-    }
-    if (HEAD_TAGS.has(tag)) {
-      i += 1;
-      continue;
-    }
-    break;
+  for (const node of contentNodes) {
+    if (isVirtualTextSkippableNode(node)) continue;
+    if (isTextLikeNode(node)) return true;
+    if (node.nodeType === Node.ELEMENT_NODE && !isSemanticElement(node)) return true;
   }
-  while (i < contentNodes.length && isWhitespaceOnlyText(contentNodes[i])) i += 1;
-  if (i < contentNodes.length && contentNodes[i].nodeType === Node.ELEMENT_NODE && localName(contentNodes[i]) === "text") {
-    i += 1;
-    while (i < contentNodes.length && isWhitespaceOnlyText(contentNodes[i])) i += 1;
-    if (i >= contentNodes.length) return false;
+  return false;
+}
+
+function appendRenderedSliceContent(container, hostEl, contentNodes, elementIds) {
+  if (!sliceHasMarkupContent(contentNodes)) return;
+  if (shouldWrapVirtualText(contentNodes)) {
+    container.appendChild(renderVirtualTextBlock(hostEl, contentNodes, elementIds));
+    return;
   }
-  return true;
+  for (const node of contentNodes) {
+    if (isVirtualTextSkippableNode(node)) continue;
+    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
+      const rendered = renderBlockElement(node, elementIds, { inline: false });
+      if (rendered) container.appendChild(rendered);
+    } else {
+      appendRenderedNode(container, node, elementIds, { inline: true });
+    }
+  }
 }
 
 function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
@@ -3301,13 +3309,40 @@ function renderFormula(el, elementIds, ctx) {
   return wrapRendered(el, span, elementIds.get(el));
 }
 
+function markPictureUnavailable(img) {
+  img.classList.add("rendered-picture-unavailable");
+  img.alt = "\u00A0";
+  img.setAttribute("aria-label", PICTURE_UNAVAILABLE_ALT);
+}
+
+function appendPictureFigureImage(figure, uri, captionEl, elementIds) {
+  const img = document.createElement("img");
+  figure.appendChild(img);
+
+  if (uri) {
+    img.alt = "";
+    img.src = resolveArchiveUri(uri);
+    img.addEventListener("error", () => markPictureUnavailable(img), { once: true });
+  } else {
+    markPictureUnavailable(img);
+    img.src = INVALID_PICTURE_SRC;
+  }
+
+  if (captionEl) {
+    figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
+  }
+}
+
 function renderPicture(el, elementIds) {
   const figure = document.createElement("figure");
   const captionEl = readCaptionElement(el);
+  const srcEl = childElements(el).find((c) => localName(c) === "src") ?? null;
+  const uri = srcEl?.getAttribute("uri")?.trim() || null;
+
+  appendPictureFigureImage(figure, uri, captionEl, elementIds);
+
   const nodes = [...el.childNodes];
   let i = skipElementHeadNodes(nodes, 0);
-  let imgAppended = false;
-
   while (i < nodes.length) {
     const node = nodes[i];
     if (node.nodeType !== Node.ELEMENT_NODE) {
@@ -3316,17 +3351,6 @@ function renderPicture(el, elementIds) {
     }
     const tag = localName(node);
     if (tag === "src") {
-      const uri = node.getAttribute("uri");
-      if (uri) {
-        const img = document.createElement("img");
-        img.src = resolveArchiveUri(uri);
-        img.alt = captionEl?.textContent?.trim() ?? "";
-        figure.appendChild(img);
-        imgAppended = true;
-        if (captionEl) {
-          figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
-        }
-      }
       i += 1;
       continue;
     }
@@ -3337,10 +3361,6 @@ function renderPicture(el, elementIds) {
       continue;
     }
     break;
-  }
-
-  if (captionEl && !imgAppended) {
-    figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
   }
 
   const bodyInner = document.createElement("div");
@@ -3435,17 +3455,7 @@ function renderList(el, elementIds) {
     }
 
     const contentNodes = nodes.slice(contentStart, i);
-    if (shouldWrapVirtualText(contentNodes)) {
-      li.appendChild(renderVirtualTextBlock(ldiv, contentNodes, elementIds));
-    } else if (sliceHasMarkupContent(contentNodes)) {
-      for (const contentNode of contentNodes) {
-        if (contentNode.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(contentNode))) {
-          li.appendChild(renderBlockElement(contentNode, elementIds, { inline: false }));
-        } else {
-          appendRenderedNode(li, contentNode, elementIds, { inline: true });
-        }
-      }
-    }
+    appendRenderedSliceContent(li, ldiv, contentNodes, elementIds);
 
     list.appendChild(li);
   }
@@ -3604,18 +3614,7 @@ function buildOtslGrid(rows) {
 }
 
 function appendTableCellContent(container, nodes, elementIds, cellToken) {
-  if (shouldWrapVirtualText(nodes)) {
-    container.appendChild(renderVirtualTextBlock(cellToken, nodes, elementIds));
-    return;
-  }
-  for (const node of nodes) {
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-      const rendered = renderBlockElement(node, elementIds, { inline: false });
-      if (rendered) container.appendChild(rendered);
-    } else {
-      appendRenderedNode(container, node, elementIds, { inline: true });
-    }
-  }
+  appendRenderedSliceContent(container, cellToken, nodes, elementIds);
 }
 
 function renderOtslContainer(el, elementIds) {
