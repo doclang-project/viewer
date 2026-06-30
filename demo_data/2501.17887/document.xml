@@ -19,25 +19,23 @@
     <location value="80"/>
     <location value="443"/>
     <location value="114"/>
-    Nikolaos Livathinos
     <marker>
       <xref thread_id="1"/>
       <!-- <location value="157"/>
       <location value="80"/>
       <location value="165"/>
       <location value="86"/> -->
-      *
+      Nikolaos Livathinos *,
     </marker>
-    , Christoph Auer
     <marker>
       <xref thread_id="1"/>
       <!-- <location value="235"/>
       <location value="80"/>
       <location value="243"/>
       <location value="86"/> -->
-      *
+      Christoph Auer *,
     </marker>
-    , Maksym Lysak, Ahmed Nassar, Michele Dolfi, Panagiotis Vagenas, Cesar Berrospi, Matteo Omenetti, Kasper Dinkla, Yusik Kim, Shubham Gupta, Rafael Teixeira de Lima, Valery Weber, Lucas Morin, Ingmar Meijer, Viktor Kuropiatnyk, Peter W. J. Staar
+    Maksym Lysak, Ahmed Nassar, Michele Dolfi, Panagiotis Vagenas, Cesar Berrospi, Matteo Omenetti, Kasper Dinkla, Yusik Kim, Shubham Gupta, Rafael Teixeira de Lima, Valery Weber, Lucas Morin, Ingmar Meijer, Viktor Kuropiatnyk, Peter W. J. Staar
   </text>
   <text>
     <location value="189"/>
@@ -65,13 +63,13 @@
     <location value="153"/>
     <location value="236"/>
     <location value="274"/>
-<![CDATA[We introduce Docling , an easy-to-use, self-contained, MITlicensed, open-source toolkit for document conversion, that can parse several types of popular document formats into a unified, richly structured representation. It is powered by state-of-the-art specialized AI models for layout analysis (DocLayNet) and table structure recognition (TableFormer), and runs efficiently on commodity hardware in a small resource budget. Docling is released as a Python package and can be used as a Python API or as a CLI tool. Docling's modular architecture and efficient document representation make it easy to implement extensions, new features, models, and customizations. Docling has been already integrated in other popular open-source frameworks (e.g., LangChain, LlamaIndex, spaCy), making it a natural fit for the processing of documents and the development of high-end applications. The open-source community has fully engaged in using, promoting, and developing for Docling, which gathered 10k stars on GitHub in less than a month and was reported as the No. 1 trending repository in GitHub worldwide in November 2024.]]>  </text>
+<![CDATA[We introduce Docling, an easy-to-use, self-contained, MIT-licensed, open-source toolkit for document conversion, that can parse several types of popular document formats into a unified, richly structured representation. It is powered by state-of-the-art specialized AI models for layout analysis (DocLayNet) and table structure recognition (TableFormer), and runs efficiently on commodity hardware in a small resource budget. Docling is released as a Python package and can be used as a Python API or as a CLI tool. Docling's modular architecture and efficient document representation make it easy to implement extensions, new features, models, and customizations. Docling has been already integrated in other popular open-source frameworks (e.g., LangChain, LlamaIndex, spaCy), making it a natural fit for the processing of documents and the development of high-end applications. The open-source community has fully engaged in using, promoting, and developing for Docling, which gathered 10k stars on GitHub in less than a month and was reported as the No. 1 trending repository in GitHub worldwide in November 2024.]]>  </text>
   <text>
     <location value="45"/>
     <location value="281"/>
     <location value="212"/>
     <location value="287"/>
-    Repository -https://github.com/DS4SD/docling
+    Repository - https://github.com/DS4SD/docling
   </text>
   <heading level="2">
     <location value="110"/>
@@ -85,7 +83,7 @@
     <location value="306"/>
     <location value="245"/>
     <location value="432"/>
-    Converting documents back into a unified machineprocessable format has been a major challenge for decades due to their huge variability in formats, weak standardization and printing-optimized characteristic, which often discards structural features and metadata. With the advent of LLMs and popular application patterns such as retrieval-augmented generation (RAG), leveraging the rich content embedded in PDFs, Office documents, and scanned document images has become ever more relevant. In the past decade, several powerful document understanding solutions have emerged on the market, most of which are commercial software, SaaS offerings on hyperscalers (Auer et al. 2022) and most recently, multimodal vision-language models. Typically, they incur a cost (e.g., for licensing or LLM inference) and cannot be run easily on local hardware. Meanwhile, only a handful of different open-source tools cover PDF, MS Word, MS PowerPoint, Images, or HTML conversion, leaving a significant feature and quality gap to proprietary solutions.
+    Converting documents back into a unified machine-processable format has been a major challenge for decades due to their huge variability in formats, weak standardization and printing-optimized characteristic, which often discards structural features and metadata. With the advent of LLMs and popular application patterns such as retrieval-augmented generation (RAG), leveraging the rich content embedded in PDFs, Office documents, and scanned document images has become ever more relevant. In the past decade, several powerful document understanding solutions have emerged on the market, most of which are commercial software, SaaS offerings on hyperscalers (Auer et al. 2022) and most recently, multimodal vision-language models. Typically, they incur a cost (e.g., for licensing or LLM inference) and cannot be run easily on local hardware. Meanwhile, only a handful of different open-source tools cover PDF, MS Word, MS PowerPoint, Images, or HTML conversion, leaving a significant feature and quality gap to proprietary solutions.
   </text>
   <footnote>
     <thread thread_id="1"/>
@@ -108,7 +106,7 @@
     <location value="142"/>
     <location value="467"/>
     <location value="268"/>
-<![CDATA[With Docling , we recently open-sourced a very capable and efficient document conversion tool which builds on the powerful, specialized AI models and datasets for layout analysis and table structure recognition that we developed and presented in the recent past (Livathinos et al. 2021; Pfitzmann et al. 2022; Lysak et al. 2023). Docling is designed as a simple, self-contained Python library with permissive MIT license, running entirely locally on commodity hardware. Its code architecture allows for easy extensibility and addition of new features and models. Since its launch in July 2024, Docling has attracted considerable attention in the AI developer community and ranks top on GitHub's monthly trending repositories with more than 10,000 stars at the time of writing. On October 16, 2024, Docling reached a major milestone with version 2, introducing several new features and concepts, which we outline in this updated technical report, along with details on its architecture, conversion speed benchmarks, and comparisons to other open-source assets.]]>  </text>
+<![CDATA[With Docling, we recently open-sourced a very capable and efficient document conversion tool which builds on the powerful, specialized AI models and datasets for layout analysis and table structure recognition that we developed and presented in the recent past (Livathinos et al. 2021; Pfitzmann et al. 2022; Lysak et al. 2023). Docling is designed as a simple, self-contained Python library with permissive MIT license, running entirely locally on commodity hardware. Its code architecture allows for easy extensibility and addition of new features and models. Since its launch in July 2024, Docling has attracted considerable attention in the AI developer community and ranks top on GitHub's monthly trending repositories with more than 10,000 stars at the time of writing. On October 16, 2024, Docling reached a major milestone with version 2, introducing several new features and concepts, which we outline in this updated technical report, along with details on its architecture, conversion speed benchmarks, and comparisons to other open-source assets.]]>  </text>
   <text>
     <location value="267"/>
     <location value="270"/>
@@ -486,7 +484,7 @@
     <location value="222"/>
     <location value="245"/>
     <location value="334"/>
-    The most popular conversion tools today leverage visionlanguage models (VLMs), which process page images to text and markup directly. Among proprietary solutions, prominent examples include GPT-4o (OpenAI), Claude (Anthropic), and Gemini (Google). In the open-source domain, LLaVA-based models, such as LLaVA-next, are noteworthy. However, all generative AI-based models face two significant challenges. First, they are prone to hallucinations, i.e., their output may contain false information which is not present in the source document - a critical issue when faithful transcription of document content is required. Second, these models demand substantial computational resources, making the conversion process expensive. Consequently, VLM-based tools are typically offered as SaaS, with compute-intensive operations performed remotely in the cloud.
+    The most popular conversion tools today leverage vision-language models (VLMs), which process page images to text and markup directly. Among proprietary solutions, prominent examples include GPT-4o (OpenAI), Claude (Anthropic), and Gemini (Google). In the open-source domain, LLaVA-based models, such as LLaVA-next, are noteworthy. However, all generative AI-based models face two significant challenges. First, they are prone to hallucinations, i.e., their output may contain false information which is not present in the source document - a critical issue when faithful transcription of document content is required. Second, these models demand substantial computational resources, making the conversion process expensive. Consequently, VLM-based tools are typically offered as SaaS, with compute-intensive operations performed remotely in the cloud.
   </text>
   <text>
     <location value="45"/>
@@ -544,7 +542,7 @@
     <location value="362"/>
     <location value="467"/>
     <location value="382"/>
-    Docling v2 introduces a unified document representation, DoclingDocument , as a Pydantic data model that can express various common document features, such as:
+    Docling v2 introduces a unified document representation, DoclingDocument, as a Pydantic data model that can express various common document features, such as:
   </text>
   <list>
     <location value="267"/>
@@ -595,7 +593,7 @@
     <location value="59"/>
     <location value="245"/>
     <location value="128"/>
-    Besides specifying the data model, the DoclingDocument class defines APIs encompassing document construction, inspection, and export. Using the respective methods, users can incrementally build a DoclingDocument , traverse its contents in reading order, or export to commonly used formats. Docling supports lossless serialization to (and deserialization from) JSON, and lossy export formats such as Markdown and HTML, which, unlike JSON, cannot retain all available meta information.
+    Besides specifying the data model, the DoclingDocument class defines APIs encompassing document construction, inspection, and export. Using the respective methods, users can incrementally build a DoclingDocument, traverse its contents in reading order, or export to commonly used formats. Docling supports lossless serialization to (and deserialization from) JSON, and lossy export formats such as Markdown and HTML, which, unlike JSON, cannot retain all available meta information.
   </text>
   <text>
     <location value="45"/>
@@ -671,7 +669,7 @@
     <location value="112"/>
     <location value="467"/>
     <location value="224"/>
-    Other Backends Markup-based formats like HTML, Markdown, or Microsoft Office (Word, PowerPoint, Excel) as well as plain formats like AsciiDoc can be transformed directly to a DoclingDocument representation with the help of several third-party format parsing libraries. For HTML documents we utilize BeautifulSoup (Richardson 2004-2024), for Markdown we use the Marko library (Ming 2019-2024), and for Office XML-based formats (Word, PowerPoint, Excel) we implement custom extensions on top of the python-docx (Canny and contributors 2013-2024a), python-pptx (Canny and contributors 20132024b), and openpyxl (Eric Gazoni 2010-2024) libraries, respectively. During parsing, we identify and extract common document elements (e.g., title, headings, paragraphs, tables, lists, figures, and code) and reflect the correct hierarchy level if possible.
+    Other Backends Markup-based formats like HTML, Markdown, or Microsoft Office (Word, PowerPoint, Excel) as well as plain formats like AsciiDoc can be transformed directly to a DoclingDocument representation with the help of several third-party format parsing libraries. For HTML documents we utilize BeautifulSoup (Richardson 2004-2024), for Markdown we use the Marko library (Ming 2019-2024), and for Office XML-based formats (Word, PowerPoint, Excel) we implement custom extensions on top of the python-docx (Canny and contributors 2013-2024a), python-pptx (Canny and contributors 2013-2024b), and openpyxl (Eric Gazoni 2010-2024) libraries, respectively. During parsing, we identify and extract common document elements (e.g., title, headings, paragraphs, tables, lists, figures, and code) and reflect the correct hierarchy level if possible.
   </text>
   <heading level="2">
     <location value="267"/>
@@ -743,14 +741,14 @@
     <location value="116"/>
     <location value="245"/>
     <location value="186"/>
-    As part of Docling, we release two highly capable AI models to the open-source community, which have been developed and published recently by our team. The first model is a layout analysis model, an accurate object detector for page elements (Pfitzmann et al. 2022). The second model is TableFormer (Nassar et al. 2022; Lysak et al. 2023), a state-of-the-art table structure recognition model. We provide the pre-trained weights (hosted on Hugging Face) and a separate Python package for the inference code ( doclingibm-models ).
+    As part of Docling, we release two highly capable AI models to the open-source community, which have been developed and published recently by our team. The first model is a layout analysis model, an accurate object detector for page elements (Pfitzmann et al. 2022). The second model is TableFormer (Nassar et al. 2022; Lysak et al. 2023), a state-of-the-art table structure recognition model. We provide the pre-trained weights (hosted on Hugging Face) and a separate Python package for the inference code (docling-ibm-models).
   </text>
   <text>
     <location value="45"/>
     <location value="194"/>
     <location value="245"/>
     <location value="299"/>
-    Layout Analysis Model Our layout analysis model is an object detector which predicts the bounding-boxes and classes of various elements on the image of a given page. Its architecture is derived from RT-DETR (Zhao et al. 2023) and re-trained on DocLayNet (Pfitzmann et al. 2022), our popular human-annotated dataset for document-layout analysis, among other proprietary datasets. For inference, our implementation relies on the Hugging Face transformers (Wolf et al. 2020) library and the Safetensors fi le format. All predicted bounding-box proposals for document elements are post-processed to remove overlapping proposals based on confidence and size, and then intersected with the text tokens in the PDF to group them into meaningful and complete units such as paragraphs, section titles, list items, captions, figures, or tables.
+    Layout Analysis Model Our layout analysis model is an object detector which predicts the bounding-boxes and classes of various elements on the image of a given page. Its architecture is derived from RT-DETR (Zhao et al. 2023) and re-trained on DocLayNet (Pfitzmann et al. 2022), our popular human-annotated dataset for document-layout analysis, among other proprietary datasets. For inference, our implementation relies on the Hugging Face transformers (Wolf et al. 2020) library and the Safetensors file format. All predicted bounding-box proposals for document elements are post-processed to remove overlapping proposals based on confidence and size, and then intersected with the text tokens in the PDF to group them into meaningful and complete units such as paragraphs, section titles, list items, captions, figures, or tables.
   </text>
   <text>
     <location value="45"/>
@@ -771,7 +769,7 @@
     <location value="98"/>
     <location value="467"/>
     <location value="146"/>
-    Assembly In the final pipeline stage, Docling assembles all prediction results produced on each page into the DoclingDocument representation, as defined in the auxiliary Python package docling-core . The generated document object is passed through a post-processing model which leverages several algorithms to augment features, such as correcting the reading order or matching figures with captions.
+    Assembly In the final pipeline stage, Docling assembles all prediction results produced on each page into the DoclingDocument representation, as defined in the auxiliary Python package docling-core. The generated document object is passed through a post-processing model which leverages several algorithms to augment features, such as correcting the reading order or matching figures with captions.
   </text>
   <heading level="2">
     <location value="332"/>
@@ -1317,7 +1315,7 @@
     <location value="421"/>
     <location value="245"/>
     <location value="455"/>
-    When running experiments on CPU, we inform all assets of the desired CPU thread budget of 8 threads, via the OMP NUM THREADS environment variable and any accepted configuration options. The L4 GPU on our AWS EC2 VM is hidden.
+    When running experiments on CPU, we inform all assets of the desired CPU thread budget of 8 threads, via the OMP_NUM_THREADS environment variable and any accepted configuration options. The L4 GPU on our AWS EC2 VM is hidden.
   </list>
   <list>
     <thread thread_id="7"/>
@@ -1330,7 +1328,7 @@
     <location value="115"/>
     <location value="467"/>
     <location value="142"/>
-    When running experiments on the L4 GPU, we enable CUDAacceleration in all accepted configuration options, ensure the GPU is visible and all required runtimes for AI inference are installed with CUDA support.
+    When running experiments on the L4 GPU, we enable CUDA acceleration in all accepted configuration options, ensure the GPU is visible and all required runtimes for AI inference are installed with CUDA support.
   </list>
   <text>
     <location value="267"/>
@@ -1456,7 +1454,7 @@
     <location value="400"/>
     <location value="467"/>
     <location value="455"/>
-    By breaking down the runtimes to a page level, we receive a more intuitive measure for the conversion speed (see also Figure 4). Processing a page in our benchmark dataset requires between 0.6 sec (5 th percentile) and 16.3 sec (95 th percentile), with a median of 0.79 sec on the x86 CPU. On the M3 Max SoC, it achieves 0.26/0.32/6.48 seconds per page (.05/median/.95), and on the Nvidia L4 GPU it achieves 57/114/2081 milliseconds per page (.05/median/.95). The
+    By breaking down the runtimes to a page level, we receive a more intuitive measure for the conversion speed (see also Figure 4). Processing a page in our benchmark dataset requires between 0.6 sec (5th percentile) and 16.3 sec (95th percentile), with a median of 0.79 sec on the x86 CPU. On the M3 Max SoC, it achieves 0.26/0.32/6.48 seconds per page (.05/median/.95), and on the Nvidia L4 GPU it achieves 57/114/2081 milliseconds per page (.05/median/.95). The
   </text>
   <page_break/>
   <text>
@@ -1589,7 +1587,7 @@
       <location value="172"/>
       <location value="467"/>
       <location value="199"/>
-      Figure 4: Contributions of PDF backend and AI models to the conversion time of a page (in seconds per page). Lower is better. Left: Ranges of time contributions for each model to pages it was applied on (i.e., OCR was applied only on pages with bitmaps, table structure was applied only on pages with tables). Right: Average time contribution to a page in the benchmark dataset (factoring in zero-time contribution for OCR and table structure models on pages without bitmaps or tables) .
+      Figure 4: Contributions of PDF backend and AI models to the conversion time of a page (in seconds per page). Lower is better. Left: Ranges of time contributions for each model to pages it was applied on (i.e., OCR was applied only on pages with bitmaps, table structure was applied only on pages with tables). Right: Average time contribution to a page in the benchmark dataset (factoring in zero-time contribution for OCR and table structure models on pages without bitmaps or tables).
     </caption>
     <src uri="assets/image_000003_aae387b4ac174e0c353410a6154f33e32888ef949db88e5f3a2bcdcf9ce49d2b.png"/>
     <text>
@@ -1799,7 +1797,7 @@
       <location value="343"/>
       <location value="245"/>
       <location value="384"/>
-      Figure 5: Conversion time in seconds per page on our dataset in three scenarios, across all assets and system configurations. Lower bars are better. The configuration includes OCR and table structure recognition ( fast table option on Docling and MinerU, hi res in unstructured, as shown in table 1).
+      Figure 5: Conversion time in seconds per page on our dataset in three scenarios, across all assets and system configurations. Lower bars are better. The configuration includes OCR and table structure recognition (fast table option on Docling and MinerU, hi_res in unstructured, as shown in table 1).
     </caption>
     <src uri="assets/image_000004_93026c6b54abfcd0b86e224af53fb690627cf3b973cafeccfda64b11b907dc00.png"/>
     <text>
@@ -2053,7 +2051,7 @@
     <location value="342"/>
     <location value="467"/>
     <location value="447"/>
-<![CDATA[Docling's modular architecture allows an easy extension of the model library and pipelines. In the future, we plan to extend Docling with several additional models, such as a figure-classifier model, an equation-recognition model and a code-recognition model. This will help improve the quality of conversion for specific types of content, as well as augment extracted document metadata with additional information. Furthermore, we will focus on building an opensource quality evaluation framework for the tasks performed by Docling, such as layout analysis, table structure recognition, reading order detection, text transcription, etc. This will allow transparent quality comparisons based on publicly available benchmarks such as DP-Bench (Zhong 2020), OmnidDocBench(Ouyang et al. 2024) and others. Results will be published in a future update of this technical report.]]>  </text>
+<![CDATA[Docling's modular architecture allows an easy extension of the model library and pipelines. In the future, we plan to extend Docling with several additional models, such as a figure-classifier model, an equation-recognition model and a code-recognition model. This will help improve the quality of conversion for specific types of content, as well as augment extracted document metadata with additional information. Furthermore, we will focus on building an open-source quality evaluation framework for the tasks performed by Docling, such as layout analysis, table structure recognition, reading order detection, text transcription, etc. This will allow transparent quality comparisons based on publicly available benchmarks such as DP-Bench (Zhong 2020), OmnidDocBench(Ouyang et al. 2024) and others. Results will be published in a future update of this technical report.]]>  </text>
   <text>
     <thread thread_id="10"/>
     <location value="276"/>
@@ -2097,7 +2095,7 @@
     <location value="98"/>
     <location value="245"/>
     <location value="139"/>
-<![CDATA[Ansel, J.; Yang, E.; He, H.; et al. 2024. PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation. In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 (ASPLOS '24) . ACM.]]>  </text>
+<![CDATA[Ansel, J.; Yang, E.; He, H.; et al. 2024. PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation. In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 (ASPLOS '24). ACM.]]>  </text>
   <text>
     <location value="45"/>
     <location value="142"/>
@@ -2131,7 +2129,7 @@
     <location value="239"/>
     <location value="245"/>
     <location value="252"/>
-    Chase, H. 2022. LangChain. https://github.com/langchainai/langchain.
+    Chase, H. 2022. LangChain. https://github.com/langchain-ai/langchain.
   </text>
   <text>
     <location value="45"/>
@@ -2152,14 +2150,14 @@
     <location value="292"/>
     <location value="245"/>
     <location value="305"/>
-    Liu, J. 2022. LlamaIndex. https://github.com/jerryjliu/ llama index.
+    Liu, J. 2022. LlamaIndex. https://github.com/jerryjliu/llama_index.
   </text>
   <text>
     <location value="45"/>
     <location value="308"/>
     <location value="245"/>
     <location value="392"/>
-    Livathinos, N.; Berrospi, C.; Lysak, M.; Kuropiatnyk, V.; Nassar, A.; Carvalho, A.; Dolfi, M.; Auer, C.; Dinkla, K.; and Staar, P. 2021. Robust PDF Document Conversion using Recurrent Neural Networks. Proceedings of the AAAI Conference on Artificial Intelligence , 35(17): 15137-15145. Lysak, M.; Nassar, A.; Livathinos, N.; Auer, C.; and Staar, P. 2023. Optimized Table Tokenization for Table Structure Recognition. In Document Analysis and Recognition - ICDAR 2023: 17th International Conference, San Jos´ e, CA, USA, August 21-26, 2023, Proceedings, Part II , 3750. Berlin, Heidelberg: Springer-Verlag. ISBN 978-3-03141678-1.
+    Livathinos, N.; Berrospi, C.; Lysak, M.; Kuropiatnyk, V.; Nassar, A.; Carvalho, A.; Dolfi, M.; Auer, C.; Dinkla, K.; and Staar, P. 2021. Robust PDF Document Conversion using Recurrent Neural Networks. Proceedings of the AAAI Conference on Artificial Intelligence, 35(17): 15137-15145. Lysak, M.; Nassar, A.; Livathinos, N.; Auer, C.; and Staar, P. 2023. Optimized Table Tokenization for Table Structure Recognition. In Document Analysis and Recognition - ICDAR 2023: 17th International Conference, San José, CA, USA, August 21-26, 2023, Proceedings, Part II, 37-50. Berlin, Heidelberg: Springer-Verlag. ISBN 978-3-031-41678-1.
   </text>
   <text>
     <location value="45"/>
@@ -2237,7 +2235,7 @@
     <location value="204"/>
     <location value="467"/>
     <location value="245"/>
-    Turski, M.; Stanisławek, T.; Kaczmarek, K.; Dyda, P.; and Grali´ nski, F. 2023. CCpdf: Building a High Quality Corpus for Visually Rich Documents from Web Crawl Data. In Fink, G. A.; Jain, R.; Kise, K.; and Zanibbi, R., eds., Document Analysis and Recognition - ICDAR 2023 , 348-365. Cham: Springer Nature Switzerland. ISBN 978-3-031-41682-8.
+    Turski, M.; Stanisławek, T.; Kaczmarek, K.; Dyda, P.; and Graliński, F. 2023. CCpdf: Building a High Quality Corpus for Visually Rich Documents from Web Crawl Data. In Fink, G. A.; Jain, R.; Kise, K.; and Zanibbi, R., eds., Document Analysis and Recognition - ICDAR 2023, 348-365. Cham: Springer Nature Switzerland. ISBN 978-3-031-41682-8.
   </text>
   <text>
     <location value="267"/>
@@ -2258,7 +2256,7 @@
     <location value="308"/>
     <location value="467"/>
     <location value="349"/>
-<![CDATA[Wolf, T.; Debut, L.; Sanh, V.; Chaumond, J.; Delangue, C.; Moi, A.; Cistac, P.; Rault, T.; Louf, R.; Funtowicz, M.; Davison, J.; Shleifer, S.; von Platen, P.; Ma, C.; Jernite, Y .; Plu, J.; Xu, C.; Scao, T. L.; Gugger, S.; Drame, M.; Lhoest, Q.; and Rush, A. M. 2020. HuggingFace's Transformers: Stateof-the-art Natural Language Processing. arXiv:1910.03771.]]>  </text>
+<![CDATA[Wolf, T.; Debut, L.; Sanh, V.; Chaumond, J.; Delangue, C.; Moi, A.; Cistac, P.; Rault, T.; Louf, R.; Funtowicz, M.; Davison, J.; Shleifer, S.; von Platen, P.; Ma, C.; Jernite, Y.; Plu, J.; Xu, C.; Scao, T. L.; Gugger, S.; Drame, M.; Lhoest, Q.; and Rush, A. M. 2020. HuggingFace's Transformers: State-of-the-art Natural Language Processing. arXiv:1910.03771.]]>  </text>
   <text>
     <location value="267"/>
     <location value="352"/>
