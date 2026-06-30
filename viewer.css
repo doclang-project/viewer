@@ -913,9 +913,7 @@ pre.markup {
 }
 
 .overlay rect.bbox.related:not(.selected) {
-  opacity: 0.45;
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
+  fill: color-mix(in srgb, var(--kind-stroke, var(--accent)) 30%, transparent) !important;
 }
 
 /* text */
