@@ -319,7 +319,10 @@ let showXrefLinks = false;
 let showReadingOrder = false;
 let showReadingOrderArrows = true;
 let readingOrderGlobalNumbering = false;
-let settingsSidebarOpen = false;
+let showReadingFurniture = true;
+let showReadingBackground = true;
+let pageSettingsOpen = false;
+let readingSettingsOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
 let pagePanDrag = null;
@@ -339,10 +342,17 @@ const els = {
   showLayoutBadges: document.getElementById("show-layout-badges"),
   showLayoutBadgesLabel: document.getElementById("show-layout-badges-label"),
   settingsToggle: document.getElementById("btn-settings-toggle"),
-  settingsLayer: document.getElementById("viewer-settings-layer"),
-  settingsScrim: document.getElementById("viewer-settings-scrim"),
-  settingsSidebar: document.getElementById("viewer-settings"),
-  settingsClose: document.getElementById("btn-settings-close"),
+  readingSettingsToggle: document.getElementById("btn-reading-settings-toggle"),
+  pageSettingsLayer: document.getElementById("page-settings-layer"),
+  pageSettingsScrim: document.getElementById("page-settings-scrim"),
+  pageSettingsClose: document.getElementById("btn-page-settings-close"),
+  readingSettingsLayer: document.getElementById("reading-settings-layer"),
+  readingSettingsScrim: document.getElementById("reading-settings-scrim"),
+  readingSettingsClose: document.getElementById("btn-reading-settings-close"),
+  showReadingFurniture: document.getElementById("show-reading-furniture"),
+  showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
+  showReadingBackground: document.getElementById("show-reading-background"),
+  showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   showPictureContents: document.getElementById("show-picture-contents"),
@@ -435,11 +445,24 @@ els.readingOrderGlobal.addEventListener("change", () => {
   readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
   if (state) renderPage(state.currentPage);
 });
-els.settingsToggle.addEventListener("click", () => setSettingsSidebarOpen(!settingsSidebarOpen));
-els.settingsClose.addEventListener("click", () => setSettingsSidebarOpen(false));
-els.settingsScrim.addEventListener("click", () => setSettingsSidebarOpen(false));
+els.settingsToggle.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
+els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
+els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
+els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
+els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
+els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && settingsSidebarOpen) setSettingsSidebarOpen(false);
+  if (e.key !== "Escape") return;
+  if (pageSettingsOpen) setPageSettingsOpen(false);
+  else if (readingSettingsOpen) setReadingSettingsOpen(false);
+});
+els.showReadingFurniture?.addEventListener("change", () => {
+  showReadingFurniture = els.showReadingFurniture.checked;
+  syncReadingLayerVisibility();
+});
+els.showReadingBackground?.addEventListener("change", () => {
+  showReadingBackground = els.showReadingBackground.checked;
+  syncReadingLayerVisibility();
 });
 initFileTypeHints();
 initCursorHints();
@@ -760,6 +783,61 @@ function elementHeadLocations(el) {
 
 function firstHeadChild(el, tag) {
   return childElements(el).find((child) => localName(child) === tag) ?? null;
+}
+
+const ELEMENT_LAYERS = new Set(["body", "background", "furniture"]);
+
+function layerFromHeadNodes(nodes, startIdx) {
+  let i = startIdx;
+  while (i < nodes.length) {
+    const node = nodes[i];
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      i += 1;
+      continue;
+    }
+    const tag = localName(node);
+    if (tag === "layer") {
+      const value = node.getAttribute("value") ?? "body";
+      return ELEMENT_LAYERS.has(value) ? value : "body";
+    }
+    if (tag === "location") break;
+    if (HEAD_TAGS.has(tag)) {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  return "body";
+}
+
+function elementLayer(el) {
+  const layerEl = firstHeadChild(el, "layer");
+  if (layerEl) {
+    const value = layerEl.getAttribute("value") ?? "body";
+    return ELEMENT_LAYERS.has(value) ? value : "body";
+  }
+  if (headLocations(el).length === 4) return "body";
+  const parent = el.parentElement;
+  if (!parent) return "body";
+  const nodes = [...parent.childNodes];
+  const idx = nodes.indexOf(el);
+  if (idx < 0) return "body";
+  return layerFromHeadNodes(nodes, idx + 1);
+}
+
+function layerClassForValue(layer) {
+  if (layer === "furniture") return "layer-furniture";
+  if (layer === "background") return "layer-background";
+  return "";
+}
+
+function applyElementLayerAttr(sourceEl, domEl) {
+  domEl.setAttribute("data-doclang-layer", elementLayer(sourceEl));
+}
+
+function syncReadingLayerCheckboxes() {
+  if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
+  if (els.showReadingBackground) els.showReadingBackground.checked = showReadingBackground;
 }
 
 /** @returns {{ key: string, value: string, isDefault: boolean }[]} */
@@ -1094,6 +1172,22 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
   els.pageNav.hidden = !open || markupOnly;
+  if (els.readingSettingsToggle) els.readingSettingsToggle.hidden = !open;
+}
+
+function applyReadingLayerClasses(root) {
+  root.classList.toggle("show-reading-furniture", showReadingFurniture);
+  root.classList.toggle("show-reading-background", showReadingBackground);
+}
+
+function syncReadingLayerVisibility() {
+  const root = els.renderedPane.querySelector(".rendered-doc");
+  if (root) applyReadingLayerClasses(root);
+}
+
+function closeAllSettings() {
+  setPageSettingsOpen(false);
+  setReadingSettingsOpen(false);
 }
 
 function setDocLabel(label) {
@@ -1131,11 +1225,14 @@ function resetViewer() {
   selectedElementId = null;
   pagePanDrag = null;
   pagePanSuppressClick = false;
+  showReadingFurniture = true;
+  showReadingBackground = true;
+  syncReadingLayerCheckboxes();
   resetPageZoom();
   setDocLabel(null);
   setDocumentOpen(false);
   document.body.classList.remove("has-page-view");
-  setSettingsSidebarOpen(false);
+  closeAllSettings();
   els.markupPane.innerHTML = "";
   els.renderedPane.innerHTML = "";
   els.pagePane.innerHTML = "";
@@ -1149,15 +1246,21 @@ function setPageViewVisible(visible) {
   if (els.settingsToggle) els.settingsToggle.hidden = !visible;
   if (els.pageZoomLabel) els.pageZoomLabel.hidden = !visible;
   if (visible) updatePageZoomResetButton();
-  if (!visible) setSettingsSidebarOpen(false);
+  if (!visible) setPageSettingsOpen(false);
   els.pagePane.tabIndex = visible ? 0 : -1;
   syncLayoutSubtoggles();
 }
 
-function setSettingsSidebarOpen(open) {
-  settingsSidebarOpen = open;
-  if (els.settingsLayer) els.settingsLayer.hidden = !open;
+function setPageSettingsOpen(open) {
+  pageSettingsOpen = open;
+  if (els.pageSettingsLayer) els.pageSettingsLayer.hidden = !open;
   if (els.settingsToggle) els.settingsToggle.setAttribute("aria-expanded", String(open));
+}
+
+function setReadingSettingsOpen(open) {
+  readingSettingsOpen = open;
+  if (els.readingSettingsLayer) els.readingSettingsLayer.hidden = !open;
+  if (els.readingSettingsToggle) els.readingSettingsToggle.setAttribute("aria-expanded", String(open));
 }
 
 function syncLayoutSubtoggles() {
@@ -1170,6 +1273,7 @@ function syncLayoutSubtoggles() {
     els.showCaptionLinksLabel,
     els.showXrefLinksLabel,
     els.showReadingOrderLabel,
+    els.showAllBboxes?.closest("label"),
   ]) {
     if (!label) continue;
     label.classList.toggle("settings-option-disabled", !layoutEnabled);
@@ -1188,7 +1292,7 @@ function syncLayoutSubtoggles() {
 
 function goToPage(n) {
   if (!state) return;
-  setSettingsSidebarOpen(false);
+  setPageSettingsOpen(false);
   const page = Math.min(Math.max(1, n), state.pageCount);
   state.currentPage = page;
   renderPage(page);
@@ -1706,16 +1810,24 @@ function resolveRenderedClickTarget(eventTarget) {
   return resolveSelectionElementId(renderedEl.getAttribute("data-element-id"));
 }
 
-/** @returns {{ kind: string, tag: string, elementId: string, x0: number, y0: number, x1: number, y1: number, resW: number, resH: number }[]} */
+/** @returns {{ kind: string, tag: string, elementId: string, layer: string, x0: number, y0: number, x1: number, y1: number, resW: number, resH: number }[]} */
 function collectBoundingBoxes(segment, defaultResolution, elementIds) {
-  /** @type {{ kind: string, tag: string, elementId: string, x0: number, y0: number, x1: number, y1: number, resW: number, resH: number }[]} */
+  /** @type {{ kind: string, tag: string, elementId: string, layer: string, x0: number, y0: number, x1: number, y1: number, resW: number, resH: number }[]} */
   const boxes = [];
   walkElements(segment, (el) => {
     const locs = headLocations(el);
     if (locs.length !== 4) return;
     const elementId = elementIds.get(el);
     if (!elementId) return;
-    pushBoundingBox(boxes, locs, defaultResolution, localName(el), elementLabel(el), elementId);
+    pushBoundingBox(
+      boxes,
+      locs,
+      defaultResolution,
+      localName(el),
+      elementLabel(el),
+      elementId,
+      elementLayer(el),
+    );
   });
   walkElements(segment, (el) => {
     const tag = localName(el);
@@ -2115,7 +2227,7 @@ function collectReadingOrderSteps(
   return steps;
 }
 
-function pushBoundingBox(boxes, locs, defaultResolution, kind, tag, elementId) {
+function pushBoundingBox(boxes, locs, defaultResolution, kind, tag, elementId, layer = "body") {
   const [x0el, y0el, x1el, y1el] = locs;
   const resW = locationResolution(x0el, defaultResolution.width);
   const resH = locationResolution(y0el, defaultResolution.height);
@@ -2123,6 +2235,7 @@ function pushBoundingBox(boxes, locs, defaultResolution, kind, tag, elementId) {
     kind,
     tag,
     elementId,
+    layer,
     x0: parseInt(x0el.getAttribute("value") ?? "0", 10),
     y0: parseInt(y0el.getAttribute("value") ?? "0", 10),
     x1: parseInt(x1el.getAttribute("value") ?? "0", 10),
@@ -2145,7 +2258,9 @@ function collectListVirtualTextBoxes(list, defaultResolution, boxes, elementIds)
     const head = parseElementHeadAt(nodes, i);
     if (head) {
       const elementId = elementIds.get(node);
-      if (elementId) pushBoundingBox(boxes, head.locs, defaultResolution, "text", "text", elementId);
+      if (elementId) {
+        pushBoundingBox(boxes, head.locs, defaultResolution, "text", "text", elementId, elementLayer(node));
+      }
       i = head.nextIndex;
     }
     i = skipUntilListItemBoundary(nodes, i);
@@ -2174,7 +2289,9 @@ function collectTableVirtualTextBoxes(container, defaultResolution, boxes, eleme
     const head = parseElementHeadAt(nodes, i);
     if (head) {
       const elementId = elementIds.get(node);
-      if (elementId) pushBoundingBox(boxes, head.locs, defaultResolution, "text", "text", elementId);
+      if (elementId) {
+        pushBoundingBox(boxes, head.locs, defaultResolution, "text", "text", elementId, elementLayer(node));
+      }
       i = head.nextIndex;
     }
     i = skipUntilCellBoundary(nodes, i);
@@ -2330,7 +2447,15 @@ function overlayBoxPaintPriority(box) {
   return 1;
 }
 
+function overlayLayerPriority(layer) {
+  if (layer === "background") return 0;
+  if (layer === "furniture") return 1;
+  return 2;
+}
+
 function compareOverlayBoxPaintOrder(a, b) {
+  const byLayer = overlayLayerPriority(a.layer ?? "body") - overlayLayerPriority(b.layer ?? "body");
+  if (byLayer !== 0) return byLayer;
   const byPriority = overlayBoxPaintPriority(a) - overlayBoxPaintPriority(b);
   if (byPriority !== 0) return byPriority;
   if (selectedElementId) {
@@ -2384,6 +2509,25 @@ function alignDashedLineToEnd(line, start, end) {
   line.setAttribute("stroke-dasharray", `${dash} ${gap}`);
   const offset = len % period;
   if (offset > 0.01) line.setAttribute("stroke-dashoffset", String(offset));
+}
+
+function ensureLayerHatchPatterns(defs) {
+  if (defs.querySelector("#layer-hatch")) return;
+
+  const pattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
+  pattern.setAttribute("id", "layer-hatch");
+  pattern.setAttribute("width", "16");
+  pattern.setAttribute("height", "16");
+  pattern.setAttribute("patternUnits", "userSpaceOnUse");
+  pattern.setAttribute("patternTransform", "rotate(45 8 8)");
+  const stripe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  stripe.setAttribute("class", "layer-hatch-stripe");
+  stripe.setAttribute("x", "10");
+  stripe.setAttribute("y", "-4");
+  stripe.setAttribute("width", "6");
+  stripe.setAttribute("height", "24");
+  pattern.appendChild(stripe);
+  defs.appendChild(pattern);
 }
 
 function ensureOverlayDefs(svg) {
@@ -2675,13 +2819,20 @@ function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrde
   appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
   appendReadingOrderOverlay(svg, img, readingOrderSteps);
 
+  const defs = ensureOverlayDefs(svg);
+  ensureLayerHatchPatterns(defs);
+
   for (const b of sortedOverlayBoxes(boxes)) {
     const { x, y, w, h } = boxPixelRect(b, img);
     const cls = bboxClassForKind(b.kind);
     const kindClass = kindClassForTag(b.kind);
+    const layerClass = layerClassForValue(b.layer ?? "body");
 
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("class", `bbox bbox-${cls} ${kindClass}`);
+    rect.setAttribute(
+      "class",
+      `bbox bbox-${cls} ${kindClass}${layerClass ? ` ${layerClass}` : ""}`,
+    );
     rect.setAttribute("x", String(x));
     rect.setAttribute("y", String(y));
     rect.setAttribute("width", String(Math.max(w, 1)));
@@ -2888,6 +3039,23 @@ function revealRenderedSelectionContext(renderedEl) {
   if (pictureContents && !pictureContents.open) {
     pictureContents.open = true;
   }
+  revealReadingLayerForSelection(renderedEl);
+}
+
+function revealReadingLayerForSelection(renderedEl) {
+  const layer = renderedEl.getAttribute("data-doclang-layer");
+  if (!layer || layer === "body") return;
+  let changed = false;
+  if (layer === "furniture" && !showReadingFurniture) {
+    showReadingFurniture = true;
+    changed = true;
+  } else if (layer === "background" && !showReadingBackground) {
+    showReadingBackground = true;
+    changed = true;
+  }
+  if (!changed) return;
+  syncReadingLayerCheckboxes();
+  syncReadingLayerVisibility();
 }
 
 function applySelection() {
@@ -3314,6 +3482,7 @@ function buildRenderedView(segment, elementIds) {
     const elementId = resolveRenderedClickTarget(e.target);
     if (elementId) selectElement(elementId);
   });
+  applyReadingLayerClasses(root);
   return root;
 }
 
@@ -3322,6 +3491,7 @@ function wrapRendered(el, node, elementId, extraClass) {
   const wrap = document.createElement("div");
   wrap.className = `rendered-el rendered-${tag}${extraClass ? ` ${extraClass}` : ""}`;
   if (elementId) wrap.setAttribute("data-element-id", elementId);
+  applyElementLayerAttr(el, wrap);
   wrap.appendChild(node);
   return wrap;
 }
@@ -3349,7 +3519,6 @@ function renderBlockElement(el, elementIds, ctx) {
     }
     case "footnote": {
       const aside = document.createElement("aside");
-      aside.className = "rendered-footnote";
       appendRenderedBody(aside, el, elementIds, { inline: false });
       return wrapRendered(el, aside, elementId);
     }
@@ -3663,6 +3832,7 @@ function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
   wrap.className = "rendered-el rendered-text rendered-el-virtual-text";
   const elementId = elementIds.get(hostEl);
   if (elementId) wrap.setAttribute("data-element-id", elementId);
+  applyElementLayerAttr(hostEl, wrap);
   wrap.appendChild(inner);
   return wrap;
 }

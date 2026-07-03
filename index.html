@@ -86,7 +86,7 @@
             id="btn-settings-toggle"
             hidden
             aria-expanded="false"
-            aria-controls="viewer-settings"
+            aria-controls="page-settings"
           >
             Options
           </button>
@@ -94,73 +94,73 @@
       </div>
       <div class="pane-page-layout">
         <div class="pane-body" id="page-pane"></div>
-        <div class="viewer-settings-layer" id="viewer-settings-layer" hidden>
+        <div class="viewer-settings-layer" id="page-settings-layer" hidden>
           <button
             type="button"
             class="viewer-settings-scrim"
-            id="viewer-settings-scrim"
+            id="page-settings-scrim"
             tabindex="-1"
             aria-label="Close options"
           ></button>
           <aside
             class="viewer-settings"
-            id="viewer-settings"
+            id="page-settings"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="viewer-settings-title"
+            aria-labelledby="page-settings-title"
           >
             <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="viewer-settings-title">Options</h2>
-              <button type="button" class="viewer-settings-close" id="btn-settings-close" aria-label="Close options">
+              <h2 class="viewer-settings-title" id="page-settings-title">Options</h2>
+              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close options">
                 ×
               </button>
             </div>
-            <div class="viewer-settings-body" id="layout-settings">
-            <label class="settings-option settings-option-primary" id="show-all-bboxes-label">
-              <input type="checkbox" id="show-all-bboxes" checked>
-              <span>Layout</span>
-            </label>
-            <div class="settings-subgroup" id="layout-subtoggles">
-              <label class="settings-option settings-option-sub" id="show-reading-order-label">
-                <input type="checkbox" id="show-reading-order">
-                <span>Reading order</span>
+            <div class="viewer-settings-body">
+              <label class="settings-option settings-option-primary" id="show-all-bboxes-label">
+                <input type="checkbox" id="show-all-bboxes" checked>
+                <span>Layout</span>
               </label>
-              <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
-                <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
-                  <input type="checkbox" id="reading-order-arrows" checked>
-                  <span>Arrows</span>
+              <div class="settings-subgroup" id="layout-subtoggles">
+                <label class="settings-option settings-option-sub" id="show-reading-order-label">
+                  <input type="checkbox" id="show-reading-order">
+                  <span>Reading order</span>
                 </label>
-                <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
-                  <input type="checkbox" id="reading-order-global">
-                  <span>Global numbering</span>
+                <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
+                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
+                    <input type="checkbox" id="reading-order-arrows" checked>
+                    <span>Arrows</span>
+                  </label>
+                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
+                    <input type="checkbox" id="reading-order-global">
+                    <span>Global numbering</span>
+                  </label>
+                </div>
+
+                <label class="settings-option settings-option-sub" id="show-picture-contents-label">
+                  <input type="checkbox" id="show-picture-contents">
+                  <span>Picture contents</span>
+                </label>
+                <label class="settings-option settings-option-sub" id="show-table-contents-label">
+                  <input type="checkbox" id="show-table-contents">
+                  <span>Table contents</span>
+                </label>
+                <label class="settings-option settings-option-sub" id="show-fragment-links-label">
+                  <input type="checkbox" id="show-fragment-links">
+                  <span>Fragments</span>
+                </label>
+                <label class="settings-option settings-option-sub" id="show-xref-links-label">
+                  <input type="checkbox" id="show-xref-links">
+                  <span>Cross-references</span>
+                </label>
+                <label class="settings-option settings-option-sub" id="show-caption-links-label">
+                  <input type="checkbox" id="show-caption-links">
+                  <span>Captions</span>
+                </label>
+                <label class="settings-option settings-option-sub" id="show-layout-badges-label">
+                  <input type="checkbox" id="show-layout-badges" checked>
+                  <span>Badges</span>
                 </label>
               </div>
-
-              <label class="settings-option settings-option-sub" id="show-picture-contents-label">
-                <input type="checkbox" id="show-picture-contents">
-                <span>Picture contents</span>
-              </label>
-              <label class="settings-option settings-option-sub" id="show-table-contents-label">
-                <input type="checkbox" id="show-table-contents">
-                <span>Table contents</span>
-              </label>
-              <label class="settings-option settings-option-sub" id="show-fragment-links-label">
-                <input type="checkbox" id="show-fragment-links">
-                <span>Fragments</span>
-              </label>
-              <label class="settings-option settings-option-sub" id="show-xref-links-label">
-                <input type="checkbox" id="show-xref-links">
-                <span>Cross-references</span>
-              </label>
-              <label class="settings-option settings-option-sub" id="show-caption-links-label">
-                <input type="checkbox" id="show-caption-links">
-                <span>Captions</span>
-              </label>
-              <label class="settings-option settings-option-sub" id="show-layout-badges-label">
-                <input type="checkbox" id="show-layout-badges" checked>
-                <span>Badges</span>
-              </label>
-            </div>
             </div>
           </aside>
         </div>
@@ -171,8 +171,58 @@
       <div class="pane-body" id="markup-pane"></div>
     </section>
     <section class="pane">
-      <div class="pane-header">Reading view</div>
-      <div class="pane-body" id="rendered-pane"></div>
+      <div class="pane-header pane-reading-header">
+        <span class="pane-header-title">Reading view</span>
+        <button
+          type="button"
+          class="pane-settings-toggle"
+          id="btn-reading-settings-toggle"
+          hidden
+          aria-expanded="false"
+          aria-controls="reading-settings"
+        >
+          Options
+        </button>
+      </div>
+      <div class="pane-reading-layout">
+        <div class="pane-body" id="rendered-pane"></div>
+        <div class="viewer-settings-layer" id="reading-settings-layer" hidden>
+          <button
+            type="button"
+            class="viewer-settings-scrim"
+            id="reading-settings-scrim"
+            tabindex="-1"
+            aria-label="Close options"
+          ></button>
+          <aside
+            class="viewer-settings"
+            id="reading-settings"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reading-settings-title"
+          >
+            <div class="viewer-settings-header">
+              <h2 class="viewer-settings-title" id="reading-settings-title">Options</h2>
+              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close options">
+                ×
+              </button>
+            </div>
+            <div class="viewer-settings-body">
+              <div class="settings-option settings-option-primary settings-option-heading" id="reading-layers-label">Layers</div>
+              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-layers-label">
+                <label class="settings-option settings-option-sub" id="show-reading-furniture-label">
+                  <input type="checkbox" id="show-reading-furniture" checked>
+                  <span>Furniture</span>
+                </label>
+                <label class="settings-option settings-option-sub" id="show-reading-background-label">
+                  <input type="checkbox" id="show-reading-background" checked>
+                  <span>Background</span>
+                </label>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
     </section>
   </main>
 

@@ -293,6 +293,10 @@ label.file-btn input {
   justify-content: space-between;
 }
 
+.pane-reading-header {
+  justify-content: space-between;
+}
+
 .pane-page-controls {
   display: flex;
   align-items: center;
@@ -385,7 +389,8 @@ label.file-btn input {
   background: color-mix(in srgb, var(--accent) 10%, var(--panel));
 }
 
-.pane-page-layout {
+.pane-page-layout,
+.pane-reading-layout {
   position: relative;
   flex: 1;
   min-height: 0;
@@ -394,7 +399,8 @@ label.file-btn input {
   flex-direction: column;
 }
 
-.pane-page-layout > .pane-body {
+.pane-page-layout > .pane-body,
+.pane-reading-layout > .pane-body {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -495,6 +501,10 @@ label.file-btn input {
 
 .settings-option-primary {
   font-weight: 600;
+}
+
+.settings-option-heading {
+  cursor: default;
 }
 
 .settings-subgroup {
@@ -981,6 +991,27 @@ pre.markup {
 
 .overlay rect.bbox.related:not(.selected) {
   fill: color-mix(in srgb, var(--kind-stroke, var(--accent)) 30%, transparent) !important;
+}
+
+.overlay rect.bbox.layer-furniture,
+.overlay rect.bbox.layer-background {
+  fill: url(#layer-hatch) !important;
+  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);
+}
+
+.overlay .layer-hatch-stripe {
+  fill: var(--muted);
+  fill-opacity: 0.06;
+}
+
+.overlay rect.bbox.layer-furniture.selected,
+.overlay rect.bbox.layer-background.selected {
+  fill: color-mix(in srgb, var(--kind-stroke, var(--accent)) 22%, transparent) !important;
+}
+
+.overlay rect.bbox.layer-furniture.related:not(.selected),
+.overlay rect.bbox.layer-background.related:not(.selected) {
+  fill: color-mix(in srgb, var(--kind-stroke, var(--accent)) 18%, transparent) !important;
 }
 
 /* text */
@@ -1520,7 +1551,34 @@ pre.markup {
   border-top: 1px solid var(--border);
 }
 
-.rendered-footnote {
+.rendered-doc:not(.show-reading-furniture) .rendered-el[data-doclang-layer="furniture"] {
+  display: none;
+}
+
+.rendered-doc:not(.show-reading-background) .rendered-el[data-doclang-layer="background"] {
+  display: none;
+}
+
+.rendered-el[data-doclang-layer="furniture"],
+.rendered-el[data-doclang-layer="background"] {
+  position: relative;
+}
+
+.rendered-el[data-doclang-layer="furniture"]::before,
+.rendered-el[data-doclang-layer="background"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 10px,
+    color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px
+  );
+}
+
+.rendered-el.rendered-footnote > aside {
   font-size: 0.875rem;
   color: var(--muted);
   border-left: 2px solid var(--border);
