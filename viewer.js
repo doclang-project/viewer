@@ -310,6 +310,7 @@ let pagePaneResizeObserver = null;
 /** @type {string | null} */
 let selectedElementId = null;
 let showAllBboxes = true;
+let showLayoutBadges = true;
 let showCaptionLinks = false;
 let showPictureContents = false;
 let showTableContents = false;
@@ -335,6 +336,8 @@ const els = {
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
+  showLayoutBadges: document.getElementById("show-layout-badges"),
+  showLayoutBadgesLabel: document.getElementById("show-layout-badges-label"),
   settingsToggle: document.getElementById("btn-settings-toggle"),
   settingsLayer: document.getElementById("viewer-settings-layer"),
   settingsScrim: document.getElementById("viewer-settings-scrim"),
@@ -387,6 +390,12 @@ els.btnNext.addEventListener("click", () => goToPage(state.currentPage + 1));
 els.showAllBboxes.addEventListener("change", () => {
   showAllBboxes = els.showAllBboxes.checked;
   syncLayoutSubtoggles();
+  const img = els.pagePane.querySelector(".page-view img");
+  if (img) syncOverlayBadges(img);
+  applyBboxVisibility();
+});
+els.showLayoutBadges.addEventListener("change", () => {
+  showLayoutBadges = els.showLayoutBadges.checked;
   const img = els.pagePane.querySelector(".page-view img");
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
@@ -1154,6 +1163,7 @@ function setSettingsSidebarOpen(open) {
 function syncLayoutSubtoggles() {
   const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
   for (const label of [
+    els.showLayoutBadgesLabel,
     els.showPictureContentsLabel,
     els.showTableContentsLabel,
     els.showFragmentLinksLabel,
@@ -1479,17 +1489,22 @@ function syncOverlayBadges(img) {
 
   for (const b of boxes) {
     const { x, y } = boxPixelRect(b, img);
-    const tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
-    appendOverlayBadge(svg, x, y, b.tag, {
-      extraClass: `element-badge ${kindClassForTag(b.kind)}`,
-      elementId: b.elementId,
-    });
+    let tagLayout = { width: 0 };
+    if (showAllBboxes && showLayoutBadges) {
+      tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
+      appendOverlayBadge(svg, x, y, b.tag, {
+        extraClass: `element-badge ${kindClassForTag(b.kind)}`,
+        elementId: b.elementId,
+      });
+    }
 
     const step = readingOrderByElementId.get(b.elementId);
     if (step) {
       const orderText = String(step.order);
       const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
-      const orderAnchorX = x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2;
+      const orderAnchorX = showAllBboxes && showLayoutBadges
+        ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2
+        : x;
       appendOverlayBadge(svg, orderAnchorX, y, orderText, {
         extraClass: "reading-order-badge",
         elementId: b.elementId,
@@ -2746,7 +2761,7 @@ function applyBboxVisibility() {
 
   const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set();
 
-  for (const el of els.pagePane.querySelectorAll(".bbox, .element-badge")) {
+  for (const el of els.pagePane.querySelectorAll(".bbox")) {
     el.classList.remove("related");
     const elementId = el.getAttribute("data-element-id");
     const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
@@ -2755,7 +2770,7 @@ function applyBboxVisibility() {
         el.classList.add("bbox-hidden");
       } else {
         el.classList.remove("bbox-hidden");
-        if (peerIds.has(elementId) && el.classList.contains("bbox")) {
+        if (peerIds.has(elementId)) {
           el.classList.add("related");
         }
       }
@@ -2765,9 +2780,23 @@ function applyBboxVisibility() {
       el.classList.remove("bbox-hidden");
     } else if (peerIds.has(elementId)) {
       el.classList.remove("bbox-hidden");
-      if (el.classList.contains("bbox")) el.classList.add("related");
+      el.classList.add("related");
     } else {
       el.classList.add("bbox-hidden");
+    }
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".element-badge")) {
+    const elementId = el.getAttribute("data-element-id");
+    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
+    if (!showAllBboxes || !showLayoutBadges) {
+      el.classList.add("bbox-hidden");
+      continue;
+    }
+    if (isContentsOptionHidden(elementId, clickVisible)) {
+      el.classList.add("bbox-hidden");
+    } else {
+      el.classList.remove("bbox-hidden");
     }
   }
 
