@@ -847,6 +847,73 @@ pre.markup {
   color: var(--xml-attr-value);
 }
 
+.xml-attr-value-truncatable {
+  display: inline;
+}
+
+.xml-attr-value-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin: 0 0 0 0.35em;
+  padding: 0.08em 0.45em 0.08em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--placeholder-bg);
+  color: var(--muted);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.xml-attr-value-chip::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 0.28em solid currentColor;
+  border-left: 0.22em solid transparent;
+  border-right: 0.22em solid transparent;
+  opacity: 0.75;
+  transition: transform 0.12s ease;
+}
+
+.xml-attr-value-chip[aria-expanded="true"]::after {
+  transform: rotate(180deg);
+}
+
+.xml-attr-value-chip:hover,
+.xml-attr-value-chip[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
+}
+
+.markup-embedded-uri-panel {
+  cursor: text;
+}
+
+.markup-embedded-uri-panel:hover {
+  background: transparent;
+}
+
+.markup-embedded-uri-panel-body {
+  margin: 0.1rem 0 0.25rem;
+  padding: 0.45rem 0.6rem;
+  max-height: 8rem;
+  overflow: auto;
+  color: var(--xml-attr-value);
+  word-break: break-all;
+  background: var(--placeholder-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  user-select: text;
+}
+
 .xml-text {
   color: var(--xml-text);
 }

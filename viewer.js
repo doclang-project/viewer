@@ -13,6 +13,7 @@ const NO_MARKUP = "(No markup to be shown.)";
 const NO_IMAGE = "(No page image available.)";
 const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
 const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
+const LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
 const HEAD_TAGS = new Set([
   "label", "thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom",
 ]);
@@ -83,12 +84,114 @@ function createMarkupLineRow(depth, { foldToggle = false } = {}) {
   return { line, content: body };
 }
 
+function isTruncatableEmbeddedImageUri(value) {
+  if (!value || value.length <= LONG_EMBEDDED_URI_PREVIEW_LENGTH) return false;
+  return /^(data:image\/|blob:)/i.test(value);
+}
+
+function formatCompactByteSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) {
+    const kb = bytes / 1024;
+    return kb < 10 ? `${kb.toFixed(1)} KB` : `${Math.round(kb)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatEmbeddedUriSizeLabel(value) {
+  if (/^blob:/i.test(value)) {
+    return value.length >= 1024 ? `${Math.round(value.length / 1024)} KB URL` : `${value.length} char URL`;
+  }
+  const comma = value.indexOf(",");
+  if (comma === -1) return "embedded data";
+  const header = value.slice(0, comma);
+  const payload = value.slice(comma + 1).replace(/\s/g, "");
+  const mime = /^data:([^;,]+)/i.exec(header)?.[1] ?? "";
+  const shortMime = mime.startsWith("image/") ? mime.slice(6) : (mime || "data");
+  const bytes = Math.floor(payload.replace(/=+$/, "").length * 3 / 4);
+  return `${shortMime} · ${formatCompactByteSize(bytes)}`;
+}
+
+function createEmbeddedUriContinuationPanel(value, depth) {
+  const { line, content } = createMarkupLineRow(depth);
+  line.className = "markup-line markup-embedded-uri-panel";
+  const body = document.createElement("div");
+  body.className = "markup-embedded-uri-panel-body";
+  body.textContent = value;
+  body.addEventListener("click", (e) => e.stopPropagation());
+  content.appendChild(body);
+  return line;
+}
+
+function createTruncatableMarkupAttrValue(value) {
+  const wrapper = document.createElement("span");
+  wrapper.className = "xml-attr-value xml-attr-value-truncatable";
+  wrapper.dataset.fullValue = value;
+
+  const text = document.createElement("span");
+  text.className = "xml-attr-value-text";
+  text.textContent = value.slice(0, LONG_EMBEDDED_URI_PREVIEW_LENGTH);
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "xml-attr-value-chip";
+  const sizeLabel = formatEmbeddedUriSizeLabel(value);
+  toggle.dataset.collapsedLabel = sizeLabel;
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-label", `Show full value (${sizeLabel})`);
+
+  const label = document.createElement("span");
+  label.className = "xml-attr-value-chip-label";
+  label.textContent = sizeLabel;
+  toggle.appendChild(label);
+
+  wrapper.append(text, toggle);
+  return wrapper;
+}
+
+function appendMarkupAttrValue(line, value) {
+  if (isTruncatableEmbeddedImageUri(value)) {
+    line.appendChild(createTruncatableMarkupAttrValue(value));
+  } else {
+    line.appendChild(xmlSpan("xml-attr-value", value));
+  }
+}
+
+function toggleTruncatableMarkupAttrValue(toggle) {
+  const wrapper = toggle.closest(".xml-attr-value-truncatable");
+  if (!wrapper) return;
+
+  const markupLine = wrapper.closest(".markup-line");
+  const fullValue = wrapper.dataset.fullValue ?? "";
+  const label = toggle.querySelector(".xml-attr-value-chip-label");
+  const collapsedLabel = toggle.dataset.collapsedLabel ?? label?.textContent ?? "";
+  const expanded = toggle.getAttribute("aria-expanded") === "true";
+
+  if (expanded) {
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", `Show full value (${collapsedLabel})`);
+    if (label) label.textContent = collapsedLabel;
+    markupLine?.nextElementSibling?.classList.contains("markup-embedded-uri-panel")
+      && markupLine.nextElementSibling.remove();
+    return;
+  }
+
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.setAttribute("aria-label", "Hide full value");
+  if (label) label.textContent = "hide";
+  if (!markupLine || markupLine.nextElementSibling?.classList.contains("markup-embedded-uri-panel")) {
+    return;
+  }
+  const depth = Number(markupLine.style.getPropertyValue("--markup-depth") || 0);
+  markupLine.insertAdjacentElement("afterend", createEmbeddedUriContinuationPanel(fullValue, depth));
+}
+
 function appendMarkupAttributes(line, attributes) {
   for (const { name, value } of attributes) {
     line.appendChild(document.createTextNode(" "));
     line.appendChild(xmlSpan("xml-attr-name", name));
     line.appendChild(xmlSpan("xml-bracket", '="'));
-    line.appendChild(xmlSpan("xml-attr-value", value));
+    appendMarkupAttrValue(line, value);
     line.appendChild(xmlSpan("xml-bracket", '"'));
   }
 }
@@ -2809,6 +2912,12 @@ function buildMarkupView(segment, elementIds) {
     }
   }
   root.addEventListener("click", (e) => {
+    const attrToggle = e.target.closest(".xml-attr-value-chip");
+    if (attrToggle) {
+      e.stopPropagation();
+      toggleTruncatableMarkupAttrValue(attrToggle);
+      return;
+    }
     const toggle = e.target.closest(".markup-fold-toggle");
     if (toggle) {
       e.stopPropagation();
