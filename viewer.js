@@ -1274,7 +1274,6 @@ function syncLayoutSubtoggles() {
     els.showCaptionLinksLabel,
     els.showXrefLinksLabel,
     els.showReadingOrderLabel,
-    els.showAllBboxes?.closest("label"),
   ]) {
     if (!label) continue;
     label.classList.toggle("settings-option-disabled", !layoutEnabled);
@@ -3548,10 +3547,14 @@ function renderBlockElement(el, elementIds, ctx) {
     case "picture":
       return renderPicture(el, elementIds);
     case "group": {
-      const div = document.createElement("div");
-      div.className = "rendered-group";
-      appendRenderedBodyBlocks(div, el, elementIds);
-      return wrapRendered(el, div, elementId);
+      const figure = document.createElement("figure");
+      figure.className = "rendered-group";
+      appendRenderedBodyBlocks(figure, el, elementIds);
+      const captionEl = readCaptionElement(el);
+      if (captionEl) {
+        figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
+      }
+      return wrapRendered(el, figure, elementId);
     }
     case "field_region": {
       const div = document.createElement("div");
