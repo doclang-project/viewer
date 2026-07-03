@@ -28,6 +28,7 @@ const CELL_SPAN_TAGS = new Set(["lcel", "ucel", "xcel"]);
 const OTSL_CONTAINER_TAGS = new Set(["table", "index", "tabular"]);
 const RENDER_BLOCK_TAGS = new Set([
   "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "list", "code", "formula", "picture", "group",
+  "field_region", "field_item",
   "table", "index", "tabular",
 ]);
 const RENDER_FORMAT_TAGS = new Set([
@@ -2414,7 +2415,7 @@ function elementLabel(el) {
 }
 
 function elementKindKey(kind) {
-  if (kind.startsWith("field_") || kind === "key" || kind === "value") return "field";
+  if (kind.startsWith("field_") || kind === "key" || kind === "value" || kind === "hint") return "field";
   if (kind === "tabular") return "table";
   const known = new Set([
     "text", "heading", "list", "ldiv", "table", "index", "formula", "code", "picture",
@@ -3552,6 +3553,18 @@ function renderBlockElement(el, elementIds, ctx) {
       appendRenderedBodyBlocks(div, el, elementIds);
       return wrapRendered(el, div, elementId);
     }
+    case "field_region": {
+      const div = document.createElement("div");
+      div.className = "rendered-field-region";
+      appendRenderedBodyBlocks(div, el, elementIds);
+      return wrapRendered(el, div, elementId);
+    }
+    case "field_item": {
+      const div = document.createElement("div");
+      div.className = "rendered-field-item";
+      appendRenderedBodyBlocks(div, el, elementIds);
+      return wrapRendered(el, div, elementId);
+    }
     default:
       return renderUnsupported(el, elementIds);
   }
@@ -3625,6 +3638,63 @@ function renderMarkerElement(el, elementIds, ctx) {
   return marker;
 }
 
+function renderCheckboxElement(el, elementIds) {
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.disabled = true;
+  cb.checked = (el.getAttribute("class") ?? "unselected") === "selected";
+  cb.className = "rendered-checkbox";
+
+  const wrap = document.createElement("span");
+  wrap.className = "rendered-checkbox-wrap rendered-el";
+  const elementId = elementIds.get(el);
+  if (elementId) wrap.setAttribute("data-element-id", elementId);
+  applyElementLayerAttr(el, wrap);
+  wrap.appendChild(cb);
+  return wrap;
+}
+
+function renderFieldKeyElement(el, elementIds, ctx) {
+  const node = document.createElement("span");
+  node.className = "rendered-field-key rendered-el";
+  const elementId = elementIds.get(el);
+  if (elementId) node.setAttribute("data-element-id", elementId);
+  applyElementLayerAttr(el, node);
+  appendRenderedBody(node, el, elementIds, { ...ctx, inline: true });
+  return node;
+}
+
+function renderFieldValueElement(el, elementIds, ctx) {
+  const valueClass = el.getAttribute("class") ?? "read_only";
+  const node = document.createElement("span");
+  node.className = `rendered-field-value rendered-field-value-${valueClass} rendered-el`;
+  const elementId = elementIds.get(el);
+  if (elementId) node.setAttribute("data-element-id", elementId);
+  applyElementLayerAttr(el, node);
+  appendRenderedBody(node, el, elementIds, { ...ctx, inline: true });
+  if (
+    valueClass === "fillable"
+    && !node.textContent.trim()
+    && !node.querySelector(".rendered-checkbox-wrap, img, .rendered-marker")
+  ) {
+    const slot = document.createElement("span");
+    slot.className = "rendered-field-fillable-slot";
+    slot.setAttribute("aria-hidden", "true");
+    node.appendChild(slot);
+  }
+  return node;
+}
+
+function renderFieldHintElement(el, elementIds, ctx) {
+  const node = document.createElement("span");
+  node.className = "rendered-field-hint rendered-el";
+  const elementId = elementIds.get(el);
+  if (elementId) node.setAttribute("data-element-id", elementId);
+  applyElementLayerAttr(el, node);
+  appendRenderedBody(node, el, elementIds, { ...ctx, inline: true });
+  return node;
+}
+
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
     let text = node.textContent;
@@ -3664,7 +3734,27 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
     return;
   }
 
-  if (tag === "checkbox" || tag === "ldiv") return;
+  if (tag === "checkbox") {
+    parent.appendChild(renderCheckboxElement(node, elementIds));
+    return;
+  }
+
+  if (tag === "key") {
+    parent.appendChild(renderFieldKeyElement(node, elementIds, ctx));
+    return;
+  }
+
+  if (tag === "value") {
+    parent.appendChild(renderFieldValueElement(node, elementIds, ctx));
+    return;
+  }
+
+  if (tag === "hint") {
+    parent.appendChild(renderFieldHintElement(node, elementIds, ctx));
+    return;
+  }
+
+  if (tag === "ldiv") return;
   if (isCellToken(tag) || tag === "src" || tag === "tabular") return;
 
   appendRenderedBody(parent, node, elementIds, ctx);
@@ -3857,11 +3947,7 @@ function appendListItemsFromElement(list, el, elementIds) {
       if (childTag === "marker") {
         li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
       } else if (childTag === "checkbox") {
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.disabled = true;
-        cb.checked = child.getAttribute("class") === "selected";
-        li.appendChild(cb);
+        li.appendChild(renderCheckboxElement(child, elementIds));
       }
     }
 

@@ -1597,6 +1597,61 @@ pre.markup {
   border-radius: 0.375rem;
 }
 
+.rendered-field-region {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--kind-field) 6%, transparent);
+}
+
+.rendered-field-region > .rendered-field-heading:first-child,
+.rendered-field-region > .rendered-el.rendered-field_heading > .rendered-field-heading:first-child {
+  margin-top: 0;
+}
+
+.rendered-field-item {
+  margin: 0.5rem 0;
+}
+
+.rendered-field-item > .rendered-el.rendered-field-key,
+.rendered-field-key {
+  font-weight: 600;
+}
+
+.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,
+.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {
+  margin-top: 0.15rem;
+}
+
+.rendered-field-value-fillable .rendered-field-fillable-slot {
+  display: inline-block;
+  min-width: 6rem;
+  min-height: 1.25em;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 55%, transparent);
+  vertical-align: bottom;
+}
+
+.rendered-field-hint {
+  font-size: 0.85em;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.rendered-field-heading {
+  color: var(--text);
+}
+
+.rendered-checkbox {
+  margin: 0 0.25rem 0 0;
+  vertical-align: middle;
+  accent-color: var(--kind-field);
+}
+
+.rendered-checkbox-wrap {
+  display: inline;
+}
+
 @media (max-width: 1200px) {
   body.viewer-loaded #main {
     grid-template-columns: 1fr;
