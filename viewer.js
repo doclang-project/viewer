@@ -345,6 +345,8 @@ let toolbarOptionsOpen = false;
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
 let layoutStackQuery = null;
+/** @type {HTMLElement | null} */
+let pageIndicatorMeasurer = null;
 
 const els = {
   openFileBtn: document.getElementById("open-file-btn"),
@@ -432,7 +434,7 @@ els.showAllBboxes.addEventListener("change", () => {
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
-els.showLayoutBadges.addEventListener("change", () => {
+els.showLayoutBadges?.addEventListener("change", () => {
   showLayoutBadges = els.showLayoutBadges.checked;
   const img = els.pagePane.querySelector(".page-view img");
   if (img) syncOverlayBadges(img);
@@ -1669,8 +1671,6 @@ function goToPage(n) {
   renderPage(page);
 }
 
-let pageIndicatorMeasurer = null;
-
 function pageIndicatorTextWidth(text) {
   if (!pageIndicatorMeasurer) {
     pageIndicatorMeasurer = document.createElement("span");
@@ -1692,6 +1692,7 @@ function pageIndicatorTextWidth(text) {
 }
 
 function setPageIndicator(pageNum, pageCount) {
+  if (!els.pageIndicator) return;
   els.pageIndicator.textContent = `Page ${pageNum} of ${pageCount}`;
   const widest = `Page ${pageCount} of ${pageCount}`;
   els.pageIndicator.style.minWidth = `${pageIndicatorTextWidth(widest)}px`;
