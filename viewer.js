@@ -303,6 +303,12 @@ const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
 const PAGE_ZOOM_DEFAULT = 100;
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
+const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
+const PANE_MIN_RATIO = 0.12;
+const PANE_KEYS = ["page", "markup", "reading"];
+const DEFAULT_PANE_RATIOS = [1 / 3, 1 / 3, 1 / 3];
+const DEFAULT_USER_PANE_VISIBLE = { page: true, markup: true, reading: true };
+const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 
 /** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
 let state = null;
@@ -330,6 +336,15 @@ let pagePanDrag = null;
 let pagePanSuppressClick = false;
 /** @type {{ paneW: number, paneH: number, imgW: number, imgH: number, fitScale: number } | null} */
 let pageLayoutCache = null;
+/** @type {{ page: boolean, markup: boolean, reading: boolean }} */
+let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
+/** @type {number[]} */
+let paneRatios = [...DEFAULT_PANE_RATIOS];
+let toolbarOptionsOpen = false;
+/** @type {{ splitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
+let paneDrag = null;
+/** @type {MediaQueryList | null} */
+let layoutStackQuery = null;
 
 const els = {
   openFileBtn: document.getElementById("open-file-btn"),
@@ -378,6 +393,18 @@ const els = {
   markupPane: document.getElementById("markup-pane"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
+  panePageView: document.querySelector(".pane-page-view"),
+  paneMarkup: document.querySelector(".pane-markup"),
+  paneReading: document.querySelector(".pane-reading"),
+  splitter0: document.getElementById("splitter-0"),
+  splitter1: document.getElementById("splitter-1"),
+  toolbarOptionsBtn: document.getElementById("btn-toolbar-options"),
+  toolbarOptionsPanel: document.getElementById("toolbar-options-panel"),
+  togglePagePane: document.getElementById("toggle-page-pane"),
+  toggleMarkupPane: document.getElementById("toggle-markup-pane"),
+  toggleReadingPane: document.getElementById("toggle-reading-pane"),
+  togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
+  resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
 };
 
 document.getElementById("btn-demo").addEventListener("click", loadDemo);
@@ -454,7 +481,8 @@ els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen
 els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (pageSettingsOpen) setPageSettingsOpen(false);
+  if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
+  else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
 });
 els.showReadingFurniture?.addEventListener("change", () => {
@@ -465,6 +493,10 @@ els.showReadingBackground?.addEventListener("change", () => {
   showReadingBackground = els.showReadingBackground.checked;
   syncReadingLayerVisibility();
 });
+loadLayoutPrefs();
+initToolbarOptions();
+initPaneSplitters();
+initLayoutStackListener();
 initFileTypeHints();
 initCursorHints();
 initBboxHints();
@@ -1162,10 +1194,9 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
   };
   resetPageLayoutCache();
 
-  setPageViewVisible(hasPageView);
-
   setDocLabel(label);
   setDocumentOpen(true, { markupOnly });
+  setPageViewVisible(hasPageView);
   renderPage(1);
 }
 
@@ -1173,7 +1204,8 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
   els.pageNav.hidden = !open || markupOnly;
-  if (els.readingSettingsToggle) els.readingSettingsToggle.hidden = !open;
+  syncToolbarPaneCheckboxes();
+  applyPaneLayout();
 }
 
 function applyReadingLayerClasses(root) {
@@ -1234,22 +1266,31 @@ function resetViewer() {
   setDocumentOpen(false);
   document.body.classList.remove("has-page-view");
   closeAllSettings();
+  setToolbarOptionsOpen(false);
   els.markupPane.innerHTML = "";
   els.renderedPane.innerHTML = "";
   els.pagePane.innerHTML = "";
   setPageIndicator(1, 1);
   els.btnPrev.disabled = true;
   els.btnNext.disabled = true;
+  applyPaneLayout();
 }
 
 function setPageViewVisible(visible) {
   document.body.classList.toggle("has-page-view", visible);
-  if (els.settingsToggle) els.settingsToggle.hidden = !visible;
-  if (els.pageZoomLabel) els.pageZoomLabel.hidden = !visible;
-  if (visible) updatePageZoomResetButton();
+  syncPagePaneControls();
+  syncToolbarPaneCheckboxes();
   if (!visible) setPageSettingsOpen(false);
-  els.pagePane.tabIndex = visible ? 0 : -1;
+  applyPaneLayout();
   syncLayoutSubtoggles();
+}
+
+function syncPagePaneControls() {
+  const pageVisible = isPaneVisible("page");
+  if (els.settingsToggle) els.settingsToggle.hidden = !pageVisible;
+  if (els.pageZoomLabel) els.pageZoomLabel.hidden = !pageVisible;
+  if (pageVisible) updatePageZoomResetButton();
+  els.pagePane.tabIndex = pageVisible ? 0 : -1;
 }
 
 function setPageSettingsOpen(open) {
@@ -1288,6 +1329,336 @@ function syncLayoutSubtoggles() {
     const input = label.querySelector("input");
     if (input) input.disabled = !readingOrderEnabled;
   }
+}
+
+function paneDef(key) {
+  const defs = {
+    page: { key: "page", el: els.panePageView, canShow: () => Boolean(state?.hasPageView) },
+    markup: { key: "markup", el: els.paneMarkup, canShow: () => Boolean(state) },
+    reading: { key: "reading", el: els.paneReading, canShow: () => Boolean(state) },
+  };
+  return defs[key];
+}
+
+function isPaneAvailable(key) {
+  const def = paneDef(key);
+  return def?.canShow() ?? false;
+}
+
+function isPaneVisible(key) {
+  if (!isPaneAvailable(key)) return false;
+  return Boolean(userPaneVisible[key]);
+}
+
+function visiblePaneKeys() {
+  return PANE_KEYS.filter((key) => isPaneVisible(key));
+}
+
+function paneRatioIndex(key) {
+  return PANE_KEYS.indexOf(key);
+}
+
+function normalizePaneRatios() {
+  const sum = paneRatios.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    paneRatios = [...DEFAULT_PANE_RATIOS];
+    return;
+  }
+  paneRatios = paneRatios.map((r) => r / sum);
+}
+
+function visiblePaneRatios(keys) {
+  const weights = keys.map((key) => paneRatios[paneRatioIndex(key)]);
+  const sum = weights.reduce((a, b) => a + b, 0) || keys.length;
+  return weights.map((w) => w / sum);
+}
+
+function loadLayoutPrefs() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data?.visible && typeof data.visible === "object") {
+      for (const key of PANE_KEYS) {
+        if (typeof data.visible[key] === "boolean") userPaneVisible[key] = data.visible[key];
+      }
+    }
+    if (Array.isArray(data?.ratios) && data.ratios.length === 3 && data.ratios.every((n) => typeof n === "number" && n > 0)) {
+      paneRatios = [...data.ratios];
+      normalizePaneRatios();
+    }
+  } catch {
+    /* ignore invalid stored layout */
+  }
+}
+
+function saveLayoutPrefs() {
+  try {
+    localStorage.setItem(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios }),
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function resetPaneLayout() {
+  userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
+  paneRatios = [...DEFAULT_PANE_RATIOS];
+  setReadingSettingsOpen(false);
+  syncPagePaneControls();
+  syncToolbarPaneCheckboxes();
+  saveLayoutPrefs();
+  applyPaneLayout();
+}
+
+function isLayoutStacked() {
+  return Boolean(layoutStackQuery?.matches);
+}
+
+function initLayoutStackListener() {
+  layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
+  const onChange = () => applyPaneLayout();
+  layoutStackQuery.addEventListener("change", onChange);
+  onChange();
+}
+
+function setToolbarOptionsOpen(open) {
+  toolbarOptionsOpen = open;
+  if (els.toolbarOptionsPanel) els.toolbarOptionsPanel.hidden = !open;
+  if (els.toolbarOptionsBtn) els.toolbarOptionsBtn.setAttribute("aria-expanded", String(open));
+}
+
+function syncToolbarPaneCheckboxes() {
+  if (els.togglePagePane) {
+    const available = isPaneAvailable("page");
+    els.togglePagePane.checked = available && userPaneVisible.page;
+    els.togglePagePane.disabled = !available;
+  }
+  if (els.togglePagePaneLabel) {
+    els.togglePagePaneLabel.classList.toggle("toolbar-options-item-disabled", !isPaneAvailable("page"));
+  }
+  if (els.toggleMarkupPane) {
+    els.toggleMarkupPane.checked = userPaneVisible.markup;
+    els.toggleMarkupPane.disabled = !state;
+  }
+  if (els.toggleReadingPane) {
+    els.toggleReadingPane.checked = userPaneVisible.reading;
+    els.toggleReadingPane.disabled = !state;
+  }
+  for (const label of [
+    els.togglePagePaneLabel,
+    document.getElementById("toggle-markup-pane-label"),
+    document.getElementById("toggle-reading-pane-label"),
+  ]) {
+    if (!label) continue;
+    const input = label.querySelector("input");
+    label.classList.toggle("toolbar-options-item-disabled", Boolean(input?.disabled));
+  }
+  if (els.resetPaneLayoutBtn) els.resetPaneLayoutBtn.disabled = !state;
+}
+
+function setUserPaneVisible(key, visible) {
+  userPaneVisible[key] = visible;
+  if (key === "page") syncPagePaneControls();
+  if (key === "reading" && !visible) setReadingSettingsOpen(false);
+  syncToolbarPaneCheckboxes();
+  saveLayoutPrefs();
+  applyPaneLayout();
+}
+
+function applyPaneLayout() {
+  if (!els.main) return;
+
+  const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
+  els.main.classList.toggle("layout-stacked", stacked);
+
+  for (const key of PANE_KEYS) {
+    const def = paneDef(key);
+    if (!def?.el) continue;
+    def.el.hidden = !isPaneVisible(key);
+    def.el.classList.remove("pane-layout-last");
+  }
+
+  if (!document.body.classList.contains("viewer-loaded")) {
+    els.splitter0.hidden = true;
+    els.splitter1.hidden = true;
+    els.main.style.gridTemplateColumns = "";
+    return;
+  }
+
+  let keys = visiblePaneKeys();
+  if (!keys.length) {
+    userPaneVisible.markup = true;
+    keys = visiblePaneKeys();
+  }
+
+  const lastKey = keys[keys.length - 1];
+  paneDef(lastKey)?.el?.classList.add("pane-layout-last");
+
+  if (stacked) {
+    els.main.style.gridTemplateColumns = "1fr";
+    let row = 1;
+    for (const key of keys) {
+      const def = paneDef(key);
+      if (!def?.el) continue;
+      def.el.style.gridColumn = "";
+      def.el.style.gridRow = String(row++);
+      def.el.hidden = false;
+    }
+    els.splitter0.hidden = true;
+    els.splitter1.hidden = true;
+    refreshPageViewLayout();
+    if (els.readingSettingsToggle) {
+      els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
+    }
+    return;
+  }
+
+  const ratios = visiblePaneRatios(keys);
+  const cols = [];
+  keys.forEach((key, index) => {
+    cols.push(`minmax(0, ${ratios[index]}fr)`);
+    if (index < keys.length - 1) cols.push("1px");
+  });
+  els.main.style.gridTemplateColumns = cols.join(" ");
+
+  let col = 1;
+  const splitters = [els.splitter0, els.splitter1];
+  splitters.forEach((splitter) => {
+    if (splitter) splitter.hidden = true;
+  });
+
+  keys.forEach((key, index) => {
+    const def = paneDef(key);
+    if (!def?.el) return;
+    def.el.style.gridColumn = String(col);
+    def.el.style.gridRow = "";
+    col += 1;
+    if (index < keys.length - 1) {
+      const splitter = splitters[index];
+      if (splitter) {
+        splitter.hidden = false;
+        splitter.style.gridColumn = String(col);
+        splitter.style.gridRow = "";
+      }
+      col += 1;
+    }
+  });
+
+  refreshPageViewLayout();
+  if (els.readingSettingsToggle) {
+    els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
+  }
+}
+
+function initToolbarOptions() {
+  if (!els.toolbarOptionsBtn || !els.toolbarOptionsPanel) return;
+
+  els.toolbarOptionsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setToolbarOptionsOpen(!toolbarOptionsOpen);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!toolbarOptionsOpen) return;
+    if (e.target instanceof Node && els.toolbarOptionsPanel.contains(e.target)) return;
+    if (e.target instanceof Node && els.toolbarOptionsBtn.contains(e.target)) return;
+    setToolbarOptionsOpen(false);
+  });
+
+  const onToggle = (key, input) => {
+    input?.addEventListener("change", () => {
+      if (!state) return;
+      const nextKeys = PANE_KEYS.filter((k) => (k === key ? input.checked : userPaneVisible[k] && isPaneAvailable(k)));
+      if (!nextKeys.length) {
+        input.checked = true;
+        return;
+      }
+      setUserPaneVisible(key, input.checked);
+    });
+  };
+
+  onToggle("page", els.togglePagePane);
+  onToggle("markup", els.toggleMarkupPane);
+  onToggle("reading", els.toggleReadingPane);
+  els.resetPaneLayoutBtn?.addEventListener("click", () => {
+    if (!state) return;
+    resetPaneLayout();
+  });
+  syncToolbarPaneCheckboxes();
+}
+
+function initPaneSplitters() {
+  for (const [index, splitter] of [els.splitter0, els.splitter1].entries()) {
+    if (!splitter) continue;
+    splitter.addEventListener("pointerdown", (e) => startPaneDrag(e, index));
+  }
+  window.addEventListener("pointermove", onPaneDragMove);
+  window.addEventListener("pointerup", endPaneDrag);
+  window.addEventListener("pointercancel", endPaneDrag);
+}
+
+function startPaneDrag(e, splitterIndex) {
+  if (e.button !== 0 || isLayoutStacked() || !document.body.classList.contains("viewer-loaded")) return;
+
+  const keys = visiblePaneKeys();
+  if (splitterIndex >= keys.length - 1) return;
+
+  const leftKey = keys[splitterIndex];
+  const rightKey = keys[splitterIndex + 1];
+  const leftIndex = paneRatioIndex(leftKey);
+  const rightIndex = paneRatioIndex(rightKey);
+
+  paneDrag = {
+    splitterIndex,
+    leftKey,
+    rightKey,
+    startX: e.clientX,
+    leftStart: paneRatios[leftIndex],
+    rightStart: paneRatios[rightIndex],
+    pointerId: e.pointerId,
+  };
+
+  e.preventDefault();
+  e.currentTarget.setPointerCapture(e.pointerId);
+  e.currentTarget.classList.add("is-dragging");
+  document.body.classList.add("pane-drag-active");
+}
+
+function onPaneDragMove(e) {
+  if (!paneDrag || e.pointerId !== paneDrag.pointerId || !els.main) return;
+
+  const rect = els.main.getBoundingClientRect();
+  const keys = visiblePaneKeys();
+  const visibleRatios = visiblePaneRatios(keys);
+  const leftVisibleIndex = keys.indexOf(paneDrag.leftKey);
+  const pairTotal = visibleRatios[leftVisibleIndex] + visibleRatios[leftVisibleIndex + 1];
+  const pairPixels = Math.max(rect.width * pairTotal, 1);
+  const deltaRatio = ((e.clientX - paneDrag.startX) / pairPixels) * pairTotal;
+
+  const leftIndex = paneRatioIndex(paneDrag.leftKey);
+  const rightIndex = paneRatioIndex(paneDrag.rightKey);
+  const pairStoredTotal = paneDrag.leftStart + paneDrag.rightStart;
+  let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
+  const min = PANE_MIN_RATIO;
+  const max = pairStoredTotal - min;
+  nextLeft = Math.min(Math.max(nextLeft, min), max);
+  paneRatios[leftIndex] = nextLeft;
+  paneRatios[rightIndex] = pairStoredTotal - nextLeft;
+  normalizePaneRatios();
+  applyPaneLayout();
+}
+
+function endPaneDrag(e) {
+  if (!paneDrag || e.pointerId !== paneDrag.pointerId) return;
+  const splitter = paneDrag.splitterIndex === 0 ? els.splitter0 : els.splitter1;
+  splitter?.classList.remove("is-dragging");
+  if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+  paneDrag = null;
+  document.body.classList.remove("pane-drag-active");
+  saveLayoutPrefs();
 }
 
 function goToPage(n) {

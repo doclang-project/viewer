@@ -29,6 +29,38 @@
       <span class="doc-label" id="doc-label" hidden></span>
     </div>
     <div class="toolbar">
+      <div class="toolbar-options-wrap">
+        <button
+          type="button"
+          class="toolbar-options-btn"
+          id="btn-toolbar-options"
+          aria-expanded="false"
+          aria-controls="toolbar-options-panel"
+          aria-haspopup="true"
+        >
+          Options
+        </button>
+        <div class="toolbar-options-panel" id="toolbar-options-panel" role="menu" hidden>
+          <div class="toolbar-options-heading" role="presentation">Panes</div>
+          <label class="toolbar-options-item" id="toggle-page-pane-label">
+            <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
+            <span>Original page</span>
+          </label>
+          <label class="toolbar-options-item" id="toggle-markup-pane-label">
+            <input type="checkbox" id="toggle-markup-pane" checked role="menuitemcheckbox">
+            <span>DocLang</span>
+          </label>
+          <label class="toolbar-options-item" id="toggle-reading-pane-label">
+            <input type="checkbox" id="toggle-reading-pane" checked role="menuitemcheckbox">
+            <span>Reading view</span>
+          </label>
+          <div class="toolbar-options-divider" role="separator"></div>
+          <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
+            Reset panes
+          </button>
+        </div>
+      </div>
+      <span class="header-divider" aria-hidden="true"></span>
       <span class="toolbar-file-group" id="toolbar-file-group">
         <label class="file-btn" id="open-file-btn">
           Open file
@@ -36,6 +68,7 @@
         </label>
       </span>
       <button type="button" id="btn-demo">Load demo</button>
+      <span class="header-divider" aria-hidden="true"></span>
       <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
     </div>
   </header>
@@ -166,11 +199,29 @@
         </div>
       </div>
     </section>
-    <section class="pane">
+    <div
+      class="pane-splitter"
+      id="splitter-0"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize Original page and DocLang panes"
+      tabindex="0"
+      hidden
+    ></div>
+    <section class="pane pane-markup">
       <div class="pane-header">DocLang</div>
       <div class="pane-body" id="markup-pane"></div>
     </section>
-    <section class="pane">
+    <div
+      class="pane-splitter"
+      id="splitter-1"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize DocLang and Reading view panes"
+      tabindex="0"
+      hidden
+    ></div>
+    <section class="pane pane-reading">
       <div class="pane-header pane-reading-header">
         <span class="pane-header-title">Reading view</span>
         <button
