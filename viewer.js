@@ -409,73 +409,73 @@ const els = {
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
 };
 
-document.getElementById("btn-demo").addEventListener("click", loadDemo);
-document.getElementById("demo-empty-link").addEventListener("click", (e) => {
+document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
+document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   loadDemo();
 });
-document.getElementById("home-link").addEventListener("click", (e) => {
+document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   resetViewer();
 });
-document.getElementById("input-archive").addEventListener("change", (e) => {
+document.getElementById("input-archive")?.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
   if (isMarkupFile(file)) loadFromMarkup(file);
   else loadFromArchive(file);
   e.target.value = "";
 });
-els.btnPrev.addEventListener("click", () => goToPage(state.currentPage - 1));
-els.btnNext.addEventListener("click", () => goToPage(state.currentPage + 1));
-els.showAllBboxes.addEventListener("change", () => {
+els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
+els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
+els.showAllBboxes?.addEventListener("change", () => {
   showAllBboxes = els.showAllBboxes.checked;
   syncLayoutSubtoggles();
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = els.pagePane?.querySelector(".page-view img");
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
 els.showLayoutBadges?.addEventListener("change", () => {
   showLayoutBadges = els.showLayoutBadges.checked;
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = els.pagePane?.querySelector(".page-view img");
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
-els.showCaptionLinks.addEventListener("change", () => {
+els.showCaptionLinks?.addEventListener("change", () => {
   showCaptionLinks = els.showCaptionLinks.checked;
   applyBboxVisibility();
 });
-els.showPictureContents.addEventListener("change", () => {
+els.showPictureContents?.addEventListener("change", () => {
   showPictureContents = els.showPictureContents.checked;
   applyBboxVisibility();
 });
-els.showTableContents.addEventListener("change", () => {
+els.showTableContents?.addEventListener("change", () => {
   showTableContents = els.showTableContents.checked;
   applyBboxVisibility();
 });
-els.showFragmentLinks.addEventListener("change", () => {
+els.showFragmentLinks?.addEventListener("change", () => {
   showFragmentLinks = els.showFragmentLinks.checked;
   applyBboxVisibility();
 });
-els.showXrefLinks.addEventListener("change", () => {
+els.showXrefLinks?.addEventListener("change", () => {
   showXrefLinks = els.showXrefLinks.checked;
   applyBboxVisibility();
 });
-els.showReadingOrder.addEventListener("change", () => {
+els.showReadingOrder?.addEventListener("change", () => {
   showReadingOrder = els.showReadingOrder.checked;
   syncLayoutSubtoggles();
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = els.pagePane?.querySelector(".page-view img");
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
-els.readingOrderArrows.addEventListener("change", () => {
+els.readingOrderArrows?.addEventListener("change", () => {
   showReadingOrderArrows = els.readingOrderArrows.checked;
   applyBboxVisibility();
 });
-els.readingOrderGlobal.addEventListener("change", () => {
+els.readingOrderGlobal?.addEventListener("change", () => {
   readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
   if (state) renderPage(state.currentPage);
 });
-els.settingsToggle.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
+els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
 els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
 els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
@@ -505,7 +505,7 @@ initBboxHints();
 initDragDrop();
 initPageWheelNav();
 initPageViewControls();
-loadDemo();
+if (document.getElementById("btn-demo")) loadDemo();
 
 async function loadDemo() {
   try {
@@ -594,6 +594,8 @@ async function openArchiveFromZipBuffer(buffer, label) {
 }
 
 function initPageWheelNav() {
+  if (!els.pagePane) return;
+
   let pixelAccum = 0;
   let pixelGestureUntil = 0;
   let lastFlipAt = 0;
@@ -662,6 +664,7 @@ function initPageWheelNav() {
     (e) => {
       if (!state?.hasPageView) return;
       const pane = pageViewScrollPane();
+      if (!pane) return;
       const scrollable = pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
       if (scrollable) {
         onScrollPaneWheel(e, pane);
@@ -675,6 +678,7 @@ function initPageWheelNav() {
   );
 
   for (const pane of [els.markupPane, els.renderedPane]) {
+    if (!pane) continue;
     pane.addEventListener("wheel", (e) => onScrollPaneWheel(e, pane), { passive: false });
   }
 
@@ -711,11 +715,13 @@ function initPageWheelNav() {
 }
 
 function pageViewScrollPane() {
+  if (!els.pagePane) return null;
   return els.pagePane.querySelector(".page-view-port") ?? els.pagePane;
 }
 
 function isPagePaneScrollable() {
   const pane = pageViewScrollPane();
+  if (!pane) return false;
   return pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
 }
 
@@ -726,11 +732,14 @@ function canStartPagePan(event) {
 }
 
 function updatePagePanePanCursor() {
+  if (!els.pagePane) return;
   els.pagePane.classList.toggle("can-pan", isPagePaneScrollable() && !pagePanDrag);
 }
 
 function initPageViewControls() {
-  els.pageZoom.addEventListener("input", () => {
+  if (!els.pagePane) return;
+
+  els.pageZoom?.addEventListener("input", () => {
     pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, Number(els.pageZoom.value));
     if (Number(els.pageZoom.value) < PAGE_ZOOM_DEFAULT) {
       els.pageZoom.value = String(pageZoomPercent);
@@ -747,12 +756,14 @@ function initPageViewControls() {
 
   els.pagePane.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || !canStartPagePan(e)) return;
+    const scrollPane = pageViewScrollPane();
+    if (!scrollPane) return;
     pagePanDrag = {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      scrollLeft: pageViewScrollPane().scrollLeft,
-      scrollTop: pageViewScrollPane().scrollTop,
+      scrollLeft: scrollPane.scrollLeft,
+      scrollTop: scrollPane.scrollTop,
       moved: false,
     };
   });
@@ -769,6 +780,7 @@ function initPageViewControls() {
     }
     if (!pagePanDrag.moved) return;
     const scrollPane = pageViewScrollPane();
+    if (!scrollPane) return;
     scrollPane.scrollLeft = pagePanDrag.scrollLeft + pagePanDrag.startX - e.clientX;
     scrollPane.scrollTop = pagePanDrag.scrollTop + pagePanDrag.startY - e.clientY;
     e.preventDefault();
@@ -1038,27 +1050,30 @@ function showCursorHintHtml(html, clientX, clientY) {
 }
 
 function initFileTypeHints() {
+  if (!els.emptyStateFileTypes) return;
   const markup = SUPPORTED_FILE_EXTENSIONS.map((ext) => `<code>${ext}</code>`).join(", ");
   els.emptyStateFileTypes.innerHTML = markup;
 }
 
 function initCursorHints() {
-  els.markupPane.addEventListener("mousemove", (e) => {
+  els.markupPane?.addEventListener("mousemove", (e) => {
     if (!e.target.closest(".markup-ghost-tag-part")) {
       hideCursorHint();
       return;
     }
     showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
   });
-  els.markupPane.addEventListener("mouseleave", hideCursorHint);
+  els.markupPane?.addEventListener("mouseleave", hideCursorHint);
 
-  els.openFileBtn.addEventListener("mousemove", (e) => {
+  els.openFileBtn?.addEventListener("mousemove", (e) => {
     showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY);
   });
-  els.openFileBtn.addEventListener("mouseleave", hideCursorHint);
+  els.openFileBtn?.addEventListener("mouseleave", hideCursorHint);
 }
 
 function initBboxHints() {
+  if (!els.pagePane) return;
+
   els.pagePane.addEventListener("mousemove", (e) => {
     if (pagePanDrag?.moved || els.pagePane.classList.contains("is-panning")) {
       hideCursorHint();
@@ -1205,7 +1220,7 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
 function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
-  els.pageNav.hidden = !open || markupOnly;
+  if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
 }
@@ -1216,7 +1231,7 @@ function applyReadingLayerClasses(root) {
 }
 
 function syncReadingLayerVisibility() {
-  const root = els.renderedPane.querySelector(".rendered-doc");
+  const root = els.renderedPane?.querySelector(".rendered-doc");
   if (root) applyReadingLayerClasses(root);
 }
 
@@ -1226,6 +1241,7 @@ function closeAllSettings() {
 }
 
 function setDocLabel(label) {
+  if (!els.docLabel) return;
   if (label) {
     els.docLabel.textContent = label;
     els.docLabel.hidden = false;
@@ -1243,8 +1259,10 @@ function resetPageZoom() {
   }
   updatePageZoomResetButton();
   const port = pageViewScrollPane();
-  port.scrollLeft = 0;
-  port.scrollTop = 0;
+  if (port) {
+    port.scrollLeft = 0;
+    port.scrollTop = 0;
+  }
   refreshPageViewLayout();
 }
 
@@ -1269,12 +1287,12 @@ function resetViewer() {
   document.body.classList.remove("has-page-view");
   closeAllSettings();
   setToolbarOptionsOpen(false);
-  els.markupPane.innerHTML = "";
-  els.renderedPane.innerHTML = "";
-  els.pagePane.innerHTML = "";
+  if (els.markupPane) els.markupPane.innerHTML = "";
+  if (els.renderedPane) els.renderedPane.innerHTML = "";
+  if (els.pagePane) els.pagePane.innerHTML = "";
   setPageIndicator(1, 1);
-  els.btnPrev.disabled = true;
-  els.btnNext.disabled = true;
+  if (els.btnPrev) els.btnPrev.disabled = true;
+  if (els.btnNext) els.btnNext.disabled = true;
   applyPaneLayout();
 }
 
@@ -1292,7 +1310,7 @@ function syncPagePaneControls() {
   if (els.settingsToggle) els.settingsToggle.hidden = !pageVisible;
   if (els.pageZoomLabel) els.pageZoomLabel.hidden = !pageVisible;
   if (pageVisible) updatePageZoomResetButton();
-  els.pagePane.tabIndex = pageVisible ? 0 : -1;
+  if (els.pagePane) els.pagePane.tabIndex = pageVisible ? 0 : -1;
 }
 
 function setPageSettingsOpen(open) {
@@ -1420,6 +1438,7 @@ function isLayoutStacked() {
 }
 
 function initLayoutStackListener() {
+  if (!els.main) return;
   layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
   const onChange = () => applyPaneLayout();
   layoutStackQuery.addEventListener("change", onChange);
@@ -1484,8 +1503,9 @@ function applyPaneLayout() {
   }
 
   if (!document.body.classList.contains("viewer-loaded")) {
-    els.splitter0.hidden = true;
-    els.splitter1.hidden = true;
+    for (const splitter of [els.splitter0, els.splitter1]) {
+      if (splitter) splitter.hidden = true;
+    }
     els.main.style.gridTemplateColumns = "";
     return;
   }
@@ -1509,8 +1529,9 @@ function applyPaneLayout() {
       def.el.style.gridRow = String(row++);
       def.el.hidden = false;
     }
-    els.splitter0.hidden = true;
-    els.splitter1.hidden = true;
+    for (const splitter of [els.splitter0, els.splitter1]) {
+      if (splitter) splitter.hidden = true;
+    }
     refreshPageViewLayout();
     if (els.readingSettingsToggle) {
       els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
@@ -1672,6 +1693,7 @@ function goToPage(n) {
 }
 
 function pageIndicatorTextWidth(text) {
+  if (!els.pageIndicator) return 0;
   if (!pageIndicatorMeasurer) {
     pageIndicatorMeasurer = document.createElement("span");
     pageIndicatorMeasurer.setAttribute("aria-hidden", "true");
@@ -1706,8 +1728,10 @@ function renderPage(pageNum) {
   selectedElementId = null;
 
   setPageIndicator(pageNum, pageCount);
-  els.btnPrev.disabled = pageNum <= 1;
-  els.btnNext.disabled = pageNum >= pageCount;
+  if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
+  if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
+
+  if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
 
   els.markupPane.innerHTML = "";
   const elementIds = assignElementIds(segment);
@@ -1878,10 +1902,11 @@ function applyPageLayout(img, pane = els.pagePane) {
 let pageLayoutFrame = 0;
 
 function refreshPageViewLayout() {
+  if (!els.pagePane) return;
   cancelAnimationFrame(pageLayoutFrame);
   pageLayoutFrame = requestAnimationFrame(() => {
     pageLayoutFrame = 0;
-    const img = els.pagePane.querySelector(".page-view img");
+    const img = els.pagePane?.querySelector(".page-view img");
     if (img?.naturalWidth) applyPageLayout(img);
   });
 }
@@ -3280,7 +3305,7 @@ function isContentsOptionHidden(elementId, clickVisible) {
 }
 
 function applyBboxVisibility() {
-  if (!state?.hasPageView) return;
+  if (!state?.hasPageView || !els.pagePane) return;
 
   const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set();
 
@@ -3380,6 +3405,7 @@ function applyBboxVisibility() {
 }
 
 function findMarkupElementForSelection(elementId) {
+  if (!els.markupPane) return null;
   return (
     els.markupPane.querySelector(`.markup-el-virtual-text[data-element-id="${elementId}"]`) ||
     els.markupPane.querySelector(`[data-element-id="${elementId}"]`)
@@ -3387,6 +3413,7 @@ function findMarkupElementForSelection(elementId) {
 }
 
 function findRenderedElementForSelection(elementId) {
+  if (!els.renderedPane) return null;
   const direct =
     els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
     els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
@@ -3431,12 +3458,13 @@ function revealReadingLayerForSelection(renderedEl) {
 }
 
 function applySelection() {
-  els.markupPane.querySelectorAll(".markup-el.selected").forEach((el) => {
+  els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
-  els.renderedPane.querySelectorAll(".rendered-el.selected").forEach((el) => {
+  els.renderedPane?.querySelectorAll(".rendered-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
+  if (!els.pagePane) return;
   els.pagePane.querySelectorAll(".bbox.selected, .overlay-badge.selected").forEach((el) => {
     el.classList.remove("selected");
   });
