@@ -38,10 +38,9 @@
           aria-controls="toolbar-options-panel"
           aria-haspopup="true"
         >
-          Options
+          Views
         </button>
         <div class="toolbar-options-panel" id="toolbar-options-panel" role="menu" hidden>
-          <div class="toolbar-options-heading" role="presentation">Panes</div>
           <label class="toolbar-options-item" id="toggle-page-pane-label">
             <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
             <span>Original page</span>
@@ -56,7 +55,7 @@
           </label>
           <div class="toolbar-options-divider" role="separator"></div>
           <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
-            Reset panes
+            Reset views
           </button>
         </div>
       </div>
@@ -121,7 +120,7 @@
             aria-expanded="false"
             aria-controls="page-settings"
           >
-            Options
+            Overlays
           </button>
         </div>
       </div>
@@ -133,7 +132,7 @@
             class="viewer-settings-scrim"
             id="page-settings-scrim"
             tabindex="-1"
-            aria-label="Close options"
+            aria-label="Close overlays"
           ></button>
           <aside
             class="viewer-settings"
@@ -143,8 +142,8 @@
             aria-labelledby="page-settings-title"
           >
             <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="page-settings-title">Options</h2>
-              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close options">
+              <h2 class="viewer-settings-title" id="page-settings-title">Overlays</h2>
+              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close overlays">
                 ×
               </button>
             </div>
@@ -230,10 +229,10 @@
           id="btn-reading-settings-toggle"
           hidden
           aria-expanded="false"
-          aria-controls="reading-settings"
-        >
-          Options
-        </button>
+            aria-controls="reading-settings"
+          >
+            Layers
+          </button>
       </div>
       <div class="pane-reading-layout">
         <div class="pane-body" id="rendered-pane"></div>
@@ -243,7 +242,7 @@
             class="viewer-settings-scrim"
             id="reading-settings-scrim"
             tabindex="-1"
-            aria-label="Close options"
+            aria-label="Close layers"
           ></button>
           <aside
             class="viewer-settings"
@@ -253,14 +252,13 @@
             aria-labelledby="reading-settings-title"
           >
             <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="reading-settings-title">Options</h2>
-              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close options">
+              <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
+              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">
                 ×
               </button>
             </div>
             <div class="viewer-settings-body">
-              <div class="settings-option settings-option-primary settings-option-heading" id="reading-layers-label">Layers</div>
-              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-layers-label">
+              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-settings-title">
                 <label class="settings-option settings-option-sub" id="show-reading-furniture-label">
                   <input type="checkbox" id="show-reading-furniture" checked>
                   <span>Furniture</span>
