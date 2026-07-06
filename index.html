@@ -20,9 +20,31 @@
       </a>
       <h1>DocLang Viewer</h1>
       <nav class="page-nav" id="page-nav" hidden>
-        <button type="button" id="btn-prev" disabled>Previous</button>
-        <span id="page-indicator">Page 1 of 1</span>
-        <button type="button" id="btn-next" disabled>Next</button>
+        <div class="page-nav-btns">
+          <button type="button" id="btn-prev" class="page-nav-btn" disabled aria-label="Previous page" title="Previous page">
+            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path d="M10.5 3.5 5.5 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+          <button type="button" id="btn-next" class="page-nav-btn" disabled aria-label="Next page" title="Next page">
+            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path d="M5.5 3.5 10.5 8l-5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="page-indicator" id="page-indicator">
+          <span class="page-indicator-static">Page&nbsp;</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            id="page-number-input"
+            class="page-number-input"
+            value="1"
+            aria-label="Page number"
+            disabled
+          >
+          <span class="page-indicator-suffix" id="page-count-indicator">&nbsp;of 1</span>
+        </div>
       </nav>
     </div>
     <div class="header-center">
@@ -41,6 +63,10 @@
           Views
         </button>
         <div class="toolbar-options-panel" id="toolbar-options-panel" role="menu" hidden>
+          <label class="toolbar-options-item" id="toggle-file-pane-label">
+            <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
+            <span>Files</span>
+          </label>
           <label class="toolbar-options-item" id="toggle-page-pane-label">
             <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
             <span>Original page</span>
@@ -63,7 +89,7 @@
       <span class="toolbar-file-group" id="toolbar-file-group">
         <label class="file-btn" id="open-file-btn">
           Open file
-          <input type="file" id="input-archive" accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
+          <input type="file" id="input-archive" multiple accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
         </label>
       </span>
       <button type="button" id="btn-demo">Load demo</button>
@@ -83,6 +109,28 @@
   </div>
 
   <main class="split" id="main">
+    <section class="pane pane-file">
+      <div class="pane-header pane-file-header">
+        <span class="pane-header-title">Files</span>
+        <button
+          type="button"
+          class="file-pane-close-all"
+          id="btn-file-pane-close-all"
+          hidden
+          aria-label="Clear all open files"
+        >Clear</button>
+      </div>
+      <div class="pane-body" id="file-pane"></div>
+    </section>
+    <div
+      class="pane-splitter"
+      id="splitter-0"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize Files and Original page panes"
+      tabindex="0"
+      hidden
+    ></div>
     <section class="pane pane-page-view">
       <div class="pane-header pane-page-header">
         <span class="pane-header-title">Original page</span>
@@ -200,7 +248,7 @@
     </section>
     <div
       class="pane-splitter"
-      id="splitter-0"
+      id="splitter-1"
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize Original page and DocLang panes"
@@ -213,7 +261,7 @@
     </section>
     <div
       class="pane-splitter"
-      id="splitter-1"
+      id="splitter-2"
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize DocLang and Reading view panes"

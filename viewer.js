@@ -11,6 +11,7 @@ const DOCLANG_NS = "https://www.doclang.ai/ns/v0";
 const PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
 const NO_MARKUP = "(No markup to be shown.)";
 const NO_IMAGE = "(No page image available.)";
+const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
 const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
 const LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
@@ -305,13 +306,16 @@ const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const PANE_MIN_RATIO = 0.12;
-const PANE_KEYS = ["page", "markup", "reading"];
-const DEFAULT_PANE_RATIOS = [1 / 3, 1 / 3, 1 / 3];
-const DEFAULT_USER_PANE_VISIBLE = { page: true, markup: true, reading: true };
+const PANE_KEYS = ["file", "page", "markup", "reading"];
+const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
+const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
 const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 
 /** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
 let state = null;
+let fileCatalog = [];
+let activeFileIndex = -1;
+let filePaneUserToggled = false;
 /** @type {ResizeObserver | null} */
 let pagePaneResizeObserver = null;
 /** @type {string | null} */
@@ -336,24 +340,27 @@ let pagePanDrag = null;
 let pagePanSuppressClick = false;
 /** @type {{ paneW: number, paneH: number, imgW: number, imgH: number, fitScale: number } | null} */
 let pageLayoutCache = null;
-/** @type {{ page: boolean, markup: boolean, reading: boolean }} */
+/** @type {{ file: boolean, page: boolean, markup: boolean, reading: boolean }} */
 let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 /** @type {number[]} */
 let paneRatios = [...DEFAULT_PANE_RATIOS];
+/** @type {number | null} */
+let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
-/** @type {{ splitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
+/** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
 let layoutStackQuery = null;
-/** @type {HTMLElement | null} */
-let pageIndicatorMeasurer = null;
-
 const els = {
   openFileBtn: document.getElementById("open-file-btn"),
   emptyStateFileTypes: document.getElementById("empty-state-file-types"),
   docLabel: document.getElementById("doc-label"),
+  filePane: document.getElementById("file-pane"),
+  filePaneCloseAll: document.getElementById("btn-file-pane-close-all"),
   pageNav: document.getElementById("page-nav"),
   pageIndicator: document.getElementById("page-indicator"),
+  pageNumberInput: document.getElementById("page-number-input"),
+  pageCountIndicator: document.getElementById("page-count-indicator"),
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
@@ -395,13 +402,19 @@ const els = {
   markupPane: document.getElementById("markup-pane"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
+  paneFile: document.querySelector(".pane-file"),
   panePageView: document.querySelector(".pane-page-view"),
   paneMarkup: document.querySelector(".pane-markup"),
   paneReading: document.querySelector(".pane-reading"),
-  splitter0: document.getElementById("splitter-0"),
-  splitter1: document.getElementById("splitter-1"),
+  splitters: [
+    document.getElementById("splitter-0"),
+    document.getElementById("splitter-1"),
+    document.getElementById("splitter-2"),
+  ],
   toolbarOptionsBtn: document.getElementById("btn-toolbar-options"),
   toolbarOptionsPanel: document.getElementById("toolbar-options-panel"),
+  toggleFilePane: document.getElementById("toggle-file-pane"),
+  toggleFilePaneLabel: document.getElementById("toggle-file-pane-label"),
   togglePagePane: document.getElementById("toggle-page-pane"),
   toggleMarkupPane: document.getElementById("toggle-markup-pane"),
   toggleReadingPane: document.getElementById("toggle-reading-pane"),
@@ -418,15 +431,29 @@ document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   resetViewer();
 });
-document.getElementById("input-archive")?.addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  if (isMarkupFile(file)) loadFromMarkup(file);
-  else loadFromArchive(file);
+document.getElementById("input-archive")?.addEventListener("change", async (e) => {
+  const files = [...e.target.files].filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  if (!files.length) return;
+  await addFilesToCatalog(files, { replace: true });
   e.target.value = "";
 });
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
+els.pageNumberInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    commitPageNumberInput();
+    els.pageNumberInput?.blur();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    resetPageNumberInput();
+    els.pageNumberInput?.blur();
+  }
+});
+els.pageNumberInput?.addEventListener("blur", resetPageNumberInput);
+els.pageNumberInput?.addEventListener("focus", (e) => {
+  e.target.select();
+});
 els.showAllBboxes?.addEventListener("change", () => {
   showAllBboxes = els.showAllBboxes.checked;
   syncLayoutSubtoggles();
@@ -503,6 +530,7 @@ initFileTypeHints();
 initCursorHints();
 initBboxHints();
 initDragDrop();
+initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 if (document.getElementById("btn-demo")) loadDemo();
@@ -512,7 +540,7 @@ async function loadDemo() {
     const res = await fetch(DEMO_ARCHIVE_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const label = DEMO_ARCHIVE_URL.split("/").pop() || "demo.dclx";
-    await openArchiveFromZipBuffer(await res.arrayBuffer(), label);
+    await addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
   } catch (err) {
     alert(
       `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
@@ -522,15 +550,187 @@ async function loadDemo() {
 
 async function loadFromFileList(fileList) {
   if (!fileList?.length) return;
-  await loadFromDroppedFiles([...fileList]);
+  const files = [...fileList];
+  if (files.some((f) => f.name === "document.xml")) {
+    await appendFolderArchive(files);
+    return;
+  }
+  const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  if (supported.length) await addFilesToCatalog(supported, { replace: false });
 }
 
-async function loadFromDroppedFiles(files) {
-  const markupFile = files.find((f) => f.name === "document.xml");
-  if (!markupFile) {
+function createFileCatalogEntry(file) {
+  return {
+    id: crypto.randomUUID(),
+    label: file.name,
+    kind: isMarkupFile(file) ? "markup" : "archive",
+    source: file,
+    currentPage: 1,
+    pageZoom: PAGE_ZOOM_DEFAULT,
+    snapshot: null,
+    thumbnailUrl: null,
+  };
+}
+
+function pageImageMimeFromExt(ext) {
+  const normalized = ext.toLowerCase().replace("jpeg", "jpg");
+  if (normalized === "png") return "image/png";
+  if (normalized === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+function createPageImageObjectUrl(data, ext) {
+  return URL.createObjectURL(new Blob([data], { type: pageImageMimeFromExt(ext) }));
+}
+
+function createFirstPageImageUrlFromFiles(files) {
+  let bestPage = Infinity;
+  /** @type {File | null} */
+  let bestFile = null;
+  for (const f of files) {
+    const relPath = f.webkitRelativePath || f.name;
+    const parts = relPath.split("/");
+    if (parts.length < 2 || parts[parts.length - 2] !== "pages") continue;
+    const m = PAGE_IMAGE_RE.exec(f.name);
+    if (!m) continue;
+    const pageNum = Number(m[1]);
+    if (pageNum < bestPage) {
+      bestPage = pageNum;
+      bestFile = f;
+    }
+  }
+  return bestFile ? URL.createObjectURL(bestFile) : null;
+}
+
+async function createFirstPageImageUrlFromZip(source) {
+  const buffer = source instanceof File ? await source.arrayBuffer() : source;
+  const entries = await unzip(buffer);
+  let bestPage = Infinity;
+  /** @type {{ name: string, data: Uint8Array } | null} */
+  let bestEntry = null;
+  for (const e of entries) {
+    const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
+    if (!m) continue;
+    const pageNum = Number(m[1]);
+    if (pageNum < bestPage) {
+      bestPage = pageNum;
+      bestEntry = e;
+    }
+  }
+  if (!bestEntry) return null;
+  const ext = bestEntry.name.split(".").pop() ?? "png";
+  return createPageImageObjectUrl(bestEntry.data, ext);
+}
+
+async function resolveCatalogEntryThumbnail(entry) {
+  if (entry.thumbnailUrl) return entry.thumbnailUrl;
+  if (entry.kind === "markup") return null;
+  try {
+    if (entry.kind === "folder") {
+      entry.thumbnailUrl = createFirstPageImageUrlFromFiles(entry.source);
+    } else if (entry.kind === "archive") {
+      entry.thumbnailUrl = await createFirstPageImageUrlFromZip(entry.source);
+    }
+  } catch {
+    entry.thumbnailUrl = null;
+  }
+  return entry.thumbnailUrl;
+}
+
+function enrichCatalogEntryThumbnail(entry) {
+  resolveCatalogEntryThumbnail(entry).then((url) => {
+    if (!fileCatalog.includes(entry)) {
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      return;
+    }
+    if (url) renderFileView();
+  });
+}
+
+function revokeCatalogEntry(entry) {
+  if (entry?.thumbnailUrl?.startsWith("blob:")) {
+    URL.revokeObjectURL(entry.thumbnailUrl);
+  }
+  if (entry) entry.thumbnailUrl = null;
+}
+
+function createFileViewThumbnail(entry) {
+  const thumb = document.createElement("span");
+  thumb.className = "file-view-thumb";
+  thumb.setAttribute("aria-hidden", "true");
+  if (entry.thumbnailUrl) {
+    const img = document.createElement("img");
+    img.src = entry.thumbnailUrl;
+    img.alt = "";
+    thumb.appendChild(img);
+  } else {
+    const placeholder = document.createElement("span");
+    placeholder.className = "file-view-thumb-placeholder";
+    placeholder.innerHTML = FILE_THUMB_PLACEHOLDER_SVG;
+    thumb.appendChild(placeholder);
+  }
+  return thumb;
+}
+
+async function addFilesToCatalog(files, { replace = false } = {}) {
+  if (replace) {
+    clearFileCatalog();
+    filePaneUserToggled = false;
+  }
+  const startIndex = fileCatalog.length;
+  for (const file of files) {
+    const entry = createFileCatalogEntry(file);
+    fileCatalog.push(entry);
+    enrichCatalogEntryThumbnail(entry);
+  }
+  if (!fileCatalog.length) return;
+  await switchToFile(replace ? 0 : startIndex);
+}
+
+async function appendFolderArchive(files) {
+  if (!files.some((f) => f.name === "document.xml")) {
     alert("Archive must contain document.xml at its root.");
     return;
   }
+  const rootName = (files[0].webkitRelativePath || files[0].name).split("/")[0] || "archive";
+  const entry = {
+    id: crypto.randomUUID(),
+    label: rootName,
+    kind: "folder",
+    source: files,
+    currentPage: 1,
+    pageZoom: PAGE_ZOOM_DEFAULT,
+    snapshot: null,
+    thumbnailUrl: null,
+  };
+  fileCatalog.push(entry);
+  enrichCatalogEntryThumbnail(entry);
+  await switchToFile(fileCatalog.length - 1);
+}
+
+async function addArchiveBufferToCatalog(buffer, label, { replace = false } = {}) {
+  if (replace) {
+    clearFileCatalog();
+    filePaneUserToggled = false;
+  }
+  const entry = {
+    id: crypto.randomUUID(),
+    label,
+    kind: "archive",
+    source: buffer,
+    currentPage: 1,
+    pageZoom: PAGE_ZOOM_DEFAULT,
+    snapshot: null,
+    thumbnailUrl: null,
+  };
+  fileCatalog.push(entry);
+  enrichCatalogEntryThumbnail(entry);
+  await switchToFile(replace ? 0 : fileCatalog.length - 1);
+}
+
+async function extractArchiveFromFiles(files) {
+  const markupFile = files.find((f) => f.name === "document.xml");
+  if (!markupFile) throw new Error("Archive must contain document.xml at its root.");
   const markupXml = await markupFile.text();
   const pageImages = new Map();
   const assetUrls = new Map();
@@ -544,53 +744,219 @@ async function loadFromDroppedFiles(files) {
     const assetPath = archiveRelativeAssetPath(relPath);
     if (assetPath) assetUrls.set(assetPath, URL.createObjectURL(f));
   }
-  const rootName = (files[0].webkitRelativePath || files[0].name).split("/")[0] || "archive";
-  openArchive(markupXml, pageImages, rootName, assetUrls);
+  return { markupXml, pageImages, assetUrls };
 }
 
-async function loadFromArchive(file) {
-  if (!file) return;
+async function parseCatalogEntry(entry) {
   try {
-    await openArchiveFromZipBuffer(await file.arrayBuffer(), file.name);
-  } catch (err) {
-    alert(`Failed to read archive: ${err.message}`);
-  }
-}
-
-async function loadFromMarkup(file) {
-  if (!file) return;
-  try {
-    openMarkupDocument(await file.text(), file.name);
-  } catch (err) {
-    alert(`Failed to read markup: ${err.message}`);
-  }
-}
-
-async function openArchiveFromZipBuffer(buffer, label) {
-  const entries = await unzip(buffer);
-  const markupEntry = findArchiveEntry(entries, "document.xml");
-  if (!markupEntry) {
-    throw new Error("Archive must contain document.xml");
-  }
-  const markupXml = new TextDecoder().decode(markupEntry.data);
-  const pageImages = new Map();
-  const assetUrls = new Map();
-  for (const e of entries) {
-    const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
-    if (m) {
-      const ext = m[2].toLowerCase().replace("jpeg", "jpg");
-      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-      pageImages.set(Number(m[1]), URL.createObjectURL(new Blob([e.data], { type: mime })));
-      continue;
+    if (entry.kind === "markup") {
+      const text = entry.source instanceof File
+        ? await entry.source.text()
+        : new TextDecoder().decode(entry.source);
+      return buildDocumentState(text, new Map(), entry.label, new Map(), { markupOnly: true });
     }
-    if (e.name.startsWith("assets/") && !e.name.endsWith("/")) {
-      assetUrls.set(
-        e.name,
-        URL.createObjectURL(new Blob([e.data], { type: mimeFromAssetPath(e.name) })),
-      );
+    if (entry.kind === "archive") {
+      const buffer = entry.source instanceof File
+        ? await entry.source.arrayBuffer()
+        : entry.source;
+      const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
+      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+    }
+    if (entry.kind === "folder") {
+      const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
+      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+    }
+  } catch (err) {
+    alert(`Failed to read ${entry.label}: ${err.message}`);
+  }
+  return null;
+}
+
+function persistActiveFileViewState() {
+  if (activeFileIndex < 0 || !state) return;
+  const entry = fileCatalog[activeFileIndex];
+  entry.currentPage = state.currentPage;
+  entry.pageZoom = pageZoomPercent;
+}
+
+function releaseActiveDocument() {
+  if (activeFileIndex >= 0) {
+    const entry = fileCatalog[activeFileIndex];
+    if (entry?.snapshot) {
+      revokeDocumentState(entry.snapshot);
+      entry.snapshot = null;
     }
   }
-  openArchive(markupXml, pageImages, label, assetUrls);
+  if (state) revokeDocumentState(state);
+  state = null;
+  selectedElementId = null;
+  pagePanDrag = null;
+  pagePanSuppressClick = false;
+}
+
+function clearFileCatalog() {
+  releaseActiveDocument();
+  for (const entry of fileCatalog) revokeCatalogEntry(entry);
+  fileCatalog = [];
+  activeFileIndex = -1;
+}
+
+async function switchToFile(index) {
+  if (index < 0 || index >= fileCatalog.length) return;
+
+  persistActiveFileViewState();
+  releaseActiveDocument();
+
+  activeFileIndex = index;
+  const entry = fileCatalog[index];
+  const docState = await parseCatalogEntry(entry);
+  if (!docState) {
+    revokeCatalogEntry(entry);
+    fileCatalog.splice(index, 1);
+    activeFileIndex = -1;
+    if (fileCatalog.length) {
+      await switchToFile(Math.min(index, fileCatalog.length - 1));
+    } else {
+      resetViewer();
+    }
+    return;
+  }
+
+  entry.snapshot = docState;
+  docState.currentPage = entry.currentPage ?? 1;
+  activateDocument(docState, entry);
+}
+
+function defaultFilePaneVisible() {
+  return fileCatalog.length > 1;
+}
+
+function syncFilePaneDefault() {
+  if (!filePaneUserToggled) {
+    const wasVisible = userPaneVisible.file;
+    const shouldBeVisible = defaultFilePaneVisible();
+    userPaneVisible.file = shouldBeVisible;
+    if (!wasVisible && shouldBeVisible) {
+      paneRatios = [...DEFAULT_PANE_RATIOS];
+      filePaneWidthPx = null;
+    }
+  }
+}
+
+async function closeCatalogFile(index) {
+  if (index < 0 || index >= fileCatalog.length) return;
+
+  const wasActive = index === activeFileIndex;
+  const entry = fileCatalog[index];
+
+  if (wasActive) {
+    releaseActiveDocument();
+    activeFileIndex = -1;
+  }
+
+  revokeCatalogEntry(entry);
+  fileCatalog.splice(index, 1);
+
+  if (!fileCatalog.length) {
+    resetViewer();
+    return;
+  }
+
+  if (wasActive) {
+    await switchToFile(Math.min(index, fileCatalog.length - 1));
+    return;
+  }
+
+  if (index < activeFileIndex) {
+    activeFileIndex -= 1;
+  }
+  updateFileView();
+}
+
+function renderFileView() {
+  if (!els.filePane) return;
+  els.filePane.replaceChildren();
+  if (!fileCatalog.length) return;
+
+  const list = document.createElement("ul");
+  list.className = "file-view-list";
+  list.setAttribute("role", "listbox");
+  list.setAttribute("aria-label", "Open files");
+
+  fileCatalog.forEach((entry, index) => {
+    const item = document.createElement("li");
+    const card = document.createElement("div");
+    card.className = "file-view-item";
+    card.title = entry.label;
+    card.tabIndex = 0;
+    card.setAttribute("role", "option");
+    if (index === activeFileIndex) {
+      card.classList.add("is-active");
+      card.setAttribute("aria-selected", "true");
+    } else {
+      card.setAttribute("aria-selected", "false");
+    }
+
+    const thumbWrap = document.createElement("div");
+    thumbWrap.className = "file-view-thumb-wrap";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "file-view-close";
+    closeBtn.setAttribute("aria-label", `Close ${entry.label}`);
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeCatalogFile(index);
+    });
+
+    thumbWrap.append(createFileViewThumbnail(entry), closeBtn);
+
+    const label = document.createElement("span");
+    label.className = "file-view-label";
+    label.textContent = entry.label;
+
+    card.append(thumbWrap, label);
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".file-view-close")) return;
+      switchToFile(index);
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        switchToFile(index);
+      }
+    });
+
+    item.appendChild(card);
+    list.appendChild(item);
+  });
+
+  els.filePane.appendChild(list);
+}
+
+function updateFileView() {
+  syncFilePaneDefault();
+  syncFilePaneCloseAllButton();
+  renderFileView();
+  syncToolbarPaneCheckboxes();
+  applyPaneLayout();
+}
+
+function syncFilePaneCloseAllButton() {
+  if (!els.filePaneCloseAll) return;
+  els.filePaneCloseAll.hidden = fileCatalog.length === 0;
+}
+
+function initFilePaneCloseAll() {
+  els.filePaneCloseAll?.addEventListener("click", () => {
+    if (!fileCatalog.length) return;
+    const count = fileCatalog.length;
+    const message = count === 1
+      ? `Remove "${fileCatalog[0].label}" from the viewer?`
+      : `Remove all ${count} open files from the viewer?`;
+    if (confirm(message)) resetViewer();
+  });
 }
 
 function initPageWheelNav() {
@@ -1144,40 +1510,25 @@ function isMarkupFile(file) {
 
 async function loadFromDrop(dataTransfer) {
   const files = [...dataTransfer.files];
-  if (files.length === 1 && isArchiveFile(files[0])) {
-    await loadFromArchive(files[0]);
+  if (files.some((f) => f.name === "document.xml")) {
+    await appendFolderArchive(files);
     return;
   }
-  if (files.length === 1 && isMarkupFile(files[0])) {
-    await loadFromMarkup(files[0]);
-    return;
-  }
-
-  if (files.length) {
-    await loadFromDroppedFiles(files);
-  }
+  const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  if (supported.length) await addFilesToCatalog(supported, { replace: false });
 }
 
-function openMarkupDocument(markupXml, label) {
-  openDocument(markupXml, new Map(), label, new Map(), { markupOnly: true });
-}
-
-function openArchive(markupXml, pageImages, label, assetUrls = new Map()) {
-  openDocument(markupXml, pageImages, label, assetUrls, { markupOnly: false });
-}
-
-function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
-  revokeArchiveUrls();
+function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnly }) {
   const doc = new DOMParser().parseFromString(markupXml, "application/xml");
   const parseError = doc.querySelector("parsererror");
   if (parseError) {
-    alert("Invalid XML");
-    return;
+    alert(`Invalid XML in ${label}`);
+    return null;
   }
   const root = doc.documentElement;
   if (localName(root) !== "doclang") {
-    alert("Root element must be <doclang>");
-    return;
+    alert(`${label}: root element must be <doclang>`);
+    return null;
   }
 
   const head = childElements(root).find((el) => localName(el) === "head") ?? null;
@@ -1191,7 +1542,7 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
   const readingOrder = computeReadingOrder(root);
   const elementPageByEl = buildElementPageMap(segments);
 
-  state = {
+  return {
     pageImages,
     assetUrls,
     currentPage: 1,
@@ -1209,12 +1560,41 @@ function openDocument(markupXml, pageImages, label, assetUrls, { markupOnly }) {
     readingOrderDisplayNumbers: computeReadingOrderDisplayNumbers(readingOrder),
     pageViewOverlay: null,
   };
-  resetPageLayoutCache();
+}
 
-  setDocLabel(label);
-  setDocumentOpen(true, { markupOnly });
-  setPageViewVisible(hasPageView);
-  renderPage(1);
+function activateDocument(docState, entry) {
+  state = docState;
+  resetPageLayoutCache();
+  closeAllSettings();
+
+  pageZoomPercent = entry.pageZoom ?? PAGE_ZOOM_DEFAULT;
+  if (els.pageZoom) {
+    els.pageZoom.value = String(pageZoomPercent);
+    els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
+  }
+  updatePageZoomResetButton();
+  const port = pageViewScrollPane();
+  if (port) {
+    port.scrollLeft = 0;
+    port.scrollTop = 0;
+  }
+
+  setDocLabel(entry.label);
+  setDocumentOpen(true, { markupOnly: state.markupOnly });
+  setPageViewVisible(state.hasPageView);
+  renderPage(state.currentPage);
+  updateFileView();
+}
+
+function setDocLabel(label) {
+  if (!els.docLabel) return;
+  if (label) {
+    els.docLabel.textContent = label;
+    els.docLabel.hidden = false;
+  } else {
+    els.docLabel.textContent = "";
+    els.docLabel.hidden = true;
+  }
 }
 
 function setDocumentOpen(open, { markupOnly = false } = {}) {
@@ -1240,17 +1620,6 @@ function closeAllSettings() {
   setReadingSettingsOpen(false);
 }
 
-function setDocLabel(label) {
-  if (!els.docLabel) return;
-  if (label) {
-    els.docLabel.textContent = label;
-    els.docLabel.hidden = false;
-  } else {
-    els.docLabel.textContent = "";
-    els.docLabel.hidden = true;
-  }
-}
-
 function resetPageZoom() {
   pageZoomPercent = PAGE_ZOOM_DEFAULT;
   if (els.pageZoom) {
@@ -1273,8 +1642,8 @@ function updatePageZoomResetButton() {
 }
 
 function resetViewer() {
-  if (state) revokeArchiveUrls();
-  state = null;
+  clearFileCatalog();
+  filePaneUserToggled = false;
   selectedElementId = null;
   pagePanDrag = null;
   pagePanSuppressClick = false;
@@ -1293,6 +1662,8 @@ function resetViewer() {
   setPageIndicator(1, 1);
   if (els.btnPrev) els.btnPrev.disabled = true;
   if (els.btnNext) els.btnNext.disabled = true;
+  if (els.filePane) els.filePane.replaceChildren();
+  updateFileView();
   applyPaneLayout();
 }
 
@@ -1353,6 +1724,7 @@ function syncLayoutSubtoggles() {
 
 function paneDef(key) {
   const defs = {
+    file: { key: "file", el: els.paneFile, canShow: () => fileCatalog.length > 0 },
     page: { key: "page", el: els.panePageView, canShow: () => Boolean(state?.hasPageView) },
     markup: { key: "markup", el: els.paneMarkup, canShow: () => Boolean(state) },
     reading: { key: "reading", el: els.paneReading, canShow: () => Boolean(state) },
@@ -1372,6 +1744,31 @@ function isPaneVisible(key) {
 
 function visiblePaneKeys() {
   return PANE_KEYS.filter((key) => isPaneVisible(key));
+}
+
+function paneMinRatio(key) {
+  return PANE_MIN_RATIO;
+}
+
+function filePaneFitWidthPx() {
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:absolute;visibility:hidden;width:var(--file-pane-fit-width);";
+  document.documentElement.appendChild(probe);
+  const px = probe.getBoundingClientRect().width;
+  probe.remove();
+  return Math.ceil(px) || 108;
+}
+
+function resolvedFilePaneWidthPx() {
+  const fit = filePaneFitWidthPx();
+  return Math.max(fit, filePaneWidthPx ?? fit);
+}
+
+function contentPaneFrWeights(keys) {
+  const contentKeys = keys.filter((key) => key !== "file");
+  const weights = contentKeys.map((key) => paneRatios[paneRatioIndex(key)]);
+  const sum = weights.reduce((a, b) => a + b, 0) || contentKeys.length;
+  return weights.map((weight) => weight / sum);
 }
 
 function paneRatioIndex(key) {
@@ -1402,10 +1799,20 @@ function loadLayoutPrefs() {
       for (const key of PANE_KEYS) {
         if (typeof data.visible[key] === "boolean") userPaneVisible[key] = data.visible[key];
       }
+      if (typeof data.visible.file === "boolean") filePaneUserToggled = true;
     }
-    if (Array.isArray(data?.ratios) && data.ratios.length === 3 && data.ratios.every((n) => typeof n === "number" && n > 0)) {
-      paneRatios = [...data.ratios];
-      normalizePaneRatios();
+    if (Array.isArray(data?.ratios)) {
+      const valid = data.ratios.every((n) => typeof n === "number" && n > 0);
+      if (valid && data.ratios.length === 4) {
+        paneRatios = [...data.ratios];
+        normalizePaneRatios();
+      } else if (valid && data.ratios.length === 3) {
+        paneRatios = [1, ...data.ratios];
+        normalizePaneRatios();
+      }
+    }
+    if (typeof data?.filePaneWidthPx === "number" && data.filePaneWidthPx > 0) {
+      filePaneWidthPx = data.filePaneWidthPx;
     }
   } catch {
     /* ignore invalid stored layout */
@@ -1416,7 +1823,7 @@ function saveLayoutPrefs() {
   try {
     localStorage.setItem(
       LAYOUT_STORAGE_KEY,
-      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios }),
+      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx }),
     );
   } catch {
     /* ignore quota / private mode */
@@ -1424,8 +1831,15 @@ function saveLayoutPrefs() {
 }
 
 function resetPaneLayout() {
-  userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
+  filePaneUserToggled = false;
+  userPaneVisible = {
+    file: defaultFilePaneVisible(),
+    page: true,
+    markup: true,
+    reading: true,
+  };
   paneRatios = [...DEFAULT_PANE_RATIOS];
+  filePaneWidthPx = null;
   setReadingSettingsOpen(false);
   syncPagePaneControls();
   syncToolbarPaneCheckboxes();
@@ -1452,6 +1866,14 @@ function setToolbarOptionsOpen(open) {
 }
 
 function syncToolbarPaneCheckboxes() {
+  if (els.toggleFilePane) {
+    const available = isPaneAvailable("file");
+    els.toggleFilePane.checked = available && userPaneVisible.file;
+    els.toggleFilePane.disabled = !available;
+  }
+  if (els.toggleFilePaneLabel) {
+    els.toggleFilePaneLabel.classList.toggle("toolbar-options-item-disabled", !isPaneAvailable("file"));
+  }
   if (els.togglePagePane) {
     const available = isPaneAvailable("page");
     els.togglePagePane.checked = available && userPaneVisible.page;
@@ -1469,6 +1891,7 @@ function syncToolbarPaneCheckboxes() {
     els.toggleReadingPane.disabled = !state;
   }
   for (const label of [
+    els.toggleFilePaneLabel,
     els.togglePagePaneLabel,
     document.getElementById("toggle-markup-pane-label"),
     document.getElementById("toggle-reading-pane-label"),
@@ -1480,8 +1903,89 @@ function syncToolbarPaneCheckboxes() {
   if (els.resetPaneLayoutBtn) els.resetPaneLayoutBtn.disabled = !state;
 }
 
+function paneKeysAdjacent(leftKey, rightKey) {
+  const leftIdx = PANE_KEYS.indexOf(leftKey);
+  const rightIdx = PANE_KEYS.indexOf(rightKey);
+  return leftIdx >= 0 && rightIdx === leftIdx + 1;
+}
+
+function onlyHiddenPanesBetween(leftKey, rightKey) {
+  const leftIdx = PANE_KEYS.indexOf(leftKey);
+  const rightIdx = PANE_KEYS.indexOf(rightKey);
+  if (leftIdx < 0 || rightIdx <= leftIdx) return false;
+  for (let i = leftIdx + 1; i < rightIdx; i++) {
+    if (isPaneVisible(PANE_KEYS[i])) return false;
+  }
+  return true;
+}
+
+function shouldShowSplitterBetween(leftKey, rightKey) {
+  if (!isPaneVisible(leftKey) || !isPaneVisible(rightKey)) return false;
+  if (paneKeysAdjacent(leftKey, rightKey)) return true;
+  return onlyHiddenPanesBetween(leftKey, rightKey);
+}
+
+function splitterForLayoutGap(leftKey, rightKey) {
+  if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
+  const leftIdx = PANE_KEYS.indexOf(leftKey);
+  if (leftIdx < 0) return null;
+  return els.splitters[leftIdx] ?? null;
+}
+
+function visiblePaneNeighborAfter(key) {
+  const idx = PANE_KEYS.indexOf(key);
+  if (idx < 0) return null;
+  for (let i = idx + 1; i < PANE_KEYS.length; i++) {
+    const neighbor = PANE_KEYS[i];
+    if (isPaneVisible(neighbor)) return neighbor;
+  }
+  return null;
+}
+
+function visiblePaneNeighborBefore(key) {
+  const idx = PANE_KEYS.indexOf(key);
+  if (idx < 0) return null;
+  for (let i = idx - 1; i >= 0; i--) {
+    const neighbor = PANE_KEYS[i];
+    if (isPaneVisible(neighbor)) return neighbor;
+  }
+  return null;
+}
+
+function resolvedPhysicalSplitterKeys(physicalSplitterIndex) {
+  const leftPhysical = PANE_KEYS[physicalSplitterIndex];
+  const rightPhysical = PANE_KEYS[physicalSplitterIndex + 1];
+  if (!leftPhysical || !rightPhysical) return null;
+
+  const leftKey = isPaneVisible(leftPhysical) ? leftPhysical : visiblePaneNeighborBefore(rightPhysical);
+  const rightKey = isPaneVisible(rightPhysical) ? rightPhysical : visiblePaneNeighborAfter(leftPhysical);
+  if (!leftKey || !rightKey || leftKey === rightKey) return null;
+  if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
+
+  const canonical = splitterForLayoutGap(leftKey, rightKey);
+  if (!canonical || canonical !== els.splitters[physicalSplitterIndex]) return null;
+  return { leftKey, rightKey };
+}
+
+function resetPaneGridStyles() {
+  for (const key of PANE_KEYS) {
+    const el = paneDef(key)?.el;
+    if (el) {
+      el.style.gridColumn = "";
+      el.style.gridRow = "";
+    }
+  }
+  for (const splitter of els.splitters) {
+    if (!splitter) continue;
+    splitter.style.gridColumn = "";
+    splitter.style.gridRow = "";
+    splitter.hidden = true;
+  }
+}
+
 function setUserPaneVisible(key, visible) {
   userPaneVisible[key] = visible;
+  if (key === "file") filePaneUserToggled = true;
   if (key === "page") syncPagePaneControls();
   if (key === "reading" && !visible) setReadingSettingsOpen(false);
   syncToolbarPaneCheckboxes();
@@ -1503,10 +2007,9 @@ function applyPaneLayout() {
   }
 
   if (!document.body.classList.contains("viewer-loaded")) {
-    for (const splitter of [els.splitter0, els.splitter1]) {
-      if (splitter) splitter.hidden = true;
-    }
+    resetPaneGridStyles();
     els.main.style.gridTemplateColumns = "";
+    els.main.style.gridTemplateRows = "";
     return;
   }
 
@@ -1519,18 +2022,16 @@ function applyPaneLayout() {
   const lastKey = keys[keys.length - 1];
   paneDef(lastKey)?.el?.classList.add("pane-layout-last");
 
+  resetPaneGridStyles();
+
   if (stacked) {
+    els.main.style.gridTemplateRows = "";
     els.main.style.gridTemplateColumns = "1fr";
     let row = 1;
     for (const key of keys) {
       const def = paneDef(key);
       if (!def?.el) continue;
-      def.el.style.gridColumn = "";
       def.el.style.gridRow = String(row++);
-      def.el.hidden = false;
-    }
-    for (const splitter of [els.splitter0, els.splitter1]) {
-      if (splitter) splitter.hidden = true;
     }
     refreshPageViewLayout();
     if (els.readingSettingsToggle) {
@@ -1539,34 +2040,38 @@ function applyPaneLayout() {
     return;
   }
 
-  const ratios = visiblePaneRatios(keys);
+  const contentFr = contentPaneFrWeights(keys);
   const cols = [];
+  let contentFrIndex = 0;
   keys.forEach((key, index) => {
-    cols.push(`minmax(0, ${ratios[index]}fr)`);
-    if (index < keys.length - 1) cols.push("1px");
+    if (key === "file") {
+      cols.push(`${resolvedFilePaneWidthPx()}px`);
+    } else {
+      cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
+    }
+    if (index < keys.length - 1 && shouldShowSplitterBetween(keys[index], keys[index + 1])) {
+      cols.push("1px");
+    }
   });
   els.main.style.gridTemplateColumns = cols.join(" ");
+  els.main.style.gridTemplateRows = "minmax(0, 1fr)";
 
   let col = 1;
-  const splitters = [els.splitter0, els.splitter1];
-  splitters.forEach((splitter) => {
-    if (splitter) splitter.hidden = true;
-  });
-
   keys.forEach((key, index) => {
     const def = paneDef(key);
     if (!def?.el) return;
     def.el.style.gridColumn = String(col);
-    def.el.style.gridRow = "";
     col += 1;
     if (index < keys.length - 1) {
-      const splitter = splitters[index];
+      const leftKey = keys[index];
+      const rightKey = keys[index + 1];
+      if (!shouldShowSplitterBetween(leftKey, rightKey)) return;
+      const splitter = splitterForLayoutGap(leftKey, rightKey);
       if (splitter) {
         splitter.hidden = false;
         splitter.style.gridColumn = String(col);
-        splitter.style.gridRow = "";
+        col += 1;
       }
-      col += 1;
     }
   });
 
@@ -1603,6 +2108,7 @@ function initToolbarOptions() {
     });
   };
 
+  onToggle("file", els.toggleFilePane);
   onToggle("page", els.togglePagePane);
   onToggle("markup", els.toggleMarkupPane);
   onToggle("reading", els.toggleReadingPane);
@@ -1614,7 +2120,7 @@ function initToolbarOptions() {
 }
 
 function initPaneSplitters() {
-  for (const [index, splitter] of [els.splitter0, els.splitter1].entries()) {
+  for (const [index, splitter] of els.splitters.entries()) {
     if (!splitter) continue;
     splitter.addEventListener("pointerdown", (e) => startPaneDrag(e, index));
   }
@@ -1623,19 +2129,18 @@ function initPaneSplitters() {
   window.addEventListener("pointercancel", endPaneDrag);
 }
 
-function startPaneDrag(e, splitterIndex) {
+function startPaneDrag(e, physicalSplitterIndex) {
   if (e.button !== 0 || isLayoutStacked() || !document.body.classList.contains("viewer-loaded")) return;
 
-  const keys = visiblePaneKeys();
-  if (splitterIndex >= keys.length - 1) return;
+  const resolved = resolvedPhysicalSplitterKeys(physicalSplitterIndex);
+  if (!resolved) return;
 
-  const leftKey = keys[splitterIndex];
-  const rightKey = keys[splitterIndex + 1];
+  const { leftKey, rightKey } = resolved;
+
   const leftIndex = paneRatioIndex(leftKey);
   const rightIndex = paneRatioIndex(rightKey);
-
-  paneDrag = {
-    splitterIndex,
+  const dragState = {
+    physicalSplitterIndex,
     leftKey,
     rightKey,
     startX: e.clientX,
@@ -1643,6 +2148,12 @@ function startPaneDrag(e, splitterIndex) {
     rightStart: paneRatios[rightIndex],
     pointerId: e.pointerId,
   };
+  if (leftKey === "file") {
+    dragState.leftStartPx = resolvedFilePaneWidthPx();
+  } else if (rightKey === "file") {
+    dragState.rightStartPx = resolvedFilePaneWidthPx();
+  }
+  paneDrag = dragState;
 
   e.preventDefault();
   e.currentTarget.setPointerCapture(e.pointerId);
@@ -1650,24 +2161,47 @@ function startPaneDrag(e, splitterIndex) {
   document.body.classList.add("pane-drag-active");
 }
 
+function contentPaneAvailableWidthPx() {
+  if (!els.main) return 1;
+  const rect = els.main.getBoundingClientRect();
+  const keys = visiblePaneKeys();
+  let reserved = 0;
+  if (keys.includes("file")) reserved += resolvedFilePaneWidthPx();
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (shouldShowSplitterBetween(keys[i], keys[i + 1])) reserved += 1;
+  }
+  return Math.max(rect.width - reserved, 1);
+}
+
 function onPaneDragMove(e) {
   if (!paneDrag || e.pointerId !== paneDrag.pointerId || !els.main) return;
 
-  const rect = els.main.getBoundingClientRect();
+  if (paneDrag.leftKey === "file" && typeof paneDrag.leftStartPx === "number") {
+    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.leftStartPx + (e.clientX - paneDrag.startX));
+    applyPaneLayout();
+    return;
+  }
+  if (paneDrag.rightKey === "file" && typeof paneDrag.rightStartPx === "number") {
+    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.rightStartPx - (e.clientX - paneDrag.startX));
+    applyPaneLayout();
+    return;
+  }
+
   const keys = visiblePaneKeys();
-  const visibleRatios = visiblePaneRatios(keys);
-  const leftVisibleIndex = keys.indexOf(paneDrag.leftKey);
-  const pairTotal = visibleRatios[leftVisibleIndex] + visibleRatios[leftVisibleIndex + 1];
-  const pairPixels = Math.max(rect.width * pairTotal, 1);
-  const deltaRatio = ((e.clientX - paneDrag.startX) / pairPixels) * pairTotal;
+  const contentFr = contentPaneFrWeights(keys);
+  const contentKeys = keys.filter((key) => key !== "file");
+  const leftContentIndex = contentKeys.indexOf(paneDrag.leftKey);
+  const pairFrTotal = contentFr[leftContentIndex] + contentFr[leftContentIndex + 1];
+  const pairPixels = Math.max(contentPaneAvailableWidthPx() * pairFrTotal, 1);
+  const deltaRatio = ((e.clientX - paneDrag.startX) / pairPixels) * pairFrTotal;
 
   const leftIndex = paneRatioIndex(paneDrag.leftKey);
   const rightIndex = paneRatioIndex(paneDrag.rightKey);
   const pairStoredTotal = paneDrag.leftStart + paneDrag.rightStart;
   let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-  const min = PANE_MIN_RATIO;
-  const max = pairStoredTotal - min;
-  nextLeft = Math.min(Math.max(nextLeft, min), max);
+  const leftMin = paneMinRatio(paneDrag.leftKey);
+  const rightMin = paneMinRatio(paneDrag.rightKey);
+  nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
   paneRatios[leftIndex] = nextLeft;
   paneRatios[rightIndex] = pairStoredTotal - nextLeft;
   normalizePaneRatios();
@@ -1676,7 +2210,7 @@ function onPaneDragMove(e) {
 
 function endPaneDrag(e) {
   if (!paneDrag || e.pointerId !== paneDrag.pointerId) return;
-  const splitter = paneDrag.splitterIndex === 0 ? els.splitter0 : els.splitter1;
+  const splitter = els.splitters[paneDrag.physicalSplitterIndex];
   splitter?.classList.remove("is-dragging");
   if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
   paneDrag = null;
@@ -1692,32 +2226,32 @@ function goToPage(n) {
   renderPage(page);
 }
 
-function pageIndicatorTextWidth(text) {
-  if (!els.pageIndicator) return 0;
-  if (!pageIndicatorMeasurer) {
-    pageIndicatorMeasurer = document.createElement("span");
-    pageIndicatorMeasurer.setAttribute("aria-hidden", "true");
-    Object.assign(pageIndicatorMeasurer.style, {
-      position: "absolute",
-      visibility: "hidden",
-      pointerEvents: "none",
-      whiteSpace: "nowrap",
-    });
-    document.body.appendChild(pageIndicatorMeasurer);
+function resetPageNumberInput() {
+  if (!els.pageNumberInput) return;
+  els.pageNumberInput.value = state ? String(state.currentPage) : "1";
+}
+
+function commitPageNumberInput() {
+  if (!state || !els.pageNumberInput) return;
+  const n = Number.parseInt(els.pageNumberInput.value.trim(), 10);
+  if (!Number.isFinite(n)) {
+    resetPageNumberInput();
+    return;
   }
-  const ref = getComputedStyle(els.pageIndicator);
-  pageIndicatorMeasurer.style.font = ref.font;
-  pageIndicatorMeasurer.style.fontVariantNumeric = ref.fontVariantNumeric;
-  pageIndicatorMeasurer.style.letterSpacing = ref.letterSpacing;
-  pageIndicatorMeasurer.textContent = text;
-  return Math.ceil(pageIndicatorMeasurer.getBoundingClientRect().width);
+  goToPage(n);
 }
 
 function setPageIndicator(pageNum, pageCount) {
   if (!els.pageIndicator) return;
-  els.pageIndicator.textContent = `Page ${pageNum} of ${pageCount}`;
-  const widest = `Page ${pageCount} of ${pageCount}`;
-  els.pageIndicator.style.minWidth = `${pageIndicatorTextWidth(widest)}px`;
+  if (els.pageCountIndicator) els.pageCountIndicator.textContent = `\u00A0of ${pageCount}`;
+  if (els.pageNumberInput) {
+    const digits = Math.max(1, String(pageCount).length);
+    els.pageNumberInput.style.setProperty("--page-num-digits", String(digits));
+    els.pageNumberInput.disabled = !state;
+    if (document.activeElement !== els.pageNumberInput) {
+      els.pageNumberInput.value = String(pageNum);
+    }
+  }
 }
 
 function renderPage(pageNum) {
@@ -4641,14 +5175,45 @@ function resolveArchiveUri(uri) {
   return state?.assetUrls?.get(normalizeArchivePath(uri)) ?? uri;
 }
 
+function revokeDocumentState(docState) {
+  if (!docState) return;
+  for (const url of docState.pageImages.values()) {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  }
+  for (const url of docState.assetUrls.values()) {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  }
+}
+
 function revokeArchiveUrls() {
-  if (!state) return;
-  for (const url of state.pageImages.values()) {
-    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  revokeDocumentState(state);
+}
+
+async function extractArchiveFromZipBuffer(buffer) {
+  const entries = await unzip(buffer);
+  const markupEntry = findArchiveEntry(entries, "document.xml");
+  if (!markupEntry) {
+    throw new Error("Archive must contain document.xml");
   }
-  for (const url of state.assetUrls.values()) {
-    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  const markupXml = new TextDecoder().decode(markupEntry.data);
+  const pageImages = new Map();
+  const assetUrls = new Map();
+  for (const e of entries) {
+    const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
+    if (m) {
+      const ext = m[2].toLowerCase().replace("jpeg", "jpg");
+      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      pageImages.set(Number(m[1]), URL.createObjectURL(new Blob([e.data], { type: mime })));
+      continue;
+    }
+    if (e.name.startsWith("assets/") && !e.name.endsWith("/")) {
+      assetUrls.set(
+        e.name,
+        URL.createObjectURL(new Blob([e.data], { type: mimeFromAssetPath(e.name) })),
+      );
+    }
   }
+  return { markupXml, pageImages, assetUrls };
 }
 
 async function unzip(buffer) {
