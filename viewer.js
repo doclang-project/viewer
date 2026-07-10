@@ -14,6 +14,14 @@ const NO_IMAGE = "(No page image available.)";
 const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
 const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
+/** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
+const MAX_DATA_IMAGE_URI_LENGTH = 2 * 1024 * 1024; // 2 MiB
+const ZIP_MAX_ENTRIES = 5000;
+const ZIP_MAX_ENTRY_COMPRESSED_BYTES = 128 * 1024 * 1024; // 128 MiB
+const ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024; // 128 MiB
+const ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024; // 512 MiB
+const ZIP_MAX_COMPRESSION_RATIO = 100; // uncompressed / compressed
 const LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
 const HEAD_TAGS = new Set([
   "label", "thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom",
@@ -604,7 +612,9 @@ function createFirstPageImageUrlFromFiles(files) {
 
 async function createFirstPageImageUrlFromZip(source) {
   const buffer = source instanceof File ? await source.arrayBuffer() : source;
-  const entries = await unzip(buffer);
+  const entries = await unzip(buffer, {
+    shouldExtract: (name) => /^pages\/\d+\.(png|jpe?g|webp)$/i.test(name),
+  });
   let bestPage = Infinity;
   /** @type {{ name: string, data: Uint8Array } | null} */
   let bestEntry = null;
@@ -4768,9 +4778,10 @@ function appendPictureFigureImage(figure, uri, captionEl, elementIds) {
   const img = document.createElement("img");
   figure.appendChild(img);
 
-  if (uri) {
+  const resolved = uri ? resolveArchiveUri(uri) : null;
+  if (resolved) {
     img.alt = "";
-    img.src = resolveArchiveUri(uri);
+    img.src = resolved;
     img.addEventListener("error", () => markPictureUnavailable(img), { once: true });
   } else {
     markPictureUnavailable(img);
@@ -5170,9 +5181,25 @@ function mimeFromAssetPath(path) {
   }
 }
 
+/**
+ * Resolve a picture @uri to a safe img src.
+ * Only archive asset blob URLs and small raster data: URIs are allowed.
+ * Remote, protocol-relative, blob:, and unresolved relative URIs are rejected.
+ * @returns {string | null}
+ */
 function resolveArchiveUri(uri) {
-  if (!uri || /^(data:|https?:|blob:|\/\/)/i.test(uri)) return uri;
-  return state?.assetUrls?.get(normalizeArchivePath(uri)) ?? uri;
+  if (!uri) return null;
+  const trimmed = uri.trim();
+  if (!trimmed) return null;
+
+  if (SAFE_DATA_IMAGE_RE.test(trimmed)) {
+    return trimmed.length <= MAX_DATA_IMAGE_URI_LENGTH ? trimmed : null;
+  }
+
+  // Reject any other scheme (http, https, blob, javascript, …) and protocol-relative URLs.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith("//")) return null;
+
+  return state?.assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
 }
 
 function revokeDocumentState(docState) {
@@ -5216,7 +5243,7 @@ async function extractArchiveFromZipBuffer(buffer) {
   return { markupXml, pageImages, assetUrls };
 }
 
-async function unzip(buffer) {
+async function unzip(buffer, { shouldExtract } = {}) {
   if (typeof DecompressionStream === "undefined") {
     throw new Error("ZIP decompression requires a browser with DecompressionStream support");
   }
@@ -5227,12 +5254,20 @@ async function unzip(buffer) {
   const entryCount = view.getUint16(eocdOffset + 10, true);
   const centralDirOffset = view.getUint32(eocdOffset + 16, true);
 
+  if (entryCount > ZIP_MAX_ENTRIES) {
+    throw new Error("ZIP archive has too many entries");
+  }
+  if (centralDirOffset >= bytes.length) {
+    throw new Error("Invalid ZIP central directory offset");
+  }
+
   /** @type {{ name: string, data: Uint8Array }[]} */
   const entries = [];
   let offset = centralDirOffset;
+  let totalUncompressed = 0;
 
   for (let i = 0; i < entryCount; i += 1) {
-    if (view.getUint32(offset, true) !== 0x02014b50) {
+    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50) {
       throw new Error("Invalid ZIP central directory");
     }
 
@@ -5243,18 +5278,50 @@ async function unzip(buffer) {
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
     const localHeaderOffset = view.getUint32(offset + 42, true);
-    const rawName = new TextDecoder().decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    const nameEnd = offset + 46 + nameLength;
+    if (nameEnd > bytes.length) {
+      throw new Error("Invalid ZIP entry name");
+    }
+    const rawName = new TextDecoder().decode(bytes.subarray(offset + 46, nameEnd));
     const name = normalizeZipEntryName(rawName);
 
-    offset += 46 + nameLength + extraLength + commentLength;
+    offset = nameEnd + extraLength + commentLength;
+    if (offset > bytes.length) {
+      throw new Error("Invalid ZIP central directory");
+    }
 
     if (!name || name.endsWith("/") || isIgnoredArchiveEntry(name)) continue;
+    if (shouldExtract && !shouldExtract(name)) continue;
 
+    if (compressedSize > ZIP_MAX_ENTRY_COMPRESSED_BYTES || uncompressedSize > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
+      throw new Error(`ZIP entry exceeds size limit: ${name}`);
+    }
+    if (
+      compressedSize > 0 &&
+      uncompressedSize > 0 &&
+      uncompressedSize / compressedSize > ZIP_MAX_COMPRESSION_RATIO
+    ) {
+      throw new Error(`ZIP entry compression ratio exceeds limit: ${name}`);
+    }
+    if (totalUncompressed + uncompressedSize > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      throw new Error("ZIP archive exceeds total uncompressed size limit");
+    }
+
+    if (localHeaderOffset + 30 > bytes.length || view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
+      throw new Error(`Invalid ZIP local header: ${name}`);
+    }
     const localNameLength = view.getUint16(localHeaderOffset + 26, true);
     const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
     const dataOffset = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    if (dataOffset + compressedSize > bytes.length) {
+      throw new Error(`ZIP entry data out of bounds: ${name}`);
+    }
     const compressed = bytes.subarray(dataOffset, dataOffset + compressedSize);
     const data = await decompressZipEntry(compressed, compression, uncompressedSize);
+    totalUncompressed += data.length;
+    if (totalUncompressed > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      throw new Error("ZIP archive exceeds total uncompressed size limit");
+    }
     entries.push({ name, data });
   }
 
@@ -5275,13 +5342,53 @@ function findEndOfCentralDirectory(bytes) {
   throw new Error("Invalid ZIP archive");
 }
 
+function concatUint8Arrays(chunks, totalLength) {
+  const out = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
 async function decompressZipEntry(data, method, uncompressedSize) {
-  if (method === 0) return data;
+  if (method === 0) {
+    if (data.length > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
+      throw new Error("ZIP entry exceeds size limit");
+    }
+    return data;
+  }
   if (method === 8) {
     const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    const out = new Uint8Array(await new Response(stream).arrayBuffer());
+    const reader = stream.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
+          throw new Error("ZIP entry exceeds size limit");
+        }
+        if (data.length > 0 && total / data.length > ZIP_MAX_COMPRESSION_RATIO) {
+          throw new Error("ZIP entry compression ratio exceeds limit");
+        }
+        chunks.push(value);
+      }
+    } catch (err) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore cancel errors */
+      }
+      throw err;
+    }
+
+    const out = concatUint8Arrays(chunks, total);
     if (uncompressedSize && out.length !== uncompressedSize) {
-      return out.slice(0, uncompressedSize);
+      return out.slice(0, Math.min(out.length, uncompressedSize));
     }
     return out;
   }
