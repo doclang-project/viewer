@@ -1723,6 +1723,36 @@ pre.markup {
   max-width: 28rem;
 }
 
+.empty-state-loading {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+}
+
+body.demo-loading .empty-state-loading {
+  display: flex;
+}
+
+body.demo-loading .empty-state-prompt {
+  display: none;
+}
+
+.loading-spinner {
+  width: 2rem;
+  height: 2rem;
+  margin: 0 auto 1rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: loading-spin 0.7s linear infinite;
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .empty-state-title {
   margin: 0 0 0.75rem;
   font-size: 1.05rem;

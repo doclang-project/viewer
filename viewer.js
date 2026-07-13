@@ -407,6 +407,8 @@ const els = {
   pageZoomReset: document.getElementById("page-zoom-reset"),
   main: document.getElementById("main"),
   emptyState: document.getElementById("empty-state"),
+  emptyStateLoading: document.getElementById("empty-state-loading"),
+  emptyStatePrompt: document.getElementById("empty-state-prompt"),
   markupPane: document.getElementById("markup-pane"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
@@ -541,9 +543,20 @@ initDragDrop();
 initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
+let demoLoadInProgress = false;
+
+function setDemoLoading(loading) {
+  document.body.classList.toggle("demo-loading", loading);
+  const btnDemo = document.getElementById("btn-demo");
+  if (btnDemo) btnDemo.disabled = loading;
+}
+
 if (document.getElementById("btn-demo")) loadDemo();
 
 async function loadDemo() {
+  if (demoLoadInProgress) return;
+  demoLoadInProgress = true;
+  setDemoLoading(true);
   try {
     const res = await fetch(DEMO_ARCHIVE_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -553,6 +566,9 @@ async function loadDemo() {
     alert(
       `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
     );
+  } finally {
+    demoLoadInProgress = false;
+    if (!document.body.classList.contains("viewer-loaded")) setDemoLoading(false);
   }
 }
 
@@ -1652,6 +1668,7 @@ function updatePageZoomResetButton() {
 }
 
 function resetViewer() {
+  setDemoLoading(false);
   clearFileCatalog();
   filePaneUserToggled = false;
   selectedElementId = null;

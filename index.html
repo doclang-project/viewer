@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
   <link rel="stylesheet" href="viewer.css">
 </head>
-<body>
+<body class="demo-loading">
   <div id="cursor-hint" class="cursor-hint" role="tooltip" hidden></div>
 
   <header>
@@ -102,9 +102,16 @@
 
   <div class="empty-state" id="empty-state">
     <div class="empty-state-inner">
-      <p class="empty-state-title">Drop a DocLang file here</p>
-      <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
-      <p class="empty-state-action">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
+      <div class="empty-state-loading" id="empty-state-loading" role="status" aria-live="polite" aria-label="Loading demo document">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <p class="empty-state-title">Loading demo…</p>
+        <p class="empty-state-meta">Preparing the sample document</p>
+      </div>
+      <div class="empty-state-prompt" id="empty-state-prompt">
+        <p class="empty-state-title">Drop a DocLang file here</p>
+        <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
+        <p class="empty-state-action">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
+      </div>
     </div>
   </div>
 
