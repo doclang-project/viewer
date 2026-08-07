@@ -3462,17 +3462,8 @@ function sortedOverlayBoxes(boxes) {
   return [...boxes].sort(compareOverlayBoxPaintOrder);
 }
 
-function anchorOnRect(rect, targetX, targetY) {
-  const cx = rect.x + rect.w / 2;
-  const cy = rect.y + rect.h / 2;
-  const dx = targetX - cx;
-  const dy = targetY - cy;
-  if (!dx && !dy) return { x: cx, y: cy };
-  const scale = Math.min(
-    dx !== 0 ? rect.w / 2 / Math.abs(dx) : Infinity,
-    dy !== 0 ? rect.h / 2 / Math.abs(dy) : Infinity,
-  );
-  return { x: cx + dx * scale, y: cy + dy * scale };
+function boxCenter(rect) {
+  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
 }
 
 function ensureArrowMarker(defs, markerId) {
@@ -3540,10 +3531,8 @@ function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, 
   for (const link of links) {
     const from = boxPixelRect(link.fromBox ?? link.captionBox, img);
     const to = boxPixelRect(link.toBox ?? link.hostBox, img);
-    const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-    const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
-    const start = anchorOnRect(from, toCenter.x, toCenter.y);
-    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+    const start = boxCenter(from);
+    const end = boxCenter(to);
 
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("class", linkClass);
@@ -3644,10 +3633,8 @@ function appendFragmentLinks(svg, img, links, defaultResolution) {
     let labelAt;
     if (link.toBox) {
       const toRect = boxPixelRect(link.toBox, img);
-      const fromCenter = { x: fromRect.x + fromRect.w / 2, y: fromRect.y + fromRect.h / 2 };
-      const toCenter = { x: toRect.x + toRect.w / 2, y: toRect.y + toRect.h / 2 };
-      const start = anchorOnRect(fromRect, toCenter.x, toCenter.y);
-      const end = anchorOnRect(toRect, fromCenter.x, fromCenter.y);
+      const start = boxCenter(fromRect);
+      const end = boxCenter(toRect);
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
@@ -3662,7 +3649,7 @@ function appendFragmentLinks(svg, img, links, defaultResolution) {
     } else {
       const corner = link.targetCorner ?? "br";
       const cornerPoint = pageCornerTarget(img, defaultResolution, corner);
-      const elementAnchor = anchorOnRect(fromRect, cornerPoint.x, cornerPoint.y);
+      const elementAnchor = boxCenter(fromRect);
       const incoming = corner === "tl";
       const start = incoming ? cornerPoint : elementAnchor;
       const end = incoming ? elementAnchor : cornerPoint;
@@ -3760,10 +3747,8 @@ function appendReadingOrderOverlay(svg, img, steps) {
     for (let i = 0; i < steps.length - 1; i += 1) {
       const from = boxPixelRect(steps[i].box, img);
       const to = boxPixelRect(steps[i + 1].box, img);
-      const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-      const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
-      const start = anchorOnRect(from, toCenter.x, toCenter.y);
-      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+      const start = boxCenter(from);
+      const end = boxCenter(to);
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("class", "reading-order-step");
