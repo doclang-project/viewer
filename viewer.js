@@ -309,6 +309,9 @@ const OVERLAY_BADGE_FONT_SIZE = 11 * 1.5 * 0.8;
 const OVERLAY_BADGE_PAD_X = 3;
 const OVERLAY_BADGE_PAD_Y = 2;
 const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
+/** Demo page size; overlay lengths are calibrated to match pre-fix sizing on these images. */
+const OVERLAY_REF_IMAGE_WIDTH = 1224;
+const OVERLAY_REF_IMAGE_HEIGHT = 1584;
 const PAGE_ZOOM_DEFAULT = 100;
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
@@ -533,6 +536,7 @@ els.showReadingBackground?.addEventListener("change", () => {
   syncReadingLayerVisibility();
 });
 loadLayoutPrefs();
+normalizePaneRatios();
 initToolbarOptions();
 initPaneSplitters();
 initLayoutStackListener();
@@ -864,6 +868,7 @@ function syncFilePaneDefault() {
     userPaneVisible.file = shouldBeVisible;
     if (!wasVisible && shouldBeVisible) {
       paneRatios = [...DEFAULT_PANE_RATIOS];
+      normalizePaneRatios();
       filePaneWidthPx = null;
     }
   }
@@ -1866,6 +1871,7 @@ function resetPaneLayout() {
     reading: true,
   };
   paneRatios = [...DEFAULT_PANE_RATIOS];
+  normalizePaneRatios();
   filePaneWidthPx = null;
   setReadingSettingsOpen(false);
   syncPagePaneControls();
@@ -2164,6 +2170,7 @@ function startPaneDrag(e, physicalSplitterIndex) {
 
   const { leftKey, rightKey } = resolved;
 
+  normalizePaneRatios();
   const leftIndex = paneRatioIndex(leftKey);
   const rightIndex = paneRatioIndex(rightKey);
   const dragState = {
@@ -2218,20 +2225,25 @@ function onPaneDragMove(e) {
   const contentFr = contentPaneFrWeights(keys);
   const contentKeys = keys.filter((key) => key !== "file");
   const leftContentIndex = contentKeys.indexOf(paneDrag.leftKey);
+  if (leftContentIndex < 0 || leftContentIndex + 1 >= contentFr.length) return;
+
   const pairFrTotal = contentFr[leftContentIndex] + contentFr[leftContentIndex + 1];
+  if (!(pairFrTotal > 0)) return;
+
   const pairPixels = Math.max(contentPaneAvailableWidthPx() * pairFrTotal, 1);
-  const deltaRatio = ((e.clientX - paneDrag.startX) / pairPixels) * pairFrTotal;
+  const deltaRatio = (e.clientX - paneDrag.startX) / pairPixels;
 
   const leftIndex = paneRatioIndex(paneDrag.leftKey);
   const rightIndex = paneRatioIndex(paneDrag.rightKey);
   const pairStoredTotal = paneDrag.leftStart + paneDrag.rightStart;
+  if (!(pairStoredTotal > 0) || leftIndex < 0 || rightIndex < 0) return;
+
   let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-  const leftMin = paneMinRatio(paneDrag.leftKey);
-  const rightMin = paneMinRatio(paneDrag.rightKey);
+  const leftMin = Math.min(paneMinRatio(paneDrag.leftKey), pairStoredTotal / 2);
+  const rightMin = Math.min(paneMinRatio(paneDrag.rightKey), pairStoredTotal / 2);
   nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
   paneRatios[leftIndex] = nextLeft;
   paneRatios[rightIndex] = pairStoredTotal - nextLeft;
-  normalizePaneRatios();
   applyPaneLayout();
 }
 
@@ -2242,6 +2254,7 @@ function endPaneDrag(e) {
   if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
   paneDrag = null;
   document.body.classList.remove("pane-drag-active");
+  normalizePaneRatios();
   saveLayoutPrefs();
 }
 
@@ -2383,8 +2396,29 @@ function pageZoomFactor() {
   return pageZoomPercent / PAGE_ZOOM_DEFAULT;
 }
 
-function overlayUserLength(baseUserPx) {
-  return baseUserPx / pageZoomFactor();
+/**
+ * Convert a legacy overlay length (image pixels as tuned on the demo pages) to SVG user
+ * units for the current page. Matches the old demo on-screen size, stays zoom-stable,
+ * and scales with page resolution so other images look the same.
+ */
+function overlayUserLength(baseUserPx, img = els.pagePane?.querySelector(".page-view img")) {
+  const zoom = pageZoomFactor();
+  if (!(zoom > 0)) return baseUserPx;
+  if (!img?.naturalWidth || !img.naturalHeight || !els.pagePane) {
+    return baseUserPx / zoom;
+  }
+
+  const { w: paneW, h: paneH } = paneContentSize(els.pagePane);
+  if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
+
+  const refFit = Math.min(
+    (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
+    (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT,
+  );
+  const fitScale = getCachedFitScale(img, els.pagePane);
+  if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
+
+  return (baseUserPx * refFit) / (fitScale * zoom);
 }
 
 function computePageFitScale(img, pane) {
@@ -3428,17 +3462,8 @@ function sortedOverlayBoxes(boxes) {
   return [...boxes].sort(compareOverlayBoxPaintOrder);
 }
 
-function anchorOnRect(rect, targetX, targetY) {
-  const cx = rect.x + rect.w / 2;
-  const cy = rect.y + rect.h / 2;
-  const dx = targetX - cx;
-  const dy = targetY - cy;
-  if (!dx && !dy) return { x: cx, y: cy };
-  const scale = Math.min(
-    dx !== 0 ? rect.w / 2 / Math.abs(dx) : Infinity,
-    dy !== 0 ? rect.h / 2 / Math.abs(dy) : Infinity,
-  );
-  return { x: cx + dx * scale, y: cy + dy * scale };
+function boxCenter(rect) {
+  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
 }
 
 function ensureArrowMarker(defs, markerId) {
@@ -3506,10 +3531,8 @@ function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, 
   for (const link of links) {
     const from = boxPixelRect(link.fromBox ?? link.captionBox, img);
     const to = boxPixelRect(link.toBox ?? link.hostBox, img);
-    const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-    const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
-    const start = anchorOnRect(from, toCenter.x, toCenter.y);
-    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+    const start = boxCenter(from);
+    const end = boxCenter(to);
 
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("class", linkClass);
@@ -3610,10 +3633,8 @@ function appendFragmentLinks(svg, img, links, defaultResolution) {
     let labelAt;
     if (link.toBox) {
       const toRect = boxPixelRect(link.toBox, img);
-      const fromCenter = { x: fromRect.x + fromRect.w / 2, y: fromRect.y + fromRect.h / 2 };
-      const toCenter = { x: toRect.x + toRect.w / 2, y: toRect.y + toRect.h / 2 };
-      const start = anchorOnRect(fromRect, toCenter.x, toCenter.y);
-      const end = anchorOnRect(toRect, fromCenter.x, fromCenter.y);
+      const start = boxCenter(fromRect);
+      const end = boxCenter(toRect);
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
@@ -3628,7 +3649,7 @@ function appendFragmentLinks(svg, img, links, defaultResolution) {
     } else {
       const corner = link.targetCorner ?? "br";
       const cornerPoint = pageCornerTarget(img, defaultResolution, corner);
-      const elementAnchor = anchorOnRect(fromRect, cornerPoint.x, cornerPoint.y);
+      const elementAnchor = boxCenter(fromRect);
       const incoming = corner === "tl";
       const start = incoming ? cornerPoint : elementAnchor;
       const end = incoming ? elementAnchor : cornerPoint;
@@ -3726,10 +3747,8 @@ function appendReadingOrderOverlay(svg, img, steps) {
     for (let i = 0; i < steps.length - 1; i += 1) {
       const from = boxPixelRect(steps[i].box, img);
       const to = boxPixelRect(steps[i + 1].box, img);
-      const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-      const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
-      const start = anchorOnRect(from, toCenter.x, toCenter.y);
-      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+      const start = boxCenter(from);
+      const end = boxCenter(to);
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("class", "reading-order-step");
