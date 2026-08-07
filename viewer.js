@@ -309,6 +309,9 @@ const OVERLAY_BADGE_FONT_SIZE = 11 * 1.5 * 0.8;
 const OVERLAY_BADGE_PAD_X = 3;
 const OVERLAY_BADGE_PAD_Y = 2;
 const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
+/** Demo page size; overlay lengths are calibrated to match pre-fix sizing on these images. */
+const OVERLAY_REF_IMAGE_WIDTH = 1224;
+const OVERLAY_REF_IMAGE_HEIGHT = 1584;
 const PAGE_ZOOM_DEFAULT = 100;
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
@@ -2393,8 +2396,29 @@ function pageZoomFactor() {
   return pageZoomPercent / PAGE_ZOOM_DEFAULT;
 }
 
-function overlayUserLength(baseUserPx) {
-  return baseUserPx / pageZoomFactor();
+/**
+ * Convert a legacy overlay length (image pixels as tuned on the demo pages) to SVG user
+ * units for the current page. Matches the old demo on-screen size, stays zoom-stable,
+ * and scales with page resolution so other images look the same.
+ */
+function overlayUserLength(baseUserPx, img = els.pagePane?.querySelector(".page-view img")) {
+  const zoom = pageZoomFactor();
+  if (!(zoom > 0)) return baseUserPx;
+  if (!img?.naturalWidth || !img.naturalHeight || !els.pagePane) {
+    return baseUserPx / zoom;
+  }
+
+  const { w: paneW, h: paneH } = paneContentSize(els.pagePane);
+  if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
+
+  const refFit = Math.min(
+    (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
+    (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT,
+  );
+  const fitScale = getCachedFitScale(img, els.pagePane);
+  if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
+
+  return (baseUserPx * refFit) / (fitScale * zoom);
 }
 
 function computePageFitScale(img, pane) {
