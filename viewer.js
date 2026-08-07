@@ -533,6 +533,7 @@ els.showReadingBackground?.addEventListener("change", () => {
   syncReadingLayerVisibility();
 });
 loadLayoutPrefs();
+normalizePaneRatios();
 initToolbarOptions();
 initPaneSplitters();
 initLayoutStackListener();
@@ -864,6 +865,7 @@ function syncFilePaneDefault() {
     userPaneVisible.file = shouldBeVisible;
     if (!wasVisible && shouldBeVisible) {
       paneRatios = [...DEFAULT_PANE_RATIOS];
+      normalizePaneRatios();
       filePaneWidthPx = null;
     }
   }
@@ -1866,6 +1868,7 @@ function resetPaneLayout() {
     reading: true,
   };
   paneRatios = [...DEFAULT_PANE_RATIOS];
+  normalizePaneRatios();
   filePaneWidthPx = null;
   setReadingSettingsOpen(false);
   syncPagePaneControls();
@@ -2164,6 +2167,7 @@ function startPaneDrag(e, physicalSplitterIndex) {
 
   const { leftKey, rightKey } = resolved;
 
+  normalizePaneRatios();
   const leftIndex = paneRatioIndex(leftKey);
   const rightIndex = paneRatioIndex(rightKey);
   const dragState = {
@@ -2218,20 +2222,25 @@ function onPaneDragMove(e) {
   const contentFr = contentPaneFrWeights(keys);
   const contentKeys = keys.filter((key) => key !== "file");
   const leftContentIndex = contentKeys.indexOf(paneDrag.leftKey);
+  if (leftContentIndex < 0 || leftContentIndex + 1 >= contentFr.length) return;
+
   const pairFrTotal = contentFr[leftContentIndex] + contentFr[leftContentIndex + 1];
+  if (!(pairFrTotal > 0)) return;
+
   const pairPixels = Math.max(contentPaneAvailableWidthPx() * pairFrTotal, 1);
-  const deltaRatio = ((e.clientX - paneDrag.startX) / pairPixels) * pairFrTotal;
+  const deltaRatio = (e.clientX - paneDrag.startX) / pairPixels;
 
   const leftIndex = paneRatioIndex(paneDrag.leftKey);
   const rightIndex = paneRatioIndex(paneDrag.rightKey);
   const pairStoredTotal = paneDrag.leftStart + paneDrag.rightStart;
+  if (!(pairStoredTotal > 0) || leftIndex < 0 || rightIndex < 0) return;
+
   let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-  const leftMin = paneMinRatio(paneDrag.leftKey);
-  const rightMin = paneMinRatio(paneDrag.rightKey);
+  const leftMin = Math.min(paneMinRatio(paneDrag.leftKey), pairStoredTotal / 2);
+  const rightMin = Math.min(paneMinRatio(paneDrag.rightKey), pairStoredTotal / 2);
   nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
   paneRatios[leftIndex] = nextLeft;
   paneRatios[rightIndex] = pairStoredTotal - nextLeft;
-  normalizePaneRatios();
   applyPaneLayout();
 }
 
@@ -2242,6 +2251,7 @@ function endPaneDrag(e) {
   if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
   paneDrag = null;
   document.body.classList.remove("pane-drag-active");
+  normalizePaneRatios();
   saveLayoutPrefs();
 }
 
