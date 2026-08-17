@@ -1,0 +1,609 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  min-height: 0;
+  min-width: 0;
+}
+:host([hidden]) {
+  display: none !important;
+}
+:host(.pane-layout-last) {
+  border-right: none;
+}
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  height: 2.125rem;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.pane-header-title {
+  min-width: 0;
+}
+.pane-page-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.page-zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  user-select: none;
+}
+.page-zoom-control-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.page-zoom-control input[type='range'] {
+  width: 5.5rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+.page-zoom-reset {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 0.375rem;
+  padding: 0 0.45rem;
+  height: 1.25rem;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  min-width: 2.75rem;
+}
+.page-zoom-reset:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.page-zoom-reset:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.pane-settings-toggle {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+  border-radius: 0.25rem;
+  padding: 0 0.28rem 0 0.4rem;
+  height: 1.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font: inherit;
+}
+.pane-settings-toggle::after {
+  content: '';
+  flex-shrink: 0;
+  width: 0.26rem;
+  height: 0.26rem;
+  margin-left: 0.22rem;
+  margin-top: -0.1em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0.65;
+}
+.pane-settings-toggle:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.pane-settings-toggle[aria-expanded='true'] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.pane-settings-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pane-page-layout {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pane-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+}
+.viewer-settings-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+.viewer-settings-layer[hidden] {
+  display: none;
+}
+.viewer-settings-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  appearance: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--bg) 28%, transparent);
+  cursor: default;
+}
+.viewer-settings {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  width: 13rem;
+  max-height: calc(100% - 1rem);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+.viewer-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.viewer-settings-title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.viewer-settings-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.viewer-settings-close:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+.viewer-settings-body {
+  padding: 0.75rem;
+  overflow: auto;
+}
+.settings-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+}
+.settings-option-primary + .settings-subgroup {
+  margin-top: 0.65rem;
+}
+.settings-option-primary {
+  font-weight: 600;
+}
+.settings-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-left: 0.85rem;
+}
+.settings-reading-order-group {
+  gap: 0.35rem;
+  padding-left: 1.6rem;
+}
+.settings-option-nested {
+  padding-left: 0;
+}
+.settings-option-sub {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.settings-option-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.settings-option-disabled input {
+  cursor: not-allowed;
+}
+.settings-option input {
+  margin: 0.15rem 0 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.page-view-port {
+  display: flex;
+  overflow: auto;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  scrollbar-gutter: stable;
+}
+.pane-body.can-pan {
+  cursor: grab;
+}
+.pane-body.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+.pane-body:focus {
+  outline: none;
+}
+.pane-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 12rem;
+  color: var(--muted);
+  font-style: italic;
+  background: var(--placeholder-bg);
+  border: 1px dashed var(--border);
+  border-radius: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+}
+.page-view {
+  position: relative;
+  display: block;
+  width: fit-content;
+  flex-shrink: 0;
+  margin: auto;
+  line-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+.page-view img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+}
+.page-view img:not([data-layout-ready]) {
+  opacity: 0;
+}
+.page-view svg.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  overflow: hidden;
+}
+.overlay rect.bbox.bbox-hidden,
+.overlay .overlay-badge.bbox-hidden {
+  display: none;
+}
+.overlay rect.bbox {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.overlay rect.bbox.selected {
+  fill: color-mix(
+    in srgb,
+    var(--kind-stroke, var(--accent)) 30%,
+    transparent
+  ) !important;
+  stroke-width: 3.5;
+  filter: drop-shadow(
+    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)
+  );
+}
+.overlay rect.bbox.related:not(.selected) {
+  fill: color-mix(
+    in srgb,
+    var(--kind-stroke, var(--accent)) 30%,
+    transparent
+  ) !important;
+}
+.overlay rect.bbox.layer-furniture,
+.overlay rect.bbox.layer-background {
+  fill: url(#layer-hatch) !important;
+  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);
+}
+.overlay .layer-hatch-stripe {
+  fill: var(--muted);
+  fill-opacity: 0.06;
+}
+.overlay rect.bbox.layer-furniture.selected,
+.overlay rect.bbox.layer-background.selected {
+  fill: color-mix(
+    in srgb,
+    var(--kind-stroke, var(--accent)) 22%,
+    transparent
+  ) !important;
+}
+.overlay rect.bbox.layer-furniture.related:not(.selected),
+.overlay rect.bbox.layer-background.related:not(.selected) {
+  fill: color-mix(
+    in srgb,
+    var(--kind-stroke, var(--accent)) 18%,
+    transparent
+  ) !important;
+}
+.overlay .bbox-text {
+  fill: color-mix(in srgb, var(--kind-text) 14%, transparent);
+  stroke: var(--kind-text);
+}
+.overlay .bbox-heading {
+  fill: color-mix(in srgb, var(--kind-heading) 14%, transparent);
+  stroke: var(--kind-heading);
+}
+.overlay .bbox-list,
+.overlay .bbox-ldiv {
+  fill: color-mix(in srgb, var(--kind-list) 14%, transparent);
+  stroke: var(--kind-list);
+}
+.overlay .bbox-table {
+  fill: color-mix(in srgb, var(--kind-table) 14%, transparent);
+  stroke: var(--kind-table);
+}
+.overlay .bbox-index {
+  fill: color-mix(in srgb, var(--kind-index) 14%, transparent);
+  stroke: var(--kind-index);
+}
+.overlay .bbox-formula {
+  fill: color-mix(in srgb, var(--kind-formula) 14%, transparent);
+  stroke: var(--kind-formula);
+}
+.overlay .bbox-code {
+  fill: color-mix(in srgb, var(--kind-code) 16%, transparent);
+  stroke: var(--kind-code);
+}
+.overlay .bbox-picture {
+  fill: color-mix(in srgb, var(--kind-picture) 14%, transparent);
+  stroke: var(--kind-picture);
+}
+.overlay .bbox-group {
+  fill: color-mix(in srgb, var(--kind-group) 14%, transparent);
+  stroke: var(--kind-group);
+}
+.overlay .bbox-footnote {
+  fill: color-mix(in srgb, var(--kind-footnote) 14%, transparent);
+  stroke: var(--kind-footnote);
+}
+.overlay .bbox-page_header,
+.overlay .bbox-page_footer {
+  fill: color-mix(in srgb, var(--kind-page_header) 14%, transparent);
+  stroke: var(--kind-page_header);
+}
+.overlay .bbox-caption {
+  fill: color-mix(in srgb, var(--kind-caption) 14%, transparent);
+  stroke: var(--kind-caption);
+}
+.overlay line.caption-link {
+  color: var(--kind-caption);
+  stroke: currentColor;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  fill: none;
+}
+.overlay line.caption-link.bbox-hidden {
+  display: none;
+}
+.overlay line.xref-link {
+  color: var(--kind-footnote);
+  stroke: currentColor;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  fill: none;
+}
+.overlay line.xref-link.bbox-hidden {
+  display: none;
+}
+.overlay .fragment-link {
+  pointer-events: none;
+}
+.overlay .fragment-link.bbox-hidden {
+  display: none;
+}
+.overlay .fragment-link-path {
+  color: var(--overlay-fragment);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.overlay .fragment-link-path-dashed {
+  stroke-dasharray: 6 4;
+}
+.overlay .fragment-nav {
+  pointer-events: none;
+}
+.overlay .fragment-nav.bbox-hidden {
+  display: none;
+}
+.overlay .fragment-nav-btn {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.overlay .fragment-nav-btn-disabled {
+  pointer-events: none;
+  cursor: default;
+  opacity: 0.35;
+}
+.overlay .fragment-nav-btn-bg {
+  fill: var(--panel);
+  stroke: var(--overlay-fragment);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.overlay .fragment-nav-btn-label {
+  fill: var(--overlay-fragment);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg {
+  fill: color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel));
+}
+.overlay .fragment-link-label {
+  fill: var(--overlay-fragment);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-style: italic;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke fill;
+  stroke: var(--panel);
+  stroke-width: 3px;
+}
+.overlay .reading-order-step {
+  color: var(--overlay-reading-order);
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  fill: none;
+}
+.overlay .reading-order-step.bbox-hidden,
+.overlay .reading-order-badge.bbox-hidden {
+  display: none;
+}
+.overlay .overlay-badge {
+  pointer-events: none;
+}
+.overlay .overlay-badge-bg {
+  fill-opacity: 1;
+  stroke: none;
+}
+.reading-order-badge .overlay-badge-bg {
+  fill: var(--overlay-reading-order);
+}
+.overlay .element-badge {
+  opacity: 0.8;
+  pointer-events: auto;
+  cursor: help;
+}
+.overlay .element-badge .overlay-badge-bg {
+  fill: var(--kind-stroke, var(--accent));
+}
+.overlay .overlay-badge-label {
+  fill: #ffffff;
+  fill-opacity: 1;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.overlay .bbox-field {
+  fill: color-mix(in srgb, var(--kind-field) 14%, transparent);
+  stroke: var(--kind-field);
+}
+.overlay .bbox-default {
+  fill: color-mix(in srgb, var(--kind-default) 12%, transparent);
+  stroke: var(--kind-default);
+}
+@media (prefers-color-scheme: dark) {
+  .overlay .bbox-text {
+    fill: color-mix(in srgb, var(--kind-text) 20%, transparent);
+  }
+  .overlay .bbox-heading {
+    fill: color-mix(in srgb, var(--kind-heading) 20%, transparent);
+  }
+  .overlay .bbox-list,
+  .overlay .bbox-ldiv {
+    fill: color-mix(in srgb, var(--kind-list) 20%, transparent);
+  }
+  .overlay .bbox-table {
+    fill: color-mix(in srgb, var(--kind-table) 18%, transparent);
+  }
+  .overlay .bbox-index {
+    fill: color-mix(in srgb, var(--kind-index) 18%, transparent);
+  }
+  .overlay .bbox-formula {
+    fill: color-mix(in srgb, var(--kind-formula) 18%, transparent);
+  }
+  .overlay .bbox-code {
+    fill: color-mix(in srgb, var(--kind-code) 20%, transparent);
+  }
+  .overlay .bbox-picture {
+    fill: color-mix(in srgb, var(--kind-picture) 20%, transparent);
+  }
+  .overlay .bbox-group {
+    fill: color-mix(in srgb, var(--kind-group) 20%, transparent);
+  }
+  .overlay .bbox-footnote {
+    fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent);
+  }
+  .overlay .bbox-page_header,
+  .overlay .bbox-page_footer {
+    fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent);
+  }
+  .overlay .bbox-caption {
+    fill: color-mix(in srgb, var(--kind-caption) 18%, transparent);
+  }
+  .overlay .bbox-field {
+    fill: color-mix(in srgb, var(--kind-field) 18%, transparent);
+  }
+  .overlay .bbox-default {
+    fill: color-mix(in srgb, var(--kind-default) 18%, transparent);
+  }
+}

@@ -213,7 +213,10 @@ export async function extractArchiveFromZipBuffer(buffer: ArrayBuffer): Promise<
       const ext = m[2]!.toLowerCase().replace('jpeg', 'jpg');
       const mime =
         ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      pageImages.set(Number(m[1]), URL.createObjectURL(new Blob([e.data as BlobPart], { type: mime })));
+      pageImages.set(
+        Number(m[1]),
+        URL.createObjectURL(new Blob([e.data as BlobPart], { type: mime }))
+      );
       continue;
     }
     if (e.name.startsWith('assets/') && !e.name.endsWith('/')) {

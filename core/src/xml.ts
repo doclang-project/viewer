@@ -10,9 +10,7 @@ import {
 import type { ParsedElementHead } from './types';
 
 export function isTextLikeNode(node: Node): boolean {
-  return (
-    node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE
-  );
+  return node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE;
 }
 
 export function isWhitespaceOnlyText(node: Node): boolean {
@@ -114,7 +112,10 @@ export function skipContainerLevelHead(nodes: ChildNode[], startIdx: number): nu
   return i;
 }
 
-export function skipUntilListItemBoundary(nodes: ChildNode[], startIdx: number): number {
+export function skipUntilListItemBoundary(
+  nodes: ChildNode[],
+  startIdx: number
+): number {
   let i = startIdx;
   while (i < nodes.length) {
     const node = nodes[i];
@@ -150,10 +151,7 @@ export function locationResolution(el: Element, axisDefault: number): number {
 }
 
 export function headingLevel(el: Element): number {
-  return Math.min(
-    Math.max(parseInt(el.getAttribute('level') ?? '1', 10) || 1, 1),
-    6
-  );
+  return Math.min(Math.max(parseInt(el.getAttribute('level') ?? '1', 10) || 1, 1), 6);
 }
 
 export function firstHeadChild(el: Element, tag: string): Element | null {
@@ -295,7 +293,10 @@ export function layerFromHeadNodes(nodes: ChildNode[], startIdx: number): string
   let i = startIdx;
   while (i < nodes.length) {
     const node = nodes[i];
-    if (!node) { i += 1; continue; }
+    if (!node) {
+      i += 1;
+      continue;
+    }
     if (node.nodeType !== Node.ELEMENT_NODE) {
       i += 1;
       continue;
@@ -328,7 +329,8 @@ export function headingLevelFromEl(el: Element): number {
 export function elementLabel(el: Element): string {
   if (isVirtualTextOverlayUnit(el)) return 'text';
   const tag = localName(el);
-  if (tag === 'heading' || tag === 'field_heading') return `${tag}[${headingLevel(el)}]`;
+  if (tag === 'heading' || tag === 'field_heading')
+    return `${tag}[${headingLevel(el)}]`;
   const level = el.getAttribute('level');
   if (level) return `${tag}[${level}]`;
   const cls = el.getAttribute('class');
@@ -340,9 +342,12 @@ export function isVirtualTextOverlayUnit(el: Element): boolean {
   if (headLocations(el).length === 4) return false;
   if (!hasVirtualTextLocations(el)) return false;
   const tag = localName(el);
-  if (tag === 'ldiv' && el.parentElement && localName(el.parentElement) === 'list') return true;
+  if (tag === 'ldiv' && el.parentElement && localName(el.parentElement) === 'list')
+    return true;
   if (isCellToken(tag) && tag !== 'nl' && !CELL_SPAN_TAGS.has(tag)) {
-    return el.parentElement ? OTSL_CONTAINER_TAGS.has(localName(el.parentElement)) : false;
+    return el.parentElement
+      ? OTSL_CONTAINER_TAGS.has(localName(el.parentElement))
+      : false;
   }
   return false;
 }

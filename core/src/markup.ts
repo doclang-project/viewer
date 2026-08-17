@@ -95,7 +95,8 @@ export function toggleTruncatableMarkupAttrValue(toggle: Element): void {
   if (!wrapper) return;
 
   const markupLine = wrapper.closest('.markup-line') as HTMLElement | null;
-  const fullValue = (wrapper as HTMLElement & { dataset: DOMStringMap }).dataset.fullValue ?? '';
+  const fullValue =
+    (wrapper as HTMLElement & { dataset: DOMStringMap }).dataset.fullValue ?? '';
   const label = toggle.querySelector('.xml-attr-value-chip-label');
   const collapsedLabel =
     (toggle as HTMLElement & { dataset: DOMStringMap }).dataset.collapsedLabel ??
@@ -387,8 +388,12 @@ function buildMarkupList(
     let i = 0;
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
-      if (node.nodeType === Node.ELEMENT_NODE && localName(node as Element) === 'ldiv') break;
+      if (!node) {
+        i += 1;
+        continue;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE && localName(node as Element) === 'ldiv')
+        break;
       if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
         i += 1;
         continue;
@@ -397,7 +402,9 @@ function buildMarkupList(
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = localName(node as Element);
         if (HEAD_TAGS.has(tag) || tag === 'location') {
-          children.appendChild(buildMarkupElement(node as Element, childDepth, elementIds));
+          children.appendChild(
+            buildMarkupElement(node as Element, childDepth, elementIds)
+          );
           i += 1;
           continue;
         }
@@ -406,8 +413,14 @@ function buildMarkupList(
     }
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
-      if (node.nodeType !== Node.ELEMENT_NODE || localName(node as Element) !== 'ldiv') {
+      if (!node) {
+        i += 1;
+        continue;
+      }
+      if (
+        node.nodeType !== Node.ELEMENT_NODE ||
+        localName(node as Element) !== 'ldiv'
+      ) {
         appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
         i += 1;
         continue;
@@ -416,7 +429,13 @@ function buildMarkupList(
       children.appendChild(buildMarkupElement(ldiv, childDepth, elementIds));
       i += 1;
       const end = skipUntilListItemBoundary(nodes, i);
-      appendMarkupVirtualText(children, childDepth, ldiv, nodes.slice(i, end), elementIds);
+      appendMarkupVirtualText(
+        children,
+        childDepth,
+        ldiv,
+        nodes.slice(i, end),
+        elementIds
+      );
       i = end;
     }
   });
@@ -432,8 +451,15 @@ function buildMarkupOtslContainer(
     let i = 0;
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
-      if (node.nodeType === Node.ELEMENT_NODE && isCellToken(localName(node as Element))) break;
+      if (!node) {
+        i += 1;
+        continue;
+      }
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        isCellToken(localName(node as Element))
+      )
+        break;
       if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
         i += 1;
         continue;
@@ -442,7 +468,9 @@ function buildMarkupOtslContainer(
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = localName(node as Element);
         if (HEAD_TAGS.has(tag) || tag === 'location' || tag === 'h_thread') {
-          children.appendChild(buildMarkupElement(node as Element, childDepth, elementIds));
+          children.appendChild(
+            buildMarkupElement(node as Element, childDepth, elementIds)
+          );
           i += 1;
           continue;
         }
@@ -451,7 +479,10 @@ function buildMarkupOtslContainer(
     }
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
+      if (!node) {
+        i += 1;
+        continue;
+      }
       if (node.nodeType !== Node.ELEMENT_NODE) {
         appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
         i += 1;
@@ -473,7 +504,13 @@ function buildMarkupOtslContainer(
       i += 1;
       if (CELL_SPAN_TAGS.has(tag)) continue;
       const end = skipUntilCellBoundary(nodes, i);
-      appendMarkupVirtualText(children, childDepth, cell, nodes.slice(i, end), elementIds);
+      appendMarkupVirtualText(
+        children,
+        childDepth,
+        cell,
+        nodes.slice(i, end),
+        elementIds
+      );
       i = end;
     }
   });
@@ -486,7 +523,8 @@ export function buildMarkupElement(
 ): HTMLElement {
   const tag = localName(el);
   if (tag === 'list') return buildMarkupList(el, depth, elementIds);
-  if (OTSL_CONTAINER_TAGS.has(tag)) return buildMarkupOtslContainer(el, depth, elementIds);
+  if (OTSL_CONTAINER_TAGS.has(tag))
+    return buildMarkupOtslContainer(el, depth, elementIds);
 
   const block = document.createElement('div');
   block.className = 'markup-el';
@@ -602,8 +640,9 @@ export function buildMarkupView(
     const ghostText = target.closest('.markup-el-virtual-text');
     const elementId = ghostText?.hasAttribute('data-element-id')
       ? ghostText.getAttribute('data-element-id')!
-      : target.closest('.markup-el[data-element-id]')?.getAttribute('data-element-id') ??
-        null;
+      : (target
+          .closest('.markup-el[data-element-id]')
+          ?.getAttribute('data-element-id') ?? null);
     if (elementId) onSelectElement(elementId);
   });
   return root;

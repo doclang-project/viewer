@@ -39,7 +39,7 @@ import type {
   ThreadNav,
 } from './types';
 import { extractArchiveFromZipBuffer } from './zip';
-import { isPictureContentElement, isTableContentElement } from './xml_overlay';
+import { isPictureContentElement, isTableContentElement } from './xml-overlay';
 
 // ---------------------------------------------------------------------------
 // Document XML parsing helpers
@@ -84,7 +84,9 @@ export function assignElementIds(segment: Element[]): Map<Element, string> {
   return ids;
 }
 
-export function invertElementIds(elementIds: Map<Element, string>): Map<string, Element> {
+export function invertElementIds(
+  elementIds: Map<Element, string>
+): Map<string, Element> {
   const idToElement = new Map<string, Element>();
   for (const [el, id] of elementIds) idToElement.set(id, el);
   return idToElement;

@@ -1,5 +1,22 @@
 /* DocLang Archive Viewer — archive format: github.com/doclang-project/doclang spec.md#doclang-archive-format */
 
+import './components/cursor-hint/cursor-hint';
+import './components/page-nav/page-nav';
+import './components/toolbar/toolbar';
+import './components/file-pane/file-pane';
+import './components/markup-pane/markup-pane';
+import './components/page-view-pane/page-view-pane';
+import './components/reading-pane/reading-pane';
+import './components/empty-state/empty-state';
+import type { DoclangCursorHint } from './components/cursor-hint/cursor-hint';
+import type { DoclangPageNav } from './components/page-nav/page-nav';
+import type { DoclangToolbar } from './components/toolbar/toolbar';
+import type { DoclangFilePane } from './components/file-pane/file-pane';
+import type { DoclangMarkupPane } from './components/markup-pane/markup-pane';
+import type { DoclangPageViewPane } from './components/page-view-pane/page-view-pane';
+import type { DoclangReadingPane } from './components/reading-pane/reading-pane';
+import type { DoclangEmptyState } from './components/empty-state/empty-state';
+
 import {
   SUPPORTED_FILE_EXTENSIONS,
   OPEN_FILE_HINT,
@@ -8,7 +25,6 @@ import {
   FRAGMENT_NAV_HINT_NEXT,
   NO_MARKUP,
   NO_IMAGE,
-  FILE_THUMB_PLACEHOLDER_SVG,
   PAGE_IMAGE_RE,
   PAGE_ZOOM_DEFAULT,
   PAGE_PAN_DRAG_THRESHOLD,
@@ -78,7 +94,7 @@ import {
   applyPageImageSize,
   setOverlayAccessors,
 } from './overlay';
-import { isPictureContentElement, isTableContentElement } from './xml_overlay';
+import { isPictureContentElement, isTableContentElement } from './xml-overlay';
 import { unzip } from './zip';
 
 // ---------------------------------------------------------------------------
@@ -124,100 +140,116 @@ setOverlayAccessors({
   getPageZoomPercent: () => pageZoomPercent,
   getPagePane: () => els.pagePane,
   getPageLayoutCache: () => pageLayoutCache,
-  setPageLayoutCache: c => { pageLayoutCache = c; },
+  setPageLayoutCache: c => {
+    pageLayoutCache = c;
+  },
   getSelectedElementId: () => selectedElementId,
 });
 
 // ---------------------------------------------------------------------------
-// DOM element references
+// Web component instances
+// ---------------------------------------------------------------------------
+
+const doclangCursorHint = document.querySelector(
+  'doclang-cursor-hint'
+) as DoclangCursorHint | null;
+const doclangPageNav = document.querySelector(
+  'doclang-page-nav'
+) as DoclangPageNav | null;
+const doclangToolbar = document.querySelector(
+  'doclang-toolbar'
+) as DoclangToolbar | null;
+const doclangFilePane = document.querySelector(
+  'doclang-file-pane'
+) as DoclangFilePane | null;
+const doclangMarkupPane = document.querySelector(
+  'doclang-markup-pane'
+) as DoclangMarkupPane | null;
+const doclangPageViewPane = document.querySelector(
+  'doclang-page-view-pane'
+) as DoclangPageViewPane | null;
+const doclangReadingPane = document.querySelector(
+  'doclang-reading-pane'
+) as DoclangReadingPane | null;
+const doclangEmptyState = document.querySelector(
+  'doclang-empty-state'
+) as DoclangEmptyState | null;
+
+// ---------------------------------------------------------------------------
+// DOM element references (flattened from component accessors)
 // ---------------------------------------------------------------------------
 
 const els = {
-  openFileBtn: document.getElementById('open-file-btn'),
-  emptyStateFileTypes: document.getElementById('empty-state-file-types'),
+  openFileBtn: doclangToolbar?.openFileBtn ?? null,
   docLabel: document.getElementById('doc-label'),
-  filePane: document.getElementById('file-pane'),
-  filePaneCloseAll: document.getElementById('btn-file-pane-close-all'),
-  pageNav: document.getElementById('page-nav'),
-  pageIndicator: document.getElementById('page-indicator'),
-  pageNumberInput: document.getElementById('page-number-input') as HTMLInputElement | null,
-  pageCountIndicator: document.getElementById('page-count-indicator'),
-  btnPrev: document.getElementById('btn-prev') as HTMLButtonElement | null,
-  btnNext: document.getElementById('btn-next') as HTMLButtonElement | null,
-  showAllBboxes: document.getElementById('show-all-bboxes') as HTMLInputElement | null,
-  showLayoutBadges: document.getElementById('show-layout-badges') as HTMLInputElement | null,
-  showLayoutBadgesLabel: document.getElementById('show-layout-badges-label'),
-  settingsToggle: document.getElementById('btn-settings-toggle'),
-  readingSettingsToggle: document.getElementById('btn-reading-settings-toggle'),
-  pageSettingsLayer: document.getElementById('page-settings-layer'),
-  pageSettingsScrim: document.getElementById('page-settings-scrim'),
-  pageSettingsClose: document.getElementById('btn-page-settings-close'),
-  readingSettingsLayer: document.getElementById('reading-settings-layer'),
-  readingSettingsScrim: document.getElementById('reading-settings-scrim'),
-  readingSettingsClose: document.getElementById('btn-reading-settings-close'),
-  showReadingFurniture: document.getElementById('show-reading-furniture') as HTMLInputElement | null,
-  showReadingFurnitureLabel: document.getElementById('show-reading-furniture-label'),
-  showReadingBackground: document.getElementById('show-reading-background') as HTMLInputElement | null,
-  showReadingBackgroundLabel: document.getElementById('show-reading-background-label'),
-  showCaptionLinks: document.getElementById('show-caption-links') as HTMLInputElement | null,
-  showCaptionLinksLabel: document.getElementById('show-caption-links-label'),
-  showPictureContents: document.getElementById('show-picture-contents') as HTMLInputElement | null,
-  showPictureContentsLabel: document.getElementById('show-picture-contents-label'),
-  showTableContents: document.getElementById('show-table-contents') as HTMLInputElement | null,
-  showTableContentsLabel: document.getElementById('show-table-contents-label'),
-  showFragmentLinks: document.getElementById('show-fragment-links') as HTMLInputElement | null,
-  showFragmentLinksLabel: document.getElementById('show-fragment-links-label'),
-  showXrefLinks: document.getElementById('show-xref-links') as HTMLInputElement | null,
-  showXrefLinksLabel: document.getElementById('show-xref-links-label'),
-  showReadingOrder: document.getElementById('show-reading-order') as HTMLInputElement | null,
-  showReadingOrderLabel: document.getElementById('show-reading-order-label'),
-  readingOrderArrows: document.getElementById('reading-order-arrows') as HTMLInputElement | null,
-  readingOrderArrowsLabel: document.getElementById('reading-order-arrows-label'),
-  readingOrderGlobal: document.getElementById('reading-order-global') as HTMLInputElement | null,
-  readingOrderGlobalLabel: document.getElementById('reading-order-global-label'),
-  pageZoom: document.getElementById('page-zoom') as HTMLInputElement | null,
-  pageZoomLabel: document.getElementById('page-zoom-label'),
-  pageZoomReset: document.getElementById('page-zoom-reset') as HTMLButtonElement | null,
+  filePane: doclangFilePane?.body ?? null,
+  filePaneCloseAll: null as HTMLButtonElement | null, // handled by doclang-file-pane internally
+  pageNav: doclangPageNav ?? null,
+  pageNumberInput: doclangPageNav?.pageNumberInput ?? null,
+  pageCountIndicator: doclangPageNav?.pageCountIndicator ?? null,
+  btnPrev: doclangPageNav?.btnPrev ?? null,
+  btnNext: doclangPageNav?.btnNext ?? null,
+  showAllBboxes: doclangPageViewPane?.showAllBboxes ?? null,
+  showLayoutBadges: doclangPageViewPane?.showLayoutBadges ?? null,
+  showLayoutBadgesLabel: doclangPageViewPane?.showLayoutBadgesLabel ?? null,
+  settingsToggle: doclangPageViewPane?.settingsToggle ?? null,
+  readingSettingsToggle: doclangReadingPane?.settingsToggle ?? null,
+  pageSettingsLayer: doclangPageViewPane?.settingsLayer ?? null,
+  pageSettingsScrim: null as HTMLElement | null, // handled by doclang-page-view-pane internally
+  pageSettingsClose: null as HTMLElement | null, // handled by doclang-page-view-pane internally
+  readingSettingsLayer: doclangReadingPane?.settingsLayer ?? null,
+  readingSettingsScrim: null as HTMLElement | null, // handled by doclang-reading-pane internally
+  readingSettingsClose: null as HTMLElement | null, // handled by doclang-reading-pane internally
+  showReadingFurniture: doclangReadingPane?.showFurniture ?? null,
+  showReadingFurnitureLabel: doclangReadingPane?.showFurnitureLabel ?? null,
+  showReadingBackground: doclangReadingPane?.showBackground ?? null,
+  showReadingBackgroundLabel: doclangReadingPane?.showBackgroundLabel ?? null,
+  showCaptionLinks: doclangPageViewPane?.showCaptionLinks ?? null,
+  showCaptionLinksLabel: doclangPageViewPane?.showCaptionLinksLabel ?? null,
+  showPictureContents: doclangPageViewPane?.showPictureContents ?? null,
+  showPictureContentsLabel: doclangPageViewPane?.showPictureContentsLabel ?? null,
+  showTableContents: doclangPageViewPane?.showTableContents ?? null,
+  showTableContentsLabel: doclangPageViewPane?.showTableContentsLabel ?? null,
+  showFragmentLinks: doclangPageViewPane?.showFragmentLinks ?? null,
+  showFragmentLinksLabel: doclangPageViewPane?.showFragmentLinksLabel ?? null,
+  showXrefLinks: doclangPageViewPane?.showXrefLinks ?? null,
+  showXrefLinksLabel: doclangPageViewPane?.showXrefLinksLabel ?? null,
+  showReadingOrder: doclangPageViewPane?.showReadingOrder ?? null,
+  showReadingOrderLabel: doclangPageViewPane?.showReadingOrderLabel ?? null,
+  readingOrderArrows: doclangPageViewPane?.readingOrderArrows ?? null,
+  readingOrderArrowsLabel: doclangPageViewPane?.readingOrderArrowsLabel ?? null,
+  readingOrderGlobal: doclangPageViewPane?.readingOrderGlobal ?? null,
+  readingOrderGlobalLabel: doclangPageViewPane?.readingOrderGlobalLabel ?? null,
+  pageZoom: doclangPageViewPane?.zoomInput ?? null,
+  pageZoomLabel: doclangPageViewPane?.zoomLabel ?? null,
+  pageZoomReset: doclangPageViewPane?.zoomReset ?? null,
   main: document.getElementById('main'),
-  emptyState: document.getElementById('empty-state'),
-  emptyStateLoading: document.getElementById('empty-state-loading'),
-  emptyStatePrompt: document.getElementById('empty-state-prompt'),
-  markupPane: document.getElementById('markup-pane'),
-  renderedPane: document.getElementById('rendered-pane'),
-  pagePane: document.getElementById('page-pane'),
-  paneFile: document.querySelector('.pane-file') as HTMLElement | null,
-  panePageView: document.querySelector('.pane-page-view') as HTMLElement | null,
-  paneMarkup: document.querySelector('.pane-markup') as HTMLElement | null,
-  paneReading: document.querySelector('.pane-reading') as HTMLElement | null,
+  emptyState: doclangEmptyState ?? null,
+  markupPane: doclangMarkupPane?.body ?? null,
+  renderedPane: doclangReadingPane?.body ?? null,
+  pagePane: doclangPageViewPane?.body ?? null,
+  paneFile: doclangFilePane?.section ?? null,
+  panePageView: doclangPageViewPane?.section ?? null,
+  paneMarkup: doclangMarkupPane?.section ?? null,
+  paneReading: doclangReadingPane?.section ?? null,
   splitters: [
     document.getElementById('splitter-0'),
     document.getElementById('splitter-1'),
     document.getElementById('splitter-2'),
   ] as (HTMLElement | null)[],
-  toolbarOptionsBtn: document.getElementById('btn-toolbar-options'),
-  toolbarOptionsPanel: document.getElementById('toolbar-options-panel'),
-  toggleFilePane: document.getElementById('toggle-file-pane') as HTMLInputElement | null,
-  toggleFilePaneLabel: document.getElementById('toggle-file-pane-label'),
-  togglePagePane: document.getElementById('toggle-page-pane') as HTMLInputElement | null,
-  toggleMarkupPane: document.getElementById('toggle-markup-pane') as HTMLInputElement | null,
-  toggleReadingPane: document.getElementById('toggle-reading-pane') as HTMLInputElement | null,
-  togglePagePaneLabel: document.getElementById('toggle-page-pane-label'),
-  resetPaneLayoutBtn: document.getElementById('btn-reset-pane-layout') as HTMLButtonElement | null,
+  toolbarOptionsBtn: doclangToolbar?.toolbarOptionsBtn ?? null,
+  toolbarOptionsPanel: null as HTMLElement | null, // handled by doclang-toolbar internally
+  toggleFilePane: doclangToolbar?.toggleFilePane ?? null,
+  toggleFilePaneLabel: doclangToolbar?.toggleFilePaneLabel ?? null,
+  togglePagePane: doclangToolbar?.togglePagePane ?? null,
+  toggleMarkupPane: doclangToolbar?.toggleMarkupPane ?? null,
+  toggleReadingPane: doclangToolbar?.toggleReadingPane ?? null,
+  togglePagePaneLabel: doclangToolbar?.togglePagePaneLabel ?? null,
+  resetPaneLayoutBtn: doclangToolbar?.resetPaneLayoutBtn ?? null,
 };
 
-// ---------------------------------------------------------------------------
-// Cursor hint
-// ---------------------------------------------------------------------------
-
-const cursorHintEl = document.getElementById('cursor-hint') as HTMLElement | null;
-const CURSOR_HINT_OFFSET = 10;
-const CURSOR_HINT_MARGIN = 8;
-
 function hideCursorHint(): void {
-  if (!cursorHintEl) return;
-  cursorHintEl.hidden = true;
-  cursorHintEl.classList.remove('cursor-hint-detail');
-  cursorHintEl.replaceChildren();
+  doclangCursorHint?.hide();
 }
 
 function showCursorHint(
@@ -226,46 +258,11 @@ function showCursorHint(
   clientY: number,
   { detail = false } = {}
 ): void {
-  if (!cursorHintEl) return;
-  cursorHintEl.replaceChildren();
-  if (typeof content === 'string') {
-    cursorHintEl.textContent = content;
-  } else {
-    cursorHintEl.appendChild(content);
-  }
-  cursorHintEl.classList.toggle('cursor-hint-detail', detail);
-  cursorHintEl.hidden = false;
-
-  let left = clientX + CURSOR_HINT_OFFSET;
-  let top = clientY + CURSOR_HINT_OFFSET;
-  const rect = cursorHintEl.getBoundingClientRect();
-  if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) {
-    left = clientX - rect.width - CURSOR_HINT_OFFSET;
-  }
-  if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) {
-    top = clientY - rect.height - CURSOR_HINT_OFFSET;
-  }
-  cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
-  cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
+  doclangCursorHint?.show(content, clientX, clientY, detail);
 }
 
 function showCursorHintHtml(html: string, clientX: number, clientY: number): void {
-  if (!cursorHintEl) return;
-  cursorHintEl.innerHTML = html;
-  cursorHintEl.classList.add('cursor-hint-detail');
-  cursorHintEl.hidden = false;
-
-  let left = clientX + CURSOR_HINT_OFFSET;
-  let top = clientY + CURSOR_HINT_OFFSET;
-  const rect = cursorHintEl.getBoundingClientRect();
-  if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) {
-    left = clientX - rect.width - CURSOR_HINT_OFFSET;
-  }
-  if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) {
-    top = clientY - rect.height - CURSOR_HINT_OFFSET;
-  }
-  cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
-  cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
+  doclangCursorHint?.showHtml(html, clientX, clientY);
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +275,10 @@ function headTextPreview(el: Element, maxLen = 72): string {
   return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
 }
 
-function collectElementHeadInfo(el: Element, defaultResolution: { width: number; height: number }): HeadInfo[] {
+function collectElementHeadInfo(
+  el: Element,
+  defaultResolution: { width: number; height: number }
+): HeadInfo[] {
   const labelEl = firstHeadChild(el, 'label');
   const threadEl = firstHeadChild(el, 'thread');
   const xrefEl = firstHeadChild(el, 'xref');
@@ -289,7 +289,9 @@ function collectElementHeadInfo(el: Element, defaultResolution: { width: number;
   const summaryEl = firstHeadChild(el, 'summary');
   const customEl = firstHeadChild(el, 'custom');
   const locs = elementHeadLocations(el);
-  const rows: HeadInfo[] = [{ key: 'element', value: elementLabel(el), isDefault: false }];
+  const rows: HeadInfo[] = [
+    { key: 'element', value: elementLabel(el), isDefault: false },
+  ];
 
   rows.push({
     key: 'label',
@@ -298,19 +300,31 @@ function collectElementHeadInfo(el: Element, defaultResolution: { width: number;
   });
 
   if (threadEl) {
-    rows.push({ key: 'thread_id', value: threadEl.getAttribute('thread_id') ?? '—', isDefault: false });
+    rows.push({
+      key: 'thread_id',
+      value: threadEl.getAttribute('thread_id') ?? '—',
+      isDefault: false,
+    });
   } else {
     rows.push({ key: 'thread', value: '—', isDefault: true });
   }
 
   if (xrefEl) {
-    rows.push({ key: 'xref', value: `thread_id ${xrefEl.getAttribute('thread_id') ?? '—'}`, isDefault: false });
+    rows.push({
+      key: 'xref',
+      value: `thread_id ${xrefEl.getAttribute('thread_id') ?? '—'}`,
+      isDefault: false,
+    });
   } else {
     rows.push({ key: 'xref', value: '—', isDefault: true });
   }
 
   if (hrefEl) {
-    rows.push({ key: 'href', value: hrefEl.getAttribute('uri') ?? '—', isDefault: false });
+    rows.push({
+      key: 'href',
+      value: hrefEl.getAttribute('uri') ?? '—',
+      isDefault: false,
+    });
   } else {
     rows.push({ key: 'href', value: '—', isDefault: true });
   }
@@ -325,10 +339,15 @@ function collectElementHeadInfo(el: Element, defaultResolution: { width: number;
   if (locs.length === 4) {
     for (let idx = 0; idx < 4; idx += 1) {
       const loc = locs[idx]!;
-      const axisDefault = idx % 2 === 0 ? defaultResolution.width : defaultResolution.height;
+      const axisDefault =
+        idx % 2 === 0 ? defaultResolution.width : defaultResolution.height;
       const resolution = locationResolution(loc, axisDefault);
       const value = loc.getAttribute('value') ?? '0';
-      rows.push({ key: cornerLabels[idx]!, value: `${value} @ ${resolution}`, isDefault: false });
+      rows.push({
+        key: cornerLabels[idx]!,
+        value: `${value} @ ${resolution}`,
+        isDefault: false,
+      });
     }
   } else {
     for (const key of cornerLabels) {
@@ -336,15 +355,34 @@ function collectElementHeadInfo(el: Element, defaultResolution: { width: number;
     }
   }
 
-  rows.push({ key: 'caption', value: captionEl ? headTextPreview(captionEl) : '—', isDefault: !captionEl });
-  rows.push({ key: 'description', value: descriptionEl ? headTextPreview(descriptionEl) : '—', isDefault: !descriptionEl });
-  rows.push({ key: 'summary', value: summaryEl ? headTextPreview(summaryEl) : '—', isDefault: !summaryEl });
-  rows.push({ key: 'custom', value: customEl ? headTextPreview(customEl) : '—', isDefault: !customEl });
+  rows.push({
+    key: 'caption',
+    value: captionEl ? headTextPreview(captionEl) : '—',
+    isDefault: !captionEl,
+  });
+  rows.push({
+    key: 'description',
+    value: descriptionEl ? headTextPreview(descriptionEl) : '—',
+    isDefault: !descriptionEl,
+  });
+  rows.push({
+    key: 'summary',
+    value: summaryEl ? headTextPreview(summaryEl) : '—',
+    isDefault: !summaryEl,
+  });
+  rows.push({
+    key: 'custom',
+    value: customEl ? headTextPreview(customEl) : '—',
+    isDefault: !customEl,
+  });
 
   return rows;
 }
 
-function elementHeadTooltipHtml(el: Element, defaultResolution: { width: number; height: number }): string {
+function elementHeadTooltipHtml(
+  el: Element,
+  defaultResolution: { width: number; height: number }
+): string {
   const rows = collectElementHeadInfo(el, defaultResolution);
   const body = rows
     .map(({ key, value, isDefault }) => {
@@ -362,7 +400,8 @@ function elementHeadTooltipHtml(el: Element, defaultResolution: { width: number;
 
 function syncReadingLayerCheckboxes(): void {
   if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
-  if (els.showReadingBackground) els.showReadingBackground.checked = showReadingBackground;
+  if (els.showReadingBackground)
+    els.showReadingBackground.checked = showReadingBackground;
 }
 
 function syncReadingLayerVisibility(): void {
@@ -382,7 +421,10 @@ function updatePageZoomResetButton(): void {
 
 function pageViewScrollPane(): HTMLElement | null {
   if (!els.pagePane) return null;
-  return (els.pagePane.querySelector('.page-view-port') as HTMLElement | null) ?? els.pagePane;
+  return (
+    (els.pagePane.querySelector('.page-view-port') as HTMLElement | null) ??
+    els.pagePane
+  );
 }
 
 function isPagePaneScrollable(): boolean {
@@ -399,7 +441,10 @@ function resetPageZoom(): void {
   }
   updatePageZoomResetButton();
   const port = pageViewScrollPane();
-  if (port) { port.scrollLeft = 0; port.scrollTop = 0; }
+  if (port) {
+    port.scrollLeft = 0;
+    port.scrollTop = 0;
+  }
   refreshPageViewLayout();
 }
 
@@ -408,7 +453,9 @@ function refreshPageViewLayout(): void {
   cancelAnimationFrame(pageLayoutFrame);
   pageLayoutFrame = requestAnimationFrame(() => {
     pageLayoutFrame = 0;
-    const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
+    const img = els.pagePane?.querySelector(
+      '.page-view img'
+    ) as HTMLImageElement | null;
     if (img?.naturalWidth) applyPageLayout(img);
   });
 }
@@ -422,10 +469,13 @@ function syncPageViewChrome(img: HTMLImageElement): void {
   const svg = img.parentElement?.querySelector('svg.overlay') as SVGSVGElement | null;
   if (svg && state?.pageViewOverlay) {
     syncOverlayBadges(
-      img, svg,
+      img,
+      svg,
       state.pageViewOverlay.boxes,
       state.pageViewOverlay.readingOrderSteps,
-      showAllBboxes, showLayoutBadges, showReadingOrder
+      showAllBboxes,
+      showLayoutBadges,
+      showReadingOrder
     );
   }
   updatePagePanePanCursor();
@@ -443,14 +493,12 @@ function updatePagePanePanCursor(): void {
 
 function setPageSettingsOpen(open: boolean): void {
   pageSettingsOpen = open;
-  if (els.pageSettingsLayer) els.pageSettingsLayer.hidden = !open;
-  if (els.settingsToggle) els.settingsToggle.setAttribute('aria-expanded', String(open));
+  doclangPageViewPane?.setSettingsOpen(open);
 }
 
 function setReadingSettingsOpen(open: boolean): void {
   readingSettingsOpen = open;
-  if (els.readingSettingsLayer) els.readingSettingsLayer.hidden = !open;
-  if (els.readingSettingsToggle) els.readingSettingsToggle.setAttribute('aria-expanded', String(open));
+  doclangReadingPane?.setSettingsOpen(open);
 }
 
 function closeAllSettings(): void {
@@ -465,8 +513,13 @@ function closeAllSettings(): void {
 function syncLayoutSubtoggles(): void {
   const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
   for (const label of [
-    els.showLayoutBadgesLabel, els.showPictureContentsLabel, els.showTableContentsLabel,
-    els.showFragmentLinksLabel, els.showCaptionLinksLabel, els.showXrefLinksLabel, els.showReadingOrderLabel,
+    els.showLayoutBadgesLabel,
+    els.showPictureContentsLabel,
+    els.showTableContentsLabel,
+    els.showFragmentLinksLabel,
+    els.showCaptionLinksLabel,
+    els.showXrefLinksLabel,
+    els.showReadingOrderLabel,
   ]) {
     if (!label) continue;
     label.classList.toggle('settings-option-disabled', !layoutEnabled);
@@ -486,12 +539,32 @@ function syncLayoutSubtoggles(): void {
 // Pane layout
 // ---------------------------------------------------------------------------
 
-function paneDef(key: PaneKey): { key: PaneKey; el: HTMLElement | null; canShow: () => boolean } {
+function paneDef(key: PaneKey): {
+  key: PaneKey;
+  el: HTMLElement | null;
+  canShow: () => boolean;
+} {
   const defs = {
-    file: { key: 'file' as PaneKey, el: els.paneFile, canShow: () => fileCatalog.length > 0 },
-    page: { key: 'page' as PaneKey, el: els.panePageView, canShow: () => Boolean(state?.hasPageView) },
-    markup: { key: 'markup' as PaneKey, el: els.paneMarkup, canShow: () => Boolean(state) },
-    reading: { key: 'reading' as PaneKey, el: els.paneReading, canShow: () => Boolean(state) },
+    file: {
+      key: 'file' as PaneKey,
+      el: els.paneFile,
+      canShow: () => fileCatalog.length > 0,
+    },
+    page: {
+      key: 'page' as PaneKey,
+      el: els.panePageView,
+      canShow: () => Boolean(state?.hasPageView),
+    },
+    markup: {
+      key: 'markup' as PaneKey,
+      el: els.paneMarkup,
+      canShow: () => Boolean(state),
+    },
+    reading: {
+      key: 'reading' as PaneKey,
+      el: els.paneReading,
+      canShow: () => Boolean(state),
+    },
   };
   return defs[key];
 }
@@ -516,7 +589,8 @@ function paneMinRatio(_unused: PaneKey): number {
 
 function filePaneFitWidthPx(): number {
   const probe = document.createElement('div');
-  probe.style.cssText = 'position:absolute;visibility:hidden;width:var(--file-pane-fit-width);';
+  probe.style.cssText =
+    'position:absolute;visibility:hidden;width:var(--file-pane-fit-width);';
   document.documentElement.appendChild(probe);
   const px = probe.getBoundingClientRect().width;
   probe.remove();
@@ -541,7 +615,10 @@ function paneRatioIndex(key: PaneKey): number {
 
 function normalizePaneRatios(): void {
   const sum = paneRatios.reduce((a, b) => a + b, 0);
-  if (sum <= 0) { paneRatios = [...DEFAULT_PANE_RATIOS]; return; }
+  if (sum <= 0) {
+    paneRatios = [...DEFAULT_PANE_RATIOS];
+    return;
+  }
   paneRatios = paneRatios.map(r => r / sum);
 }
 
@@ -549,10 +626,15 @@ function loadLayoutPrefs(): void {
   try {
     const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
     if (!raw) return;
-    const data = JSON.parse(raw) as { visible?: Record<string, unknown>; ratios?: unknown[]; filePaneWidthPx?: unknown };
+    const data = JSON.parse(raw) as {
+      visible?: Record<string, unknown>;
+      ratios?: unknown[];
+      filePaneWidthPx?: unknown;
+    };
     if (data?.visible && typeof data.visible === 'object') {
       for (const key of PANE_KEYS) {
-        if (typeof data.visible[key] === 'boolean') userPaneVisible[key] = data.visible[key] as boolean;
+        if (typeof data.visible[key] === 'boolean')
+          userPaneVisible[key] = data.visible[key] as boolean;
       }
       if (typeof data.visible['file'] === 'boolean') filePaneUserToggled = true;
     }
@@ -569,7 +651,9 @@ function loadLayoutPrefs(): void {
     if (typeof data?.filePaneWidthPx === 'number' && data.filePaneWidthPx > 0) {
       filePaneWidthPx = data.filePaneWidthPx;
     }
-  } catch { /* ignore invalid stored layout */ }
+  } catch {
+    /* ignore invalid stored layout */
+  }
 }
 
 function saveLayoutPrefs(): void {
@@ -578,12 +662,19 @@ function saveLayoutPrefs(): void {
       LAYOUT_STORAGE_KEY,
       JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx })
     );
-  } catch { /* ignore quota / private mode */ }
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 function resetPaneLayout(): void {
   filePaneUserToggled = false;
-  userPaneVisible = { file: defaultFilePaneVisible(), page: true, markup: true, reading: true };
+  userPaneVisible = {
+    file: defaultFilePaneVisible(),
+    page: true,
+    markup: true,
+    reading: true,
+  };
   paneRatios = [...DEFAULT_PANE_RATIOS];
   normalizePaneRatios();
   filePaneWidthPx = null;
@@ -655,12 +746,18 @@ function visiblePaneNeighborBefore(key: PaneKey): PaneKey | null {
   return null;
 }
 
-function resolvedPhysicalSplitterKeys(physicalSplitterIndex: number): { leftKey: PaneKey; rightKey: PaneKey } | null {
+function resolvedPhysicalSplitterKeys(
+  physicalSplitterIndex: number
+): { leftKey: PaneKey; rightKey: PaneKey } | null {
   const leftPhysical = PANE_KEYS[physicalSplitterIndex];
   const rightPhysical = PANE_KEYS[physicalSplitterIndex + 1];
   if (!leftPhysical || !rightPhysical) return null;
-  const leftKey = isPaneVisible(leftPhysical) ? leftPhysical : visiblePaneNeighborBefore(rightPhysical);
-  const rightKey = isPaneVisible(rightPhysical) ? rightPhysical : visiblePaneNeighborAfter(leftPhysical);
+  const leftKey = isPaneVisible(leftPhysical)
+    ? leftPhysical
+    : visiblePaneNeighborBefore(rightPhysical);
+  const rightKey = isPaneVisible(rightPhysical)
+    ? rightPhysical
+    : visiblePaneNeighborAfter(leftPhysical);
   if (!leftKey || !rightKey || leftKey === rightKey) return null;
   if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
   const canonical = splitterForLayoutGap(leftKey, rightKey);
@@ -671,7 +768,10 @@ function resolvedPhysicalSplitterKeys(physicalSplitterIndex: number): { leftKey:
 function resetPaneGridStyles(): void {
   for (const key of PANE_KEYS) {
     const el = paneDef(key)?.el;
-    if (el) { el.style.gridColumn = ''; el.style.gridRow = ''; }
+    if (el) {
+      el.style.gridColumn = '';
+      el.style.gridRow = '';
+    }
   }
   for (const splitter of els.splitters) {
     if (!splitter) continue;
@@ -693,7 +793,8 @@ function setUserPaneVisible(key: PaneKey, visible: boolean): void {
 
 function applyPaneLayout(): void {
   if (!els.main) return;
-  const stacked = document.body.classList.contains('viewer-loaded') && isLayoutStacked();
+  const stacked =
+    document.body.classList.contains('viewer-loaded') && isLayoutStacked();
   els.main.classList.toggle('layout-stacked', stacked);
 
   for (const key of PANE_KEYS) {
@@ -711,7 +812,10 @@ function applyPaneLayout(): void {
   }
 
   let keys = visiblePaneKeys();
-  if (!keys.length) { userPaneVisible.markup = true; keys = visiblePaneKeys(); }
+  if (!keys.length) {
+    userPaneVisible.markup = true;
+    keys = visiblePaneKeys();
+  }
 
   const lastKey = keys[keys.length - 1]!;
   paneDef(lastKey)?.el?.classList.add('pane-layout-last');
@@ -727,7 +831,8 @@ function applyPaneLayout(): void {
       def.el.style.gridRow = String(row++);
     }
     refreshPageViewLayout();
-    if (els.readingSettingsToggle) els.readingSettingsToggle.hidden = !state || !isPaneVisible('reading');
+    if (els.readingSettingsToggle)
+      els.readingSettingsToggle.hidden = !state || !isPaneVisible('reading');
     return;
   }
 
@@ -740,7 +845,10 @@ function applyPaneLayout(): void {
     } else {
       cols.push(`minmax(0, ${contentFr[contentFrIndex++]!.toFixed(6)}fr)`);
     }
-    if (index < keys.length - 1 && shouldShowSplitterBetween(keys[index]!, keys[index + 1]!)) {
+    if (
+      index < keys.length - 1 &&
+      shouldShowSplitterBetween(keys[index]!, keys[index + 1]!)
+    ) {
       cols.push('1px');
     }
   });
@@ -758,12 +866,17 @@ function applyPaneLayout(): void {
       const rightKey = keys[index + 1]!;
       if (!shouldShowSplitterBetween(leftKey, rightKey)) return;
       const splitter = splitterForLayoutGap(leftKey, rightKey);
-      if (splitter) { splitter.hidden = false; splitter.style.gridColumn = String(col); col += 1; }
+      if (splitter) {
+        splitter.hidden = false;
+        splitter.style.gridColumn = String(col);
+        col += 1;
+      }
     }
   });
 
   refreshPageViewLayout();
-  if (els.readingSettingsToggle) els.readingSettingsToggle.hidden = !state || !isPaneVisible('reading');
+  if (els.readingSettingsToggle)
+    els.readingSettingsToggle.hidden = !state || !isPaneVisible('reading');
 }
 
 // ---------------------------------------------------------------------------
@@ -772,8 +885,7 @@ function applyPaneLayout(): void {
 
 function setToolbarOptionsOpen(open: boolean): void {
   toolbarOptionsOpen = open;
-  if (els.toolbarOptionsPanel) els.toolbarOptionsPanel.hidden = !open;
-  if (els.toolbarOptionsBtn) els.toolbarOptionsBtn.setAttribute('aria-expanded', String(open));
+  doclangToolbar?.setOptionsOpen(open);
 }
 
 function syncToolbarPaneCheckboxes(): void {
@@ -782,17 +894,32 @@ function syncToolbarPaneCheckboxes(): void {
     els.toggleFilePane.checked = available && userPaneVisible.file;
     els.toggleFilePane.disabled = !available;
   }
-  if (els.toggleFilePaneLabel) els.toggleFilePaneLabel.classList.toggle('toolbar-options-item-disabled', !isPaneAvailable('file'));
+  if (els.toggleFilePaneLabel)
+    els.toggleFilePaneLabel.classList.toggle(
+      'toolbar-options-item-disabled',
+      !isPaneAvailable('file')
+    );
   if (els.togglePagePane) {
     const available = isPaneAvailable('page');
     els.togglePagePane.checked = available && userPaneVisible.page;
     els.togglePagePane.disabled = !available;
   }
-  if (els.togglePagePaneLabel) els.togglePagePaneLabel.classList.toggle('toolbar-options-item-disabled', !isPaneAvailable('page'));
-  if (els.toggleMarkupPane) { els.toggleMarkupPane.checked = userPaneVisible.markup; els.toggleMarkupPane.disabled = !state; }
-  if (els.toggleReadingPane) { els.toggleReadingPane.checked = userPaneVisible.reading; els.toggleReadingPane.disabled = !state; }
+  if (els.togglePagePaneLabel)
+    els.togglePagePaneLabel.classList.toggle(
+      'toolbar-options-item-disabled',
+      !isPaneAvailable('page')
+    );
+  if (els.toggleMarkupPane) {
+    els.toggleMarkupPane.checked = userPaneVisible.markup;
+    els.toggleMarkupPane.disabled = !state;
+  }
+  if (els.toggleReadingPane) {
+    els.toggleReadingPane.checked = userPaneVisible.reading;
+    els.toggleReadingPane.disabled = !state;
+  }
   for (const label of [
-    els.toggleFilePaneLabel, els.togglePagePaneLabel,
+    els.toggleFilePaneLabel,
+    els.togglePagePaneLabel,
     document.getElementById('toggle-markup-pane-label'),
     document.getElementById('toggle-reading-pane-label'),
   ]) {
@@ -804,30 +931,28 @@ function syncToolbarPaneCheckboxes(): void {
 }
 
 function initToolbarOptions(): void {
-  if (!els.toolbarOptionsBtn || !els.toolbarOptionsPanel) return;
-  els.toolbarOptionsBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    setToolbarOptionsOpen(!toolbarOptionsOpen);
+  if (!doclangToolbar) return;
+  // doclang-toolbar handles its own open/close toggle and click-outside.
+  // We listen to the composed events it emits.
+  doclangToolbar.addEventListener('doclang-toggle-pane', (e: Event) => {
+    const { pane, checked } = (e as CustomEvent<{ pane: PaneKey; checked: boolean }>)
+      .detail;
+    if (!state) {
+      syncToolbarPaneCheckboxes();
+      return;
+    }
+    const nextKeys = [...PANE_KEYS].filter(k =>
+      k === pane ? checked : userPaneVisible[k] && isPaneAvailable(k)
+    );
+    if (!nextKeys.length) {
+      syncToolbarPaneCheckboxes();
+      return;
+    }
+    setUserPaneVisible(pane, checked);
   });
-  document.addEventListener('click', e => {
-    if (!toolbarOptionsOpen) return;
-    if (e.target instanceof Node && els.toolbarOptionsPanel!.contains(e.target)) return;
-    if (e.target instanceof Node && els.toolbarOptionsBtn!.contains(e.target)) return;
-    setToolbarOptionsOpen(false);
+  doclangToolbar.addEventListener('doclang-reset-pane-layout', () => {
+    if (state) resetPaneLayout();
   });
-  const onToggle = (key: PaneKey, input: HTMLInputElement | null): void => {
-    input?.addEventListener('change', () => {
-      if (!state) return;
-      const nextKeys = [...PANE_KEYS].filter(k => (k === key ? input.checked : userPaneVisible[k] && isPaneAvailable(k)));
-      if (!nextKeys.length) { input.checked = true; return; }
-      setUserPaneVisible(key, input.checked);
-    });
-  };
-  onToggle('file', els.toggleFilePane);
-  onToggle('page', els.togglePagePane);
-  onToggle('markup', els.toggleMarkupPane);
-  onToggle('reading', els.toggleReadingPane);
-  els.resetPaneLayoutBtn?.addEventListener('click', () => { if (state) resetPaneLayout(); });
   syncToolbarPaneCheckboxes();
 }
 
@@ -848,7 +973,12 @@ function contentPaneAvailableWidthPx(): number {
 }
 
 function startPaneDrag(e: PointerEvent, physicalSplitterIndex: number): void {
-  if (e.button !== 0 || isLayoutStacked() || !document.body.classList.contains('viewer-loaded')) return;
+  if (
+    e.button !== 0 ||
+    isLayoutStacked() ||
+    !document.body.classList.contains('viewer-loaded')
+  )
+    return;
   const resolved = resolvedPhysicalSplitterKeys(physicalSplitterIndex);
   if (!resolved) return;
   const { leftKey, rightKey } = resolved;
@@ -856,7 +986,9 @@ function startPaneDrag(e: PointerEvent, physicalSplitterIndex: number): void {
   const leftIndex = paneRatioIndex(leftKey);
   const rightIndex = paneRatioIndex(rightKey);
   const dragState: PaneDragState = {
-    physicalSplitterIndex, leftKey, rightKey,
+    physicalSplitterIndex,
+    leftKey,
+    rightKey,
     startX: e.clientX,
     leftStart: paneRatios[leftIndex]!,
     rightStart: paneRatios[rightIndex]!,
@@ -874,17 +1006,29 @@ function startPaneDrag(e: PointerEvent, physicalSplitterIndex: number): void {
 function onPaneDragMove(e: PointerEvent): void {
   if (!paneDrag || e.pointerId !== paneDrag.pointerId || !els.main) return;
   if (paneDrag.leftKey === 'file' && typeof paneDrag.leftStartPx === 'number') {
-    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.leftStartPx + (e.clientX - paneDrag.startX));
-    applyPaneLayout(); return;
+    filePaneWidthPx = Math.max(
+      filePaneFitWidthPx(),
+      paneDrag.leftStartPx + (e.clientX - paneDrag.startX)
+    );
+    applyPaneLayout();
+    return;
   }
   if (paneDrag.rightKey === 'file' && typeof paneDrag.rightStartPx === 'number') {
-    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.rightStartPx - (e.clientX - paneDrag.startX));
-    applyPaneLayout(); return;
+    filePaneWidthPx = Math.max(
+      filePaneFitWidthPx(),
+      paneDrag.rightStartPx - (e.clientX - paneDrag.startX)
+    );
+    applyPaneLayout();
+    return;
   }
   const keys = visiblePaneKeys();
   const contentFr = contentPaneFrWeights(keys);
-  const contentKeys = keys.filter((key): key is Exclude<PaneKey, 'file'> => key !== 'file');
-  const leftContentIndex = contentKeys.indexOf(paneDrag.leftKey as Exclude<PaneKey, 'file'>);
+  const contentKeys = keys.filter(
+    (key): key is Exclude<PaneKey, 'file'> => key !== 'file'
+  );
+  const leftContentIndex = contentKeys.indexOf(
+    paneDrag.leftKey as Exclude<PaneKey, 'file'>
+  );
   if (leftContentIndex < 0 || leftContentIndex + 1 >= contentFr.length) return;
   const pairFrTotal = contentFr[leftContentIndex]! + contentFr[leftContentIndex + 1]!;
   if (!(pairFrTotal > 0)) return;
@@ -907,7 +1051,8 @@ function endPaneDrag(e: PointerEvent): void {
   if (!paneDrag || e.pointerId !== paneDrag.pointerId) return;
   const splitter = els.splitters[paneDrag.physicalSplitterIndex];
   splitter?.classList.remove('is-dragging');
-  if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+  if (splitter?.hasPointerCapture(e.pointerId))
+    splitter.releasePointerCapture(e.pointerId);
   paneDrag = null;
   document.body.classList.remove('pane-drag-active');
   normalizePaneRatios();
@@ -917,7 +1062,9 @@ function endPaneDrag(e: PointerEvent): void {
 function initPaneSplitters(): void {
   for (const [index, splitter] of els.splitters.entries()) {
     if (!splitter) continue;
-    splitter.addEventListener('pointerdown', e => startPaneDrag(e as PointerEvent, index));
+    splitter.addEventListener('pointerdown', e =>
+      startPaneDrag(e as PointerEvent, index)
+    );
   }
   window.addEventListener('pointermove', e => onPaneDragMove(e as PointerEvent));
   window.addEventListener('pointerup', e => endPaneDrag(e as PointerEvent));
@@ -936,27 +1083,8 @@ function goToPage(n: number): void {
   renderPage(page);
 }
 
-function resetPageNumberInput(): void {
-  if (!els.pageNumberInput) return;
-  els.pageNumberInput.value = state ? String(state.currentPage) : '1';
-}
-
-function commitPageNumberInput(): void {
-  if (!state || !els.pageNumberInput) return;
-  const n = Number.parseInt(els.pageNumberInput.value.trim(), 10);
-  if (!Number.isFinite(n)) { resetPageNumberInput(); return; }
-  goToPage(n);
-}
-
 function setPageIndicator(pageNum: number, pageCount: number): void {
-  if (!els.pageIndicator) return;
-  if (els.pageCountIndicator) els.pageCountIndicator.textContent = `\u00A0of ${pageCount}`;
-  if (els.pageNumberInput) {
-    const digits = Math.max(1, String(pageCount).length);
-    els.pageNumberInput.style.setProperty('--page-num-digits', String(digits));
-    els.pageNumberInput.disabled = !state;
-    if (document.activeElement !== els.pageNumberInput) els.pageNumberInput.value = String(pageNum);
-  }
+  doclangPageNav?.setIndicator(pageNum, pageCount);
 }
 
 function syncPagePaneControls(): void {
@@ -1006,10 +1134,15 @@ function findListVirtualTextHost(list: Element, target: Element): Element | null
   let i = skipContainerLevelHead(nodes, 0);
   while (i < nodes.length) {
     const node = nodes[i]!;
-    if (node.nodeType !== Node.ELEMENT_NODE || localName(node as Element) !== 'ldiv') { i += 1; continue; }
-    const ldiv = node as Element; i += 1;
+    if (node.nodeType !== Node.ELEMENT_NODE || localName(node as Element) !== 'ldiv') {
+      i += 1;
+      continue;
+    }
+    const ldiv = node as Element;
+    i += 1;
     const end = skipUntilListItemBoundary(nodes, i);
-    if (target === ldiv || nodes.slice(i, end).some(n => xmlContains(target, n))) return ldiv;
+    if (target === ldiv || nodes.slice(i, end).some(n => xmlContains(target, n)))
+      return ldiv;
     i = end;
   }
   return null;
@@ -1020,12 +1153,25 @@ function findTableVirtualTextHost(container: Element, target: Element): Element 
   let i = skipContainerLevelHead(nodes, 0);
   while (i < nodes.length) {
     const node = nodes[i]!;
-    if (node.nodeType !== Node.ELEMENT_NODE) { i += 1; continue; }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      i += 1;
+      continue;
+    }
     const tag = localName(node as Element);
-    if (tag === 'nl' || isVirtualTextHost(node as Element) || CELL_SPAN_TAGS.has(tag) || !isCellToken(tag)) { i += 1; continue; }
-    const cell = node as Element; i += 1;
+    if (
+      tag === 'nl' ||
+      isVirtualTextHost(node as Element) ||
+      CELL_SPAN_TAGS.has(tag) ||
+      !isCellToken(tag)
+    ) {
+      i += 1;
+      continue;
+    }
+    const cell = node as Element;
+    i += 1;
     const end = skipUntilCellBoundary(nodes, i);
-    if (target === cell || nodes.slice(i, end).some(n => xmlContains(target, n))) return cell;
+    if (target === cell || nodes.slice(i, end).some(n => xmlContains(target, n)))
+      return cell;
     i = end;
   }
   return null;
@@ -1037,8 +1183,14 @@ function findVirtualTextHost(xmlEl: Element): Element | null {
     const parent: Element | null = node.parentElement;
     if (!parent) return null;
     const tag = localName(parent);
-    if (tag === 'list') { const host = findListVirtualTextHost(parent, xmlEl); if (host) return host; }
-    if (OTSL_CONTAINER_TAGS.has(tag)) { const host = findTableVirtualTextHost(parent, xmlEl); if (host) return host; }
+    if (tag === 'list') {
+      const host = findListVirtualTextHost(parent, xmlEl);
+      if (host) return host;
+    }
+    if (OTSL_CONTAINER_TAGS.has(tag)) {
+      const host = findTableVirtualTextHost(parent, xmlEl);
+      if (host) return host;
+    }
     node = parent;
   }
   return null;
@@ -1118,58 +1270,98 @@ function isFragmentLinkRelevant(linkEl: Element, peerIds: Set<string>): boolean 
 
 function applyBboxVisibility(): void {
   if (!state?.hasPageView || !els.pagePane) return;
-  const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set<string>();
+  const peerIds = selectedElementId
+    ? fragmentPeerElementIds(selectedElementId)
+    : new Set<string>();
 
   for (const el of els.pagePane.querySelectorAll('.bbox')) {
     el.classList.remove('related');
     const elementId = el.getAttribute('data-element-id') ?? '';
     const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
     if (showAllBboxes) {
-      if (isContentsOptionHidden(elementId, clickVisible)) { el.classList.add('bbox-hidden'); }
-      else { el.classList.remove('bbox-hidden'); if (peerIds.has(elementId)) el.classList.add('related'); }
+      if (isContentsOptionHidden(elementId, clickVisible)) {
+        el.classList.add('bbox-hidden');
+      } else {
+        el.classList.remove('bbox-hidden');
+        if (peerIds.has(elementId)) el.classList.add('related');
+      }
       continue;
     }
-    if (elementId === selectedElementId) { el.classList.remove('bbox-hidden'); }
-    else if (peerIds.has(elementId)) { el.classList.remove('bbox-hidden'); el.classList.add('related'); }
-    else { el.classList.add('bbox-hidden'); }
+    if (elementId === selectedElementId) {
+      el.classList.remove('bbox-hidden');
+    } else if (peerIds.has(elementId)) {
+      el.classList.remove('bbox-hidden');
+      el.classList.add('related');
+    } else {
+      el.classList.add('bbox-hidden');
+    }
   }
 
   for (const el of els.pagePane.querySelectorAll('.element-badge')) {
     const elementId = el.getAttribute('data-element-id') ?? '';
     const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showLayoutBadges) { el.classList.add('bbox-hidden'); continue; }
-    if (isContentsOptionHidden(elementId, clickVisible)) el.classList.add('bbox-hidden');
+    if (!showAllBboxes || !showLayoutBadges) {
+      el.classList.add('bbox-hidden');
+      continue;
+    }
+    if (isContentsOptionHidden(elementId, clickVisible))
+      el.classList.add('bbox-hidden');
     else el.classList.remove('bbox-hidden');
   }
 
   for (const el of els.pagePane.querySelectorAll('.caption-link')) {
-    if (!showAllBboxes || !showCaptionLinks) { el.classList.add('bbox-hidden'); continue; }
+    if (!showAllBboxes || !showCaptionLinks) {
+      el.classList.add('bbox-hidden');
+      continue;
+    }
     el.classList.remove('bbox-hidden');
   }
   for (const el of els.pagePane.querySelectorAll('.xref-link')) {
-    if (!showAllBboxes || !showXrefLinks) { el.classList.add('bbox-hidden'); continue; }
+    if (!showAllBboxes || !showXrefLinks) {
+      el.classList.add('bbox-hidden');
+      continue;
+    }
     el.classList.remove('bbox-hidden');
   }
   for (const el of els.pagePane.querySelectorAll('.fragment-link')) {
-    const clickVisible = Boolean(selectedElementId && isFragmentLinkRelevant(el, peerIds));
-    el.classList.toggle('bbox-hidden', !(clickVisible || (showAllBboxes && showFragmentLinks)));
+    const clickVisible = Boolean(
+      selectedElementId && isFragmentLinkRelevant(el, peerIds)
+    );
+    el.classList.toggle(
+      'bbox-hidden',
+      !(clickVisible || (showAllBboxes && showFragmentLinks))
+    );
   }
   for (const el of els.pagePane.querySelectorAll('.fragment-nav')) {
     const elementId = el.getAttribute('data-element-id') ?? '';
     const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    el.classList.toggle('bbox-hidden', !(clickVisible || (showAllBboxes && showFragmentLinks)));
+    el.classList.toggle(
+      'bbox-hidden',
+      !(clickVisible || (showAllBboxes && showFragmentLinks))
+    );
   }
   for (const el of els.pagePane.querySelectorAll('.reading-order-badge')) {
     const elementId = el.getAttribute('data-element-id') ?? '';
     const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showReadingOrder) { el.classList.add('bbox-hidden'); continue; }
-    if (isPictureContentOverlayElement(elementId) || isTableContentOverlayElement(elementId) || isContentsOptionHidden(elementId, clickVisible)) {
-      el.classList.add('bbox-hidden'); continue;
+    if (!showAllBboxes || !showReadingOrder) {
+      el.classList.add('bbox-hidden');
+      continue;
+    }
+    if (
+      isPictureContentOverlayElement(elementId) ||
+      isTableContentOverlayElement(elementId) ||
+      isContentsOptionHidden(elementId, clickVisible)
+    ) {
+      el.classList.add('bbox-hidden');
+      continue;
     }
     el.classList.remove('bbox-hidden');
   }
   for (const el of els.pagePane.querySelectorAll('.reading-order-step')) {
-    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) { el.classList.add('bbox-hidden'); continue; }
+    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
+      el.classList.add('bbox-hidden');
+      continue;
+    }
     el.classList.remove('bbox-hidden');
   }
 }
@@ -1177,21 +1369,25 @@ function applyBboxVisibility(): void {
 function findMarkupElementForSelection(elementId: string): Element | null {
   if (!els.markupPane) return null;
   return (
-    els.markupPane.querySelector(`.markup-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.markupPane.querySelector(`[data-element-id="${elementId}"]`)
+    els.markupPane.querySelector(
+      `.markup-el-virtual-text[data-element-id="${elementId}"]`
+    ) || els.markupPane.querySelector(`[data-element-id="${elementId}"]`)
   );
 }
 
 function findRenderedElementForSelection(elementId: string): Element | null {
   if (!els.renderedPane) return null;
   const direct =
-    els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
+    els.renderedPane.querySelector(
+      `.rendered-el-virtual-text[data-element-id="${elementId}"]`
+    ) || els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
   if (direct) return direct;
   const xmlEl = state?.idToElement?.get(elementId);
   const threadId = xmlEl ? elementThreadId(xmlEl) : null;
   if (!threadId) return null;
-  const merged = els.renderedPane.querySelector(`.rendered-fragment-merged[data-thread-id="${threadId}"]`);
+  const merged = els.renderedPane.querySelector(
+    `.rendered-fragment-merged[data-thread-id="${threadId}"]`
+  );
   if (!merged) return null;
   const primaryId = merged.getAttribute('data-element-id');
   if (!primaryId || primaryId === elementId) return merged;
@@ -1202,38 +1398,65 @@ function revealReadingLayerForSelection(renderedEl: Element): void {
   const layer = renderedEl.getAttribute('data-doclang-layer');
   if (!layer || layer === 'body') return;
   let changed = false;
-  if (layer === 'furniture' && !showReadingFurniture) { showReadingFurniture = true; changed = true; }
-  else if (layer === 'background' && !showReadingBackground) { showReadingBackground = true; changed = true; }
+  if (layer === 'furniture' && !showReadingFurniture) {
+    showReadingFurniture = true;
+    changed = true;
+  } else if (layer === 'background' && !showReadingBackground) {
+    showReadingBackground = true;
+    changed = true;
+  }
   if (!changed) return;
   syncReadingLayerCheckboxes();
   syncReadingLayerVisibility();
 }
 
 function revealRenderedSelectionContext(renderedEl: Element): void {
-  const pictureContents = renderedEl.closest('.rendered-picture-contents') as HTMLDetailsElement | null;
+  const pictureContents = renderedEl.closest(
+    '.rendered-picture-contents'
+  ) as HTMLDetailsElement | null;
   if (pictureContents && !pictureContents.open) pictureContents.open = true;
   revealReadingLayerForSelection(renderedEl);
 }
 
 function applySelection(): void {
-  els.markupPane?.querySelectorAll('.markup-el.selected').forEach(el => el.classList.remove('selected'));
-  els.renderedPane?.querySelectorAll('.rendered-el.selected').forEach(el => el.classList.remove('selected'));
+  els.markupPane
+    ?.querySelectorAll('.markup-el.selected')
+    .forEach(el => el.classList.remove('selected'));
+  els.renderedPane
+    ?.querySelectorAll('.rendered-el.selected')
+    .forEach(el => el.classList.remove('selected'));
   if (!els.pagePane) return;
-  els.pagePane.querySelectorAll('.bbox.selected, .overlay-badge.selected').forEach(el => el.classList.remove('selected'));
+  els.pagePane
+    .querySelectorAll('.bbox.selected, .overlay-badge.selected')
+    .forEach(el => el.classList.remove('selected'));
 
   if (!selectedElementId) {
     const img = els.pagePane.querySelector('.page-view img') as HTMLImageElement | null;
     if (img) {
-      const svg = img.parentElement?.querySelector('svg.overlay') as SVGSVGElement | null;
+      const svg = img.parentElement?.querySelector(
+        'svg.overlay'
+      ) as SVGSVGElement | null;
       if (svg && state?.pageViewOverlay) {
-        syncOverlayBadges(img, svg, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
+        syncOverlayBadges(
+          img,
+          svg,
+          state.pageViewOverlay.boxes,
+          state.pageViewOverlay.readingOrderSteps,
+          showAllBboxes,
+          showLayoutBadges,
+          showReadingOrder
+        );
       }
     }
-    applyBboxVisibility(); return;
+    applyBboxVisibility();
+    return;
   }
 
   const markupEl = findMarkupElementForSelection(selectedElementId);
-  if (markupEl) { markupEl.classList.add('selected'); markupEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  if (markupEl) {
+    markupEl.classList.add('selected');
+    markupEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
   const renderedEl = findRenderedElementForSelection(selectedElementId);
   if (renderedEl) {
@@ -1243,7 +1466,9 @@ function applySelection(): void {
   }
 
   if (state?.hasPageView) {
-    for (const el of els.pagePane.querySelectorAll(`[data-element-id="${selectedElementId}"]`)) {
+    for (const el of els.pagePane.querySelectorAll(
+      `[data-element-id="${selectedElementId}"]`
+    )) {
       el.classList.add('selected');
     }
   }
@@ -1252,7 +1477,15 @@ function applySelection(): void {
   if (img) {
     const svg = img.parentElement?.querySelector('svg.overlay') as SVGSVGElement | null;
     if (svg && state?.pageViewOverlay) {
-      syncOverlayBadges(img, svg, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
+      syncOverlayBadges(
+        img,
+        svg,
+        state.pageViewOverlay.boxes,
+        state.pageViewOverlay.readingOrderSteps,
+        showAllBboxes,
+        showLayoutBadges,
+        showReadingOrder
+      );
     }
   }
   applyBboxVisibility();
@@ -1281,9 +1514,21 @@ function renderPage(pageNum: number): void {
   state.idToElement = invertElementIds(elementIds);
 
   if (segmentHasMarkup(segment)) {
-    els.markupPane.appendChild(buildMarkupView(segment, elementIds, id => selectElement(resolveSelectionElementId(id) ?? id)));
+    els.markupPane.appendChild(
+      buildMarkupView(segment, elementIds, id =>
+        selectElement(resolveSelectionElementId(id) ?? id)
+      )
+    );
     els.renderedPane.innerHTML = '';
-    els.renderedPane.appendChild(buildRenderedView(segment, elementIds, showReadingFurniture, showReadingBackground, id => selectElement(resolveSelectionElementId(id) ?? id)));
+    els.renderedPane.appendChild(
+      buildRenderedView(
+        segment,
+        elementIds,
+        showReadingFurniture,
+        showReadingBackground,
+        id => selectElement(resolveSelectionElementId(id) ?? id)
+      )
+    );
   } else {
     els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
     els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
@@ -1308,25 +1553,43 @@ function renderPage(pageNum: number): void {
         const existing = wrap.querySelector('svg.overlay');
         if (existing) existing.remove();
         const readingOrderSteps = collectReadingOrderSteps(
-          segment, elementIds, boxes,
-          state!.readingOrder, readingOrderGlobalNumbering, state!.readingOrderDisplayNumbers
+          segment,
+          elementIds,
+          boxes,
+          state!.readingOrder,
+          readingOrderGlobalNumbering,
+          state!.readingOrderDisplayNumbers
         );
         state!.pageViewOverlay = { boxes, readingOrderSteps };
         if (boxes.length) {
           wrap.appendChild(
             buildOverlay(
-              img, boxes,
+              img,
+              boxes,
               collectCaptionLinks(segment, elementIds, boxes),
               collectXrefLinks(segment, elementIds, boxes),
               readingOrderSteps,
-              collectFragmentLinks(segment, elementIds, boxes, pageNum, state!.threadPagesById),
-              collectFragmentNavItems(segment, elementIds, boxes, state!.threadNavByElement),
+              collectFragmentLinks(
+                segment,
+                elementIds,
+                boxes,
+                pageNum,
+                state!.threadPagesById
+              ),
+              collectFragmentNavItems(
+                segment,
+                elementIds,
+                boxes,
+                state!.threadNavByElement
+              ),
               defaultResolution,
               id => selectElement(resolveSelectionElementId(id) ?? id),
               navigateThreadFragment,
               clearSelection,
               () => pagePanSuppressClick,
-              v => { pagePanSuppressClick = v; }
+              v => {
+                pagePanSuppressClick = v;
+              }
             )
           );
         }
@@ -1362,14 +1625,19 @@ function renderPage(pageNum: number): void {
 
 function setDocLabel(label: string | null): void {
   if (!els.docLabel) return;
-  if (label) { els.docLabel.textContent = label; els.docLabel.hidden = false; }
-  else { els.docLabel.textContent = ''; els.docLabel.hidden = true; }
+  if (label) {
+    els.docLabel.textContent = label;
+    els.docLabel.hidden = false;
+  } else {
+    els.docLabel.textContent = '';
+    els.docLabel.hidden = true;
+  }
 }
 
 function setDocumentOpen(open: boolean, { markupOnly = false } = {}): void {
   document.body.classList.toggle('viewer-loaded', open);
   document.body.classList.toggle('markup-only', open && markupOnly);
-  if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
+  doclangPageNav?.setVisible(open && !markupOnly);
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
 }
@@ -1422,7 +1690,9 @@ function pageImageMimeFromExt(ext: string): string {
 }
 
 function createPageImageObjectUrl(data: Uint8Array, ext: string): string {
-  return URL.createObjectURL(new Blob([data as BlobPart], { type: pageImageMimeFromExt(ext) }));
+  return URL.createObjectURL(
+    new Blob([data as BlobPart], { type: pageImageMimeFromExt(ext) })
+  );
 }
 
 function createFirstPageImageUrlFromFiles(files: File[]): string | null {
@@ -1435,12 +1705,17 @@ function createFirstPageImageUrlFromFiles(files: File[]): string | null {
     const m = PAGE_IMAGE_RE.exec(f.name);
     if (!m) continue;
     const pageNum = Number(m[1]);
-    if (pageNum < bestPage) { bestPage = pageNum; bestFile = f; }
+    if (pageNum < bestPage) {
+      bestPage = pageNum;
+      bestFile = f;
+    }
   }
   return bestFile ? URL.createObjectURL(bestFile) : null;
 }
 
-async function createFirstPageImageUrlFromZip(source: File | ArrayBuffer): Promise<string | null> {
+async function createFirstPageImageUrlFromZip(
+  source: File | ArrayBuffer
+): Promise<string | null> {
   const buffer = source instanceof File ? await source.arrayBuffer() : source;
   const entries = await unzip(buffer, {
     shouldExtract: name => /^pages\/\d+\.(png|jpe?g|webp)$/i.test(name),
@@ -1451,23 +1726,32 @@ async function createFirstPageImageUrlFromZip(source: File | ArrayBuffer): Promi
     const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
     if (!m) continue;
     const pageNum = Number(m[1]);
-    if (pageNum < bestPage) { bestPage = pageNum; bestEntry = e; }
+    if (pageNum < bestPage) {
+      bestPage = pageNum;
+      bestEntry = e;
+    }
   }
   if (!bestEntry) return null;
   const ext = bestEntry.name.split('.').pop() ?? 'png';
   return createPageImageObjectUrl(bestEntry.data, ext);
 }
 
-async function resolveCatalogEntryThumbnail(entry: FileCatalogEntry): Promise<string | null> {
+async function resolveCatalogEntryThumbnail(
+  entry: FileCatalogEntry
+): Promise<string | null> {
   if (entry.thumbnailUrl) return entry.thumbnailUrl;
   if (entry.kind === 'markup') return null;
   try {
     if (entry.kind === 'folder') {
       entry.thumbnailUrl = createFirstPageImageUrlFromFiles(entry.source as File[]);
     } else if (entry.kind === 'archive') {
-      entry.thumbnailUrl = await createFirstPageImageUrlFromZip(entry.source as File | ArrayBuffer);
+      entry.thumbnailUrl = await createFirstPageImageUrlFromZip(
+        entry.source as File | ArrayBuffer
+      );
     }
-  } catch { entry.thumbnailUrl = null; }
+  } catch {
+    entry.thumbnailUrl = null;
+  }
   return entry.thumbnailUrl;
 }
 
@@ -1484,24 +1768,6 @@ function enrichCatalogEntryThumbnail(entry: FileCatalogEntry): void {
 function revokeCatalogEntry(entry: FileCatalogEntry | null): void {
   if (entry?.thumbnailUrl?.startsWith('blob:')) URL.revokeObjectURL(entry.thumbnailUrl);
   if (entry) entry.thumbnailUrl = null;
-}
-
-function createFileViewThumbnail(entry: FileCatalogEntry): HTMLElement {
-  const thumb = document.createElement('span');
-  thumb.className = 'file-view-thumb';
-  thumb.setAttribute('aria-hidden', 'true');
-  if (entry.thumbnailUrl) {
-    const img = document.createElement('img');
-    img.src = entry.thumbnailUrl;
-    img.alt = '';
-    thumb.appendChild(img);
-  } else {
-    const placeholder = document.createElement('span');
-    placeholder.className = 'file-view-thumb-placeholder';
-    placeholder.innerHTML = FILE_THUMB_PLACEHOLDER_SVG;
-    thumb.appendChild(placeholder);
-  }
-  return thumb;
 }
 
 function createFileCatalogEntry(file: File): FileCatalogEntry {
@@ -1529,24 +1795,37 @@ function hasArchiveTransfer(dataTransfer: DataTransfer | null): boolean {
   return Boolean(dataTransfer && [...dataTransfer.types].includes('Files'));
 }
 
-async function parseCatalogEntry(entry: FileCatalogEntry): Promise<DocumentState | null> {
+async function parseCatalogEntry(
+  entry: FileCatalogEntry
+): Promise<DocumentState | null> {
   try {
     if (entry.kind === 'markup') {
-      const text = entry.source instanceof File
-        ? await (entry.source as File).text()
-        : new TextDecoder().decode(entry.source as ArrayBuffer);
-      return buildDocumentState(text, new Map(), entry.label, new Map(), { markupOnly: true });
+      const text =
+        entry.source instanceof File
+          ? await (entry.source as File).text()
+          : new TextDecoder().decode(entry.source as ArrayBuffer);
+      return buildDocumentState(text, new Map(), entry.label, new Map(), {
+        markupOnly: true,
+      });
     }
     if (entry.kind === 'archive') {
-      const buffer = entry.source instanceof File
-        ? await (entry.source as File).arrayBuffer()
-        : entry.source as ArrayBuffer;
-      const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
-      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+      const buffer =
+        entry.source instanceof File
+          ? await (entry.source as File).arrayBuffer()
+          : (entry.source as ArrayBuffer);
+      const { markupXml, pageImages, assetUrls } =
+        await extractArchiveFromZipBuffer(buffer);
+      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, {
+        markupOnly: false,
+      });
     }
     if (entry.kind === 'folder') {
-      const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source as File[]);
-      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+      const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(
+        entry.source as File[]
+      );
+      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, {
+        markupOnly: false,
+      });
     }
   } catch (err) {
     alert(`Failed to read ${entry.label}: ${(err as Error).message}`);
@@ -1565,7 +1844,10 @@ function persistActiveFileViewState(): void {
 function releaseActiveDocument(): void {
   if (activeFileIndex >= 0) {
     const entry = fileCatalog[activeFileIndex];
-    if (entry?.snapshot) { revokeDocumentState(entry.snapshot); entry.snapshot = null; }
+    if (entry?.snapshot) {
+      revokeDocumentState(entry.snapshot);
+      entry.snapshot = null;
+    }
   }
   if (state) revokeDocumentState(state);
   state = null;
@@ -1592,8 +1874,9 @@ async function switchToFile(index: number): Promise<void> {
     revokeCatalogEntry(entry);
     fileCatalog.splice(index, 1);
     activeFileIndex = -1;
-    if (fileCatalog.length) { await switchToFile(Math.min(index, fileCatalog.length - 1)); }
-    else resetViewer();
+    if (fileCatalog.length) {
+      await switchToFile(Math.min(index, fileCatalog.length - 1));
+    } else resetViewer();
     return;
   }
   entry.snapshot = docState;
@@ -1622,51 +1905,33 @@ async function closeCatalogFile(index: number): Promise<void> {
   if (index < 0 || index >= fileCatalog.length) return;
   const wasActive = index === activeFileIndex;
   const entry = fileCatalog[index]!;
-  if (wasActive) { releaseActiveDocument(); activeFileIndex = -1; }
+  if (wasActive) {
+    releaseActiveDocument();
+    activeFileIndex = -1;
+  }
   revokeCatalogEntry(entry);
   fileCatalog.splice(index, 1);
-  if (!fileCatalog.length) { resetViewer(); return; }
-  if (wasActive) { await switchToFile(Math.min(index, fileCatalog.length - 1)); return; }
+  if (!fileCatalog.length) {
+    resetViewer();
+    return;
+  }
+  if (wasActive) {
+    await switchToFile(Math.min(index, fileCatalog.length - 1));
+    return;
+  }
   if (index < activeFileIndex) activeFileIndex -= 1;
   updateFileView();
 }
 
 function renderFileView(): void {
-  if (!els.filePane) return;
-  els.filePane.replaceChildren();
-  if (!fileCatalog.length) return;
-  const list = document.createElement('ul');
-  list.className = 'file-view-list';
-  list.setAttribute('role', 'listbox');
-  list.setAttribute('aria-label', 'Open files');
-  fileCatalog.forEach((entry, index) => {
-    const item = document.createElement('li');
-    const card = document.createElement('div');
-    card.className = 'file-view-item';
-    card.title = entry.label;
-    card.tabIndex = 0;
-    card.setAttribute('role', 'option');
-    if (index === activeFileIndex) { card.classList.add('is-active'); card.setAttribute('aria-selected', 'true'); }
-    else card.setAttribute('aria-selected', 'false');
-    const thumbWrap = document.createElement('div');
-    thumbWrap.className = 'file-view-thumb-wrap';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'file-view-close';
-    closeBtn.setAttribute('aria-label', `Close ${entry.label}`);
-    closeBtn.textContent = '×';
-    closeBtn.addEventListener('click', e => { e.stopPropagation(); closeCatalogFile(index); });
-    thumbWrap.append(createFileViewThumbnail(entry), closeBtn);
-    const label = document.createElement('span');
-    label.className = 'file-view-label';
-    label.textContent = entry.label;
-    card.append(thumbWrap, label);
-    card.addEventListener('click', e => { if ((e.target as Element).closest('.file-view-close')) return; switchToFile(index); });
-    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchToFile(index); } });
-    item.appendChild(card);
-    list.appendChild(item);
-  });
-  els.filePane.appendChild(list);
+  if (!doclangFilePane) return;
+  doclangFilePane.renderFiles(
+    fileCatalog.map((entry, index) => ({
+      label: entry.label,
+      thumbnailUrl: entry.thumbnailUrl,
+      isActive: index === activeFileIndex,
+    }))
+  );
 }
 
 function updateFileView(): void {
@@ -1678,18 +1943,24 @@ function updateFileView(): void {
 }
 
 function syncFilePaneCloseAllButton(): void {
-  if (!els.filePaneCloseAll) return;
-  els.filePaneCloseAll.hidden = fileCatalog.length === 0;
+  // Close-all button visibility is managed inside doclang-file-pane via renderFiles
 }
 
 function initFilePaneCloseAll(): void {
-  els.filePaneCloseAll?.addEventListener('click', () => {
+  doclangFilePane?.addEventListener('doclang-file-pane-close-all', () => {
     if (!fileCatalog.length) return;
     const count = fileCatalog.length;
-    const message = count === 1
-      ? `Remove "${fileCatalog[0]!.label}" from the viewer?`
-      : `Remove all ${count} open files from the viewer?`;
+    const message =
+      count === 1
+        ? `Remove "${fileCatalog[0]!.label}" from the viewer?`
+        : `Remove all ${count} open files from the viewer?`;
     if (confirm(message)) resetViewer();
+  });
+  doclangFilePane?.addEventListener('doclang-file-select', (e: Event) => {
+    switchToFile((e as CustomEvent<{ index: number }>).detail.index);
+  });
+  doclangFilePane?.addEventListener('doclang-file-close', (e: Event) => {
+    closeCatalogFile((e as CustomEvent<{ index: number }>).detail.index);
   });
 }
 
@@ -1704,7 +1975,10 @@ function activateDocument(docState: DocumentState, entry: FileCatalogEntry): voi
   }
   updatePageZoomResetButton();
   const port = pageViewScrollPane();
-  if (port) { port.scrollLeft = 0; port.scrollTop = 0; }
+  if (port) {
+    port.scrollLeft = 0;
+    port.scrollTop = 0;
+  }
   setDocLabel(entry.label);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
@@ -1720,8 +1994,8 @@ declare const DEMO_ARCHIVE_URL: string;
 
 function setDemoLoading(loading: boolean): void {
   document.body.classList.toggle('demo-loading', loading);
-  const btnDemo = document.getElementById('btn-demo') as HTMLButtonElement | null;
-  if (btnDemo) btnDemo.disabled = loading;
+  doclangEmptyState?.setDemoLoading(loading);
+  if (doclangToolbar) doclangToolbar.btnDemo.disabled = loading;
 }
 
 async function loadDemo(): Promise<void> {
@@ -1734,15 +2008,23 @@ async function loadDemo(): Promise<void> {
     const label = DEMO_ARCHIVE_URL.split('/').pop() || 'demo.dclx';
     await addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
   } catch (err) {
-    alert(`Failed to load demo: ${(err as Error).message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`);
+    alert(
+      `Failed to load demo: ${(err as Error).message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`
+    );
   } finally {
     demoLoadInProgress = false;
-    if (!document.body.classList.contains('viewer-loaded')) setDemoLoading(false);
+    setDemoLoading(false);
   }
 }
 
-async function addFilesToCatalog(files: File[], { replace = false } = {}): Promise<void> {
-  if (replace) { clearFileCatalog(); filePaneUserToggled = false; }
+async function addFilesToCatalog(
+  files: File[],
+  { replace = false } = {}
+): Promise<void> {
+  if (replace) {
+    clearFileCatalog();
+    filePaneUserToggled = false;
+  }
   const startIndex = fileCatalog.length;
   for (const file of files) {
     const entry = createFileCatalogEntry(file);
@@ -1754,22 +2036,45 @@ async function addFilesToCatalog(files: File[], { replace = false } = {}): Promi
 }
 
 async function appendFolderArchive(files: File[]): Promise<void> {
-  if (!files.some(f => f.name === 'document.xml')) { alert('Archive must contain document.xml at its root.'); return; }
-  const rootName = (files[0]!.webkitRelativePath || files[0]!.name).split('/')[0] || 'archive';
+  if (!files.some(f => f.name === 'document.xml')) {
+    alert('Archive must contain document.xml at its root.');
+    return;
+  }
+  const rootName =
+    (files[0]!.webkitRelativePath || files[0]!.name).split('/')[0] || 'archive';
   const entry: FileCatalogEntry = {
-    id: crypto.randomUUID(), label: rootName, kind: 'folder', source: files,
-    currentPage: 1, pageZoom: PAGE_ZOOM_DEFAULT, snapshot: null, thumbnailUrl: null,
+    id: crypto.randomUUID(),
+    label: rootName,
+    kind: 'folder',
+    source: files,
+    currentPage: 1,
+    pageZoom: PAGE_ZOOM_DEFAULT,
+    snapshot: null,
+    thumbnailUrl: null,
   };
   fileCatalog.push(entry);
   enrichCatalogEntryThumbnail(entry);
   await switchToFile(fileCatalog.length - 1);
 }
 
-async function addArchiveBufferToCatalog(buffer: ArrayBuffer, label: string, { replace = false } = {}): Promise<void> {
-  if (replace) { clearFileCatalog(); filePaneUserToggled = false; }
+async function addArchiveBufferToCatalog(
+  buffer: ArrayBuffer,
+  label: string,
+  { replace = false } = {}
+): Promise<void> {
+  if (replace) {
+    clearFileCatalog();
+    filePaneUserToggled = false;
+  }
   const entry: FileCatalogEntry = {
-    id: crypto.randomUUID(), label, kind: 'archive', source: buffer,
-    currentPage: 1, pageZoom: PAGE_ZOOM_DEFAULT, snapshot: null, thumbnailUrl: null,
+    id: crypto.randomUUID(),
+    label,
+    kind: 'archive',
+    source: buffer,
+    currentPage: 1,
+    pageZoom: PAGE_ZOOM_DEFAULT,
+    snapshot: null,
+    thumbnailUrl: null,
   };
   fileCatalog.push(entry);
   enrichCatalogEntryThumbnail(entry);
@@ -1778,7 +2083,10 @@ async function addArchiveBufferToCatalog(buffer: ArrayBuffer, label: string, { r
 
 async function loadFromDrop(dataTransfer: DataTransfer): Promise<void> {
   const files = [...dataTransfer.files];
-  if (files.some(f => f.name === 'document.xml')) { await appendFolderArchive(files); return; }
+  if (files.some(f => f.name === 'document.xml')) {
+    await appendFolderArchive(files);
+    return;
+  }
   const supported = files.filter(f => isArchiveFile(f) || isMarkupFile(f));
   if (supported.length) await addFilesToCatalog(supported, { replace: false });
 }
@@ -1801,7 +2109,9 @@ function initPageWheelNav(): void {
     pixelGestureUntil = now + PAGE_WHEEL_GESTURE_MS;
     pixelAccum += e.deltaY;
     if (Math.abs(pixelAccum) >= PAGE_WHEEL_PIXEL_THRESHOLD) {
-      const dir = pixelAccum > 0 ? 1 : -1; pixelAccum = 0; return dir;
+      const dir = pixelAccum > 0 ? 1 : -1;
+      pixelAccum = 0;
+      return dir;
     }
     return 0;
   }
@@ -1812,12 +2122,19 @@ function initPageWheelNav(): void {
     if (now - lastFlipAt < PAGE_WHEEL_COOLDOWN_MS) return false;
     const before = state.currentPage;
     goToPage(state.currentPage + dir);
-    if (state.currentPage !== before) { lastFlipAt = now; return true; }
+    if (state.currentPage !== before) {
+      lastFlipAt = now;
+      return true;
+    }
     return false;
   }
 
-  function isScrollAtTop(pane: HTMLElement): boolean { return pane.scrollTop <= 0; }
-  function isScrollAtBottom(pane: HTMLElement): boolean { return pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1; }
+  function isScrollAtTop(pane: HTMLElement): boolean {
+    return pane.scrollTop <= 0;
+  }
+  function isScrollAtBottom(pane: HTMLElement): boolean {
+    return pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
+  }
 
   function onScrollPaneWheel(e: WheelEvent, pane: HTMLElement): void {
     if (!state || state.markupOnly || state.pageCount <= 1) return;
@@ -1830,34 +2147,58 @@ function initPageWheelNav(): void {
     if (!wantPrev && !wantNext) return;
     e.preventDefault();
     if (!tryFlipPage(dir)) return;
-    requestAnimationFrame(() => { pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight; });
+    requestAnimationFrame(() => {
+      pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight;
+    });
   }
 
-  els.pagePane.addEventListener('wheel', e => {
-    if (!state?.hasPageView) return;
-    const pane = pageViewScrollPane();
-    if (!pane) return;
-    const scrollable = pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
-    if (scrollable) { onScrollPaneWheel(e, pane); return; }
-    e.preventDefault();
-    const dir = wheelDir(e);
-    if (dir) tryFlipPage(dir);
-  }, { passive: false });
+  els.pagePane.addEventListener(
+    'wheel',
+    e => {
+      if (!state?.hasPageView) return;
+      const pane = pageViewScrollPane();
+      if (!pane) return;
+      const scrollable =
+        pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
+      if (scrollable) {
+        onScrollPaneWheel(e, pane);
+        return;
+      }
+      e.preventDefault();
+      const dir = wheelDir(e);
+      if (dir) tryFlipPage(dir);
+    },
+    { passive: false }
+  );
 
   for (const pane of [els.markupPane, els.renderedPane]) {
     if (!pane) continue;
-    pane.addEventListener('wheel', e => onScrollPaneWheel(e as WheelEvent, pane), { passive: false });
+    pane.addEventListener('wheel', e => onScrollPaneWheel(e as WheelEvent, pane), {
+      passive: false,
+    });
   }
 
   els.pagePane.tabIndex = 0;
   els.pagePane.setAttribute('role', 'region');
   els.pagePane.setAttribute('aria-label', 'Original page');
-  els.pagePane.addEventListener('pointerdown', () => { if (state?.hasPageView) els.pagePane!.focus({ preventScroll: true }); });
+  els.pagePane.addEventListener('pointerdown', () => {
+    if (state?.hasPageView) els.pagePane!.focus({ preventScroll: true });
+  });
   els.pagePane.addEventListener('keydown', e => {
     if (!state?.hasPageView) return;
     switch (e.key) {
-      case 'ArrowDown': case 'PageDown': case 'ArrowRight': e.preventDefault(); tryFlipPage(1); break;
-      case 'ArrowUp': case 'PageUp': case 'ArrowLeft': e.preventDefault(); tryFlipPage(-1); break;
+      case 'ArrowDown':
+      case 'PageDown':
+      case 'ArrowRight':
+        e.preventDefault();
+        tryFlipPage(1);
+        break;
+      case 'ArrowUp':
+      case 'PageUp':
+      case 'ArrowLeft':
+        e.preventDefault();
+        tryFlipPage(-1);
+        break;
     }
   });
 }
@@ -1874,20 +2215,20 @@ function canStartPagePan(event: PointerEvent): boolean {
 
 function initPageViewControls(): void {
   if (!els.pagePane) return;
-  els.pageZoom?.addEventListener('input', () => {
-    pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, Number(els.pageZoom!.value));
-    if (Number(els.pageZoom!.value) < PAGE_ZOOM_DEFAULT) els.pageZoom!.value = String(pageZoomPercent);
-    els.pageZoom!.setAttribute('aria-valuenow', String(pageZoomPercent));
-    updatePageZoomResetButton();
-    refreshPageViewLayout();
-  });
-  els.pageZoomReset?.addEventListener('click', () => { if (pageZoomPercent !== PAGE_ZOOM_DEFAULT) resetPageZoom(); });
+  // Zoom input and reset are wired via doclang-page-view-pane component events above.
 
   els.pagePane.addEventListener('pointerdown', e => {
     if (e.button !== 0 || !canStartPagePan(e)) return;
     const scrollPane = pageViewScrollPane();
     if (!scrollPane) return;
-    pagePanDrag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, scrollLeft: scrollPane.scrollLeft, scrollTop: scrollPane.scrollTop, moved: false };
+    pagePanDrag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: scrollPane.scrollLeft,
+      scrollTop: scrollPane.scrollTop,
+      moved: false,
+    };
   });
 
   els.pagePane.addEventListener('pointermove', e => {
@@ -1913,7 +2254,8 @@ function initPageViewControls(): void {
     if (pagePanDrag.moved) pagePanSuppressClick = true;
     pagePanDrag = null;
     els.pagePane!.classList.remove('is-panning');
-    if (els.pagePane!.hasPointerCapture(e.pointerId)) els.pagePane!.releasePointerCapture(e.pointerId);
+    if (els.pagePane!.hasPointerCapture(e.pointerId))
+      els.pagePane!.releasePointerCapture(e.pointerId);
     updatePagePanePanCursor();
   }
 
@@ -1926,36 +2268,58 @@ function initPageViewControls(): void {
 // ---------------------------------------------------------------------------
 
 function initFileTypeHints(): void {
-  if (!els.emptyStateFileTypes) return;
-  const markup = SUPPORTED_FILE_EXTENSIONS.map(ext => `<code>${ext}</code>`).join(', ');
-  els.emptyStateFileTypes.innerHTML = markup;
+  doclangEmptyState?.setFileTypeHints(SUPPORTED_FILE_EXTENSIONS);
 }
 
 function initCursorHints(): void {
   els.markupPane?.addEventListener('mousemove', e => {
-    if (!(e.target as Element).closest('.markup-ghost-tag-part')) { hideCursorHint(); return; }
+    if (!(e.target as Element).closest('.markup-ghost-tag-part')) {
+      hideCursorHint();
+      return;
+    }
     showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
   });
   els.markupPane?.addEventListener('mouseleave', hideCursorHint);
-  els.openFileBtn?.addEventListener('mousemove', e => showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY));
+  els.openFileBtn?.addEventListener('mousemove', e =>
+    showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY)
+  );
   els.openFileBtn?.addEventListener('mouseleave', hideCursorHint);
 }
 
 function initBboxHints(): void {
   if (!els.pagePane) return;
   els.pagePane.addEventListener('mousemove', e => {
-    if (pagePanDrag?.moved || els.pagePane!.classList.contains('is-panning')) { hideCursorHint(); return; }
-    const navBtn = (e.target as Element).closest('.fragment-nav-btn:not(.fragment-nav-btn-disabled)');
+    if (pagePanDrag?.moved || els.pagePane!.classList.contains('is-panning')) {
+      hideCursorHint();
+      return;
+    }
+    const navBtn = (e.target as Element).closest(
+      '.fragment-nav-btn:not(.fragment-nav-btn-disabled)'
+    );
     if (navBtn) {
-      const hint = navBtn.getAttribute('data-nav') === 'prev' ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT;
-      showCursorHint(hint, e.clientX, e.clientY); return;
+      const hint =
+        navBtn.getAttribute('data-nav') === 'prev'
+          ? FRAGMENT_NAV_HINT_PREV
+          : FRAGMENT_NAV_HINT_NEXT;
+      showCursorHint(hint, e.clientX, e.clientY);
+      return;
     }
     const badge = (e.target as Element).closest('.element-badge[data-element-id]');
-    if (!badge || !state?.idToElement) { hideCursorHint(); return; }
+    if (!badge || !state?.idToElement) {
+      hideCursorHint();
+      return;
+    }
     const elementId = badge.getAttribute('data-element-id');
     const xmlEl = elementId ? state.idToElement.get(elementId) : null;
-    if (!xmlEl) { hideCursorHint(); return; }
-    showCursorHintHtml(elementHeadTooltipHtml(xmlEl, state.defaultResolution), e.clientX, e.clientY);
+    if (!xmlEl) {
+      hideCursorHint();
+      return;
+    }
+    showCursorHintHtml(
+      elementHeadTooltipHtml(xmlEl, state.defaultResolution),
+      e.clientX,
+      e.clientY
+    );
   });
   els.pagePane.addEventListener('mouseleave', hideCursorHint);
 }
@@ -1985,71 +2349,166 @@ function initDragDrop(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Event wiring
+// Event wiring — component custom events
 // ---------------------------------------------------------------------------
 
-document.getElementById('btn-demo')?.addEventListener('click', loadDemo);
-document.getElementById('demo-empty-link')?.addEventListener('click', e => { e.preventDefault(); loadDemo(); });
-document.getElementById('home-link')?.addEventListener('click', e => { e.preventDefault(); resetViewer(); });
-document.getElementById('input-archive')?.addEventListener('change', async e => {
-  const input = e.target as HTMLInputElement;
-  const files = [...(input.files ?? [])].filter(f => isArchiveFile(f) || isMarkupFile(f));
+// Toolbar
+doclangToolbar?.addEventListener('doclang-load-demo', loadDemo);
+doclangToolbar?.addEventListener('doclang-open-files', async (e: Event) => {
+  const files = (e as CustomEvent<{ files: File[] }>).detail.files.filter(
+    f => isArchiveFile(f) || isMarkupFile(f)
+  );
   if (!files.length) return;
   await addFilesToCatalog(files, { replace: true });
-  input.value = '';
 });
 
-els.btnPrev?.addEventListener('click', () => state && goToPage(state.currentPage - 1));
-els.btnNext?.addEventListener('click', () => state && goToPage(state.currentPage + 1));
+// Empty state
+doclangEmptyState?.addEventListener('doclang-load-demo', loadDemo);
 
-els.pageNumberInput?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); commitPageNumberInput(); els.pageNumberInput?.blur(); }
-  else if (e.key === 'Escape') { e.preventDefault(); resetPageNumberInput(); els.pageNumberInput?.blur(); }
+// Home link
+document.getElementById('home-link')?.addEventListener('click', e => {
+  e.preventDefault();
+  resetViewer();
 });
-els.pageNumberInput?.addEventListener('blur', resetPageNumberInput);
-els.pageNumberInput?.addEventListener('focus', e => (e.target as HTMLInputElement).select());
 
-els.showAllBboxes?.addEventListener('change', () => {
-  showAllBboxes = els.showAllBboxes!.checked;
+// Page nav
+doclangPageNav?.addEventListener(
+  'doclang-prev-page',
+  () => state && goToPage(state.currentPage - 1)
+);
+doclangPageNav?.addEventListener(
+  'doclang-next-page',
+  () => state && goToPage(state.currentPage + 1)
+);
+doclangPageNav?.addEventListener('doclang-go-to-page', (e: Event) => {
+  goToPage((e as CustomEvent<{ page: number }>).detail.page);
+});
+
+// Page view pane overlay settings
+doclangPageViewPane?.addEventListener('doclang-page-settings-toggle', () =>
+  setPageSettingsOpen(!pageSettingsOpen)
+);
+doclangPageViewPane?.addEventListener('doclang-page-settings-close', () =>
+  setPageSettingsOpen(false)
+);
+doclangPageViewPane?.addEventListener('doclang-zoom-change', (e: Event) => {
+  const val = Math.max(
+    PAGE_ZOOM_DEFAULT,
+    (e as CustomEvent<{ value: number }>).detail.value
+  );
+  pageZoomPercent = val;
+  if (doclangPageViewPane) {
+    doclangPageViewPane.zoomInput.value = String(pageZoomPercent);
+    doclangPageViewPane.zoomInput.setAttribute(
+      'aria-valuenow',
+      String(pageZoomPercent)
+    );
+  }
+  updatePageZoomResetButton();
+  refreshPageViewLayout();
+});
+doclangPageViewPane?.addEventListener('doclang-zoom-reset', () => {
+  if (pageZoomPercent !== PAGE_ZOOM_DEFAULT) resetPageZoom();
+});
+
+doclangPageViewPane?.addEventListener('doclang-show-all-bboxes', (e: Event) => {
+  showAllBboxes = (e as CustomEvent<{ checked: boolean }>).detail.checked;
   syncLayoutSubtoggles();
   const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement!.querySelector('svg.overlay') as SVGSVGElement, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
+  if (img && state?.pageViewOverlay)
+    syncOverlayBadges(
+      img,
+      img.parentElement!.querySelector('svg.overlay') as SVGSVGElement,
+      state.pageViewOverlay.boxes,
+      state.pageViewOverlay.readingOrderSteps,
+      showAllBboxes,
+      showLayoutBadges,
+      showReadingOrder
+    );
   applyBboxVisibility();
 });
-els.showLayoutBadges?.addEventListener('change', () => {
-  showLayoutBadges = els.showLayoutBadges!.checked;
+doclangPageViewPane?.addEventListener('doclang-show-layout-badges', (e: Event) => {
+  showLayoutBadges = (e as CustomEvent<{ checked: boolean }>).detail.checked;
   const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement!.querySelector('svg.overlay') as SVGSVGElement, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
+  if (img && state?.pageViewOverlay)
+    syncOverlayBadges(
+      img,
+      img.parentElement!.querySelector('svg.overlay') as SVGSVGElement,
+      state.pageViewOverlay.boxes,
+      state.pageViewOverlay.readingOrderSteps,
+      showAllBboxes,
+      showLayoutBadges,
+      showReadingOrder
+    );
   applyBboxVisibility();
 });
-els.showCaptionLinks?.addEventListener('change', () => { showCaptionLinks = els.showCaptionLinks!.checked; applyBboxVisibility(); });
-els.showPictureContents?.addEventListener('change', () => { showPictureContents = els.showPictureContents!.checked; applyBboxVisibility(); });
-els.showTableContents?.addEventListener('change', () => { showTableContents = els.showTableContents!.checked; applyBboxVisibility(); });
-els.showFragmentLinks?.addEventListener('change', () => { showFragmentLinks = els.showFragmentLinks!.checked; applyBboxVisibility(); });
-els.showXrefLinks?.addEventListener('change', () => { showXrefLinks = els.showXrefLinks!.checked; applyBboxVisibility(); });
-els.showReadingOrder?.addEventListener('change', () => {
-  showReadingOrder = els.showReadingOrder!.checked;
+doclangPageViewPane?.addEventListener('doclang-show-reading-order', (e: Event) => {
+  showReadingOrder = (e as CustomEvent<{ checked: boolean }>).detail.checked;
   syncLayoutSubtoggles();
   const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement!.querySelector('svg.overlay') as SVGSVGElement, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
+  if (img && state?.pageViewOverlay)
+    syncOverlayBadges(
+      img,
+      img.parentElement!.querySelector('svg.overlay') as SVGSVGElement,
+      state.pageViewOverlay.boxes,
+      state.pageViewOverlay.readingOrderSteps,
+      showAllBboxes,
+      showLayoutBadges,
+      showReadingOrder
+    );
   applyBboxVisibility();
 });
-els.readingOrderArrows?.addEventListener('change', () => { showReadingOrderArrows = els.readingOrderArrows!.checked; applyBboxVisibility(); });
-els.readingOrderGlobal?.addEventListener('change', () => { readingOrderGlobalNumbering = els.readingOrderGlobal!.checked; if (state) renderPage(state.currentPage); });
-els.settingsToggle?.addEventListener('click', () => setPageSettingsOpen(!pageSettingsOpen));
-els.readingSettingsToggle?.addEventListener('click', () => setReadingSettingsOpen(!readingSettingsOpen));
-els.pageSettingsClose?.addEventListener('click', () => setPageSettingsOpen(false));
-els.pageSettingsScrim?.addEventListener('click', () => setPageSettingsOpen(false));
-els.readingSettingsClose?.addEventListener('click', () => setReadingSettingsOpen(false));
-els.readingSettingsScrim?.addEventListener('click', () => setReadingSettingsOpen(false));
+doclangPageViewPane?.addEventListener('doclang-reading-order-arrows', (e: Event) => {
+  showReadingOrderArrows = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  applyBboxVisibility();
+});
+doclangPageViewPane?.addEventListener('doclang-reading-order-global', (e: Event) => {
+  readingOrderGlobalNumbering = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  if (state) renderPage(state.currentPage);
+});
+doclangPageViewPane?.addEventListener('doclang-show-picture-contents', (e: Event) => {
+  showPictureContents = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  applyBboxVisibility();
+});
+doclangPageViewPane?.addEventListener('doclang-show-table-contents', (e: Event) => {
+  showTableContents = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  applyBboxVisibility();
+});
+doclangPageViewPane?.addEventListener('doclang-show-fragment-links', (e: Event) => {
+  showFragmentLinks = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  applyBboxVisibility();
+});
+doclangPageViewPane?.addEventListener('doclang-show-xref-links', (e: Event) => {
+  showXrefLinks = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  applyBboxVisibility();
+});
+doclangPageViewPane?.addEventListener('doclang-show-caption-links', (e: Event) => {
+  showCaptionLinks = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  applyBboxVisibility();
+});
+
+// Reading pane layer settings
+doclangReadingPane?.addEventListener('doclang-reading-settings-toggle', () =>
+  setReadingSettingsOpen(!readingSettingsOpen)
+);
+doclangReadingPane?.addEventListener('doclang-reading-settings-close', () =>
+  setReadingSettingsOpen(false)
+);
+doclangReadingPane?.addEventListener('doclang-show-reading-furniture', (e: Event) => {
+  showReadingFurniture = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  syncReadingLayerVisibility();
+});
+doclangReadingPane?.addEventListener('doclang-show-reading-background', (e: Event) => {
+  showReadingBackground = (e as CustomEvent<{ checked: boolean }>).detail.checked;
+  syncReadingLayerVisibility();
+});
+
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
 });
-els.showReadingFurniture?.addEventListener('change', () => { showReadingFurniture = els.showReadingFurniture!.checked; syncReadingLayerVisibility(); });
-els.showReadingBackground?.addEventListener('change', () => { showReadingBackground = els.showReadingBackground!.checked; syncReadingLayerVisibility(); });
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -2068,4 +2527,10 @@ initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 
-if (document.getElementById('btn-demo')) loadDemo();
+// Sync initial demo-loading state from body onto the component host
+// (<body class="demo-loading"> is set in HTML before JS runs)
+if (document.body.classList.contains('demo-loading')) {
+  doclangEmptyState?.setDemoLoading(true);
+}
+
+if (doclangToolbar?.btnDemo) loadDemo();

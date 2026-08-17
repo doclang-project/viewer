@@ -1,0 +1,50 @@
+:host {
+  display: contents;
+}
+.cursor-hint {
+  position: fixed;
+  z-index: 200;
+  width: max-content;
+  max-width: 16rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+.cursor-hint.cursor-hint-detail {
+  max-width: 24rem;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+.head-tooltip {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+.head-tooltip th {
+  padding: 0.1rem 0.55rem 0.1rem 0;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.head-tooltip td {
+  padding: 0.1rem 0;
+  vertical-align: top;
+  word-break: break-word;
+}
+.head-tooltip .head-default {
+  color: var(--muted);
+  font-style: italic;
+  white-space: nowrap;
+}

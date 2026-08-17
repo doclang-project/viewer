@@ -16,7 +16,7 @@ export default defineConfig({
       output: {
         // Unwrap the IIFE wrapper — the original viewer.js runs top-level code
         // so the bundle is already self-contained without an export surface.
-        extend: true
+        extend: true,
       },
     },
   },

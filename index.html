@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="viewer.css">
 </head>
 <body class="demo-loading">
-  <div id="cursor-hint" class="cursor-hint" role="tooltip" hidden></div>
+  <doclang-cursor-hint></doclang-cursor-hint>
 
   <header>
     <div class="header-brand">
@@ -19,116 +19,20 @@
         <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo">
       </a>
       <h1>DocLang Viewer</h1>
-      <nav class="page-nav" id="page-nav" hidden>
-        <div class="page-nav-btns">
-          <button type="button" id="btn-prev" class="page-nav-btn" disabled aria-label="Previous page" title="Previous page">
-            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path d="M10.5 3.5 5.5 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-          </button>
-          <button type="button" id="btn-next" class="page-nav-btn" disabled aria-label="Next page" title="Next page">
-            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path d="M5.5 3.5 10.5 8l-5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-          </button>
-        </div>
-        <div class="page-indicator" id="page-indicator">
-          <span class="page-indicator-static">Page&nbsp;</span>
-          <input
-            type="text"
-            inputmode="numeric"
-            id="page-number-input"
-            class="page-number-input"
-            value="1"
-            aria-label="Page number"
-            disabled
-          >
-          <span class="page-indicator-suffix" id="page-count-indicator">&nbsp;of 1</span>
-        </div>
-      </nav>
+      <doclang-page-nav></doclang-page-nav>
     </div>
     <div class="header-center">
       <span class="doc-label" id="doc-label" hidden></span>
     </div>
-    <div class="toolbar">
-      <div class="toolbar-options-wrap">
-        <button
-          type="button"
-          class="toolbar-options-btn"
-          id="btn-toolbar-options"
-          aria-expanded="false"
-          aria-controls="toolbar-options-panel"
-          aria-haspopup="true"
-        >
-          Views
-        </button>
-        <div class="toolbar-options-panel" id="toolbar-options-panel" role="menu" hidden>
-          <label class="toolbar-options-item" id="toggle-file-pane-label">
-            <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
-            <span>Files</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-page-pane-label">
-            <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
-            <span>Original page</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-markup-pane-label">
-            <input type="checkbox" id="toggle-markup-pane" checked role="menuitemcheckbox">
-            <span>DocLang</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-reading-pane-label">
-            <input type="checkbox" id="toggle-reading-pane" checked role="menuitemcheckbox">
-            <span>Reading view</span>
-          </label>
-          <div class="toolbar-options-divider" role="separator"></div>
-          <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
-            Reset views
-          </button>
-        </div>
-      </div>
-      <span class="header-divider" aria-hidden="true"></span>
-      <span class="toolbar-file-group" id="toolbar-file-group">
-        <label class="file-btn" id="open-file-btn">
-          Open file
-          <input type="file" id="input-archive" multiple accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
-        </label>
-      </span>
-      <button type="button" id="btn-demo">Load demo</button>
-      <span class="header-divider" aria-hidden="true"></span>
-      <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
-    </div>
+    <doclang-toolbar></doclang-toolbar>
   </header>
 
   <p class="drop-banner" id="drop-banner">Drop to open another file</p>
 
-  <div class="empty-state" id="empty-state">
-    <div class="empty-state-inner">
-      <div class="empty-state-loading" id="empty-state-loading" role="status" aria-live="polite" aria-label="Loading demo document">
-        <div class="loading-spinner" aria-hidden="true"></div>
-        <p class="empty-state-title">Loading demo…</p>
-        <p class="empty-state-meta">Preparing the sample document</p>
-      </div>
-      <div class="empty-state-prompt" id="empty-state-prompt">
-        <p class="empty-state-title">Drop a DocLang file here</p>
-        <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
-        <p class="empty-state-action">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
-      </div>
-    </div>
-  </div>
+  <doclang-empty-state></doclang-empty-state>
 
   <main class="split" id="main">
-    <section class="pane pane-file">
-      <div class="pane-header pane-file-header">
-        <span class="pane-header-title">Files</span>
-        <button
-          type="button"
-          class="file-pane-close-all"
-          id="btn-file-pane-close-all"
-          hidden
-          aria-label="Clear all open files"
-        >Clear</button>
-      </div>
-      <div class="pane-body" id="file-pane"></div>
-    </section>
+    <doclang-file-pane></doclang-file-pane>
     <div
       class="pane-splitter"
       id="splitter-0"
@@ -138,121 +42,7 @@
       tabindex="0"
       hidden
     ></div>
-    <section class="pane pane-page-view">
-      <div class="pane-header pane-page-header">
-        <span class="pane-header-title">Original page</span>
-        <div class="pane-page-controls">
-          <div class="page-zoom-control" id="page-zoom-label" hidden>
-            <label class="page-zoom-control-label" for="page-zoom">
-              <span aria-hidden="true">Zoom</span>
-            </label>
-            <input
-              type="range"
-              id="page-zoom"
-              min="100"
-              max="300"
-              step="10"
-              value="100"
-              aria-valuemin="100"
-              aria-valuemax="300"
-              aria-valuenow="100"
-              aria-label="Page zoom"
-            >
-            <button
-              type="button"
-              id="page-zoom-reset"
-              class="page-zoom-reset"
-              title="Reset zoom"
-              aria-label="Reset zoom"
-              disabled
-            >100%</button>
-          </div>
-          <button
-            type="button"
-            class="pane-settings-toggle"
-            id="btn-settings-toggle"
-            hidden
-            aria-expanded="false"
-            aria-controls="page-settings"
-          >
-            Overlays
-          </button>
-        </div>
-      </div>
-      <div class="pane-page-layout">
-        <div class="pane-body" id="page-pane"></div>
-        <div class="viewer-settings-layer" id="page-settings-layer" hidden>
-          <button
-            type="button"
-            class="viewer-settings-scrim"
-            id="page-settings-scrim"
-            tabindex="-1"
-            aria-label="Close overlays"
-          ></button>
-          <aside
-            class="viewer-settings"
-            id="page-settings"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="page-settings-title"
-          >
-            <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="page-settings-title">Overlays</h2>
-              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close overlays">
-                ×
-              </button>
-            </div>
-            <div class="viewer-settings-body">
-              <label class="settings-option settings-option-primary" id="show-all-bboxes-label">
-                <input type="checkbox" id="show-all-bboxes" checked>
-                <span>Layout</span>
-              </label>
-              <div class="settings-subgroup" id="layout-subtoggles">
-                <label class="settings-option settings-option-sub" id="show-reading-order-label">
-                  <input type="checkbox" id="show-reading-order">
-                  <span>Reading order</span>
-                </label>
-                <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
-                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
-                    <input type="checkbox" id="reading-order-arrows" checked>
-                    <span>Arrows</span>
-                  </label>
-                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
-                    <input type="checkbox" id="reading-order-global">
-                    <span>Global numbering</span>
-                  </label>
-                </div>
-
-                <label class="settings-option settings-option-sub" id="show-picture-contents-label">
-                  <input type="checkbox" id="show-picture-contents">
-                  <span>Picture contents</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-table-contents-label">
-                  <input type="checkbox" id="show-table-contents">
-                  <span>Table contents</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-fragment-links-label">
-                  <input type="checkbox" id="show-fragment-links">
-                  <span>Fragments</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-xref-links-label">
-                  <input type="checkbox" id="show-xref-links">
-                  <span>Cross-references</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-caption-links-label">
-                  <input type="checkbox" id="show-caption-links">
-                  <span>Captions</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-layout-badges-label">
-                  <input type="checkbox" id="show-layout-badges" checked>
-                  <span>Badges</span>
-                </label>
-              </div>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </section>
+    <doclang-page-view-pane></doclang-page-view-pane>
     <div
       class="pane-splitter"
       id="splitter-1"
@@ -262,10 +52,7 @@
       tabindex="0"
       hidden
     ></div>
-    <section class="pane pane-markup">
-      <div class="pane-header">DocLang</div>
-      <div class="pane-body" id="markup-pane"></div>
-    </section>
+    <doclang-markup-pane></doclang-markup-pane>
     <div
       class="pane-splitter"
       id="splitter-2"
@@ -275,59 +62,7 @@
       tabindex="0"
       hidden
     ></div>
-    <section class="pane pane-reading">
-      <div class="pane-header pane-reading-header">
-        <span class="pane-header-title">Reading view</span>
-        <button
-          type="button"
-          class="pane-settings-toggle"
-          id="btn-reading-settings-toggle"
-          hidden
-          aria-expanded="false"
-            aria-controls="reading-settings"
-          >
-            Layers
-          </button>
-      </div>
-      <div class="pane-reading-layout">
-        <div class="pane-body" id="rendered-pane"></div>
-        <div class="viewer-settings-layer" id="reading-settings-layer" hidden>
-          <button
-            type="button"
-            class="viewer-settings-scrim"
-            id="reading-settings-scrim"
-            tabindex="-1"
-            aria-label="Close layers"
-          ></button>
-          <aside
-            class="viewer-settings"
-            id="reading-settings"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="reading-settings-title"
-          >
-            <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
-              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">
-                ×
-              </button>
-            </div>
-            <div class="viewer-settings-body">
-              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-settings-title">
-                <label class="settings-option settings-option-sub" id="show-reading-furniture-label">
-                  <input type="checkbox" id="show-reading-furniture" checked>
-                  <span>Furniture</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-reading-background-label">
-                  <input type="checkbox" id="show-reading-background" checked>
-                  <span>Background</span>
-                </label>
-              </div>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </section>
+    <doclang-reading-pane></doclang-reading-pane>
   </main>
 
   <script src="demo-data.js"></script>

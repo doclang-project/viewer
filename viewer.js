@@ -1,4 +1,329 @@
 (function() {
+	//#region src/components/base/base.ts
+	/** Base class for all doclang web components. */
+	var DoclangHTMLElement = class extends HTMLElement {
+		/** The attached shadow root — available after the constructor runs. */
+		shadow;
+		/**
+		* @param css  Shadow DOM stylesheet — pass the `?inline` import directly.
+		* @param html Shadow DOM template  — pass the `?raw`    import directly.
+		*/
+		constructor(css, html) {
+			super();
+			this.shadow = this.attachShadow({ mode: "open" });
+			const sheet = new CSSStyleSheet();
+			sheet.replaceSync(css);
+			this.shadow.adoptedStyleSheets = [sheet];
+			this.shadow.innerHTML = html;
+		}
+		/** Typed shorthand for `this.shadow.querySelector`. */
+		q(selector) {
+			const el = this.shadow.querySelector(selector);
+			if (!el) throw new Error(`[${this.tagName.toLowerCase()}] No element matches "${selector}"`);
+			return el;
+		}
+	};
+	//#endregion
+	//#region src/components/cursor-hint/cursor-hint.css?inline
+	var cursor_hint_default$1 = ":host {\n  display: contents;\n}\n.cursor-hint {\n  position: fixed;\n  z-index: 200;\n  width: max-content;\n  max-width: 16rem;\n  padding: 0.3rem 0.5rem;\n  border-radius: 0.25rem;\n  background: var(--panel);\n  border: 1px solid var(--border);\n  color: var(--text);\n  font-family: var(--font-ui);\n  font-size: 0.75rem;\n  line-height: 1.35;\n  text-align: center;\n  white-space: normal;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);\n  pointer-events: none;\n}\n.cursor-hint.cursor-hint-detail {\n  max-width: 24rem;\n  padding: 0.45rem 0.55rem;\n  text-align: left;\n}\n.head-tooltip {\n  border-collapse: collapse;\n  width: 100%;\n  font-size: 0.6875rem;\n  line-height: 1.4;\n}\n.head-tooltip th {\n  padding: 0.1rem 0.55rem 0.1rem 0;\n  color: var(--muted);\n  font-weight: 600;\n  text-align: left;\n  vertical-align: top;\n  white-space: nowrap;\n}\n.head-tooltip td {\n  padding: 0.1rem 0;\n  vertical-align: top;\n  word-break: break-word;\n}\n.head-tooltip .head-default {\n  color: var(--muted);\n  font-style: italic;\n  white-space: nowrap;\n}\n";
+	//#endregion
+	//#region src/components/cursor-hint/cursor-hint.html?raw
+	var cursor_hint_default = "<div class=\"cursor-hint\" role=\"tooltip\" hidden></div>\n";
+	//#endregion
+	//#region src/components/cursor-hint/cursor-hint.ts
+	/** <doclang-cursor-hint> — floating tooltip that follows the pointer */
+	var OFFSET = 10;
+	var MARGIN = 8;
+	var DoclangCursorHint = class extends DoclangHTMLElement {
+		_hint;
+		constructor() {
+			super(cursor_hint_default$1, cursor_hint_default);
+			this._hint = this.q(".cursor-hint");
+		}
+		hide() {
+			this._hint.hidden = true;
+			this._hint.classList.remove("cursor-hint-detail");
+			this._hint.replaceChildren();
+		}
+		show(content, clientX, clientY, detail = false) {
+			this._hint.replaceChildren();
+			if (typeof content === "string") this._hint.textContent = content;
+			else this._hint.appendChild(content);
+			this._hint.classList.toggle("cursor-hint-detail", detail);
+			this._hint.hidden = false;
+			this._position(clientX, clientY);
+		}
+		showHtml(html, clientX, clientY) {
+			this._hint.innerHTML = html;
+			this._hint.classList.add("cursor-hint-detail");
+			this._hint.hidden = false;
+			this._position(clientX, clientY);
+		}
+		_position(clientX, clientY) {
+			let left = clientX + OFFSET;
+			let top = clientY + OFFSET;
+			const rect = this._hint.getBoundingClientRect();
+			if (left + rect.width > window.innerWidth - MARGIN) left = clientX - rect.width - OFFSET;
+			if (top + rect.height > window.innerHeight - MARGIN) top = clientY - rect.height - OFFSET;
+			this._hint.style.left = `${Math.max(MARGIN, left)}px`;
+			this._hint.style.top = `${Math.max(MARGIN, top)}px`;
+		}
+	};
+	customElements.define("doclang-cursor-hint", DoclangCursorHint);
+	//#endregion
+	//#region src/components/page-nav/page-nav.css?inline
+	var page_nav_default$1 = ":host {\n  display: contents;\n}\nnav {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n  margin-left: 0.25rem;\n}\nnav::before {\n  content: '';\n  flex-shrink: 0;\n  align-self: center;\n  width: 1px;\n  height: 1.125rem;\n  margin-right: 0.75rem;\n  background: var(--border);\n}\nnav[hidden] {\n  display: none;\n}\n.page-nav-btns {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.25rem;\n}\n.page-nav-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 1.875rem;\n  height: 1.875rem;\n  padding: 0;\n  flex-shrink: 0;\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--panel);\n  color: var(--text);\n  border-radius: 0.375rem;\n  font: inherit;\n  font-size: 0.875rem;\n  cursor: pointer;\n}\n.page-nav-btn:hover {\n  border-color: var(--accent);\n}\n.page-nav-btn:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.page-nav-chevron {\n  display: block;\n  width: 0.875rem;\n  height: 0.875rem;\n}\n.page-indicator {\n  display: inline-flex;\n  align-items: center;\n  font-size: 0.875rem;\n  color: var(--muted);\n  font-variant-numeric: tabular-nums;\n}\n.page-number-input {\n  appearance: none;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--panel);\n  color: var(--text);\n  font: inherit;\n  font-size: 0.875rem;\n  font-variant-numeric: tabular-nums;\n  text-align: center;\n  padding: 0 0.35rem;\n  margin: 0;\n  height: 1.875rem;\n  box-sizing: border-box;\n  width: calc(var(--page-num-digits, 1) * 1ch + 0.75rem);\n  line-height: 1;\n  cursor: text;\n}\n.page-number-input:hover:not(:disabled) {\n  border-color: var(--accent);\n}\n.page-number-input:focus {\n  outline: none;\n  border-color: var(--accent);\n  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.page-number-input:disabled {\n  opacity: 0.55;\n  cursor: not-allowed;\n}\n";
+	//#endregion
+	//#region src/components/page-nav/page-nav.html?raw
+	var page_nav_default = "<nav id=\"page-nav\" aria-label=\"Page navigation\" hidden>\n  <div class=\"page-nav-btns\">\n    <button\n      type=\"button\"\n      class=\"page-nav-btn btn-prev\"\n      aria-label=\"Previous page\"\n      title=\"Previous page\"\n      disabled\n    >\n      <svg\n        class=\"page-nav-chevron\"\n        viewBox=\"0 0 16 16\"\n        width=\"16\"\n        height=\"16\"\n        aria-hidden=\"true\"\n      >\n        <path\n          d=\"M10.5 3.5 5.5 8l5 4.5\"\n          fill=\"none\"\n          stroke=\"currentColor\"\n          stroke-width=\"1.75\"\n          stroke-linecap=\"round\"\n          stroke-linejoin=\"round\"\n        ></path>\n      </svg>\n    </button>\n    <button\n      type=\"button\"\n      class=\"page-nav-btn btn-next\"\n      aria-label=\"Next page\"\n      title=\"Next page\"\n      disabled\n    >\n      <svg\n        class=\"page-nav-chevron\"\n        viewBox=\"0 0 16 16\"\n        width=\"16\"\n        height=\"16\"\n        aria-hidden=\"true\"\n      >\n        <path\n          d=\"M5.5 3.5 10.5 8l-5 4.5\"\n          fill=\"none\"\n          stroke=\"currentColor\"\n          stroke-width=\"1.75\"\n          stroke-linecap=\"round\"\n          stroke-linejoin=\"round\"\n        ></path>\n      </svg>\n    </button>\n  </div>\n  <div class=\"page-indicator\">\n    <span>Page&#xA0;</span>\n    <input\n      type=\"text\"\n      inputmode=\"numeric\"\n      class=\"page-number-input\"\n      value=\"1\"\n      aria-label=\"Page number\"\n      disabled\n    />\n    <span class=\"page-count\">&#xA0;of 1</span>\n  </div>\n</nav>\n";
+	//#endregion
+	//#region src/components/page-nav/page-nav.ts
+	/** <doclang-page-nav> — page navigation (prev/next buttons + page indicator) */
+	var DoclangPageNav = class extends DoclangHTMLElement {
+		_nav;
+		_btnPrev;
+		_btnNext;
+		_input;
+		_countSpan;
+		constructor() {
+			super(page_nav_default$1, page_nav_default);
+			this._nav = this.q("nav");
+			this._btnPrev = this.q(".btn-prev");
+			this._btnNext = this.q(".btn-next");
+			this._input = this.q(".page-number-input");
+			this._countSpan = this.q(".page-count");
+			this._btnPrev.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-prev-page", {
+				bubbles: true,
+				composed: true
+			})));
+			this._btnNext.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-next-page", {
+				bubbles: true,
+				composed: true
+			})));
+			this._input.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					this._commitInput();
+					this._input.blur();
+				} else if (e.key === "Escape") {
+					e.preventDefault();
+					this._resetInput();
+					this._input.blur();
+				}
+			});
+			this._input.addEventListener("blur", () => this._resetInput());
+			this._input.addEventListener("focus", () => this._input.select());
+		}
+		_currentPage = 1;
+		_pageCount = 1;
+		get btnPrev() {
+			return this._btnPrev;
+		}
+		get btnNext() {
+			return this._btnNext;
+		}
+		get pageNumberInput() {
+			return this._input;
+		}
+		get pageCountIndicator() {
+			return this._countSpan;
+		}
+		setVisible(visible) {
+			this._nav.hidden = !visible;
+		}
+		setIndicator(pageNum, pageCount) {
+			this._currentPage = pageNum;
+			this._pageCount = pageCount;
+			this._countSpan.textContent = `\u00A0of ${pageCount}`;
+			const digits = Math.max(1, String(pageCount).length);
+			this._input.style.setProperty("--page-num-digits", String(digits));
+			this._input.disabled = false;
+			if (document.activeElement !== this._input) this._input.value = String(pageNum);
+			this._btnPrev.disabled = pageNum <= 1;
+			this._btnNext.disabled = pageNum >= pageCount;
+		}
+		reset() {
+			this._currentPage = 1;
+			this._pageCount = 1;
+			this._nav.hidden = true;
+			this._input.value = "1";
+			this._input.disabled = true;
+			this._btnPrev.disabled = true;
+			this._btnNext.disabled = true;
+			this._countSpan.textContent = "\xA0of 1";
+		}
+		_resetInput() {
+			this._input.value = String(this._currentPage);
+		}
+		_commitInput() {
+			const n = Number.parseInt(this._input.value.trim(), 10);
+			if (!Number.isFinite(n)) {
+				this._resetInput();
+				return;
+			}
+			const page = Math.min(Math.max(1, n), this._pageCount);
+			this.dispatchEvent(new CustomEvent("doclang-go-to-page", {
+				bubbles: true,
+				composed: true,
+				detail: { page }
+			}));
+		}
+	};
+	customElements.define("doclang-page-nav", DoclangPageNav);
+	//#endregion
+	//#region src/components/toolbar/toolbar.css?inline
+	var toolbar_default$1 = ":host {\n  display: contents;\n}\n.toolbar {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-wrap: wrap;\n  grid-column: 3;\n  justify-self: end;\n}\n.header-divider {\n  flex-shrink: 0;\n  align-self: center;\n  width: 1px;\n  height: 1.125rem;\n  background: var(--border);\n}\n.toolbar-options-wrap {\n  position: relative;\n}\n/* Menu/control triggers */\n.toolbar-options-btn {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.375rem;\n  padding: 0.35rem 0.45rem 0.35rem 0.55rem;\n  font-size: 0.8125rem;\n  line-height: 1.2;\n  font: inherit;\n}\n.toolbar-options-btn::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.32rem;\n  height: 0.32rem;\n  margin-left: 0.3rem;\n  margin-top: -0.14em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.toolbar-options-btn:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.toolbar-options-btn[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.toolbar-options-btn:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.toolbar-options-panel {\n  position: absolute;\n  top: calc(100% + 0.35rem);\n  right: 0;\n  z-index: 30;\n  min-width: 11rem;\n  padding: 0.5rem 0;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--panel);\n  box-shadow: 0 0.5rem 1.25rem color-mix(in srgb, var(--text) 12%, transparent);\n}\n.toolbar-options-panel[hidden] {\n  display: none;\n}\n.toolbar-options-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.75rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  font-family: var(--font-ui);\n}\n.toolbar-options-item:hover {\n  background: color-mix(in srgb, var(--accent) 6%, var(--panel));\n}\n.toolbar-options-item input {\n  margin: 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.toolbar-options-item-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.toolbar-options-item-disabled input {\n  cursor: not-allowed;\n}\n.toolbar-options-divider {\n  margin: 0.35rem 0;\n  border-top: 1px solid var(--border);\n}\n.toolbar-options-reset {\n  display: block;\n  width: 100%;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0.35rem 0.75rem;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: var(--text);\n  font: inherit;\n  font-size: 0.875rem;\n  text-align: left;\n  cursor: pointer;\n}\n.toolbar-options-reset:hover:not(:disabled) {\n  background: color-mix(in srgb, var(--accent) 6%, var(--panel));\n  color: var(--accent);\n}\n.toolbar-options-reset:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.toolbar-file-group {\n  display: inline-flex;\n  align-items: center;\n}\nbutton,\nlabel.file-btn {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--panel);\n  color: var(--text);\n  border-radius: 0.375rem;\n  padding: 0.4rem 0.75rem;\n  font: inherit;\n  font-size: 0.875rem;\n  cursor: pointer;\n}\nbutton:hover,\nlabel.file-btn:hover {\n  border-color: var(--accent);\n}\nbutton:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\nlabel.file-btn input {\n  display: none;\n}\n.header-site-link {\n  color: var(--muted);\n  font-size: 0.875rem;\n  text-decoration: none;\n  white-space: nowrap;\n}\n.header-site-link:hover {\n  color: var(--accent);\n  text-decoration: underline;\n}\n.header-site-link:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  border-radius: 0.125rem;\n}\n";
+	//#endregion
+	//#region src/components/toolbar/toolbar.html?raw
+	var toolbar_default = "<div class=\"toolbar\">\n  <div class=\"toolbar-options-wrap\">\n    <button\n      type=\"button\"\n      class=\"toolbar-options-btn\"\n      aria-expanded=\"false\"\n      aria-haspopup=\"true\"\n    >\n      Views\n    </button>\n    <div class=\"toolbar-options-panel\" role=\"menu\" hidden>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-file-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Files</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-page-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Original page</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-markup-pane\" role=\"menuitemcheckbox\" checked />\n        <span>DocLang</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input\n          type=\"checkbox\"\n          class=\"cb-reading-pane\"\n          role=\"menuitemcheckbox\"\n          checked\n        />\n        <span>Reading view</span>\n      </label>\n      <div class=\"toolbar-options-divider\" role=\"separator\"></div>\n      <button type=\"button\" class=\"toolbar-options-reset\" role=\"menuitem\">\n        Reset views\n      </button>\n    </div>\n  </div>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <span class=\"toolbar-file-group\">\n    <label class=\"file-btn\">\n      Open file\n      <input\n        type=\"file\"\n        class=\"input-archive\"\n        multiple\n        accept=\".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml\"\n      />\n    </label>\n  </span>\n  <button type=\"button\" class=\"btn-demo\">Load demo</button>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <a href=\"https://doclang.ai/\" class=\"header-site-link\">doclang.ai</a>\n</div>\n";
+	//#endregion
+	//#region src/components/toolbar/toolbar.ts
+	/** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
+	var DoclangToolbar = class extends DoclangHTMLElement {
+		_toolbarOptionsBtn;
+		_toolbarOptionsPanel;
+		_toggleFilePane;
+		_toggleFilePaneLabel;
+		_togglePagePane;
+		_togglePagePaneLabel;
+		_toggleMarkupPane;
+		_toggleMarkupPaneLabel;
+		_toggleReadingPane;
+		_toggleReadingPaneLabel;
+		_resetPaneLayoutBtn;
+		_btnDemo;
+		_openFileBtn;
+		_inputArchive;
+		_panelOpen = false;
+		constructor() {
+			super(toolbar_default$1, toolbar_default);
+			this._toolbarOptionsBtn = this.q(".toolbar-options-btn");
+			this._toolbarOptionsPanel = this.q(".toolbar-options-panel");
+			this._toggleFilePaneLabel = this.q("label:has(.cb-file-pane)");
+			this._toggleFilePane = this.q(".cb-file-pane");
+			this._togglePagePaneLabel = this.q("label:has(.cb-page-pane)");
+			this._togglePagePane = this.q(".cb-page-pane");
+			this._toggleMarkupPaneLabel = this.q("label:has(.cb-markup-pane)");
+			this._toggleMarkupPane = this.q(".cb-markup-pane");
+			this._toggleReadingPaneLabel = this.q("label:has(.cb-reading-pane)");
+			this._toggleReadingPane = this.q(".cb-reading-pane");
+			this._resetPaneLayoutBtn = this.q(".toolbar-options-reset");
+			this._btnDemo = this.q(".btn-demo");
+			this._openFileBtn = this.q(".file-btn");
+			this._inputArchive = this.q(".input-archive");
+			this._wireEvents();
+		}
+		get toggleFilePane() {
+			return this._toggleFilePane;
+		}
+		get toggleFilePaneLabel() {
+			return this._toggleFilePaneLabel;
+		}
+		get togglePagePane() {
+			return this._togglePagePane;
+		}
+		get togglePagePaneLabel() {
+			return this._togglePagePaneLabel;
+		}
+		get toggleMarkupPane() {
+			return this._toggleMarkupPane;
+		}
+		get toggleMarkupPaneLabel() {
+			return this._toggleMarkupPaneLabel;
+		}
+		get toggleReadingPane() {
+			return this._toggleReadingPane;
+		}
+		get toggleReadingPaneLabel() {
+			return this._toggleReadingPaneLabel;
+		}
+		get resetPaneLayoutBtn() {
+			return this._resetPaneLayoutBtn;
+		}
+		get toolbarOptionsBtn() {
+			return this._toolbarOptionsBtn;
+		}
+		get btnDemo() {
+			return this._btnDemo;
+		}
+		get openFileBtn() {
+			return this._openFileBtn;
+		}
+		get inputArchive() {
+			return this._inputArchive;
+		}
+		setOptionsOpen(open) {
+			this._panelOpen = open;
+			this._toolbarOptionsPanel.hidden = !open;
+			this._toolbarOptionsBtn.setAttribute("aria-expanded", String(open));
+		}
+		closeOptionsIfOpen() {
+			if (this._panelOpen) this.setOptionsOpen(false);
+		}
+		_wireEvents() {
+			this._toolbarOptionsBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.setOptionsOpen(!this._panelOpen);
+			});
+			document.addEventListener("click", (e) => {
+				if (!this._panelOpen) return;
+				const path = e.composedPath();
+				if (path.includes(this._toolbarOptionsPanel) || path.includes(this._toolbarOptionsBtn)) return;
+				this.setOptionsOpen(false);
+			});
+			this._btnDemo.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-load-demo", {
+				bubbles: true,
+				composed: true
+			})));
+			this._inputArchive.addEventListener("change", (e) => {
+				const input = e.target;
+				this.dispatchEvent(new CustomEvent("doclang-open-files", {
+					bubbles: true,
+					composed: true,
+					detail: { files: [...input.files ?? []] }
+				}));
+				input.value = "";
+			});
+			this._toggleFilePane.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-toggle-pane", {
+				bubbles: true,
+				composed: true,
+				detail: {
+					pane: "file",
+					checked: this._toggleFilePane.checked
+				}
+			})));
+			this._togglePagePane.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-toggle-pane", {
+				bubbles: true,
+				composed: true,
+				detail: {
+					pane: "page",
+					checked: this._togglePagePane.checked
+				}
+			})));
+			this._toggleMarkupPane.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-toggle-pane", {
+				bubbles: true,
+				composed: true,
+				detail: {
+					pane: "markup",
+					checked: this._toggleMarkupPane.checked
+				}
+			})));
+			this._toggleReadingPane.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-toggle-pane", {
+				bubbles: true,
+				composed: true,
+				detail: {
+					pane: "reading",
+					checked: this._toggleReadingPane.checked
+				}
+			})));
+			this._resetPaneLayoutBtn.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reset-pane-layout", {
+				bubbles: true,
+				composed: true
+			})));
+		}
+	};
+	customElements.define("doclang-toolbar", DoclangToolbar);
+	//#endregion
 	//#region src/constants.ts
 	var SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
 	var OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
@@ -142,6 +467,488 @@
 		reading: true
 	};
 	var LAYOUT_STACK_BREAKPOINT_PX = 1200;
+	//#endregion
+	//#region src/components/file-pane/file-pane.css?inline
+	var file_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n  overflow: hidden;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.35rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.35rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  padding-inline: calc(0.75rem - 0.35rem);\n}\n.file-pane-close-all {\n  appearance: none;\n  border: 1px solid transparent;\n  border-radius: 0.25rem;\n  background: transparent;\n  color: var(--muted);\n  font: inherit;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  padding: 0 0.15rem;\n  height: 1.25rem;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n}\n.file-pane-close-all:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.file-pane-close-all:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-body {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 0.375rem var(--file-pane-pad-x, 0.5rem);\n  min-width: 0;\n}\n.file-view-list {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n  width: 100%;\n}\n.file-view-list > li {\n  width: 100%;\n  max-width: 100%;\n}\n.file-view-item {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 0.35rem;\n  width: 100%;\n  max-width: 100%;\n  box-sizing: border-box;\n  border: none;\n  border-radius: 0;\n  background: transparent;\n  color: var(--text);\n  font: inherit;\n  font-size: 0.8125rem;\n  line-height: 1.35;\n  text-align: center;\n  padding: 0.5rem var(--file-item-pad-x, 0.35rem);\n  cursor: pointer;\n}\n.file-view-thumb-wrap {\n  position: relative;\n  flex-shrink: 0;\n}\n.file-view-close {\n  position: absolute;\n  top: -0.25rem;\n  right: -0.25rem;\n  appearance: none;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 1rem;\n  height: 1rem;\n  padding: 0;\n  border: 1px solid var(--border);\n  border-radius: 50%;\n  background: var(--bg);\n  color: var(--muted);\n  font: inherit;\n  font-size: 0.75rem;\n  line-height: 1;\n  cursor: pointer;\n  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);\n  z-index: 1;\n}\n.file-view-close:hover {\n  color: var(--text);\n  background: var(--panel);\n}\n.file-view-close:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 1px;\n}\n.file-view-thumb {\n  flex-shrink: 0;\n  width: var(--file-thumb-size, 3.75rem);\n  height: var(--file-thumb-size, 3.75rem);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.file-view-thumb img {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n}\n.file-view-thumb-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 100%;\n  height: 100%;\n  color: var(--muted);\n}\n.file-view-thumb-placeholder svg {\n  display: block;\n  width: 1.875rem;\n  height: 1.875rem;\n}\n.file-view-label {\n  width: 100%;\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.file-view-item:hover {\n  background: var(--markup-hover);\n}\n.file-view-item.is-active {\n  background: var(--markup-selected);\n  color: var(--accent);\n  font-weight: 500;\n}\n.file-view-item:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n";
+	//#endregion
+	//#region src/components/file-pane/file-pane.html?raw
+	var file_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Files</span>\n  <button\n    type=\"button\"\n    class=\"file-pane-close-all\"\n    aria-label=\"Clear all open files\"\n    hidden\n  >\n    Clear\n  </button>\n</div>\n<div class=\"pane-body\"></div>\n";
+	//#endregion
+	//#region src/components/file-pane/file-pane.ts
+	/** <doclang-file-pane> — file list sidebar */
+	var DoclangFilePane = class extends DoclangHTMLElement {
+		_closeAllBtn;
+		_body;
+		constructor() {
+			super(file_pane_default$1, file_pane_default);
+			this.classList.add("pane", "pane-file");
+			this._closeAllBtn = this.q(".file-pane-close-all");
+			this._body = this.q(".pane-body");
+			this._closeAllBtn.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-file-pane-close-all", {
+				bubbles: true,
+				composed: true
+			})));
+		}
+		get section() {
+			return this;
+		}
+		get body() {
+			return this._body;
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+		}
+		setLastPane(isLast) {
+			this.classList.toggle("pane-layout-last", isLast);
+		}
+		renderFiles(entries) {
+			this._body.replaceChildren();
+			this._closeAllBtn.hidden = entries.length === 0;
+			if (!entries.length) return;
+			const list = document.createElement("ul");
+			list.className = "file-view-list";
+			list.setAttribute("role", "listbox");
+			list.setAttribute("aria-label", "Open files");
+			entries.forEach((entry, index) => {
+				const item = document.createElement("li");
+				const card = document.createElement("div");
+				card.className = "file-view-item";
+				if (entry.isActive) {
+					card.classList.add("is-active");
+					card.setAttribute("aria-selected", "true");
+				} else card.setAttribute("aria-selected", "false");
+				card.title = entry.label;
+				card.tabIndex = 0;
+				card.setAttribute("role", "option");
+				const thumbWrap = document.createElement("div");
+				thumbWrap.className = "file-view-thumb-wrap";
+				const closeBtn = document.createElement("button");
+				closeBtn.type = "button";
+				closeBtn.className = "file-view-close";
+				closeBtn.setAttribute("aria-label", `Close ${entry.label}`);
+				closeBtn.textContent = "×";
+				closeBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					this.dispatchEvent(new CustomEvent("doclang-file-close", {
+						bubbles: true,
+						composed: true,
+						detail: { index }
+					}));
+				});
+				const thumb = document.createElement("span");
+				thumb.className = "file-view-thumb";
+				thumb.setAttribute("aria-hidden", "true");
+				if (entry.thumbnailUrl) {
+					const img = document.createElement("img");
+					img.src = entry.thumbnailUrl;
+					img.alt = "";
+					thumb.appendChild(img);
+				} else {
+					const ph = document.createElement("span");
+					ph.className = "file-view-thumb-placeholder";
+					ph.innerHTML = FILE_THUMB_PLACEHOLDER_SVG;
+					thumb.appendChild(ph);
+				}
+				thumbWrap.append(thumb, closeBtn);
+				const label = document.createElement("span");
+				label.className = "file-view-label";
+				label.textContent = entry.label;
+				card.append(thumbWrap, label);
+				card.addEventListener("click", (e) => {
+					if (e.target.closest(".file-view-close")) return;
+					this.dispatchEvent(new CustomEvent("doclang-file-select", {
+						bubbles: true,
+						composed: true,
+						detail: { index }
+					}));
+				});
+				card.addEventListener("keydown", (e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						this.dispatchEvent(new CustomEvent("doclang-file-select", {
+							bubbles: true,
+							composed: true,
+							detail: { index }
+						}));
+					}
+				});
+				item.appendChild(card);
+				list.appendChild(item);
+			});
+			this._body.appendChild(list);
+		}
+	};
+	customElements.define("doclang-file-pane", DoclangFilePane);
+	//#endregion
+	//#region src/components/markup-pane/markup-pane.css?inline
+	var markup_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-body {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 0;\n  background: var(--markup-bg);\n  color: var(--markup-fg);\n}\n.pane-body .placeholder {\n  margin: 1rem;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\npre.markup {\n  margin: 0;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.markup {\n  margin: 0;\n  padding: 0.75rem 1rem 1rem;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.55;\n  tab-size: 2;\n  --markup-indent: 2ch;\n  --markup-gutter-width: 1rem;\n}\n.markup-ghost-tag-part {\n  opacity: 0.35;\n  cursor: help;\n}\n.head-tooltip {\n  border-collapse: collapse;\n  width: 100%;\n  font-size: 0.6875rem;\n  line-height: 1.4;\n}\n.head-tooltip th {\n  padding: 0.1rem 0.55rem 0.1rem 0;\n  color: var(--muted);\n  font-weight: 600;\n  text-align: left;\n  vertical-align: top;\n  white-space: nowrap;\n}\n.head-tooltip td {\n  padding: 0.1rem 0;\n  vertical-align: top;\n  word-break: break-word;\n}\n.head-tooltip .head-default {\n  color: var(--muted);\n  font-style: italic;\n  white-space: nowrap;\n}\n.markup-el {\n  cursor: pointer;\n  border-radius: 0.2rem;\n}\n.markup-el:hover {\n  background: var(--markup-hover);\n}\n.markup-el.selected {\n  background: var(--markup-selected);\n  box-shadow: inset 0 0 0 1px var(--accent);\n}\n.markup-line {\n  white-space: pre-wrap;\n  word-break: break-word;\n  cursor: pointer;\n  padding: 0 0.25rem;\n  border-radius: 0.15rem;\n}\n.markup-line-content {\n  display: flex;\n  align-items: baseline;\n  min-width: 0;\n  padding-left: calc(var(--markup-depth, 0) * var(--markup-indent));\n}\n.markup-gutter {\n  flex: 0 0 var(--markup-gutter-width);\n  width: var(--markup-gutter-width);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.markup-line-body {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n.markup-fold-toggle {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: var(--markup-gutter-width);\n  height: 1rem;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 0.15rem;\n  background: transparent;\n  color: var(--muted);\n  cursor: pointer;\n  flex-shrink: 0;\n}\n.markup-fold-toggle::before {\n  content: '';\n  display: block;\n  width: 0;\n  height: 0;\n  border-top: 4px solid transparent;\n  border-bottom: 4px solid transparent;\n  border-left: 5px solid currentColor;\n  transform: rotate(90deg);\n  transition: transform 0.12s ease;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-toggle::before {\n  transform: rotate(0deg);\n}\n.markup-fold-toggle:hover {\n  background: var(--markup-hover);\n  color: var(--markup-fg);\n}\n.markup-fold-suffix {\n  display: none;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-suffix {\n  display: inline;\n}\n.markup-el-foldable.markup-collapsed > .markup-fold-body {\n  display: none;\n}\n.xml-tag {\n  color: var(--xml-tag);\n}\n.xml-bracket {\n  color: var(--xml-bracket);\n}\n.xml-attr-name {\n  color: var(--xml-attr-name);\n}\n.xml-attr-value {\n  color: var(--xml-attr-value);\n}\n.xml-attr-value-truncatable {\n  display: inline;\n}\n.xml-attr-value-chip {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  gap: 0.3em;\n  margin: 0 0 0 0.35em;\n  padding: 0.08em 0.45em 0.08em 0.5em;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  background: var(--placeholder-bg);\n  color: var(--muted);\n  font-family: var(--font-ui, system-ui, sans-serif);\n  font-size: 0.72em;\n  font-weight: 600;\n  line-height: 1.35;\n  cursor: pointer;\n  vertical-align: baseline;\n  white-space: nowrap;\n}\n.xml-attr-value-chip::after {\n  content: '';\n  width: 0;\n  height: 0;\n  border-top: 0.28em solid currentColor;\n  border-left: 0.22em solid transparent;\n  border-right: 0.22em solid transparent;\n  opacity: 0.75;\n  transition: transform 0.12s ease;\n}\n.xml-attr-value-chip[aria-expanded='true']::after {\n  transform: rotate(180deg);\n}\n.xml-attr-value-chip:hover,\n.xml-attr-value-chip[aria-expanded='true'] {\n  border-color: var(--accent);\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));\n}\n.markup-embedded-uri-panel {\n  cursor: text;\n}\n.markup-embedded-uri-panel:hover {\n  background: transparent;\n}\n.markup-embedded-uri-panel-body {\n  margin: 0.1rem 0 0.25rem;\n  padding: 0.45rem 0.6rem;\n  max-height: 8rem;\n  overflow: auto;\n  color: var(--xml-attr-value);\n  word-break: break-all;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  user-select: text;\n}\n.xml-text {\n  color: var(--xml-text);\n}\n.xml-cdata {\n  color: var(--xml-cdata);\n}\n.xml-cdata-delimiter {\n  color: var(--xml-cdata-delimiter);\n}\n";
+	//#endregion
+	//#region src/components/markup-pane/markup-pane.html?raw
+	var markup_pane_default = "<div class=\"pane-header\">DocLang</div>\n<div class=\"pane-body\" id=\"markup-pane\"></div>\n";
+	//#endregion
+	//#region src/components/markup-pane/markup-pane.ts
+	/** <doclang-markup-pane> — DocLang XML markup view */
+	var DoclangMarkupPane = class extends DoclangHTMLElement {
+		_body;
+		constructor() {
+			super(markup_pane_default$1, markup_pane_default);
+			this.classList.add("pane", "pane-markup");
+			this._body = this.q(".pane-body");
+		}
+		get section() {
+			return this;
+		}
+		get body() {
+			return this._body;
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+		}
+		setLastPane(isLast) {
+			this.classList.toggle("pane-layout-last", isLast);
+		}
+	};
+	customElements.define("doclang-markup-pane", DoclangMarkupPane);
+	//#endregion
+	//#region src/components/page-view-pane/page-view-pane.css?inline
+	var page_view_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-page-controls {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n.page-zoom-control {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  user-select: none;\n}\n.page-zoom-control-label {\n  font-size: 0.625rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  cursor: pointer;\n}\n.page-zoom-control input[type='range'] {\n  width: 5.5rem;\n  height: 1rem;\n  margin: 0;\n  cursor: pointer;\n}\n.page-zoom-reset {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--bg);\n  color: var(--muted);\n  border-radius: 0.375rem;\n  padding: 0 0.45rem;\n  height: 1.25rem;\n  font: inherit;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n  line-height: 1;\n  cursor: pointer;\n  min-width: 2.75rem;\n}\n.page-zoom-reset:not(:disabled):hover {\n  border-color: var(--accent);\n  color: var(--text);\n}\n.page-zoom-reset:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-page-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  padding: 0.75rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-option-primary + .settings-subgroup {\n  margin-top: 0.65rem;\n}\n.settings-option-primary {\n  font-weight: 600;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-reading-order-group {\n  gap: 0.35rem;\n  padding-left: 1.6rem;\n}\n.settings-option-nested {\n  padding-left: 0;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.settings-option-disabled input {\n  cursor: not-allowed;\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.page-view-port {\n  display: flex;\n  overflow: auto;\n  flex: 1 1 auto;\n  width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  scrollbar-gutter: stable;\n}\n.pane-body.can-pan {\n  cursor: grab;\n}\n.pane-body.is-panning {\n  cursor: grabbing;\n  user-select: none;\n}\n.pane-body:focus {\n  outline: none;\n}\n.pane-body:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\n.page-view {\n  position: relative;\n  display: block;\n  width: fit-content;\n  flex-shrink: 0;\n  margin: auto;\n  line-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.page-view img {\n  display: block;\n  width: auto;\n  height: auto;\n  max-width: none;\n  max-height: none;\n  border: none;\n  border-radius: 0;\n}\n.page-view img:not([data-layout-ready]) {\n  opacity: 0;\n}\n.page-view svg.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  pointer-events: auto;\n  overflow: hidden;\n}\n.overlay rect.bbox.bbox-hidden,\n.overlay .overlay-badge.bbox-hidden {\n  display: none;\n}\n.overlay rect.bbox {\n  stroke-width: 2;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n}\n.overlay rect.bbox.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n  stroke-width: 3.5;\n  filter: drop-shadow(\n    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)\n  );\n}\n.overlay rect.bbox.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture,\n.overlay rect.bbox.layer-background {\n  fill: url(#layer-hatch) !important;\n  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);\n}\n.overlay .layer-hatch-stripe {\n  fill: var(--muted);\n  fill-opacity: 0.06;\n}\n.overlay rect.bbox.layer-furniture.selected,\n.overlay rect.bbox.layer-background.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 22%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture.related:not(.selected),\n.overlay rect.bbox.layer-background.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 18%,\n    transparent\n  ) !important;\n}\n.overlay .bbox-text {\n  fill: color-mix(in srgb, var(--kind-text) 14%, transparent);\n  stroke: var(--kind-text);\n}\n.overlay .bbox-heading {\n  fill: color-mix(in srgb, var(--kind-heading) 14%, transparent);\n  stroke: var(--kind-heading);\n}\n.overlay .bbox-list,\n.overlay .bbox-ldiv {\n  fill: color-mix(in srgb, var(--kind-list) 14%, transparent);\n  stroke: var(--kind-list);\n}\n.overlay .bbox-table {\n  fill: color-mix(in srgb, var(--kind-table) 14%, transparent);\n  stroke: var(--kind-table);\n}\n.overlay .bbox-index {\n  fill: color-mix(in srgb, var(--kind-index) 14%, transparent);\n  stroke: var(--kind-index);\n}\n.overlay .bbox-formula {\n  fill: color-mix(in srgb, var(--kind-formula) 14%, transparent);\n  stroke: var(--kind-formula);\n}\n.overlay .bbox-code {\n  fill: color-mix(in srgb, var(--kind-code) 16%, transparent);\n  stroke: var(--kind-code);\n}\n.overlay .bbox-picture {\n  fill: color-mix(in srgb, var(--kind-picture) 14%, transparent);\n  stroke: var(--kind-picture);\n}\n.overlay .bbox-group {\n  fill: color-mix(in srgb, var(--kind-group) 14%, transparent);\n  stroke: var(--kind-group);\n}\n.overlay .bbox-footnote {\n  fill: color-mix(in srgb, var(--kind-footnote) 14%, transparent);\n  stroke: var(--kind-footnote);\n}\n.overlay .bbox-page_header,\n.overlay .bbox-page_footer {\n  fill: color-mix(in srgb, var(--kind-page_header) 14%, transparent);\n  stroke: var(--kind-page_header);\n}\n.overlay .bbox-caption {\n  fill: color-mix(in srgb, var(--kind-caption) 14%, transparent);\n  stroke: var(--kind-caption);\n}\n.overlay line.caption-link {\n  color: var(--kind-caption);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.caption-link.bbox-hidden {\n  display: none;\n}\n.overlay line.xref-link {\n  color: var(--kind-footnote);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.xref-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link {\n  pointer-events: none;\n}\n.overlay .fragment-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link-path {\n  color: var(--overlay-fragment);\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-link-path-dashed {\n  stroke-dasharray: 6 4;\n}\n.overlay .fragment-nav {\n  pointer-events: none;\n}\n.overlay .fragment-nav.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-nav-btn {\n  pointer-events: auto;\n  cursor: pointer;\n}\n.overlay .fragment-nav-btn-disabled {\n  pointer-events: none;\n  cursor: default;\n  opacity: 0.35;\n}\n.overlay .fragment-nav-btn-bg {\n  fill: var(--panel);\n  stroke: var(--overlay-fragment);\n  stroke-width: 1;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-nav-btn-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg {\n  fill: color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel));\n}\n.overlay .fragment-link-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 600;\n  font-style: italic;\n  text-anchor: middle;\n  dominant-baseline: middle;\n  paint-order: stroke fill;\n  stroke: var(--panel);\n  stroke-width: 3px;\n}\n.overlay .reading-order-step {\n  color: var(--overlay-reading-order);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-dasharray: 5 4;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay .reading-order-step.bbox-hidden,\n.overlay .reading-order-badge.bbox-hidden {\n  display: none;\n}\n.overlay .overlay-badge {\n  pointer-events: none;\n}\n.overlay .overlay-badge-bg {\n  fill-opacity: 1;\n  stroke: none;\n}\n.reading-order-badge .overlay-badge-bg {\n  fill: var(--overlay-reading-order);\n}\n.overlay .element-badge {\n  opacity: 0.8;\n  pointer-events: auto;\n  cursor: help;\n}\n.overlay .element-badge .overlay-badge-bg {\n  fill: var(--kind-stroke, var(--accent));\n}\n.overlay .overlay-badge-label {\n  fill: #ffffff;\n  fill-opacity: 1;\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .bbox-field {\n  fill: color-mix(in srgb, var(--kind-field) 14%, transparent);\n  stroke: var(--kind-field);\n}\n.overlay .bbox-default {\n  fill: color-mix(in srgb, var(--kind-default) 12%, transparent);\n  stroke: var(--kind-default);\n}\n@media (prefers-color-scheme: dark) {\n  .overlay .bbox-text {\n    fill: color-mix(in srgb, var(--kind-text) 20%, transparent);\n  }\n  .overlay .bbox-heading {\n    fill: color-mix(in srgb, var(--kind-heading) 20%, transparent);\n  }\n  .overlay .bbox-list,\n  .overlay .bbox-ldiv {\n    fill: color-mix(in srgb, var(--kind-list) 20%, transparent);\n  }\n  .overlay .bbox-table {\n    fill: color-mix(in srgb, var(--kind-table) 18%, transparent);\n  }\n  .overlay .bbox-index {\n    fill: color-mix(in srgb, var(--kind-index) 18%, transparent);\n  }\n  .overlay .bbox-formula {\n    fill: color-mix(in srgb, var(--kind-formula) 18%, transparent);\n  }\n  .overlay .bbox-code {\n    fill: color-mix(in srgb, var(--kind-code) 20%, transparent);\n  }\n  .overlay .bbox-picture {\n    fill: color-mix(in srgb, var(--kind-picture) 20%, transparent);\n  }\n  .overlay .bbox-group {\n    fill: color-mix(in srgb, var(--kind-group) 20%, transparent);\n  }\n  .overlay .bbox-footnote {\n    fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent);\n  }\n  .overlay .bbox-page_header,\n  .overlay .bbox-page_footer {\n    fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent);\n  }\n  .overlay .bbox-caption {\n    fill: color-mix(in srgb, var(--kind-caption) 18%, transparent);\n  }\n  .overlay .bbox-field {\n    fill: color-mix(in srgb, var(--kind-field) 18%, transparent);\n  }\n  .overlay .bbox-default {\n    fill: color-mix(in srgb, var(--kind-default) 18%, transparent);\n  }\n}\n";
+	//#endregion
+	//#region src/components/page-view-pane/page-view-pane.html?raw
+	var page_view_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Original page</span>\n  <div class=\"pane-page-controls\">\n    <div class=\"page-zoom-control\" hidden>\n      <label class=\"page-zoom-control-label\">\n        <span aria-hidden=\"true\">Zoom</span>\n        <input\n          type=\"range\"\n          class=\"zoom-input\"\n          min=\"100\"\n          max=\"300\"\n          step=\"10\"\n          value=\"100\"\n          aria-valuemin=\"100\"\n          aria-valuemax=\"300\"\n          aria-valuenow=\"100\"\n          aria-label=\"Page zoom\"\n        />\n      </label>\n      <button\n        type=\"button\"\n        class=\"page-zoom-reset\"\n        title=\"Reset zoom\"\n        aria-label=\"Reset zoom\"\n        disabled\n      >\n        100%\n      </button>\n    </div>\n    <button type=\"button\" class=\"pane-settings-toggle\" aria-expanded=\"false\" hidden>\n      Overlays\n    </button>\n  </div>\n</div>\n<div class=\"pane-page-layout\">\n  <div class=\"pane-body\" id=\"page-pane\" tabindex=\"0\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close overlays\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"page-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"page-settings-title\">Overlays</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close overlays\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <label class=\"settings-option settings-option-primary\">\n          <input type=\"checkbox\" class=\"cb-all-bboxes\" checked />\n          <span>Layout</span>\n        </label>\n        <div class=\"settings-subgroup\">\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-reading-order\" />\n            <span>Reading order</span>\n          </label>\n          <div class=\"settings-subgroup settings-reading-order-group\">\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-arrows\" checked />\n              <span>Arrows</span>\n            </label>\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-global\" />\n              <span>Global numbering</span>\n            </label>\n          </div>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-picture-contents\" />\n            <span>Picture contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-table-contents\" />\n            <span>Table contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-fragment-links\" />\n            <span>Fragments</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-xref-links\" />\n            <span>Cross-references</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-caption-links\" />\n            <span>Captions</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-layout-badges\" checked />\n            <span>Badges</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
+	//#endregion
+	//#region src/components/page-view-pane/page-view-pane.ts
+	/** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
+	var DoclangPageViewPane = class extends DoclangHTMLElement {
+		_body;
+		_settingsToggle;
+		_settingsLayer;
+		_settingsScrim;
+		_settingsClose;
+		_zoomLabel;
+		_zoomInput;
+		_zoomReset;
+		_showAllBboxes;
+		_showAllBboxesLabel;
+		_layoutSubtoggles;
+		_showLayoutBadges;
+		_showLayoutBadgesLabel;
+		_showReadingOrder;
+		_showReadingOrderLabel;
+		_readingOrderSubtoggles;
+		_readingOrderArrows;
+		_readingOrderArrowsLabel;
+		_readingOrderGlobal;
+		_readingOrderGlobalLabel;
+		_showPictureContents;
+		_showPictureContentsLabel;
+		_showTableContents;
+		_showTableContentsLabel;
+		_showFragmentLinks;
+		_showFragmentLinksLabel;
+		_showXrefLinks;
+		_showXrefLinksLabel;
+		_showCaptionLinks;
+		_showCaptionLinksLabel;
+		constructor() {
+			super(page_view_pane_default$1, page_view_pane_default);
+			this.classList.add("pane", "pane-page-view");
+			this._body = this.q(".pane-body");
+			this._zoomLabel = this.q(".page-zoom-control");
+			this._zoomInput = this.q(".zoom-input");
+			this._zoomReset = this.q(".page-zoom-reset");
+			this._settingsToggle = this.q(".pane-settings-toggle");
+			this._settingsLayer = this.q(".viewer-settings-layer");
+			this._settingsScrim = this.q(".viewer-settings-scrim");
+			this._settingsClose = this.q(".viewer-settings-close");
+			this._showAllBboxesLabel = this.q("label:has(.cb-all-bboxes)");
+			this._showAllBboxes = this.q(".cb-all-bboxes");
+			this._layoutSubtoggles = this.q(".settings-subgroup");
+			this._showReadingOrderLabel = this.q("label:has(.cb-reading-order)");
+			this._showReadingOrder = this.q(".cb-reading-order");
+			this._readingOrderSubtoggles = this.q(".settings-reading-order-group");
+			this._readingOrderArrowsLabel = this.q("label:has(.cb-reading-order-arrows)");
+			this._readingOrderArrows = this.q(".cb-reading-order-arrows");
+			this._readingOrderGlobalLabel = this.q("label:has(.cb-reading-order-global)");
+			this._readingOrderGlobal = this.q(".cb-reading-order-global");
+			this._showPictureContentsLabel = this.q("label:has(.cb-picture-contents)");
+			this._showPictureContents = this.q(".cb-picture-contents");
+			this._showTableContentsLabel = this.q("label:has(.cb-table-contents)");
+			this._showTableContents = this.q(".cb-table-contents");
+			this._showFragmentLinksLabel = this.q("label:has(.cb-fragment-links)");
+			this._showFragmentLinks = this.q(".cb-fragment-links");
+			this._showXrefLinksLabel = this.q("label:has(.cb-xref-links)");
+			this._showXrefLinks = this.q(".cb-xref-links");
+			this._showCaptionLinksLabel = this.q("label:has(.cb-caption-links)");
+			this._showCaptionLinks = this.q(".cb-caption-links");
+			this._showLayoutBadgesLabel = this.q("label:has(.cb-layout-badges)");
+			this._showLayoutBadges = this.q(".cb-layout-badges");
+			this._wireEvents();
+		}
+		get section() {
+			return this;
+		}
+		get body() {
+			return this._body;
+		}
+		get settingsToggle() {
+			return this._settingsToggle;
+		}
+		get settingsLayer() {
+			return this._settingsLayer;
+		}
+		get zoomLabel() {
+			return this._zoomLabel;
+		}
+		get zoomInput() {
+			return this._zoomInput;
+		}
+		get zoomReset() {
+			return this._zoomReset;
+		}
+		get showAllBboxes() {
+			return this._showAllBboxes;
+		}
+		get showAllBboxesLabel() {
+			return this._showAllBboxesLabel;
+		}
+		get showLayoutBadges() {
+			return this._showLayoutBadges;
+		}
+		get showLayoutBadgesLabel() {
+			return this._showLayoutBadgesLabel;
+		}
+		get showReadingOrder() {
+			return this._showReadingOrder;
+		}
+		get showReadingOrderLabel() {
+			return this._showReadingOrderLabel;
+		}
+		get readingOrderArrows() {
+			return this._readingOrderArrows;
+		}
+		get readingOrderArrowsLabel() {
+			return this._readingOrderArrowsLabel;
+		}
+		get readingOrderGlobal() {
+			return this._readingOrderGlobal;
+		}
+		get readingOrderGlobalLabel() {
+			return this._readingOrderGlobalLabel;
+		}
+		get showPictureContents() {
+			return this._showPictureContents;
+		}
+		get showPictureContentsLabel() {
+			return this._showPictureContentsLabel;
+		}
+		get showTableContents() {
+			return this._showTableContents;
+		}
+		get showTableContentsLabel() {
+			return this._showTableContentsLabel;
+		}
+		get showFragmentLinks() {
+			return this._showFragmentLinks;
+		}
+		get showFragmentLinksLabel() {
+			return this._showFragmentLinksLabel;
+		}
+		get showXrefLinks() {
+			return this._showXrefLinks;
+		}
+		get showXrefLinksLabel() {
+			return this._showXrefLinksLabel;
+		}
+		get showCaptionLinks() {
+			return this._showCaptionLinks;
+		}
+		get showCaptionLinksLabel() {
+			return this._showCaptionLinksLabel;
+		}
+		get layoutSubtoggles() {
+			return this._layoutSubtoggles;
+		}
+		get readingOrderSubtoggles() {
+			return this._readingOrderSubtoggles;
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+		}
+		setLastPane(isLast) {
+			this.classList.toggle("pane-layout-last", isLast);
+		}
+		setSettingsOpen(open) {
+			this._settingsLayer.hidden = !open;
+			this._settingsToggle.setAttribute("aria-expanded", String(open));
+		}
+		_wireEvents() {
+			this._settingsToggle.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-page-settings-toggle", {
+				bubbles: true,
+				composed: true
+			})));
+			this._settingsClose.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-page-settings-close", {
+				bubbles: true,
+				composed: true
+			})));
+			this._settingsScrim.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-page-settings-close", {
+				bubbles: true,
+				composed: true
+			})));
+			this._zoomInput.addEventListener("input", () => this.dispatchEvent(new CustomEvent("doclang-zoom-change", {
+				bubbles: true,
+				composed: true,
+				detail: { value: Number(this._zoomInput.value) }
+			})));
+			this._zoomReset.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-zoom-reset", {
+				bubbles: true,
+				composed: true
+			})));
+			for (const [el, name] of [
+				[this._showAllBboxes, "doclang-show-all-bboxes"],
+				[this._showLayoutBadges, "doclang-show-layout-badges"],
+				[this._showReadingOrder, "doclang-show-reading-order"],
+				[this._readingOrderArrows, "doclang-reading-order-arrows"],
+				[this._readingOrderGlobal, "doclang-reading-order-global"],
+				[this._showPictureContents, "doclang-show-picture-contents"],
+				[this._showTableContents, "doclang-show-table-contents"],
+				[this._showFragmentLinks, "doclang-show-fragment-links"],
+				[this._showXrefLinks, "doclang-show-xref-links"],
+				[this._showCaptionLinks, "doclang-show-caption-links"]
+			]) el.addEventListener("change", () => this.dispatchEvent(new CustomEvent(name, {
+				bubbles: true,
+				composed: true,
+				detail: { checked: el.checked }
+			})));
+		}
+	};
+	customElements.define("doclang-page-view-pane", DoclangPageViewPane);
+	//#endregion
+	//#region src/components/reading-pane/reading-pane.css?inline
+	var reading_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-reading-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: auto;\n  padding: 1rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.rendered-doc {\n  max-width: 42rem;\n  margin: 0 auto;\n  line-height: 1.6;\n}\n.rendered-el-virtual-text > p,\n.rendered-el-virtual-text > div {\n  margin: 0;\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text {\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text > p,\n.rendered-doc li > .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-el-virtual-text > div > .rendered-el {\n  display: block;\n  margin: 0.25rem 0;\n}\n.rendered-el {\n  cursor: pointer;\n  border-radius: 0.25rem;\n}\n.rendered-el:hover {\n  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);\n}\n.rendered-el.selected {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  background: color-mix(in srgb, var(--accent) 8%, transparent);\n}\n.rendered-doc p {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc h1,\n.rendered-doc h2,\n.rendered-doc h3,\n.rendered-doc h4,\n.rendered-doc h5,\n.rendered-doc h6 {\n  margin: 1.25rem 0 0.5rem;\n  line-height: 1.25;\n}\n.rendered-doc h1:first-child,\n.rendered-doc h2:first-child,\n.rendered-doc h3:first-child {\n  margin-top: 0;\n}\n.rendered-doc ul,\n.rendered-doc ol {\n  margin: 0 0 0.75rem;\n  padding-left: 1.5rem;\n}\n.rendered-doc li {\n  margin: 0.25rem 0;\n}\n.rendered-doc li > .rendered-el > p:first-child,\n.rendered-doc li > .rendered-el > h1:first-child,\n.rendered-doc li > .rendered-el > h2:first-child,\n.rendered-doc li > .rendered-el > h3:first-child,\n.rendered-doc li > .rendered-el > h4:first-child,\n.rendered-doc li > .rendered-el > h5:first-child,\n.rendered-doc li > .rendered-el > h6:first-child {\n  margin-top: 0;\n}\n.rendered-marker {\n  margin-right: 0.35rem;\n}\n.rendered-handwriting {\n  font-family: 'Segoe Print', 'Bradley Hand', cursive;\n}\n.rendered-doc pre {\n  margin: 0 0 0.75rem;\n  padding: 0.75rem 1rem;\n  overflow-x: auto;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-doc code {\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc pre code {\n  font-size: inherit;\n  background: none;\n  border: none;\n  padding: 0;\n}\n.rendered-code-label {\n  display: block;\n  margin-bottom: 0.25rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n}\n.rendered-formula {\n  display: block;\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-family: var(--font-mono);\n  font-size: 0.875rem;\n  background: var(--placeholder-bg);\n  border-left: 3px solid var(--border);\n  overflow-x: auto;\n}\n.rendered-formula-inline {\n  display: inline;\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc figure {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc figure img {\n  max-width: 100%;\n  height: auto;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n}\n.rendered-doc figure img.rendered-picture-unavailable {\n  display: inline-block;\n  min-width: 3rem;\n  min-height: 2.5rem;\n  object-fit: contain;\n  vertical-align: middle;\n}\n.rendered-doc figcaption {\n  margin-top: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-picture-contents {\n  margin-top: 0.5rem;\n  font-size: 0.875rem;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--placeholder-bg);\n}\n.rendered-picture-contents summary {\n  padding: 0.4rem 0.65rem;\n  cursor: pointer;\n  font-weight: 600;\n  color: var(--muted);\n  user-select: none;\n}\n.rendered-picture-contents summary:hover {\n  color: var(--text);\n}\n.rendered-picture-contents-body {\n  padding: 0.5rem 0.75rem 0.75rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-picture-contents-body .rendered-el > p {\n  margin-bottom: 0.35rem;\n  font-size: 0.8125rem;\n}\n.rendered-table {\n  width: 100%;\n  margin: 0 0 0.75rem;\n  border-collapse: collapse;\n  font-size: 0.875rem;\n}\n.rendered-table caption {\n  caption-side: top;\n  margin-bottom: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n  text-align: left;\n}\n.rendered-table th,\n.rendered-table td {\n  border: 1px solid var(--border);\n  padding: 0.35rem 0.5rem;\n  vertical-align: top;\n  text-align: left;\n}\n.rendered-table th {\n  background: color-mix(in srgb, var(--border) 35%, var(--panel));\n  font-weight: 600;\n}\n.rendered-table .rendered-table-cell-text {\n  display: inline;\n}\n.rendered-table .rendered-el {\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  margin: 0;\n}\n.rendered-table .rendered-table {\n  margin: 0.25rem 0 0;\n}\n.rendered-page-header,\n.rendered-page-footer {\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-page-header {\n  margin-bottom: 1rem;\n  padding-bottom: 0.5rem;\n  border-bottom: 1px solid var(--border);\n}\n.rendered-page-footer {\n  margin-top: 1rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-doc:not(.show-reading-furniture)\n  .rendered-el[data-doclang-layer='furniture'] {\n  display: none;\n}\n.rendered-doc:not(.show-reading-background)\n  .rendered-el[data-doclang-layer='background'] {\n  display: none;\n}\n.rendered-el[data-doclang-layer='furniture'],\n.rendered-el[data-doclang-layer='background'] {\n  position: relative;\n}\n.rendered-el[data-doclang-layer='furniture']::before,\n.rendered-el[data-doclang-layer='background']::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  border-radius: inherit;\n  pointer-events: none;\n  background: repeating-linear-gradient(\n    -45deg,\n    transparent 0 10px,\n    color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px\n  );\n}\n.rendered-el.rendered-footnote > aside {\n  font-size: 0.875rem;\n  color: var(--muted);\n  border-left: 2px solid var(--border);\n  padding-left: 0.75rem;\n  margin: 0 0 0.75rem;\n}\n.rendered-unsupported {\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.8125rem;\n  font-style: italic;\n  color: var(--muted);\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-field-region {\n  margin: 0 0 1rem;\n  padding: 0.75rem 1rem;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: color-mix(in srgb, var(--kind-field) 6%, transparent);\n}\n.rendered-field-region > .rendered-field-heading:first-child,\n.rendered-field-region\n  > .rendered-el.rendered-field_heading\n  > .rendered-field-heading:first-child {\n  margin-top: 0;\n}\n.rendered-field-item {\n  margin: 0.5rem 0;\n}\n.rendered-field-item > .rendered-el.rendered-field-key,\n.rendered-field-key {\n  font-weight: 600;\n}\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {\n  margin-top: 0.15rem;\n}\n.rendered-field-value-fillable .rendered-field-fillable-slot {\n  display: inline-block;\n  min-width: 6rem;\n  min-height: 1.25em;\n  border-bottom: 1px solid color-mix(in srgb, var(--text) 55%, transparent);\n  vertical-align: bottom;\n}\n.rendered-field-hint {\n  font-size: 0.85em;\n  color: var(--muted);\n  font-style: italic;\n}\n.rendered-field-heading {\n  color: var(--text);\n}\n.rendered-checkbox {\n  margin: 0 0.25rem 0 0;\n  vertical-align: middle;\n  accent-color: var(--kind-field);\n}\n.rendered-checkbox-wrap {\n  display: inline;\n}\n";
+	//#endregion
+	//#region src/components/reading-pane/reading-pane.html?raw
+	var reading_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Reading view</span>\n  <button\n    type=\"button\"\n    class=\"pane-settings-toggle\"\n    aria-expanded=\"false\"\n    aria-controls=\"reading-settings\"\n    hidden\n  >\n    Layers\n  </button>\n</div>\n<div class=\"pane-reading-layout\">\n  <div class=\"pane-body\" id=\"rendered-pane\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close layers\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"reading-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"reading-settings-title\">Layers</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close layers\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <div\n          class=\"settings-subgroup\"\n          role=\"group\"\n          aria-labelledby=\"reading-settings-title\"\n        >\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-furniture\" checked />\n            <span>Furniture</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-background\" checked />\n            <span>Background</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
+	//#endregion
+	//#region src/components/reading-pane/reading-pane.ts
+	/** <doclang-reading-pane> — reading/rendered view with layers settings panel */
+	var DoclangReadingPane = class extends DoclangHTMLElement {
+		_body;
+		_settingsToggle;
+		_settingsLayer;
+		_settingsScrim;
+		_settingsClose;
+		_showFurniture;
+		_showFurnitureLabel;
+		_showBackground;
+		_showBackgroundLabel;
+		constructor() {
+			super(reading_pane_default$1, reading_pane_default);
+			this.classList.add("pane", "pane-reading");
+			this._body = this.q(".pane-body");
+			this._settingsToggle = this.q(".pane-settings-toggle");
+			this._settingsLayer = this.q(".viewer-settings-layer");
+			this._settingsScrim = this.q(".viewer-settings-scrim");
+			this._settingsClose = this.q(".viewer-settings-close");
+			this._showFurnitureLabel = this.q("label:has(.cb-furniture)");
+			this._showFurniture = this.q(".cb-furniture");
+			this._showBackgroundLabel = this.q("label:has(.cb-background)");
+			this._showBackground = this.q(".cb-background");
+			this._wireEvents();
+		}
+		get section() {
+			return this;
+		}
+		get body() {
+			return this._body;
+		}
+		get settingsToggle() {
+			return this._settingsToggle;
+		}
+		get settingsLayer() {
+			return this._settingsLayer;
+		}
+		get showFurniture() {
+			return this._showFurniture;
+		}
+		get showFurnitureLabel() {
+			return this._showFurnitureLabel;
+		}
+		get showBackground() {
+			return this._showBackground;
+		}
+		get showBackgroundLabel() {
+			return this._showBackgroundLabel;
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+		}
+		setLastPane(isLast) {
+			this.classList.toggle("pane-layout-last", isLast);
+		}
+		setSettingsOpen(open) {
+			this._settingsLayer.hidden = !open;
+			this._settingsToggle.setAttribute("aria-expanded", String(open));
+		}
+		syncCheckboxes(furniture, background) {
+			this._showFurniture.checked = furniture;
+			this._showBackground.checked = background;
+		}
+		_wireEvents() {
+			this._settingsToggle.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-toggle", {
+				bubbles: true,
+				composed: true
+			})));
+			this._settingsClose.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
+				bubbles: true,
+				composed: true
+			})));
+			this._settingsScrim.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
+				bubbles: true,
+				composed: true
+			})));
+			this._showFurniture.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
+				bubbles: true,
+				composed: true,
+				detail: { checked: this._showFurniture.checked }
+			})));
+			this._showBackground.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
+				bubbles: true,
+				composed: true,
+				detail: { checked: this._showBackground.checked }
+			})));
+		}
+	};
+	customElements.define("doclang-reading-pane", DoclangReadingPane);
+	//#endregion
+	//#region src/components/empty-state/empty-state.css?inline
+	var empty_state_default$1 = ":host {\n  display: contents;\n}\n.empty-state {\n  flex: 1 1 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 0;\n  margin: 1rem;\n  padding: 2rem 1.5rem;\n  border: 2px dashed var(--border);\n  border-radius: 0.75rem;\n  background: var(--placeholder-bg);\n  text-align: center;\n  color: var(--muted);\n}\n.empty-state-inner {\n  max-width: 28rem;\n}\n.empty-state-loading {\n  display: none;\n  flex-direction: column;\n  align-items: center;\n}\n:host(.demo-loading) .empty-state-loading {\n  display: flex;\n}\n:host(.demo-loading) .empty-state-prompt {\n  display: none;\n}\n.loading-spinner {\n  width: 2rem;\n  height: 2rem;\n  margin: 0 auto 1rem;\n  border: 2px solid var(--border);\n  border-top-color: var(--accent);\n  border-radius: 50%;\n  animation: loading-spin 0.7s linear infinite;\n}\n@keyframes loading-spin {\n  to {\n    transform: rotate(360deg);\n  }\n}\n.empty-state-title {\n  margin: 0 0 0.75rem;\n  font-size: 1.05rem;\n  color: var(--text);\n}\n.empty-state p {\n  margin: 0.5rem 0;\n}\n.empty-state-action {\n  margin: 0 0 0.75rem;\n}\n.text-link {\n  color: var(--accent);\n  text-decoration: underline;\n}\n.text-link:hover {\n  opacity: 0.85;\n}\n.empty-state-meta {\n  font-size: 0.875rem;\n}\ncode {\n  font-family: var(--font-mono);\n}\n";
+	//#endregion
+	//#region src/components/empty-state/empty-state.html?raw
+	var empty_state_default = "<div class=\"empty-state\">\n  <div class=\"empty-state-inner\">\n    <div\n      class=\"empty-state-loading\"\n      role=\"status\"\n      aria-live=\"polite\"\n      aria-label=\"Loading demo document\"\n    >\n      <div class=\"loading-spinner\" aria-hidden=\"true\"></div>\n      <p class=\"empty-state-title\">Loading demo&#x2026;</p>\n      <p class=\"empty-state-meta\">Preparing the sample document</p>\n    </div>\n    <div class=\"empty-state-prompt\">\n      <p class=\"empty-state-title\">Drop a DocLang file here</p>\n      <p class=\"empty-state-meta\">\n        Supported file types: <span class=\"file-types\"></span>\n      </p>\n      <p class=\"empty-state-action\">or <a href=\"#\" class=\"text-link\">load demo</a></p>\n    </div>\n  </div>\n</div>\n";
+	//#endregion
+	//#region src/components/empty-state/empty-state.ts
+	/** <doclang-empty-state> — loading/prompt empty state */
+	var DoclangEmptyState = class extends DoclangHTMLElement {
+		_fileTypesSpan;
+		constructor() {
+			super(empty_state_default$1, empty_state_default);
+			this._fileTypesSpan = this.q(".file-types");
+			this.q(".text-link").addEventListener("click", (e) => {
+				e.preventDefault();
+				this.dispatchEvent(new CustomEvent("doclang-load-demo", {
+					bubbles: true,
+					composed: true
+				}));
+			});
+		}
+		setFileTypeHints(extensions) {
+			this._fileTypesSpan.innerHTML = extensions.map((ext) => `<code>${ext}</code>`).join(", ");
+		}
+		setDemoLoading(loading) {
+			this.classList.toggle("demo-loading", loading);
+		}
+	};
+	customElements.define("doclang-empty-state", DoclangEmptyState);
 	//#endregion
 	//#region src/xml.ts
 	function isTextLikeNode(node) {
@@ -561,7 +1368,7 @@
 		}
 	}
 	//#endregion
-	//#region src/xml_overlay.ts
+	//#region src/xml-overlay.ts
 	function isPictureContentElement(el) {
 		if (!el) return false;
 		const tag = localName(el);
@@ -2783,114 +3590,90 @@
 		},
 		getSelectedElementId: () => selectedElementId
 	});
+	var doclangCursorHint = document.querySelector("doclang-cursor-hint");
+	var doclangPageNav = document.querySelector("doclang-page-nav");
+	var doclangToolbar = document.querySelector("doclang-toolbar");
+	var doclangFilePane = document.querySelector("doclang-file-pane");
+	var doclangMarkupPane = document.querySelector("doclang-markup-pane");
+	var doclangPageViewPane = document.querySelector("doclang-page-view-pane");
+	var doclangReadingPane = document.querySelector("doclang-reading-pane");
+	var doclangEmptyState = document.querySelector("doclang-empty-state");
 	var els = {
-		openFileBtn: document.getElementById("open-file-btn"),
-		emptyStateFileTypes: document.getElementById("empty-state-file-types"),
+		openFileBtn: doclangToolbar?.openFileBtn ?? null,
 		docLabel: document.getElementById("doc-label"),
-		filePane: document.getElementById("file-pane"),
-		filePaneCloseAll: document.getElementById("btn-file-pane-close-all"),
-		pageNav: document.getElementById("page-nav"),
-		pageIndicator: document.getElementById("page-indicator"),
-		pageNumberInput: document.getElementById("page-number-input"),
-		pageCountIndicator: document.getElementById("page-count-indicator"),
-		btnPrev: document.getElementById("btn-prev"),
-		btnNext: document.getElementById("btn-next"),
-		showAllBboxes: document.getElementById("show-all-bboxes"),
-		showLayoutBadges: document.getElementById("show-layout-badges"),
-		showLayoutBadgesLabel: document.getElementById("show-layout-badges-label"),
-		settingsToggle: document.getElementById("btn-settings-toggle"),
-		readingSettingsToggle: document.getElementById("btn-reading-settings-toggle"),
-		pageSettingsLayer: document.getElementById("page-settings-layer"),
-		pageSettingsScrim: document.getElementById("page-settings-scrim"),
-		pageSettingsClose: document.getElementById("btn-page-settings-close"),
-		readingSettingsLayer: document.getElementById("reading-settings-layer"),
-		readingSettingsScrim: document.getElementById("reading-settings-scrim"),
-		readingSettingsClose: document.getElementById("btn-reading-settings-close"),
-		showReadingFurniture: document.getElementById("show-reading-furniture"),
-		showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
-		showReadingBackground: document.getElementById("show-reading-background"),
-		showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
-		showCaptionLinks: document.getElementById("show-caption-links"),
-		showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
-		showPictureContents: document.getElementById("show-picture-contents"),
-		showPictureContentsLabel: document.getElementById("show-picture-contents-label"),
-		showTableContents: document.getElementById("show-table-contents"),
-		showTableContentsLabel: document.getElementById("show-table-contents-label"),
-		showFragmentLinks: document.getElementById("show-fragment-links"),
-		showFragmentLinksLabel: document.getElementById("show-fragment-links-label"),
-		showXrefLinks: document.getElementById("show-xref-links"),
-		showXrefLinksLabel: document.getElementById("show-xref-links-label"),
-		showReadingOrder: document.getElementById("show-reading-order"),
-		showReadingOrderLabel: document.getElementById("show-reading-order-label"),
-		readingOrderArrows: document.getElementById("reading-order-arrows"),
-		readingOrderArrowsLabel: document.getElementById("reading-order-arrows-label"),
-		readingOrderGlobal: document.getElementById("reading-order-global"),
-		readingOrderGlobalLabel: document.getElementById("reading-order-global-label"),
-		pageZoom: document.getElementById("page-zoom"),
-		pageZoomLabel: document.getElementById("page-zoom-label"),
-		pageZoomReset: document.getElementById("page-zoom-reset"),
+		filePane: doclangFilePane?.body ?? null,
+		filePaneCloseAll: null,
+		pageNav: doclangPageNav ?? null,
+		pageNumberInput: doclangPageNav?.pageNumberInput ?? null,
+		pageCountIndicator: doclangPageNav?.pageCountIndicator ?? null,
+		btnPrev: doclangPageNav?.btnPrev ?? null,
+		btnNext: doclangPageNav?.btnNext ?? null,
+		showAllBboxes: doclangPageViewPane?.showAllBboxes ?? null,
+		showLayoutBadges: doclangPageViewPane?.showLayoutBadges ?? null,
+		showLayoutBadgesLabel: doclangPageViewPane?.showLayoutBadgesLabel ?? null,
+		settingsToggle: doclangPageViewPane?.settingsToggle ?? null,
+		readingSettingsToggle: doclangReadingPane?.settingsToggle ?? null,
+		pageSettingsLayer: doclangPageViewPane?.settingsLayer ?? null,
+		pageSettingsScrim: null,
+		pageSettingsClose: null,
+		readingSettingsLayer: doclangReadingPane?.settingsLayer ?? null,
+		readingSettingsScrim: null,
+		readingSettingsClose: null,
+		showReadingFurniture: doclangReadingPane?.showFurniture ?? null,
+		showReadingFurnitureLabel: doclangReadingPane?.showFurnitureLabel ?? null,
+		showReadingBackground: doclangReadingPane?.showBackground ?? null,
+		showReadingBackgroundLabel: doclangReadingPane?.showBackgroundLabel ?? null,
+		showCaptionLinks: doclangPageViewPane?.showCaptionLinks ?? null,
+		showCaptionLinksLabel: doclangPageViewPane?.showCaptionLinksLabel ?? null,
+		showPictureContents: doclangPageViewPane?.showPictureContents ?? null,
+		showPictureContentsLabel: doclangPageViewPane?.showPictureContentsLabel ?? null,
+		showTableContents: doclangPageViewPane?.showTableContents ?? null,
+		showTableContentsLabel: doclangPageViewPane?.showTableContentsLabel ?? null,
+		showFragmentLinks: doclangPageViewPane?.showFragmentLinks ?? null,
+		showFragmentLinksLabel: doclangPageViewPane?.showFragmentLinksLabel ?? null,
+		showXrefLinks: doclangPageViewPane?.showXrefLinks ?? null,
+		showXrefLinksLabel: doclangPageViewPane?.showXrefLinksLabel ?? null,
+		showReadingOrder: doclangPageViewPane?.showReadingOrder ?? null,
+		showReadingOrderLabel: doclangPageViewPane?.showReadingOrderLabel ?? null,
+		readingOrderArrows: doclangPageViewPane?.readingOrderArrows ?? null,
+		readingOrderArrowsLabel: doclangPageViewPane?.readingOrderArrowsLabel ?? null,
+		readingOrderGlobal: doclangPageViewPane?.readingOrderGlobal ?? null,
+		readingOrderGlobalLabel: doclangPageViewPane?.readingOrderGlobalLabel ?? null,
+		pageZoom: doclangPageViewPane?.zoomInput ?? null,
+		pageZoomLabel: doclangPageViewPane?.zoomLabel ?? null,
+		pageZoomReset: doclangPageViewPane?.zoomReset ?? null,
 		main: document.getElementById("main"),
-		emptyState: document.getElementById("empty-state"),
-		emptyStateLoading: document.getElementById("empty-state-loading"),
-		emptyStatePrompt: document.getElementById("empty-state-prompt"),
-		markupPane: document.getElementById("markup-pane"),
-		renderedPane: document.getElementById("rendered-pane"),
-		pagePane: document.getElementById("page-pane"),
-		paneFile: document.querySelector(".pane-file"),
-		panePageView: document.querySelector(".pane-page-view"),
-		paneMarkup: document.querySelector(".pane-markup"),
-		paneReading: document.querySelector(".pane-reading"),
+		emptyState: doclangEmptyState ?? null,
+		markupPane: doclangMarkupPane?.body ?? null,
+		renderedPane: doclangReadingPane?.body ?? null,
+		pagePane: doclangPageViewPane?.body ?? null,
+		paneFile: doclangFilePane?.section ?? null,
+		panePageView: doclangPageViewPane?.section ?? null,
+		paneMarkup: doclangMarkupPane?.section ?? null,
+		paneReading: doclangReadingPane?.section ?? null,
 		splitters: [
 			document.getElementById("splitter-0"),
 			document.getElementById("splitter-1"),
 			document.getElementById("splitter-2")
 		],
-		toolbarOptionsBtn: document.getElementById("btn-toolbar-options"),
-		toolbarOptionsPanel: document.getElementById("toolbar-options-panel"),
-		toggleFilePane: document.getElementById("toggle-file-pane"),
-		toggleFilePaneLabel: document.getElementById("toggle-file-pane-label"),
-		togglePagePane: document.getElementById("toggle-page-pane"),
-		toggleMarkupPane: document.getElementById("toggle-markup-pane"),
-		toggleReadingPane: document.getElementById("toggle-reading-pane"),
-		togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
-		resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout")
+		toolbarOptionsBtn: doclangToolbar?.toolbarOptionsBtn ?? null,
+		toolbarOptionsPanel: null,
+		toggleFilePane: doclangToolbar?.toggleFilePane ?? null,
+		toggleFilePaneLabel: doclangToolbar?.toggleFilePaneLabel ?? null,
+		togglePagePane: doclangToolbar?.togglePagePane ?? null,
+		toggleMarkupPane: doclangToolbar?.toggleMarkupPane ?? null,
+		toggleReadingPane: doclangToolbar?.toggleReadingPane ?? null,
+		togglePagePaneLabel: doclangToolbar?.togglePagePaneLabel ?? null,
+		resetPaneLayoutBtn: doclangToolbar?.resetPaneLayoutBtn ?? null
 	};
-	var cursorHintEl = document.getElementById("cursor-hint");
-	var CURSOR_HINT_OFFSET = 10;
-	var CURSOR_HINT_MARGIN = 8;
 	function hideCursorHint() {
-		if (!cursorHintEl) return;
-		cursorHintEl.hidden = true;
-		cursorHintEl.classList.remove("cursor-hint-detail");
-		cursorHintEl.replaceChildren();
+		doclangCursorHint?.hide();
 	}
 	function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
-		if (!cursorHintEl) return;
-		cursorHintEl.replaceChildren();
-		if (typeof content === "string") cursorHintEl.textContent = content;
-		else cursorHintEl.appendChild(content);
-		cursorHintEl.classList.toggle("cursor-hint-detail", detail);
-		cursorHintEl.hidden = false;
-		let left = clientX + CURSOR_HINT_OFFSET;
-		let top = clientY + CURSOR_HINT_OFFSET;
-		const rect = cursorHintEl.getBoundingClientRect();
-		if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) left = clientX - rect.width - CURSOR_HINT_OFFSET;
-		if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) top = clientY - rect.height - CURSOR_HINT_OFFSET;
-		cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
-		cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
+		doclangCursorHint?.show(content, clientX, clientY, detail);
 	}
 	function showCursorHintHtml(html, clientX, clientY) {
-		if (!cursorHintEl) return;
-		cursorHintEl.innerHTML = html;
-		cursorHintEl.classList.add("cursor-hint-detail");
-		cursorHintEl.hidden = false;
-		let left = clientX + CURSOR_HINT_OFFSET;
-		let top = clientY + CURSOR_HINT_OFFSET;
-		const rect = cursorHintEl.getBoundingClientRect();
-		if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) left = clientX - rect.width - CURSOR_HINT_OFFSET;
-		if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) top = clientY - rect.height - CURSOR_HINT_OFFSET;
-		cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
-		cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
+		doclangCursorHint?.showHtml(html, clientX, clientY);
 	}
 	function headTextPreview(el, maxLen = 72) {
 		const text = el.textContent?.replace(/\s+/g, " ").trim() ?? "";
@@ -3064,13 +3847,11 @@
 	}
 	function setPageSettingsOpen(open) {
 		pageSettingsOpen = open;
-		if (els.pageSettingsLayer) els.pageSettingsLayer.hidden = !open;
-		if (els.settingsToggle) els.settingsToggle.setAttribute("aria-expanded", String(open));
+		doclangPageViewPane?.setSettingsOpen(open);
 	}
 	function setReadingSettingsOpen(open) {
 		readingSettingsOpen = open;
-		if (els.readingSettingsLayer) els.readingSettingsLayer.hidden = !open;
-		if (els.readingSettingsToggle) els.readingSettingsToggle.setAttribute("aria-expanded", String(open));
+		doclangReadingPane?.setSettingsOpen(open);
 	}
 	function closeAllSettings() {
 		setPageSettingsOpen(false);
@@ -3374,8 +4155,7 @@
 	}
 	function setToolbarOptionsOpen(open) {
 		toolbarOptionsOpen = open;
-		if (els.toolbarOptionsPanel) els.toolbarOptionsPanel.hidden = !open;
-		if (els.toolbarOptionsBtn) els.toolbarOptionsBtn.setAttribute("aria-expanded", String(open));
+		doclangToolbar?.setOptionsOpen(open);
 	}
 	function syncToolbarPaneCheckboxes() {
 		if (els.toggleFilePane) {
@@ -3411,32 +4191,20 @@
 		if (els.resetPaneLayoutBtn) els.resetPaneLayoutBtn.disabled = !state;
 	}
 	function initToolbarOptions() {
-		if (!els.toolbarOptionsBtn || !els.toolbarOptionsPanel) return;
-		els.toolbarOptionsBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			setToolbarOptionsOpen(!toolbarOptionsOpen);
+		if (!doclangToolbar) return;
+		doclangToolbar.addEventListener("doclang-toggle-pane", (e) => {
+			const { pane, checked } = e.detail;
+			if (!state) {
+				syncToolbarPaneCheckboxes();
+				return;
+			}
+			if (![...PANE_KEYS].filter((k) => k === pane ? checked : userPaneVisible[k] && isPaneAvailable(k)).length) {
+				syncToolbarPaneCheckboxes();
+				return;
+			}
+			setUserPaneVisible(pane, checked);
 		});
-		document.addEventListener("click", (e) => {
-			if (!toolbarOptionsOpen) return;
-			if (e.target instanceof Node && els.toolbarOptionsPanel.contains(e.target)) return;
-			if (e.target instanceof Node && els.toolbarOptionsBtn.contains(e.target)) return;
-			setToolbarOptionsOpen(false);
-		});
-		const onToggle = (key, input) => {
-			input?.addEventListener("change", () => {
-				if (!state) return;
-				if (![...PANE_KEYS].filter((k) => k === key ? input.checked : userPaneVisible[k] && isPaneAvailable(k)).length) {
-					input.checked = true;
-					return;
-				}
-				setUserPaneVisible(key, input.checked);
-			});
-		};
-		onToggle("file", els.toggleFilePane);
-		onToggle("page", els.togglePagePane);
-		onToggle("markup", els.toggleMarkupPane);
-		onToggle("reading", els.toggleReadingPane);
-		els.resetPaneLayoutBtn?.addEventListener("click", () => {
+		doclangToolbar.addEventListener("doclang-reset-pane-layout", () => {
 			if (state) resetPaneLayout();
 		});
 		syncToolbarPaneCheckboxes();
@@ -3533,28 +4301,8 @@
 		state.currentPage = page;
 		renderPage(page);
 	}
-	function resetPageNumberInput() {
-		if (!els.pageNumberInput) return;
-		els.pageNumberInput.value = state ? String(state.currentPage) : "1";
-	}
-	function commitPageNumberInput() {
-		if (!state || !els.pageNumberInput) return;
-		const n = Number.parseInt(els.pageNumberInput.value.trim(), 10);
-		if (!Number.isFinite(n)) {
-			resetPageNumberInput();
-			return;
-		}
-		goToPage(n);
-	}
 	function setPageIndicator(pageNum, pageCount) {
-		if (!els.pageIndicator) return;
-		if (els.pageCountIndicator) els.pageCountIndicator.textContent = `\u00A0of ${pageCount}`;
-		if (els.pageNumberInput) {
-			const digits = Math.max(1, String(pageCount).length);
-			els.pageNumberInput.style.setProperty("--page-num-digits", String(digits));
-			els.pageNumberInput.disabled = !state;
-			if (document.activeElement !== els.pageNumberInput) els.pageNumberInput.value = String(pageNum);
-		}
+		doclangPageNav?.setIndicator(pageNum, pageCount);
 	}
 	function syncPagePaneControls() {
 		const pageVisible = isPaneVisible("page");
@@ -3936,7 +4684,7 @@
 	function setDocumentOpen(open, { markupOnly = false } = {}) {
 		document.body.classList.toggle("viewer-loaded", open);
 		document.body.classList.toggle("markup-only", open && markupOnly);
-		if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
+		doclangPageNav?.setVisible(open && !markupOnly);
 		syncToolbarPaneCheckboxes();
 		applyPaneLayout();
 	}
@@ -4039,23 +4787,6 @@
 	function revokeCatalogEntry(entry) {
 		if (entry?.thumbnailUrl?.startsWith("blob:")) URL.revokeObjectURL(entry.thumbnailUrl);
 		if (entry) entry.thumbnailUrl = null;
-	}
-	function createFileViewThumbnail(entry) {
-		const thumb = document.createElement("span");
-		thumb.className = "file-view-thumb";
-		thumb.setAttribute("aria-hidden", "true");
-		if (entry.thumbnailUrl) {
-			const img = document.createElement("img");
-			img.src = entry.thumbnailUrl;
-			img.alt = "";
-			thumb.appendChild(img);
-		} else {
-			const placeholder = document.createElement("span");
-			placeholder.className = "file-view-thumb-placeholder";
-			placeholder.innerHTML = FILE_THUMB_PLACEHOLDER_SVG;
-			thumb.appendChild(placeholder);
-		}
-		return thumb;
 	}
 	function createFileCatalogEntry(file) {
 		return {
@@ -4177,72 +4908,31 @@
 		updateFileView();
 	}
 	function renderFileView() {
-		if (!els.filePane) return;
-		els.filePane.replaceChildren();
-		if (!fileCatalog.length) return;
-		const list = document.createElement("ul");
-		list.className = "file-view-list";
-		list.setAttribute("role", "listbox");
-		list.setAttribute("aria-label", "Open files");
-		fileCatalog.forEach((entry, index) => {
-			const item = document.createElement("li");
-			const card = document.createElement("div");
-			card.className = "file-view-item";
-			card.title = entry.label;
-			card.tabIndex = 0;
-			card.setAttribute("role", "option");
-			if (index === activeFileIndex) {
-				card.classList.add("is-active");
-				card.setAttribute("aria-selected", "true");
-			} else card.setAttribute("aria-selected", "false");
-			const thumbWrap = document.createElement("div");
-			thumbWrap.className = "file-view-thumb-wrap";
-			const closeBtn = document.createElement("button");
-			closeBtn.type = "button";
-			closeBtn.className = "file-view-close";
-			closeBtn.setAttribute("aria-label", `Close ${entry.label}`);
-			closeBtn.textContent = "×";
-			closeBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				closeCatalogFile(index);
-			});
-			thumbWrap.append(createFileViewThumbnail(entry), closeBtn);
-			const label = document.createElement("span");
-			label.className = "file-view-label";
-			label.textContent = entry.label;
-			card.append(thumbWrap, label);
-			card.addEventListener("click", (e) => {
-				if (e.target.closest(".file-view-close")) return;
-				switchToFile(index);
-			});
-			card.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					e.preventDefault();
-					switchToFile(index);
-				}
-			});
-			item.appendChild(card);
-			list.appendChild(item);
-		});
-		els.filePane.appendChild(list);
+		if (!doclangFilePane) return;
+		doclangFilePane.renderFiles(fileCatalog.map((entry, index) => ({
+			label: entry.label,
+			thumbnailUrl: entry.thumbnailUrl,
+			isActive: index === activeFileIndex
+		})));
 	}
 	function updateFileView() {
 		syncFilePaneDefault();
-		syncFilePaneCloseAllButton();
 		renderFileView();
 		syncToolbarPaneCheckboxes();
 		applyPaneLayout();
 	}
-	function syncFilePaneCloseAllButton() {
-		if (!els.filePaneCloseAll) return;
-		els.filePaneCloseAll.hidden = fileCatalog.length === 0;
-	}
 	function initFilePaneCloseAll() {
-		els.filePaneCloseAll?.addEventListener("click", () => {
+		doclangFilePane?.addEventListener("doclang-file-pane-close-all", () => {
 			if (!fileCatalog.length) return;
 			const count = fileCatalog.length;
 			const message = count === 1 ? `Remove "${fileCatalog[0].label}" from the viewer?` : `Remove all ${count} open files from the viewer?`;
 			if (confirm(message)) resetViewer();
+		});
+		doclangFilePane?.addEventListener("doclang-file-select", (e) => {
+			switchToFile(e.detail.index);
+		});
+		doclangFilePane?.addEventListener("doclang-file-close", (e) => {
+			closeCatalogFile(e.detail.index);
 		});
 	}
 	function activateDocument(docState, entry) {
@@ -4268,8 +4958,8 @@
 	}
 	function setDemoLoading(loading) {
 		document.body.classList.toggle("demo-loading", loading);
-		const btnDemo = document.getElementById("btn-demo");
-		if (btnDemo) btnDemo.disabled = loading;
+		doclangEmptyState?.setDemoLoading(loading);
+		if (doclangToolbar) doclangToolbar.btnDemo.disabled = loading;
 	}
 	async function loadDemo() {
 		if (demoLoadInProgress) return;
@@ -4284,7 +4974,7 @@
 			alert(`Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`);
 		} finally {
 			demoLoadInProgress = false;
-			if (!document.body.classList.contains("viewer-loaded")) setDemoLoading(false);
+			setDemoLoading(false);
 		}
 	}
 	async function addFilesToCatalog(files, { replace = false } = {}) {
@@ -4445,16 +5135,6 @@
 	}
 	function initPageViewControls() {
 		if (!els.pagePane) return;
-		els.pageZoom?.addEventListener("input", () => {
-			pageZoomPercent = Math.max(100, Number(els.pageZoom.value));
-			if (Number(els.pageZoom.value) < 100) els.pageZoom.value = String(pageZoomPercent);
-			els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
-			updatePageZoomResetButton();
-			refreshPageViewLayout();
-		});
-		els.pageZoomReset?.addEventListener("click", () => {
-			if (pageZoomPercent !== 100) resetPageZoom();
-		});
 		els.pagePane.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || !canStartPagePan(e)) return;
 			const scrollPane = pageViewScrollPane();
@@ -4497,9 +5177,7 @@
 		els.pagePane.addEventListener("pointercancel", (e) => endPagePan(e));
 	}
 	function initFileTypeHints() {
-		if (!els.emptyStateFileTypes) return;
-		const markup = SUPPORTED_FILE_EXTENSIONS.map((ext) => `<code>${ext}</code>`).join(", ");
-		els.emptyStateFileTypes.innerHTML = markup;
+		doclangEmptyState?.setFileTypeHints(SUPPORTED_FILE_EXTENSIONS);
 	}
 	function initCursorHints() {
 		els.markupPane?.addEventListener("mousemove", (e) => {
@@ -4563,104 +5241,99 @@
 			if (e.dataTransfer) await loadFromDrop(e.dataTransfer);
 		});
 	}
-	document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
-	document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
-		e.preventDefault();
-		loadDemo();
+	doclangToolbar?.addEventListener("doclang-load-demo", loadDemo);
+	doclangToolbar?.addEventListener("doclang-open-files", async (e) => {
+		const files = e.detail.files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+		if (!files.length) return;
+		await addFilesToCatalog(files, { replace: true });
 	});
+	doclangEmptyState?.addEventListener("doclang-load-demo", loadDemo);
 	document.getElementById("home-link")?.addEventListener("click", (e) => {
 		e.preventDefault();
 		resetViewer();
 	});
-	document.getElementById("input-archive")?.addEventListener("change", async (e) => {
-		const input = e.target;
-		const files = [...input.files ?? []].filter((f) => isArchiveFile(f) || isMarkupFile(f));
-		if (!files.length) return;
-		await addFilesToCatalog(files, { replace: true });
-		input.value = "";
+	doclangPageNav?.addEventListener("doclang-prev-page", () => state && goToPage(state.currentPage - 1));
+	doclangPageNav?.addEventListener("doclang-next-page", () => state && goToPage(state.currentPage + 1));
+	doclangPageNav?.addEventListener("doclang-go-to-page", (e) => {
+		goToPage(e.detail.page);
 	});
-	els.btnPrev?.addEventListener("click", () => state && goToPage(state.currentPage - 1));
-	els.btnNext?.addEventListener("click", () => state && goToPage(state.currentPage + 1));
-	els.pageNumberInput?.addEventListener("keydown", (e) => {
-		if (e.key === "Enter") {
-			e.preventDefault();
-			commitPageNumberInput();
-			els.pageNumberInput?.blur();
-		} else if (e.key === "Escape") {
-			e.preventDefault();
-			resetPageNumberInput();
-			els.pageNumberInput?.blur();
+	doclangPageViewPane?.addEventListener("doclang-page-settings-toggle", () => setPageSettingsOpen(!pageSettingsOpen));
+	doclangPageViewPane?.addEventListener("doclang-page-settings-close", () => setPageSettingsOpen(false));
+	doclangPageViewPane?.addEventListener("doclang-zoom-change", (e) => {
+		pageZoomPercent = Math.max(100, e.detail.value);
+		if (doclangPageViewPane) {
+			doclangPageViewPane.zoomInput.value = String(pageZoomPercent);
+			doclangPageViewPane.zoomInput.setAttribute("aria-valuenow", String(pageZoomPercent));
 		}
+		updatePageZoomResetButton();
+		refreshPageViewLayout();
 	});
-	els.pageNumberInput?.addEventListener("blur", resetPageNumberInput);
-	els.pageNumberInput?.addEventListener("focus", (e) => e.target.select());
-	els.showAllBboxes?.addEventListener("change", () => {
-		showAllBboxes = els.showAllBboxes.checked;
+	doclangPageViewPane?.addEventListener("doclang-zoom-reset", () => {
+		if (pageZoomPercent !== 100) resetPageZoom();
+	});
+	doclangPageViewPane?.addEventListener("doclang-show-all-bboxes", (e) => {
+		showAllBboxes = e.detail.checked;
 		syncLayoutSubtoggles();
 		const img = els.pagePane?.querySelector(".page-view img");
 		if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement.querySelector("svg.overlay"), state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
 		applyBboxVisibility();
 	});
-	els.showLayoutBadges?.addEventListener("change", () => {
-		showLayoutBadges = els.showLayoutBadges.checked;
+	doclangPageViewPane?.addEventListener("doclang-show-layout-badges", (e) => {
+		showLayoutBadges = e.detail.checked;
 		const img = els.pagePane?.querySelector(".page-view img");
 		if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement.querySelector("svg.overlay"), state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
 		applyBboxVisibility();
 	});
-	els.showCaptionLinks?.addEventListener("change", () => {
-		showCaptionLinks = els.showCaptionLinks.checked;
-		applyBboxVisibility();
-	});
-	els.showPictureContents?.addEventListener("change", () => {
-		showPictureContents = els.showPictureContents.checked;
-		applyBboxVisibility();
-	});
-	els.showTableContents?.addEventListener("change", () => {
-		showTableContents = els.showTableContents.checked;
-		applyBboxVisibility();
-	});
-	els.showFragmentLinks?.addEventListener("change", () => {
-		showFragmentLinks = els.showFragmentLinks.checked;
-		applyBboxVisibility();
-	});
-	els.showXrefLinks?.addEventListener("change", () => {
-		showXrefLinks = els.showXrefLinks.checked;
-		applyBboxVisibility();
-	});
-	els.showReadingOrder?.addEventListener("change", () => {
-		showReadingOrder = els.showReadingOrder.checked;
+	doclangPageViewPane?.addEventListener("doclang-show-reading-order", (e) => {
+		showReadingOrder = e.detail.checked;
 		syncLayoutSubtoggles();
 		const img = els.pagePane?.querySelector(".page-view img");
 		if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement.querySelector("svg.overlay"), state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
 		applyBboxVisibility();
 	});
-	els.readingOrderArrows?.addEventListener("change", () => {
-		showReadingOrderArrows = els.readingOrderArrows.checked;
+	doclangPageViewPane?.addEventListener("doclang-reading-order-arrows", (e) => {
+		showReadingOrderArrows = e.detail.checked;
 		applyBboxVisibility();
 	});
-	els.readingOrderGlobal?.addEventListener("change", () => {
-		readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
+	doclangPageViewPane?.addEventListener("doclang-reading-order-global", (e) => {
+		readingOrderGlobalNumbering = e.detail.checked;
 		if (state) renderPage(state.currentPage);
 	});
-	els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
-	els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
-	els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
-	els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
-	els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
-	els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
+	doclangPageViewPane?.addEventListener("doclang-show-picture-contents", (e) => {
+		showPictureContents = e.detail.checked;
+		applyBboxVisibility();
+	});
+	doclangPageViewPane?.addEventListener("doclang-show-table-contents", (e) => {
+		showTableContents = e.detail.checked;
+		applyBboxVisibility();
+	});
+	doclangPageViewPane?.addEventListener("doclang-show-fragment-links", (e) => {
+		showFragmentLinks = e.detail.checked;
+		applyBboxVisibility();
+	});
+	doclangPageViewPane?.addEventListener("doclang-show-xref-links", (e) => {
+		showXrefLinks = e.detail.checked;
+		applyBboxVisibility();
+	});
+	doclangPageViewPane?.addEventListener("doclang-show-caption-links", (e) => {
+		showCaptionLinks = e.detail.checked;
+		applyBboxVisibility();
+	});
+	doclangReadingPane?.addEventListener("doclang-reading-settings-toggle", () => setReadingSettingsOpen(!readingSettingsOpen));
+	doclangReadingPane?.addEventListener("doclang-reading-settings-close", () => setReadingSettingsOpen(false));
+	doclangReadingPane?.addEventListener("doclang-show-reading-furniture", (e) => {
+		showReadingFurniture = e.detail.checked;
+		syncReadingLayerVisibility();
+	});
+	doclangReadingPane?.addEventListener("doclang-show-reading-background", (e) => {
+		showReadingBackground = e.detail.checked;
+		syncReadingLayerVisibility();
+	});
 	document.addEventListener("keydown", (e) => {
 		if (e.key !== "Escape") return;
 		if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
 		else if (pageSettingsOpen) setPageSettingsOpen(false);
 		else if (readingSettingsOpen) setReadingSettingsOpen(false);
-	});
-	els.showReadingFurniture?.addEventListener("change", () => {
-		showReadingFurniture = els.showReadingFurniture.checked;
-		syncReadingLayerVisibility();
-	});
-	els.showReadingBackground?.addEventListener("change", () => {
-		showReadingBackground = els.showReadingBackground.checked;
-		syncReadingLayerVisibility();
 	});
 	loadLayoutPrefs();
 	normalizePaneRatios();
@@ -4674,6 +5347,7 @@
 	initFilePaneCloseAll();
 	initPageWheelNav();
 	initPageViewControls();
-	if (document.getElementById("btn-demo")) loadDemo();
+	if (document.body.classList.contains("demo-loading")) doclangEmptyState?.setDemoLoading(true);
+	if (doclangToolbar?.btnDemo) loadDemo();
 	//#endregion
 })();

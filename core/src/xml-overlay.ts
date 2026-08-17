@@ -45,7 +45,12 @@ export function isTableContentElement(el: Element | null): boolean {
 }
 
 export function elementKindKey(kind: string): string {
-  if (kind.startsWith('field_') || kind === 'key' || kind === 'value' || kind === 'hint')
+  if (
+    kind.startsWith('field_') ||
+    kind === 'key' ||
+    kind === 'value' ||
+    kind === 'hint'
+  )
     return 'field';
   if (kind === 'tabular') return 'table';
   const known = new Set([

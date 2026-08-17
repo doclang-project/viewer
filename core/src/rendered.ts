@@ -144,8 +144,13 @@ function appendRenderedBodyBlocks(
   let i = skipElementHeadNodes(nodes, 0);
   while (i < nodes.length) {
     const node = nodes[i]!;
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node as Element))) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false });
+    if (
+      node.nodeType === Node.ELEMENT_NODE &&
+      RENDER_BLOCK_TAGS.has(localName(node as Element))
+    ) {
+      const rendered = renderBlockElement(node as Element, elementIds, {
+        inline: false,
+      });
       if (rendered) parent.appendChild(rendered);
     } else {
       appendRenderedNode(parent, node, elementIds, { inline: false });
@@ -312,10 +317,7 @@ function renderFormula(
   return wrapRendered(el, span, elementIds.get(el));
 }
 
-function renderPicture(
-  el: Element,
-  elementIds: Map<Element, string>
-): HTMLElement {
+function renderPicture(el: Element, elementIds: Map<Element, string>): HTMLElement {
   const figure = document.createElement('figure');
   const captionEl = readCaptionElement(el);
   const srcEl = childElements(el).find(c => localName(c) === 'src') ?? null;
@@ -370,8 +372,13 @@ function appendPictureBodyContent(
   let i = startIdx;
   while (i < nodes.length) {
     const node = nodes[i]!;
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node as Element))) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false });
+    if (
+      node.nodeType === Node.ELEMENT_NODE &&
+      RENDER_BLOCK_TAGS.has(localName(node as Element))
+    ) {
+      const rendered = renderBlockElement(node as Element, elementIds, {
+        inline: false,
+      });
       if (rendered) container.appendChild(rendered);
     } else {
       appendRenderedNode(container, node, elementIds, { inline: false });
@@ -387,8 +394,7 @@ function renderVirtualTextBlock(
 ): HTMLElement {
   const hasBlock = contentNodes.some(
     n =>
-      n.nodeType === Node.ELEMENT_NODE &&
-      RENDER_BLOCK_TAGS.has(localName(n as Element))
+      n.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(n as Element))
   );
   const inner = document.createElement(hasBlock ? 'div' : 'p');
   for (const node of contentNodes) {
@@ -396,7 +402,9 @@ function renderVirtualTextBlock(
       node.nodeType === Node.ELEMENT_NODE &&
       RENDER_BLOCK_TAGS.has(localName(node as Element))
     ) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false });
+      const rendered = renderBlockElement(node as Element, elementIds, {
+        inline: false,
+      });
       if (rendered) inner.appendChild(rendered);
     } else {
       appendRenderedNode(inner, node, elementIds, { inline: true });
@@ -433,7 +441,8 @@ function shouldWrapVirtualText(contentNodes: ChildNode[]): boolean {
   for (const node of contentNodes) {
     if (isVirtualTextSkippableNode(node)) continue;
     if (isTextLikeNode(node)) return true;
-    if (node.nodeType === Node.ELEMENT_NODE && !isSemanticElement(node as Element)) return true;
+    if (node.nodeType === Node.ELEMENT_NODE && !isSemanticElement(node as Element))
+      return true;
   }
   return false;
 }
@@ -455,7 +464,9 @@ function appendRenderedSliceContent(
       node.nodeType === Node.ELEMENT_NODE &&
       RENDER_BLOCK_TAGS.has(localName(node as Element))
     ) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false });
+      const rendered = renderBlockElement(node as Element, elementIds, {
+        inline: false,
+      });
       if (rendered) container.appendChild(rendered);
     } else {
       appendRenderedNode(container, node, elementIds, { inline: true });
@@ -595,7 +606,11 @@ function findHorizontalCellOrigin(
   return null;
 }
 
-function nextFreeColumn(grid: (OtslCell | undefined)[][], row: number, col: number): number {
+function nextFreeColumn(
+  grid: (OtslCell | undefined)[][],
+  row: number,
+  col: number
+): number {
   let c = col;
   while (grid[row]?.[c]?.covered) c += 1;
   return c;
@@ -701,7 +716,12 @@ function renderOtslContainer(
       const td = document.createElement(cellTag);
       if (cell.colspan > 1) td.colSpan = cell.colspan;
       if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
-      appendRenderedSliceContent(td, cell.token, cell.contentNodes as ChildNode[], elementIds);
+      appendRenderedSliceContent(
+        td,
+        cell.token,
+        cell.contentNodes as ChildNode[],
+        elementIds
+      );
       tr.appendChild(td);
     }
     if (tr.childNodes.length) tbody.appendChild(tr);
@@ -958,7 +978,11 @@ function collectIntraPageThreads(segment: Element[]): Map<string, Element[]> {
   return byThread;
 }
 
-export function applyReadingLayerClasses(root: HTMLElement, showFurniture: boolean, showBackground: boolean): void {
+export function applyReadingLayerClasses(
+  root: HTMLElement,
+  showFurniture: boolean,
+  showBackground: boolean
+): void {
   root.classList.toggle('show-reading-furniture', showFurniture);
   root.classList.toggle('show-reading-background', showBackground);
 }
@@ -999,8 +1023,9 @@ export function buildRenderedView(
     const ghostText = target.closest('.rendered-el-virtual-text');
     const elementId = ghostText?.hasAttribute('data-element-id')
       ? ghostText.getAttribute('data-element-id')!
-      : target.closest('.rendered-el[data-element-id]')?.getAttribute('data-element-id') ??
-        null;
+      : (target
+          .closest('.rendered-el[data-element-id]')
+          ?.getAttribute('data-element-id') ?? null);
     if (elementId) onSelectElement(elementId);
   });
   applyReadingLayerClasses(root, showFurniture, showBackground);

@@ -12,11 +12,7 @@ import {
   FRAGMENT_NAV_HINT_PREV,
   FRAGMENT_NAV_HINT_NEXT,
 } from './constants';
-import {
-  layerClassForValue,
-  kindClassForTag,
-  bboxClassForKind,
-} from './xml_overlay';
+import { layerClassForValue, kindClassForTag, bboxClassForKind } from './xml-overlay';
 import type {
   BoundingBox,
   Resolution,
@@ -30,7 +26,7 @@ import type {
 } from './types';
 
 // We re-export the overlay box paint utilities needed by main.ts
-export { elementKindKey, kindClassForTag, bboxClassForKind } from './xml_overlay';
+export { elementKindKey, kindClassForTag, bboxClassForKind } from './xml-overlay';
 
 // ---------------------------------------------------------------------------
 // State accessors — injected by main.ts
@@ -38,7 +34,9 @@ export { elementKindKey, kindClassForTag, bboxClassForKind } from './xml_overlay
 let getPageZoomPercent: () => number = () => PAGE_ZOOM_DEFAULT;
 let getPagePane: () => HTMLElement | null = () => null;
 let getPageLayoutCache: () => PageLayoutCache | null = () => null;
-let setPageLayoutCache: (c: PageLayoutCache) => void = () => { /* noop */ };
+let setPageLayoutCache: (c: PageLayoutCache) => void = () => {
+  /* noop */
+};
 let getSelectedElementId: () => string | null = () => null;
 
 export function setOverlayAccessors(opts: {
@@ -121,10 +119,7 @@ export function overlayUserLength(
   return (baseUserPx * refFit) / (fitScale * zoom);
 }
 
-export function applyPageImageSize(
-  img: HTMLImageElement,
-  pane: HTMLElement
-): boolean {
+export function applyPageImageSize(img: HTMLImageElement, pane: HTMLElement): boolean {
   if (!img?.naturalWidth || !img.naturalHeight) return false;
   const zoomPct = Math.max(PAGE_ZOOM_DEFAULT, getPageZoomPercent());
   const fitScale = getCachedFitScale(img, pane);
@@ -297,9 +292,7 @@ function overlayBadgeLayout(
     width = overlayUserLength(
       label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2
     );
-    height = overlayUserLength(
-      OVERLAY_BADGE_FONT_SIZE * 1.1 + OVERLAY_BADGE_PAD_Y * 2
-    );
+    height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + OVERLAY_BADGE_PAD_Y * 2);
   }
   probe.remove();
   return { width, height };
@@ -427,8 +420,7 @@ function appendOverlayLinks(
     line.setAttribute('marker-end', `url(#${markerId})`);
     const fromId =
       (link as CaptionLink).captionElementId ?? (link as XrefLink).fromElementId;
-    const toId =
-      (link as CaptionLink).hostElementId ?? (link as XrefLink).toElementId;
+    const toId = (link as CaptionLink).hostElementId ?? (link as XrefLink).toElementId;
     line.setAttribute(fromIdAttr, fromId);
     line.setAttribute(toIdAttr, toId);
     svg.appendChild(line);

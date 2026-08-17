@@ -71,7 +71,14 @@ export const CELL_TOKENS = new Set([
   'xcel',
   'nl',
 ]);
-export const CELL_CONTENT_TAGS = new Set(['fcel', 'ecel', 'ched', 'rhed', 'corn', 'srow']);
+export const CELL_CONTENT_TAGS = new Set([
+  'fcel',
+  'ecel',
+  'ched',
+  'rhed',
+  'corn',
+  'srow',
+]);
 export const CELL_SPAN_TAGS = new Set(['lcel', 'ucel', 'xcel']);
 export const OTSL_CONTAINER_TAGS = new Set(['table', 'index', 'tabular']);
 export const RENDER_BLOCK_TAGS = new Set([
