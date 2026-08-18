@@ -8,7 +8,6 @@ import './components/markup-pane/markup-pane';
 import './components/page-view-pane/page-view-pane';
 import './components/reading-pane/reading-pane';
 import './components/empty-state/empty-state';
-import type { DoclangCursorHint } from './components/cursor-hint/cursor-hint';
 import type { DoclangPageNav } from './components/page-nav/page-nav';
 import type { DoclangToolbar } from './components/toolbar/toolbar';
 import type { DoclangFilePane } from './components/file-pane/file-pane';
@@ -19,15 +18,8 @@ import type { DoclangEmptyState } from './components/empty-state/empty-state';
 
 import {
   SUPPORTED_FILE_EXTENSIONS,
-  OPEN_FILE_HINT,
-  VIRTUAL_TEXT_TAG_HINT,
-  FRAGMENT_NAV_HINT_PREV,
-  FRAGMENT_NAV_HINT_NEXT,
-  NO_MARKUP,
-  NO_IMAGE,
   PAGE_IMAGE_RE,
   PAGE_ZOOM_DEFAULT,
-  PAGE_PAN_DRAG_THRESHOLD,
   PAGE_WHEEL_COOLDOWN_MS,
   PAGE_WHEEL_PIXEL_THRESHOLD,
   PAGE_WHEEL_GESTURE_MS,
@@ -44,20 +36,11 @@ import type { PaneKey } from './constants';
 import type {
   DocumentState,
   FileCatalogEntry,
-  PageLayoutCache,
-  PagePanDrag,
   PaneDragState,
   UserPaneVisible,
-  HeadInfo,
-} from './types';
+} from './doclang/types';
 import {
   localName,
-  escapeHtml,
-  elementLabel,
-  elementHeadLocations,
-  elementThreadId,
-  firstHeadChild,
-  locationResolution,
   isSemanticElement,
   isVirtualTextHost,
   isListOrOtslContainer,
@@ -66,36 +49,14 @@ import {
   skipUntilListItemBoundary,
   skipUntilCellBoundary,
   isCellToken,
-} from './xml';
+} from './doclang/dom';
 import {
   buildDocumentState,
-  assignElementIds,
-  invertElementIds,
-  segmentHasMarkup,
-  collectBoundingBoxes,
-  collectCaptionLinks,
-  collectXrefLinks,
-  collectFragmentLinks,
-  collectFragmentNavItems,
-  collectReadingOrderSteps,
   extractArchiveFromFiles,
   extractArchiveFromZipBuffer,
   revokeDocumentState,
-} from './document';
-import { buildMarkupView } from './markup';
-import {
-  buildRenderedView,
-  applyReadingLayerClasses,
-  setStateAccessor,
-} from './rendered';
-import {
-  buildOverlay,
-  syncOverlayBadges,
-  applyPageImageSize,
-  setOverlayAccessors,
-} from './overlay';
-import { isPictureContentElement, isTableContentElement } from './xml-overlay';
-import { unzip } from './zip';
+} from './doclang/document';
+import { unzip } from './doclang/zip';
 
 // ---------------------------------------------------------------------------
 // Global mutable state
@@ -105,54 +66,21 @@ let state: DocumentState | null = null;
 let fileCatalog: FileCatalogEntry[] = [];
 let activeFileIndex = -1;
 let filePaneUserToggled = false;
-let pagePaneResizeObserver: ResizeObserver | null = null;
-let selectedElementId: string | null = null;
-let showAllBboxes = true;
-let showLayoutBadges = true;
-let showCaptionLinks = false;
-let showPictureContents = false;
-let showTableContents = false;
-let showFragmentLinks = false;
-let showXrefLinks = false;
-let showReadingOrder = false;
-let showReadingOrderArrows = true;
-let readingOrderGlobalNumbering = false;
-let showReadingFurniture = true;
-let showReadingBackground = true;
-let pageSettingsOpen = false;
 let readingSettingsOpen = false;
-let pageZoomPercent = PAGE_ZOOM_DEFAULT;
-let pagePanDrag: PagePanDrag | null = null;
-let pagePanSuppressClick = false;
-let pageLayoutCache: PageLayoutCache | null = null;
 let userPaneVisible: UserPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 let paneRatios: number[] = [...DEFAULT_PANE_RATIOS];
 let filePaneWidthPx: number | null = null;
 let toolbarOptionsOpen = false;
 let paneDrag: PaneDragState | null = null;
 let layoutStackQuery: MediaQueryList | null = null;
-let pageLayoutFrame = 0;
 let demoLoadInProgress = false;
 
-// Wire state accessors into sub-modules
-setStateAccessor(() => state);
-setOverlayAccessors({
-  getPageZoomPercent: () => pageZoomPercent,
-  getPagePane: () => els.pagePane,
-  getPageLayoutCache: () => pageLayoutCache,
-  setPageLayoutCache: c => {
-    pageLayoutCache = c;
-  },
-  getSelectedElementId: () => selectedElementId,
-});
+// Wire state accessor into rendered module
 
 // ---------------------------------------------------------------------------
 // Web component instances
 // ---------------------------------------------------------------------------
 
-const doclangCursorHint = document.querySelector(
-  'doclang-cursor-hint'
-) as DoclangCursorHint | null;
 const doclangPageNav = document.querySelector(
   'doclang-page-nav'
 ) as DoclangPageNav | null;
@@ -176,325 +104,35 @@ const doclangEmptyState = document.querySelector(
 ) as DoclangEmptyState | null;
 
 // ---------------------------------------------------------------------------
-// DOM element references (flattened from component accessors)
+// DOM element references
 // ---------------------------------------------------------------------------
 
 const els = {
-  openFileBtn: doclangToolbar?.openFileBtn ?? null,
   docLabel: document.getElementById('doc-label'),
-  filePane: doclangFilePane?.body ?? null,
-  filePaneCloseAll: null as HTMLButtonElement | null, // handled by doclang-file-pane internally
-  pageNav: doclangPageNav ?? null,
-  pageNumberInput: doclangPageNav?.pageNumberInput ?? null,
-  pageCountIndicator: doclangPageNav?.pageCountIndicator ?? null,
-  btnPrev: doclangPageNav?.btnPrev ?? null,
-  btnNext: doclangPageNav?.btnNext ?? null,
-  showAllBboxes: doclangPageViewPane?.showAllBboxes ?? null,
-  showLayoutBadges: doclangPageViewPane?.showLayoutBadges ?? null,
-  showLayoutBadgesLabel: doclangPageViewPane?.showLayoutBadgesLabel ?? null,
-  settingsToggle: doclangPageViewPane?.settingsToggle ?? null,
-  readingSettingsToggle: doclangReadingPane?.settingsToggle ?? null,
-  pageSettingsLayer: doclangPageViewPane?.settingsLayer ?? null,
-  pageSettingsScrim: null as HTMLElement | null, // handled by doclang-page-view-pane internally
-  pageSettingsClose: null as HTMLElement | null, // handled by doclang-page-view-pane internally
-  readingSettingsLayer: doclangReadingPane?.settingsLayer ?? null,
-  readingSettingsScrim: null as HTMLElement | null, // handled by doclang-reading-pane internally
-  readingSettingsClose: null as HTMLElement | null, // handled by doclang-reading-pane internally
-  showReadingFurniture: doclangReadingPane?.showFurniture ?? null,
-  showReadingFurnitureLabel: doclangReadingPane?.showFurnitureLabel ?? null,
-  showReadingBackground: doclangReadingPane?.showBackground ?? null,
-  showReadingBackgroundLabel: doclangReadingPane?.showBackgroundLabel ?? null,
-  showCaptionLinks: doclangPageViewPane?.showCaptionLinks ?? null,
-  showCaptionLinksLabel: doclangPageViewPane?.showCaptionLinksLabel ?? null,
-  showPictureContents: doclangPageViewPane?.showPictureContents ?? null,
-  showPictureContentsLabel: doclangPageViewPane?.showPictureContentsLabel ?? null,
-  showTableContents: doclangPageViewPane?.showTableContents ?? null,
-  showTableContentsLabel: doclangPageViewPane?.showTableContentsLabel ?? null,
-  showFragmentLinks: doclangPageViewPane?.showFragmentLinks ?? null,
-  showFragmentLinksLabel: doclangPageViewPane?.showFragmentLinksLabel ?? null,
-  showXrefLinks: doclangPageViewPane?.showXrefLinks ?? null,
-  showXrefLinksLabel: doclangPageViewPane?.showXrefLinksLabel ?? null,
-  showReadingOrder: doclangPageViewPane?.showReadingOrder ?? null,
-  showReadingOrderLabel: doclangPageViewPane?.showReadingOrderLabel ?? null,
-  readingOrderArrows: doclangPageViewPane?.readingOrderArrows ?? null,
-  readingOrderArrowsLabel: doclangPageViewPane?.readingOrderArrowsLabel ?? null,
-  readingOrderGlobal: doclangPageViewPane?.readingOrderGlobal ?? null,
-  readingOrderGlobalLabel: doclangPageViewPane?.readingOrderGlobalLabel ?? null,
-  pageZoom: doclangPageViewPane?.zoomInput ?? null,
-  pageZoomLabel: doclangPageViewPane?.zoomLabel ?? null,
-  pageZoomReset: doclangPageViewPane?.zoomReset ?? null,
   main: document.getElementById('main'),
   emptyState: doclangEmptyState ?? null,
-  markupPane: doclangMarkupPane?.body ?? null,
-  renderedPane: doclangReadingPane?.body ?? null,
-  pagePane: doclangPageViewPane?.body ?? null,
-  paneFile: doclangFilePane?.section ?? null,
-  panePageView: doclangPageViewPane?.section ?? null,
-  paneMarkup: doclangMarkupPane?.section ?? null,
-  paneReading: doclangReadingPane?.section ?? null,
+  paneFile: doclangFilePane ?? null,
+  panePageView: doclangPageViewPane ?? null,
+  paneMarkup: doclangMarkupPane ?? null,
+  paneReading: doclangReadingPane ?? null,
   splitters: [
     document.getElementById('splitter-0'),
     document.getElementById('splitter-1'),
     document.getElementById('splitter-2'),
   ] as (HTMLElement | null)[],
-  toolbarOptionsBtn: doclangToolbar?.toolbarOptionsBtn ?? null,
-  toolbarOptionsPanel: null as HTMLElement | null, // handled by doclang-toolbar internally
-  toggleFilePane: doclangToolbar?.toggleFilePane ?? null,
-  toggleFilePaneLabel: doclangToolbar?.toggleFilePaneLabel ?? null,
-  togglePagePane: doclangToolbar?.togglePagePane ?? null,
-  toggleMarkupPane: doclangToolbar?.toggleMarkupPane ?? null,
-  toggleReadingPane: doclangToolbar?.toggleReadingPane ?? null,
-  togglePagePaneLabel: doclangToolbar?.togglePagePaneLabel ?? null,
-  resetPaneLayoutBtn: doclangToolbar?.resetPaneLayoutBtn ?? null,
 };
 
-function hideCursorHint(): void {
-  doclangCursorHint?.hide();
-}
-
-function showCursorHint(
-  content: string | Node,
-  clientX: number,
-  clientY: number,
-  { detail = false } = {}
-): void {
-  doclangCursorHint?.show(content, clientX, clientY, detail);
-}
-
-function showCursorHintHtml(html: string, clientX: number, clientY: number): void {
-  doclangCursorHint?.showHtml(html, clientX, clientY);
-}
-
 // ---------------------------------------------------------------------------
-// Element head tooltip
+// Page zoom / layout
 // ---------------------------------------------------------------------------
-
-function headTextPreview(el: Element, maxLen = 72): string {
-  const text = el.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-  if (!text) return '—';
-  return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
-}
-
-function collectElementHeadInfo(
-  el: Element,
-  defaultResolution: { width: number; height: number }
-): HeadInfo[] {
-  const labelEl = firstHeadChild(el, 'label');
-  const threadEl = firstHeadChild(el, 'thread');
-  const xrefEl = firstHeadChild(el, 'xref');
-  const hrefEl = firstHeadChild(el, 'href');
-  const layerEl = firstHeadChild(el, 'layer');
-  const captionEl = firstHeadChild(el, 'caption');
-  const descriptionEl = firstHeadChild(el, 'description');
-  const summaryEl = firstHeadChild(el, 'summary');
-  const customEl = firstHeadChild(el, 'custom');
-  const locs = elementHeadLocations(el);
-  const rows: HeadInfo[] = [
-    { key: 'element', value: elementLabel(el), isDefault: false },
-  ];
-
-  rows.push({
-    key: 'label',
-    value: labelEl?.getAttribute('value') ?? 'undefined',
-    isDefault: !labelEl?.hasAttribute('value'),
-  });
-
-  if (threadEl) {
-    rows.push({
-      key: 'thread_id',
-      value: threadEl.getAttribute('thread_id') ?? '—',
-      isDefault: false,
-    });
-  } else {
-    rows.push({ key: 'thread', value: '—', isDefault: true });
-  }
-
-  if (xrefEl) {
-    rows.push({
-      key: 'xref',
-      value: `thread_id ${xrefEl.getAttribute('thread_id') ?? '—'}`,
-      isDefault: false,
-    });
-  } else {
-    rows.push({ key: 'xref', value: '—', isDefault: true });
-  }
-
-  if (hrefEl) {
-    rows.push({
-      key: 'href',
-      value: hrefEl.getAttribute('uri') ?? '—',
-      isDefault: false,
-    });
-  } else {
-    rows.push({ key: 'href', value: '—', isDefault: true });
-  }
-
-  rows.push({
-    key: 'layer',
-    value: layerEl?.getAttribute('value') ?? 'body',
-    isDefault: !layerEl?.hasAttribute('value'),
-  });
-
-  const cornerLabels = ['x_min', 'y_min', 'x_max', 'y_max'];
-  if (locs.length === 4) {
-    for (let idx = 0; idx < 4; idx += 1) {
-      const loc = locs[idx]!;
-      const axisDefault =
-        idx % 2 === 0 ? defaultResolution.width : defaultResolution.height;
-      const resolution = locationResolution(loc, axisDefault);
-      const value = loc.getAttribute('value') ?? '0';
-      rows.push({
-        key: cornerLabels[idx]!,
-        value: `${value} @ ${resolution}`,
-        isDefault: false,
-      });
-    }
-  } else {
-    for (const key of cornerLabels) {
-      rows.push({ key, value: '—', isDefault: false });
-    }
-  }
-
-  rows.push({
-    key: 'caption',
-    value: captionEl ? headTextPreview(captionEl) : '—',
-    isDefault: !captionEl,
-  });
-  rows.push({
-    key: 'description',
-    value: descriptionEl ? headTextPreview(descriptionEl) : '—',
-    isDefault: !descriptionEl,
-  });
-  rows.push({
-    key: 'summary',
-    value: summaryEl ? headTextPreview(summaryEl) : '—',
-    isDefault: !summaryEl,
-  });
-  rows.push({
-    key: 'custom',
-    value: customEl ? headTextPreview(customEl) : '—',
-    isDefault: !customEl,
-  });
-
-  return rows;
-}
-
-function elementHeadTooltipHtml(
-  el: Element,
-  defaultResolution: { width: number; height: number }
-): string {
-  const rows = collectElementHeadInfo(el, defaultResolution);
-  const body = rows
-    .map(({ key, value, isDefault }) => {
-      const rendered = escapeHtml(value);
-      const suffix = isDefault ? ' <span class="head-default">(default)</span>' : '';
-      return `<tr><th scope="row">${escapeHtml(key)}</th><td>${rendered}${suffix}</td></tr>`;
-    })
-    .join('');
-  return `<table class="head-tooltip"><tbody>${body}</tbody></table>`;
-}
-
-// ---------------------------------------------------------------------------
-// Reading layer
-// ---------------------------------------------------------------------------
-
-function syncReadingLayerCheckboxes(): void {
-  if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
-  if (els.showReadingBackground)
-    els.showReadingBackground.checked = showReadingBackground;
-}
-
-function syncReadingLayerVisibility(): void {
-  const root = els.renderedPane?.querySelector('.rendered-doc') as HTMLElement | null;
-  if (root) applyReadingLayerClasses(root, showReadingFurniture, showReadingBackground);
-}
-
-// ---------------------------------------------------------------------------
-// Page zoom
-// ---------------------------------------------------------------------------
-
-function updatePageZoomResetButton(): void {
-  if (!els.pageZoomReset) return;
-  els.pageZoomReset.textContent = `${pageZoomPercent}%`;
-  els.pageZoomReset.disabled = pageZoomPercent === PAGE_ZOOM_DEFAULT;
-}
-
-function pageViewScrollPane(): HTMLElement | null {
-  if (!els.pagePane) return null;
-  return (
-    (els.pagePane.querySelector('.page-view-port') as HTMLElement | null) ??
-    els.pagePane
-  );
-}
-
-function isPagePaneScrollable(): boolean {
-  const pane = pageViewScrollPane();
-  if (!pane) return false;
-  return pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
-}
 
 function resetPageZoom(): void {
-  pageZoomPercent = PAGE_ZOOM_DEFAULT;
-  if (els.pageZoom) {
-    els.pageZoom.value = String(PAGE_ZOOM_DEFAULT);
-    els.pageZoom.setAttribute('aria-valuenow', String(PAGE_ZOOM_DEFAULT));
-  }
-  updatePageZoomResetButton();
-  const port = pageViewScrollPane();
-  if (port) {
-    port.scrollLeft = 0;
-    port.scrollTop = 0;
-  }
-  refreshPageViewLayout();
-}
-
-function refreshPageViewLayout(): void {
-  if (!els.pagePane) return;
-  cancelAnimationFrame(pageLayoutFrame);
-  pageLayoutFrame = requestAnimationFrame(() => {
-    pageLayoutFrame = 0;
-    const img = els.pagePane?.querySelector(
-      '.page-view img'
-    ) as HTMLImageElement | null;
-    if (img?.naturalWidth) applyPageLayout(img);
-  });
-}
-
-function applyPageLayout(img: HTMLImageElement, pane = els.pagePane!): void {
-  applyPageImageSize(img, pane);
-  syncPageViewChrome(img);
-}
-
-function syncPageViewChrome(img: HTMLImageElement): void {
-  const svg = img.parentElement?.querySelector('svg.overlay') as SVGSVGElement | null;
-  if (svg && state?.pageViewOverlay) {
-    syncOverlayBadges(
-      img,
-      svg,
-      state.pageViewOverlay.boxes,
-      state.pageViewOverlay.readingOrderSteps,
-      showAllBboxes,
-      showLayoutBadges,
-      showReadingOrder
-    );
-  }
-  updatePagePanePanCursor();
-  applyBboxVisibility();
-}
-
-function updatePagePanePanCursor(): void {
-  if (!els.pagePane) return;
-  els.pagePane.classList.toggle('can-pan', isPagePaneScrollable() && !pagePanDrag);
+  doclangPageViewPane?.resetZoom();
 }
 
 // ---------------------------------------------------------------------------
 // Settings open/close
 // ---------------------------------------------------------------------------
-
-function setPageSettingsOpen(open: boolean): void {
-  pageSettingsOpen = open;
-  doclangPageViewPane?.setSettingsOpen(open);
-}
 
 function setReadingSettingsOpen(open: boolean): void {
   readingSettingsOpen = open;
@@ -502,37 +140,8 @@ function setReadingSettingsOpen(open: boolean): void {
 }
 
 function closeAllSettings(): void {
-  setPageSettingsOpen(false);
+  doclangPageViewPane?.closeSettings();
   setReadingSettingsOpen(false);
-}
-
-// ---------------------------------------------------------------------------
-// Layout subtoggle sync
-// ---------------------------------------------------------------------------
-
-function syncLayoutSubtoggles(): void {
-  const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
-  for (const label of [
-    els.showLayoutBadgesLabel,
-    els.showPictureContentsLabel,
-    els.showTableContentsLabel,
-    els.showFragmentLinksLabel,
-    els.showCaptionLinksLabel,
-    els.showXrefLinksLabel,
-    els.showReadingOrderLabel,
-  ]) {
-    if (!label) continue;
-    label.classList.toggle('settings-option-disabled', !layoutEnabled);
-    const input = label.querySelector('input') as HTMLInputElement | null;
-    if (input) input.disabled = !layoutEnabled;
-  }
-  const readingOrderEnabled = layoutEnabled && showReadingOrder;
-  for (const label of [els.readingOrderArrowsLabel, els.readingOrderGlobalLabel]) {
-    if (!label) continue;
-    label.classList.toggle('settings-option-disabled', !readingOrderEnabled);
-    const input = label.querySelector('input') as HTMLInputElement | null;
-    if (input) input.disabled = !readingOrderEnabled;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -830,9 +439,8 @@ function applyPaneLayout(): void {
       if (!def?.el) continue;
       def.el.style.gridRow = String(row++);
     }
-    refreshPageViewLayout();
-    if (els.readingSettingsToggle)
-      els.readingSettingsToggle.hidden = !state || !isPaneVisible('reading');
+    doclangPageViewPane?.refreshLayout();
+    doclangReadingPane?.setVisible(isPaneVisible('reading'));
     return;
   }
 
@@ -874,9 +482,8 @@ function applyPaneLayout(): void {
     }
   });
 
-  refreshPageViewLayout();
-  if (els.readingSettingsToggle)
-    els.readingSettingsToggle.hidden = !state || !isPaneVisible('reading');
+  doclangPageViewPane?.refreshLayout();
+  doclangReadingPane?.setVisible(isPaneVisible('reading'));
 }
 
 // ---------------------------------------------------------------------------
@@ -889,45 +496,15 @@ function setToolbarOptionsOpen(open: boolean): void {
 }
 
 function syncToolbarPaneCheckboxes(): void {
-  if (els.toggleFilePane) {
-    const available = isPaneAvailable('file');
-    els.toggleFilePane.checked = available && userPaneVisible.file;
-    els.toggleFilePane.disabled = !available;
-  }
-  if (els.toggleFilePaneLabel)
-    els.toggleFilePaneLabel.classList.toggle(
-      'toolbar-options-item-disabled',
-      !isPaneAvailable('file')
-    );
-  if (els.togglePagePane) {
-    const available = isPaneAvailable('page');
-    els.togglePagePane.checked = available && userPaneVisible.page;
-    els.togglePagePane.disabled = !available;
-  }
-  if (els.togglePagePaneLabel)
-    els.togglePagePaneLabel.classList.toggle(
-      'toolbar-options-item-disabled',
-      !isPaneAvailable('page')
-    );
-  if (els.toggleMarkupPane) {
-    els.toggleMarkupPane.checked = userPaneVisible.markup;
-    els.toggleMarkupPane.disabled = !state;
-  }
-  if (els.toggleReadingPane) {
-    els.toggleReadingPane.checked = userPaneVisible.reading;
-    els.toggleReadingPane.disabled = !state;
-  }
-  for (const label of [
-    els.toggleFilePaneLabel,
-    els.togglePagePaneLabel,
-    document.getElementById('toggle-markup-pane-label'),
-    document.getElementById('toggle-reading-pane-label'),
-  ]) {
-    if (!label) continue;
-    const input = label.querySelector('input') as HTMLInputElement | null;
-    label.classList.toggle('toolbar-options-item-disabled', Boolean(input?.disabled));
-  }
-  if (els.resetPaneLayoutBtn) els.resetPaneLayoutBtn.disabled = !state;
+  doclangToolbar?.syncPaneToggles({
+    file: userPaneVisible.file,
+    page: userPaneVisible.page,
+    markup: userPaneVisible.markup,
+    reading: userPaneVisible.reading,
+    fileAvailable: isPaneAvailable('file'),
+    pageAvailable: isPaneAvailable('page'),
+    hasState: Boolean(state),
+  });
 }
 
 function initToolbarOptions(): void {
@@ -1077,10 +654,13 @@ function initPaneSplitters(): void {
 
 function goToPage(n: number): void {
   if (!state) return;
-  setPageSettingsOpen(false);
+  doclangPageViewPane?.closeSettings();
   const page = Math.min(Math.max(1, n), state.pageCount);
   state.currentPage = page;
-  renderPage(page);
+  if (doclangMarkupPane) doclangMarkupPane.page = page;
+  if (doclangReadingPane) doclangReadingPane.page = page;
+  if (doclangPageViewPane) doclangPageViewPane.page = page;
+  setPageIndicator(page, state.pageCount);
 }
 
 function setPageIndicator(pageNum: number, pageCount: number): void {
@@ -1089,10 +669,7 @@ function setPageIndicator(pageNum: number, pageCount: number): void {
 
 function syncPagePaneControls(): void {
   const pageVisible = isPaneVisible('page');
-  if (els.settingsToggle) els.settingsToggle.hidden = !pageVisible;
-  if (els.pageZoomLabel) els.pageZoomLabel.hidden = !pageVisible;
-  if (pageVisible) updatePageZoomResetButton();
-  if (els.pagePane) els.pagePane.tabIndex = pageVisible ? 0 : -1;
+  doclangPageViewPane?.setVisible(pageVisible);
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,397 +803,15 @@ function resolveSelectionElementId(rawElementId: string | null): string | null {
 
 function selectElement(elementId: string): void {
   if (!elementId) return;
-  selectedElementId = elementId;
-  applySelection();
+  if (doclangMarkupPane) doclangMarkupPane.selected = elementId;
+  if (doclangReadingPane) doclangReadingPane.selected = elementId;
+  if (doclangPageViewPane) doclangPageViewPane.selected = elementId;
 }
 
 function clearSelection(): void {
-  selectedElementId = null;
-  applySelection();
-}
-
-function fragmentPeerElementIds(elementId: string): Set<string> {
-  const peers = new Set<string>();
-  if (!elementId || !state?.elementIds || !state.idToElement) return peers;
-  const el = state.idToElement.get(elementId);
-  const threadId = el ? elementThreadId(el) : null;
-  if (!threadId) return peers;
-  for (const [node, id] of state.elementIds) {
-    if (elementThreadId(node) === threadId) peers.add(id);
-  }
-  return peers;
-}
-
-function isPictureContentOverlayElement(elementId: string): boolean {
-  return isPictureContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-function isTableContentOverlayElement(elementId: string): boolean {
-  return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-function isContentsOptionHidden(elementId: string, clickVisible: boolean): boolean {
-  if (clickVisible) return false;
-  if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
-  if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
-  return false;
-}
-
-function isFragmentLinkRelevant(linkEl: Element, peerIds: Set<string>): boolean {
-  const fromId = linkEl.getAttribute('data-fragment-from-id');
-  const toId = linkEl.getAttribute('data-fragment-to-id');
-  if (fromId && peerIds.has(fromId)) return true;
-  if (toId && peerIds.has(toId)) return true;
-  return false;
-}
-
-function applyBboxVisibility(): void {
-  if (!state?.hasPageView || !els.pagePane) return;
-  const peerIds = selectedElementId
-    ? fragmentPeerElementIds(selectedElementId)
-    : new Set<string>();
-
-  for (const el of els.pagePane.querySelectorAll('.bbox')) {
-    el.classList.remove('related');
-    const elementId = el.getAttribute('data-element-id') ?? '';
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (showAllBboxes) {
-      if (isContentsOptionHidden(elementId, clickVisible)) {
-        el.classList.add('bbox-hidden');
-      } else {
-        el.classList.remove('bbox-hidden');
-        if (peerIds.has(elementId)) el.classList.add('related');
-      }
-      continue;
-    }
-    if (elementId === selectedElementId) {
-      el.classList.remove('bbox-hidden');
-    } else if (peerIds.has(elementId)) {
-      el.classList.remove('bbox-hidden');
-      el.classList.add('related');
-    } else {
-      el.classList.add('bbox-hidden');
-    }
-  }
-
-  for (const el of els.pagePane.querySelectorAll('.element-badge')) {
-    const elementId = el.getAttribute('data-element-id') ?? '';
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showLayoutBadges) {
-      el.classList.add('bbox-hidden');
-      continue;
-    }
-    if (isContentsOptionHidden(elementId, clickVisible))
-      el.classList.add('bbox-hidden');
-    else el.classList.remove('bbox-hidden');
-  }
-
-  for (const el of els.pagePane.querySelectorAll('.caption-link')) {
-    if (!showAllBboxes || !showCaptionLinks) {
-      el.classList.add('bbox-hidden');
-      continue;
-    }
-    el.classList.remove('bbox-hidden');
-  }
-  for (const el of els.pagePane.querySelectorAll('.xref-link')) {
-    if (!showAllBboxes || !showXrefLinks) {
-      el.classList.add('bbox-hidden');
-      continue;
-    }
-    el.classList.remove('bbox-hidden');
-  }
-  for (const el of els.pagePane.querySelectorAll('.fragment-link')) {
-    const clickVisible = Boolean(
-      selectedElementId && isFragmentLinkRelevant(el, peerIds)
-    );
-    el.classList.toggle(
-      'bbox-hidden',
-      !(clickVisible || (showAllBboxes && showFragmentLinks))
-    );
-  }
-  for (const el of els.pagePane.querySelectorAll('.fragment-nav')) {
-    const elementId = el.getAttribute('data-element-id') ?? '';
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    el.classList.toggle(
-      'bbox-hidden',
-      !(clickVisible || (showAllBboxes && showFragmentLinks))
-    );
-  }
-  for (const el of els.pagePane.querySelectorAll('.reading-order-badge')) {
-    const elementId = el.getAttribute('data-element-id') ?? '';
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showReadingOrder) {
-      el.classList.add('bbox-hidden');
-      continue;
-    }
-    if (
-      isPictureContentOverlayElement(elementId) ||
-      isTableContentOverlayElement(elementId) ||
-      isContentsOptionHidden(elementId, clickVisible)
-    ) {
-      el.classList.add('bbox-hidden');
-      continue;
-    }
-    el.classList.remove('bbox-hidden');
-  }
-  for (const el of els.pagePane.querySelectorAll('.reading-order-step')) {
-    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
-      el.classList.add('bbox-hidden');
-      continue;
-    }
-    el.classList.remove('bbox-hidden');
-  }
-}
-
-function findMarkupElementForSelection(elementId: string): Element | null {
-  if (!els.markupPane) return null;
-  return (
-    els.markupPane.querySelector(
-      `.markup-el-virtual-text[data-element-id="${elementId}"]`
-    ) || els.markupPane.querySelector(`[data-element-id="${elementId}"]`)
-  );
-}
-
-function findRenderedElementForSelection(elementId: string): Element | null {
-  if (!els.renderedPane) return null;
-  const direct =
-    els.renderedPane.querySelector(
-      `.rendered-el-virtual-text[data-element-id="${elementId}"]`
-    ) || els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
-  if (direct) return direct;
-  const xmlEl = state?.idToElement?.get(elementId);
-  const threadId = xmlEl ? elementThreadId(xmlEl) : null;
-  if (!threadId) return null;
-  const merged = els.renderedPane.querySelector(
-    `.rendered-fragment-merged[data-thread-id="${threadId}"]`
-  );
-  if (!merged) return null;
-  const primaryId = merged.getAttribute('data-element-id');
-  if (!primaryId || primaryId === elementId) return merged;
-  return fragmentPeerElementIds(primaryId).has(elementId) ? merged : null;
-}
-
-function revealReadingLayerForSelection(renderedEl: Element): void {
-  const layer = renderedEl.getAttribute('data-doclang-layer');
-  if (!layer || layer === 'body') return;
-  let changed = false;
-  if (layer === 'furniture' && !showReadingFurniture) {
-    showReadingFurniture = true;
-    changed = true;
-  } else if (layer === 'background' && !showReadingBackground) {
-    showReadingBackground = true;
-    changed = true;
-  }
-  if (!changed) return;
-  syncReadingLayerCheckboxes();
-  syncReadingLayerVisibility();
-}
-
-function revealRenderedSelectionContext(renderedEl: Element): void {
-  const pictureContents = renderedEl.closest(
-    '.rendered-picture-contents'
-  ) as HTMLDetailsElement | null;
-  if (pictureContents && !pictureContents.open) pictureContents.open = true;
-  revealReadingLayerForSelection(renderedEl);
-}
-
-function applySelection(): void {
-  els.markupPane
-    ?.querySelectorAll('.markup-el.selected')
-    .forEach(el => el.classList.remove('selected'));
-  els.renderedPane
-    ?.querySelectorAll('.rendered-el.selected')
-    .forEach(el => el.classList.remove('selected'));
-  if (!els.pagePane) return;
-  els.pagePane
-    .querySelectorAll('.bbox.selected, .overlay-badge.selected')
-    .forEach(el => el.classList.remove('selected'));
-
-  if (!selectedElementId) {
-    const img = els.pagePane.querySelector('.page-view img') as HTMLImageElement | null;
-    if (img) {
-      const svg = img.parentElement?.querySelector(
-        'svg.overlay'
-      ) as SVGSVGElement | null;
-      if (svg && state?.pageViewOverlay) {
-        syncOverlayBadges(
-          img,
-          svg,
-          state.pageViewOverlay.boxes,
-          state.pageViewOverlay.readingOrderSteps,
-          showAllBboxes,
-          showLayoutBadges,
-          showReadingOrder
-        );
-      }
-    }
-    applyBboxVisibility();
-    return;
-  }
-
-  const markupEl = findMarkupElementForSelection(selectedElementId);
-  if (markupEl) {
-    markupEl.classList.add('selected');
-    markupEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
-
-  const renderedEl = findRenderedElementForSelection(selectedElementId);
-  if (renderedEl) {
-    revealRenderedSelectionContext(renderedEl);
-    renderedEl.classList.add('selected');
-    renderedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }
-
-  if (state?.hasPageView) {
-    for (const el of els.pagePane.querySelectorAll(
-      `[data-element-id="${selectedElementId}"]`
-    )) {
-      el.classList.add('selected');
-    }
-  }
-
-  const img = els.pagePane.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img) {
-    const svg = img.parentElement?.querySelector('svg.overlay') as SVGSVGElement | null;
-    if (svg && state?.pageViewOverlay) {
-      syncOverlayBadges(
-        img,
-        svg,
-        state.pageViewOverlay.boxes,
-        state.pageViewOverlay.readingOrderSteps,
-        showAllBboxes,
-        showLayoutBadges,
-        showReadingOrder
-      );
-    }
-  }
-  applyBboxVisibility();
-}
-
-// ---------------------------------------------------------------------------
-// Page rendering
-// ---------------------------------------------------------------------------
-
-function renderPage(pageNum: number): void {
-  if (!state) return;
-  const { segments, pageImages, pageCount, defaultResolution } = state;
-  const idx = pageNum - 1;
-  const segment = segments[idx] ?? [];
-  selectedElementId = null;
-
-  setPageIndicator(pageNum, pageCount);
-  if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
-  if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
-
-  if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
-
-  els.markupPane.innerHTML = '';
-  const elementIds = assignElementIds(segment);
-  state.elementIds = elementIds;
-  state.idToElement = invertElementIds(elementIds);
-
-  if (segmentHasMarkup(segment)) {
-    els.markupPane.appendChild(
-      buildMarkupView(segment, elementIds, id =>
-        selectElement(resolveSelectionElementId(id) ?? id)
-      )
-    );
-    els.renderedPane.innerHTML = '';
-    els.renderedPane.appendChild(
-      buildRenderedView(
-        segment,
-        elementIds,
-        showReadingFurniture,
-        showReadingBackground,
-        id => selectElement(resolveSelectionElementId(id) ?? id)
-      )
-    );
-  } else {
-    els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-    els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-  }
-
-  els.pagePane.innerHTML = '';
-  if (state.hasPageView) {
-    const imageUrl = pageImages.get(pageNum);
-    if (imageUrl) {
-      const port = document.createElement('div');
-      port.className = 'page-view-port';
-      const wrap = document.createElement('div');
-      wrap.className = 'page-view';
-      const img = document.createElement('img');
-      img.alt = `Page ${pageNum}`;
-
-      const onImageReady = (): void => {
-        if (img.dataset.layoutGeneration === String(pageNum)) return;
-        img.dataset.layoutGeneration = String(pageNum);
-        applyPageImageSize(img, els.pagePane!);
-        const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
-        const existing = wrap.querySelector('svg.overlay');
-        if (existing) existing.remove();
-        const readingOrderSteps = collectReadingOrderSteps(
-          segment,
-          elementIds,
-          boxes,
-          state!.readingOrder,
-          readingOrderGlobalNumbering,
-          state!.readingOrderDisplayNumbers
-        );
-        state!.pageViewOverlay = { boxes, readingOrderSteps };
-        if (boxes.length) {
-          wrap.appendChild(
-            buildOverlay(
-              img,
-              boxes,
-              collectCaptionLinks(segment, elementIds, boxes),
-              collectXrefLinks(segment, elementIds, boxes),
-              readingOrderSteps,
-              collectFragmentLinks(
-                segment,
-                elementIds,
-                boxes,
-                pageNum,
-                state!.threadPagesById
-              ),
-              collectFragmentNavItems(
-                segment,
-                elementIds,
-                boxes,
-                state!.threadNavByElement
-              ),
-              defaultResolution,
-              id => selectElement(resolveSelectionElementId(id) ?? id),
-              navigateThreadFragment,
-              clearSelection,
-              () => pagePanSuppressClick,
-              v => {
-                pagePanSuppressClick = v;
-              }
-            )
-          );
-        }
-        syncPageViewChrome(img);
-        const pending = state!.pendingSelectElement;
-        if (pending) {
-          state!.pendingSelectElement = null;
-          const id = findElementIdOnPage(pending);
-          if (id) selectElement(id);
-        }
-      };
-
-      img.addEventListener('load', onImageReady, { once: true });
-      wrap.appendChild(img);
-      port.appendChild(wrap);
-      els.pagePane.appendChild(port);
-      img.src = imageUrl;
-      if (img.complete) onImageReady();
-
-      if (!pagePaneResizeObserver) {
-        pagePaneResizeObserver = new ResizeObserver(() => refreshPageViewLayout());
-        pagePaneResizeObserver.observe(els.pagePane);
-      }
-    } else {
-      els.pagePane.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
-    }
-  }
+  if (doclangMarkupPane) doclangMarkupPane.selected = null;
+  if (doclangReadingPane) doclangReadingPane.selected = null;
+  if (doclangPageViewPane) doclangPageViewPane.selected = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1646,34 +841,25 @@ function setPageViewVisible(visible: boolean): void {
   document.body.classList.toggle('has-page-view', visible);
   syncPagePaneControls();
   syncToolbarPaneCheckboxes();
-  if (!visible) setPageSettingsOpen(false);
+  if (!visible) doclangPageViewPane?.closeSettings();
   applyPaneLayout();
-  syncLayoutSubtoggles();
 }
 
 function resetViewer(): void {
   setDemoLoading(false);
   clearFileCatalog();
   filePaneUserToggled = false;
-  selectedElementId = null;
-  pagePanDrag = null;
-  pagePanSuppressClick = false;
-  showReadingFurniture = true;
-  showReadingBackground = true;
-  syncReadingLayerCheckboxes();
   resetPageZoom();
   setDocLabel(null);
   setDocumentOpen(false);
   document.body.classList.remove('has-page-view');
   closeAllSettings();
   setToolbarOptionsOpen(false);
-  if (els.markupPane) els.markupPane.innerHTML = '';
-  if (els.renderedPane) els.renderedPane.innerHTML = '';
-  if (els.pagePane) els.pagePane.innerHTML = '';
+  if (doclangMarkupPane) doclangMarkupPane.document = null;
+  if (doclangReadingPane) doclangReadingPane.document = null;
+  if (doclangPageViewPane) doclangPageViewPane.document = null;
+  doclangFilePane?.renderFiles([]);
   setPageIndicator(1, 1);
-  if (els.btnPrev) els.btnPrev.disabled = true;
-  if (els.btnNext) els.btnNext.disabled = true;
-  if (els.filePane) els.filePane.replaceChildren();
   updateFileView();
   applyPaneLayout();
 }
@@ -1838,7 +1024,7 @@ function persistActiveFileViewState(): void {
   const entry = fileCatalog[activeFileIndex];
   if (!entry) return;
   entry.currentPage = state.currentPage;
-  entry.pageZoom = pageZoomPercent;
+  entry.pageZoom = doclangPageViewPane?.zoomPercent ?? PAGE_ZOOM_DEFAULT;
 }
 
 function releaseActiveDocument(): void {
@@ -1851,9 +1037,6 @@ function releaseActiveDocument(): void {
   }
   if (state) revokeDocumentState(state);
   state = null;
-  selectedElementId = null;
-  pagePanDrag = null;
-  pagePanSuppressClick = false;
 }
 
 function clearFileCatalog(): void {
@@ -1966,23 +1149,16 @@ function initFilePaneCloseAll(): void {
 
 function activateDocument(docState: DocumentState, entry: FileCatalogEntry): void {
   state = docState;
-  pageLayoutCache = null;
   closeAllSettings();
-  pageZoomPercent = entry.pageZoom ?? PAGE_ZOOM_DEFAULT;
-  if (els.pageZoom) {
-    els.pageZoom.value = String(pageZoomPercent);
-    els.pageZoom.setAttribute('aria-valuenow', String(pageZoomPercent));
-  }
-  updatePageZoomResetButton();
-  const port = pageViewScrollPane();
-  if (port) {
-    port.scrollLeft = 0;
-    port.scrollTop = 0;
-  }
+  doclangPageViewPane?.activateZoom(entry.pageZoom ?? PAGE_ZOOM_DEFAULT);
   setDocLabel(entry.label);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
-  renderPage(state.currentPage);
+  setPageIndicator(state.currentPage, state.pageCount);
+  // Pass the document state to all three content panes; each renders its own view.
+  if (doclangMarkupPane) doclangMarkupPane.document = docState;
+  if (doclangReadingPane) doclangReadingPane.document = docState;
+  if (doclangPageViewPane) doclangPageViewPane.document = docState;
   updateFileView();
 }
 
@@ -1995,7 +1171,7 @@ declare const DEMO_ARCHIVE_URL: string;
 function setDemoLoading(loading: boolean): void {
   document.body.classList.toggle('demo-loading', loading);
   doclangEmptyState?.setDemoLoading(loading);
-  if (doclangToolbar) doclangToolbar.btnDemo.disabled = loading;
+  doclangToolbar?.setDemoLoading(loading);
 }
 
 async function loadDemo(): Promise<void> {
@@ -2096,7 +1272,6 @@ async function loadFromDrop(dataTransfer: DataTransfer): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function initPageWheelNav(): void {
-  if (!els.pagePane) return;
   let pixelAccum = 0;
   let pixelGestureUntil = 0;
   let lastFlipAt = 0;
@@ -2152,176 +1327,47 @@ function initPageWheelNav(): void {
     });
   }
 
-  els.pagePane.addEventListener(
+  // Page-view pane: wheel on component host element
+  doclangPageViewPane?.addEventListener(
     'wheel',
     e => {
       if (!state?.hasPageView) return;
-      const pane = pageViewScrollPane();
-      if (!pane) return;
+      const scrollPane = doclangPageViewPane?.scrollPane ?? null;
+      if (!scrollPane) return;
       const scrollable =
-        pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
+        scrollPane.scrollHeight > scrollPane.clientHeight ||
+        scrollPane.scrollWidth > scrollPane.clientWidth;
       if (scrollable) {
-        onScrollPaneWheel(e, pane);
+        onScrollPaneWheel(e as WheelEvent, scrollPane);
         return;
       }
       e.preventDefault();
-      const dir = wheelDir(e);
+      const dir = wheelDir(e as WheelEvent);
       if (dir) tryFlipPage(dir);
     },
     { passive: false }
   );
 
-  for (const pane of [els.markupPane, els.renderedPane]) {
+  // Markup and reading panes: wheel on component host elements
+  for (const pane of [doclangMarkupPane, doclangReadingPane]) {
     if (!pane) continue;
-    pane.addEventListener('wheel', e => onScrollPaneWheel(e as WheelEvent, pane), {
-      passive: false,
-    });
+    pane.addEventListener(
+      'wheel',
+      e => onScrollPaneWheel(e as WheelEvent, pane as HTMLElement),
+      { passive: false }
+    );
   }
 
-  els.pagePane.tabIndex = 0;
-  els.pagePane.setAttribute('role', 'region');
-  els.pagePane.setAttribute('aria-label', 'Original page');
-  els.pagePane.addEventListener('pointerdown', () => {
-    if (state?.hasPageView) els.pagePane!.focus({ preventScroll: true });
-  });
-  els.pagePane.addEventListener('keydown', e => {
-    if (!state?.hasPageView) return;
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'PageDown':
-      case 'ArrowRight':
-        e.preventDefault();
-        tryFlipPage(1);
-        break;
-      case 'ArrowUp':
-      case 'PageUp':
-      case 'ArrowLeft':
-        e.preventDefault();
-        tryFlipPage(-1);
-        break;
-    }
-  });
+  // Key navigation is now handled inside page-view-pane component
+  // which fires doclang-page-key-nav events that we listen to below.
 }
 
 // ---------------------------------------------------------------------------
-// Page pan controls
-// ---------------------------------------------------------------------------
-
-function canStartPagePan(event: PointerEvent): boolean {
-  if (!(event.target instanceof Element)) return false;
-  if (!event.target.closest('.page-view')) return false;
-  return isPagePaneScrollable();
-}
-
-function initPageViewControls(): void {
-  if (!els.pagePane) return;
-  // Zoom input and reset are wired via doclang-page-view-pane component events above.
-
-  els.pagePane.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || !canStartPagePan(e)) return;
-    const scrollPane = pageViewScrollPane();
-    if (!scrollPane) return;
-    pagePanDrag = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      scrollLeft: scrollPane.scrollLeft,
-      scrollTop: scrollPane.scrollTop,
-      moved: false,
-    };
-  });
-
-  els.pagePane.addEventListener('pointermove', e => {
-    if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
-    const dx = e.clientX - pagePanDrag.startX;
-    const dy = e.clientY - pagePanDrag.startY;
-    if (!pagePanDrag.moved && Math.hypot(dx, dy) >= PAGE_PAN_DRAG_THRESHOLD) {
-      pagePanDrag.moved = true;
-      els.pagePane!.classList.add('is-panning');
-      els.pagePane!.classList.remove('can-pan');
-      els.pagePane!.setPointerCapture(e.pointerId);
-    }
-    if (!pagePanDrag.moved) return;
-    const scrollPane = pageViewScrollPane();
-    if (!scrollPane) return;
-    scrollPane.scrollLeft = pagePanDrag.scrollLeft + pagePanDrag.startX - e.clientX;
-    scrollPane.scrollTop = pagePanDrag.scrollTop + pagePanDrag.startY - e.clientY;
-    e.preventDefault();
-  });
-
-  function endPagePan(e: PointerEvent): void {
-    if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
-    if (pagePanDrag.moved) pagePanSuppressClick = true;
-    pagePanDrag = null;
-    els.pagePane!.classList.remove('is-panning');
-    if (els.pagePane!.hasPointerCapture(e.pointerId))
-      els.pagePane!.releasePointerCapture(e.pointerId);
-    updatePagePanePanCursor();
-  }
-
-  els.pagePane.addEventListener('pointerup', e => endPagePan(e as PointerEvent));
-  els.pagePane.addEventListener('pointercancel', e => endPagePan(e as PointerEvent));
-}
-
-// ---------------------------------------------------------------------------
-// Hints / drag-drop init
+// Drag-drop init
 // ---------------------------------------------------------------------------
 
 function initFileTypeHints(): void {
   doclangEmptyState?.setFileTypeHints(SUPPORTED_FILE_EXTENSIONS);
-}
-
-function initCursorHints(): void {
-  els.markupPane?.addEventListener('mousemove', e => {
-    if (!(e.target as Element).closest('.markup-ghost-tag-part')) {
-      hideCursorHint();
-      return;
-    }
-    showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
-  });
-  els.markupPane?.addEventListener('mouseleave', hideCursorHint);
-  els.openFileBtn?.addEventListener('mousemove', e =>
-    showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY)
-  );
-  els.openFileBtn?.addEventListener('mouseleave', hideCursorHint);
-}
-
-function initBboxHints(): void {
-  if (!els.pagePane) return;
-  els.pagePane.addEventListener('mousemove', e => {
-    if (pagePanDrag?.moved || els.pagePane!.classList.contains('is-panning')) {
-      hideCursorHint();
-      return;
-    }
-    const navBtn = (e.target as Element).closest(
-      '.fragment-nav-btn:not(.fragment-nav-btn-disabled)'
-    );
-    if (navBtn) {
-      const hint =
-        navBtn.getAttribute('data-nav') === 'prev'
-          ? FRAGMENT_NAV_HINT_PREV
-          : FRAGMENT_NAV_HINT_NEXT;
-      showCursorHint(hint, e.clientX, e.clientY);
-      return;
-    }
-    const badge = (e.target as Element).closest('.element-badge[data-element-id]');
-    if (!badge || !state?.idToElement) {
-      hideCursorHint();
-      return;
-    }
-    const elementId = badge.getAttribute('data-element-id');
-    const xmlEl = elementId ? state.idToElement.get(elementId) : null;
-    if (!xmlEl) {
-      hideCursorHint();
-      return;
-    }
-    showCursorHintHtml(
-      elementHeadTooltipHtml(xmlEl, state.defaultResolution),
-      e.clientX,
-      e.clientY
-    );
-  });
-  els.pagePane.addEventListener('mouseleave', hideCursorHint);
 }
 
 function initDragDrop(): void {
@@ -2384,107 +1430,50 @@ doclangPageNav?.addEventListener('doclang-go-to-page', (e: Event) => {
   goToPage((e as CustomEvent<{ page: number }>).detail.page);
 });
 
-// Page view pane overlay settings
-doclangPageViewPane?.addEventListener('doclang-page-settings-toggle', () =>
-  setPageSettingsOpen(!pageSettingsOpen)
-);
-doclangPageViewPane?.addEventListener('doclang-page-settings-close', () =>
-  setPageSettingsOpen(false)
-);
-doclangPageViewPane?.addEventListener('doclang-zoom-change', (e: Event) => {
-  const val = Math.max(
-    PAGE_ZOOM_DEFAULT,
-    (e as CustomEvent<{ value: number }>).detail.value
-  );
-  pageZoomPercent = val;
-  if (doclangPageViewPane) {
-    doclangPageViewPane.zoomInput.value = String(pageZoomPercent);
-    doclangPageViewPane.zoomInput.setAttribute(
-      'aria-valuenow',
-      String(pageZoomPercent)
-    );
-  }
-  updatePageZoomResetButton();
-  refreshPageViewLayout();
-});
-doclangPageViewPane?.addEventListener('doclang-zoom-reset', () => {
-  if (pageZoomPercent !== PAGE_ZOOM_DEFAULT) resetPageZoom();
+// Element selection events from markup-pane, reading-pane, and page-view-pane
+document.addEventListener('doclang-element-select', (e: Event) => {
+  const rawId = (e as CustomEvent<{ id: string }>).detail.id;
+  const resolved = resolveSelectionElementId(rawId) ?? rawId;
+  selectElement(resolved);
 });
 
-doclangPageViewPane?.addEventListener('doclang-show-all-bboxes', (e: Event) => {
-  showAllBboxes = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  syncLayoutSubtoggles();
-  const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img && state?.pageViewOverlay)
-    syncOverlayBadges(
-      img,
-      img.parentElement!.querySelector('svg.overlay') as SVGSVGElement,
-      state.pageViewOverlay.boxes,
-      state.pageViewOverlay.readingOrderSteps,
-      showAllBboxes,
-      showLayoutBadges,
-      showReadingOrder
-    );
-  applyBboxVisibility();
+// Thread fragment navigation from page-view-pane overlay
+document.addEventListener('doclang-navigate-thread', (e: Event) => {
+  const { elementId, direction } = (
+    e as CustomEvent<{ elementId: string; direction: string }>
+  ).detail;
+  navigateThreadFragment(elementId, direction);
 });
-doclangPageViewPane?.addEventListener('doclang-show-layout-badges', (e: Event) => {
-  showLayoutBadges = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img && state?.pageViewOverlay)
-    syncOverlayBadges(
-      img,
-      img.parentElement!.querySelector('svg.overlay') as SVGSVGElement,
-      state.pageViewOverlay.boxes,
-      state.pageViewOverlay.readingOrderSteps,
-      showAllBboxes,
-      showLayoutBadges,
-      showReadingOrder
-    );
-  applyBboxVisibility();
+
+// Clear selection from page-view-pane overlay
+document.addEventListener('doclang-clear-selection', () => {
+  clearSelection();
 });
-doclangPageViewPane?.addEventListener('doclang-show-reading-order', (e: Event) => {
-  showReadingOrder = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  syncLayoutSubtoggles();
-  const img = els.pagePane?.querySelector('.page-view img') as HTMLImageElement | null;
-  if (img && state?.pageViewOverlay)
-    syncOverlayBadges(
-      img,
-      img.parentElement!.querySelector('svg.overlay') as SVGSVGElement,
-      state.pageViewOverlay.boxes,
-      state.pageViewOverlay.readingOrderSteps,
-      showAllBboxes,
-      showLayoutBadges,
-      showReadingOrder
-    );
-  applyBboxVisibility();
+
+// Keyboard page navigation from page-view-pane
+document.addEventListener('doclang-page-key-nav', (e: Event) => {
+  const { dir } = (e as CustomEvent<{ dir: 1 | -1 }>).detail;
+  if (state) goToPage(state.currentPage + dir);
 });
-doclangPageViewPane?.addEventListener('doclang-reading-order-arrows', (e: Event) => {
-  showReadingOrderArrows = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  applyBboxVisibility();
+
+// Page view pane: zoom change triggers layout refresh (internal to component now)
+doclangPageViewPane?.addEventListener('doclang-zoom-change', () => {
+  doclangPageViewPane?.refreshLayout();
 });
-doclangPageViewPane?.addEventListener('doclang-reading-order-global', (e: Event) => {
-  readingOrderGlobalNumbering = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  if (state) renderPage(state.currentPage);
-});
-doclangPageViewPane?.addEventListener('doclang-show-picture-contents', (e: Event) => {
-  showPictureContents = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  applyBboxVisibility();
-});
-doclangPageViewPane?.addEventListener('doclang-show-table-contents', (e: Event) => {
-  showTableContents = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  applyBboxVisibility();
-});
-doclangPageViewPane?.addEventListener('doclang-show-fragment-links', (e: Event) => {
-  showFragmentLinks = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  applyBboxVisibility();
-});
-doclangPageViewPane?.addEventListener('doclang-show-xref-links', (e: Event) => {
-  showXrefLinks = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  applyBboxVisibility();
-});
-doclangPageViewPane?.addEventListener('doclang-show-caption-links', (e: Event) => {
-  showCaptionLinks = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  applyBboxVisibility();
+
+// Page view pane: reading-order global toggle requires re-render
+let prevReadingOrderGlobal = false;
+doclangPageViewPane?.addEventListener('doclang-overlay-change', (e: Event) => {
+  const detail = (e as CustomEvent<{ readingOrderGlobal: boolean }>).detail;
+  if (detail.readingOrderGlobal !== prevReadingOrderGlobal) {
+    prevReadingOrderGlobal = detail.readingOrderGlobal;
+    // Re-render all panes so reading-order step labels update
+    if (state) {
+      if (doclangMarkupPane) doclangMarkupPane.document = state;
+      if (doclangReadingPane) doclangReadingPane.document = state;
+      if (doclangPageViewPane) doclangPageViewPane.document = state;
+    }
+  }
 });
 
 // Reading pane layer settings
@@ -2494,19 +1483,11 @@ doclangReadingPane?.addEventListener('doclang-reading-settings-toggle', () =>
 doclangReadingPane?.addEventListener('doclang-reading-settings-close', () =>
   setReadingSettingsOpen(false)
 );
-doclangReadingPane?.addEventListener('doclang-show-reading-furniture', (e: Event) => {
-  showReadingFurniture = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  syncReadingLayerVisibility();
-});
-doclangReadingPane?.addEventListener('doclang-show-reading-background', (e: Event) => {
-  showReadingBackground = (e as CustomEvent<{ checked: boolean }>).detail.checked;
-  syncReadingLayerVisibility();
-});
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
-  else if (pageSettingsOpen) setPageSettingsOpen(false);
+  else if (doclangPageViewPane) doclangPageViewPane.closeSettings();
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
 });
 
@@ -2520,12 +1501,9 @@ initToolbarOptions();
 initPaneSplitters();
 initLayoutStackListener();
 initFileTypeHints();
-initCursorHints();
-initBboxHints();
 initDragDrop();
 initFilePaneCloseAll();
 initPageWheelNav();
-initPageViewControls();
 
 // Sync initial demo-loading state from body onto the component host
 // (<body class="demo-loading"> is set in HTML before JS runs)
@@ -2533,4 +1511,4 @@ if (document.body.classList.contains('demo-loading')) {
   doclangEmptyState?.setDemoLoading(true);
 }
 
-if (doclangToolbar?.btnDemo) loadDemo();
+if (doclangToolbar) loadDemo();

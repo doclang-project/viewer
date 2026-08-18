@@ -31,9 +31,6 @@ export class DoclangFilePane extends DoclangHTMLElement {
     );
   }
 
-  get section(): HTMLElement {
-    return this;
-  }
   get body(): HTMLElement {
     return this._body;
   }

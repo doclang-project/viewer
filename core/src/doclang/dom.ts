@@ -6,7 +6,7 @@ import {
   CELL_SPAN_TAGS,
   OTSL_CONTAINER_TAGS,
   SEMANTIC_TAGS,
-} from './constants';
+} from '../constants';
 import type { ParsedElementHead } from './types';
 
 export function isTextLikeNode(node: Node): boolean {
@@ -373,4 +373,28 @@ export function virtualTextHeadLocations(el: Element): Element[] {
 export function elementHeadLocations(el: Element): Element[] {
   const own = headLocations(el);
   return own.length === 4 ? own : virtualTextHeadLocations(el);
+}
+
+export function isPictureContentElement(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = localName(el);
+  if (tag === 'picture' || tag === 'caption') return false;
+  let node: Element | null = el.parentElement;
+  while (node) {
+    if (localName(node) === 'picture') return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+export function isTableContentElement(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = localName(el);
+  if (OTSL_CONTAINER_TAGS.has(tag) || tag === 'caption') return false;
+  let node: Element | null = el.parentElement;
+  while (node) {
+    if (OTSL_CONTAINER_TAGS.has(localName(node))) return true;
+    node = node.parentElement;
+  }
+  return false;
 }

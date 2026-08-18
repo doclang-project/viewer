@@ -1,13 +1,28 @@
 (function() {
+	//#region \0rolldown/runtime.js
+	var __defProp = Object.defineProperty;
+	var __esmMin = (fn, res, err) => () => {
+		if (err) throw err[0];
+		try {
+			return fn && (res = fn(fn = 0)), res;
+		} catch (e) {
+			throw err = [e], e;
+		}
+	};
+	var __exportAll = (all, no_symbols) => {
+		let target = {};
+		for (var name in all) __defProp(target, name, {
+			get: all[name],
+			enumerable: true
+		});
+		if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
+		return target;
+	};
+	//#endregion
 	//#region src/components/base/base.ts
 	/** Base class for all doclang web components. */
 	var DoclangHTMLElement = class extends HTMLElement {
-		/** The attached shadow root — available after the constructor runs. */
 		shadow;
-		/**
-		* @param css  Shadow DOM stylesheet — pass the `?inline` import directly.
-		* @param html Shadow DOM template  — pass the `?raw`    import directly.
-		*/
 		constructor(css, html) {
 			super();
 			this.shadow = this.attachShadow({ mode: "open" });
@@ -16,7 +31,6 @@
 			this.shadow.adoptedStyleSheets = [sheet];
 			this.shadow.innerHTML = html;
 		}
-		/** Typed shorthand for `this.shadow.querySelector`. */
 		q(selector) {
 			const el = this.shadow.querySelector(selector);
 			if (!el) throw new Error(`[${this.tagName.toLowerCase()}] No element matches "${selector}"`);
@@ -36,9 +50,23 @@
 	var MARGIN = 8;
 	var DoclangCursorHint = class extends DoclangHTMLElement {
 		_hint;
+		_onHint = (e) => {
+			const { html, text, clientX, clientY } = e.detail;
+			if (html !== void 0) this.showHtml(html, clientX, clientY);
+			else if (text !== void 0) this.show(text, clientX, clientY);
+		};
+		_onHide = () => this.hide();
 		constructor() {
 			super(cursor_hint_default$1, cursor_hint_default);
 			this._hint = this.q(".cursor-hint");
+		}
+		connectedCallback() {
+			document.addEventListener("doclang-hint", this._onHint);
+			document.addEventListener("doclang-hint-hide", this._onHide);
+		}
+		disconnectedCallback() {
+			document.removeEventListener("doclang-hint", this._onHint);
+			document.removeEventListener("doclang-hint-hide", this._onHide);
 		}
 		hide() {
 			this._hint.hidden = true;
@@ -116,18 +144,6 @@
 		}
 		_currentPage = 1;
 		_pageCount = 1;
-		get btnPrev() {
-			return this._btnPrev;
-		}
-		get btnNext() {
-			return this._btnNext;
-		}
-		get pageNumberInput() {
-			return this._input;
-		}
-		get pageCountIndicator() {
-			return this._countSpan;
-		}
 		setVisible(visible) {
 			this._nav.hidden = !visible;
 		}
@@ -175,10 +191,153 @@
 	var toolbar_default$1 = ":host {\n  display: contents;\n}\n.toolbar {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-wrap: wrap;\n  grid-column: 3;\n  justify-self: end;\n}\n.header-divider {\n  flex-shrink: 0;\n  align-self: center;\n  width: 1px;\n  height: 1.125rem;\n  background: var(--border);\n}\n.toolbar-options-wrap {\n  position: relative;\n}\n/* Menu/control triggers */\n.toolbar-options-btn {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.375rem;\n  padding: 0.35rem 0.45rem 0.35rem 0.55rem;\n  font-size: 0.8125rem;\n  line-height: 1.2;\n  font: inherit;\n}\n.toolbar-options-btn::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.32rem;\n  height: 0.32rem;\n  margin-left: 0.3rem;\n  margin-top: -0.14em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.toolbar-options-btn:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.toolbar-options-btn[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.toolbar-options-btn:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.toolbar-options-panel {\n  position: absolute;\n  top: calc(100% + 0.35rem);\n  right: 0;\n  z-index: 30;\n  min-width: 11rem;\n  padding: 0.5rem 0;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--panel);\n  box-shadow: 0 0.5rem 1.25rem color-mix(in srgb, var(--text) 12%, transparent);\n}\n.toolbar-options-panel[hidden] {\n  display: none;\n}\n.toolbar-options-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.75rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  font-family: var(--font-ui);\n}\n.toolbar-options-item:hover {\n  background: color-mix(in srgb, var(--accent) 6%, var(--panel));\n}\n.toolbar-options-item input {\n  margin: 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.toolbar-options-item-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.toolbar-options-item-disabled input {\n  cursor: not-allowed;\n}\n.toolbar-options-divider {\n  margin: 0.35rem 0;\n  border-top: 1px solid var(--border);\n}\n.toolbar-options-reset {\n  display: block;\n  width: 100%;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0.35rem 0.75rem;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: var(--text);\n  font: inherit;\n  font-size: 0.875rem;\n  text-align: left;\n  cursor: pointer;\n}\n.toolbar-options-reset:hover:not(:disabled) {\n  background: color-mix(in srgb, var(--accent) 6%, var(--panel));\n  color: var(--accent);\n}\n.toolbar-options-reset:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.toolbar-file-group {\n  display: inline-flex;\n  align-items: center;\n}\nbutton,\nlabel.file-btn {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--panel);\n  color: var(--text);\n  border-radius: 0.375rem;\n  padding: 0.4rem 0.75rem;\n  font: inherit;\n  font-size: 0.875rem;\n  cursor: pointer;\n}\nbutton:hover,\nlabel.file-btn:hover {\n  border-color: var(--accent);\n}\nbutton:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\nlabel.file-btn input {\n  display: none;\n}\n.header-site-link {\n  color: var(--muted);\n  font-size: 0.875rem;\n  text-decoration: none;\n  white-space: nowrap;\n}\n.header-site-link:hover {\n  color: var(--accent);\n  text-decoration: underline;\n}\n.header-site-link:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  border-radius: 0.125rem;\n}\n";
 	//#endregion
 	//#region src/components/toolbar/toolbar.html?raw
-	var toolbar_default = "<div class=\"toolbar\">\n  <div class=\"toolbar-options-wrap\">\n    <button\n      type=\"button\"\n      class=\"toolbar-options-btn\"\n      aria-expanded=\"false\"\n      aria-haspopup=\"true\"\n    >\n      Views\n    </button>\n    <div class=\"toolbar-options-panel\" role=\"menu\" hidden>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-file-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Files</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-page-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Original page</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-markup-pane\" role=\"menuitemcheckbox\" checked />\n        <span>DocLang</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input\n          type=\"checkbox\"\n          class=\"cb-reading-pane\"\n          role=\"menuitemcheckbox\"\n          checked\n        />\n        <span>Reading view</span>\n      </label>\n      <div class=\"toolbar-options-divider\" role=\"separator\"></div>\n      <button type=\"button\" class=\"toolbar-options-reset\" role=\"menuitem\">\n        Reset views\n      </button>\n    </div>\n  </div>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <span class=\"toolbar-file-group\">\n    <label class=\"file-btn\">\n      Open file\n      <input\n        type=\"file\"\n        class=\"input-archive\"\n        multiple\n        accept=\".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml\"\n      />\n    </label>\n  </span>\n  <button type=\"button\" class=\"btn-demo\">Load demo</button>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <a href=\"https://doclang.ai/\" class=\"header-site-link\">doclang.ai</a>\n</div>\n";
+	var toolbar_default = "<div class=\"toolbar\">\n  <div class=\"toolbar-options-wrap\">\n    <button\n      type=\"button\"\n      class=\"toolbar-options-btn\"\n      aria-expanded=\"false\"\n      aria-haspopup=\"true\"\n    >\n      Views\n    </button>\n    <div class=\"toolbar-options-panel\" role=\"menu\" hidden>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-file-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Files</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-page-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Original page</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-markup-pane\" role=\"menuitemcheckbox\" checked />\n        <span>DocLang</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input\n          type=\"checkbox\"\n          class=\"cb-reading-pane\"\n          role=\"menuitemcheckbox\"\n          checked\n        />\n        <span>Reading view</span>\n      </label>\n      <div class=\"toolbar-options-divider\" role=\"separator\"></div>\n      <button type=\"button\" class=\"toolbar-options-reset\" role=\"menuitem\">\n        Reset views\n      </button>\n    </div>\n  </div>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <span class=\"toolbar-file-group\">\n    <label class=\"file-btn\">\n      Open file\n      <input\n        type=\"file\"\n        class=\"input-archive\"\n        multiple\n        accept=\".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml\"\n      />\n    </label>\n  </span>\n  <button type=\"button\" class=\"btn-demo\">Load demo</button>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <a href=\"https://doclang.ai/\" class=\"header-site-link\">doclang.ai</a>\n</div>\n", SUPPORTED_FILE_EXTENSIONS, OPEN_FILE_HINT, VIRTUAL_TEXT_TAG_HINT, FRAGMENT_LINK_LABEL_CROSS_PAGE, FRAGMENT_LINK_LABEL_SAME_PAGE, FRAGMENT_NAV_HINT_PREV, FRAGMENT_NAV_HINT_NEXT, PAGE_IMAGE_RE, NO_MARKUP, NO_IMAGE, FILE_THUMB_PLACEHOLDER_SVG, PICTURE_UNAVAILABLE_ALT, INVALID_PICTURE_SRC, SAFE_DATA_IMAGE_RE, HEAD_TAGS, SEMANTIC_TAGS, CELL_TOKENS, CELL_CONTENT_TAGS, CELL_SPAN_TAGS, OTSL_CONTAINER_TAGS, RENDER_BLOCK_TAGS, RENDER_FORMAT_TAGS, FORMAT_HTML_TAG, OVERLAY_BADGE_FONT_SIZE, OVERLAY_REF_IMAGE_WIDTH, OVERLAY_REF_IMAGE_HEIGHT, LAYOUT_STORAGE_KEY, PANE_MIN_RATIO, PANE_KEYS, DEFAULT_PANE_RATIOS, DEFAULT_USER_PANE_VISIBLE, LAYOUT_STACK_BREAKPOINT_PX;
+	var init_constants = __esmMin((() => {
+		SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
+		OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
+		VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
+		FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
+		FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
+		FRAGMENT_NAV_HINT_PREV = "Previous fragment";
+		FRAGMENT_NAV_HINT_NEXT = "Next fragment";
+		PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
+		NO_MARKUP = "(No markup to be shown.)";
+		NO_IMAGE = "(No page image available.)";
+		FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+		PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
+		INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
+		SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
+		HEAD_TAGS = /* @__PURE__ */ new Set([
+			"label",
+			"thread",
+			"xref",
+			"href",
+			"layer",
+			"location",
+			"caption",
+			"description",
+			"summary",
+			"custom"
+		]);
+		SEMANTIC_TAGS = /* @__PURE__ */ new Set([
+			"text",
+			"heading",
+			"footnote",
+			"page_header",
+			"page_footer",
+			"field_region",
+			"list",
+			"table",
+			"index",
+			"formula",
+			"code",
+			"picture",
+			"marker",
+			"group",
+			"field_heading",
+			"field_item",
+			"key",
+			"value",
+			"hint",
+			"caption",
+			"page_break"
+		]);
+		CELL_TOKENS = /* @__PURE__ */ new Set([
+			"fcel",
+			"ecel",
+			"ched",
+			"rhed",
+			"corn",
+			"srow",
+			"lcel",
+			"ucel",
+			"xcel",
+			"nl"
+		]);
+		CELL_CONTENT_TAGS = /* @__PURE__ */ new Set([
+			"fcel",
+			"ecel",
+			"ched",
+			"rhed",
+			"corn",
+			"srow"
+		]);
+		CELL_SPAN_TAGS = /* @__PURE__ */ new Set([
+			"lcel",
+			"ucel",
+			"xcel"
+		]);
+		OTSL_CONTAINER_TAGS = /* @__PURE__ */ new Set([
+			"table",
+			"index",
+			"tabular"
+		]);
+		RENDER_BLOCK_TAGS = /* @__PURE__ */ new Set([
+			"text",
+			"heading",
+			"field_heading",
+			"footnote",
+			"page_header",
+			"page_footer",
+			"list",
+			"code",
+			"formula",
+			"picture",
+			"group",
+			"field_region",
+			"field_item",
+			"table",
+			"index",
+			"tabular"
+		]);
+		RENDER_FORMAT_TAGS = /* @__PURE__ */ new Set([
+			"bold",
+			"italic",
+			"underline",
+			"strikethrough",
+			"superscript",
+			"subscript",
+			"handwriting",
+			"rtl",
+			"content"
+		]);
+		FORMAT_HTML_TAG = {
+			bold: "strong",
+			italic: "em",
+			underline: "u",
+			strikethrough: "s",
+			superscript: "sup",
+			subscript: "sub"
+		};
+		OVERLAY_BADGE_FONT_SIZE = 16.5 * .8;
+		OVERLAY_REF_IMAGE_WIDTH = 1224;
+		OVERLAY_REF_IMAGE_HEIGHT = 1584;
+		LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
+		PANE_MIN_RATIO = .12;
+		PANE_KEYS = [
+			"file",
+			"page",
+			"markup",
+			"reading"
+		];
+		DEFAULT_PANE_RATIOS = [
+			1,
+			1,
+			1,
+			1
+		];
+		DEFAULT_USER_PANE_VISIBLE = {
+			file: false,
+			page: true,
+			markup: true,
+			reading: true
+		};
+		LAYOUT_STACK_BREAKPOINT_PX = 1200;
+	}));
 	//#endregion
 	//#region src/components/toolbar/toolbar.ts
 	/** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
+	init_constants();
 	var DoclangToolbar = class extends DoclangHTMLElement {
 		_toolbarOptionsBtn;
 		_toolbarOptionsPanel;
@@ -187,12 +346,9 @@
 		_togglePagePane;
 		_togglePagePaneLabel;
 		_toggleMarkupPane;
-		_toggleMarkupPaneLabel;
 		_toggleReadingPane;
-		_toggleReadingPaneLabel;
 		_resetPaneLayoutBtn;
 		_btnDemo;
-		_openFileBtn;
 		_inputArchive;
 		_panelOpen = false;
 		constructor() {
@@ -203,54 +359,33 @@
 			this._toggleFilePane = this.q(".cb-file-pane");
 			this._togglePagePaneLabel = this.q("label:has(.cb-page-pane)");
 			this._togglePagePane = this.q(".cb-page-pane");
-			this._toggleMarkupPaneLabel = this.q("label:has(.cb-markup-pane)");
+			this.q("label:has(.cb-markup-pane)");
 			this._toggleMarkupPane = this.q(".cb-markup-pane");
-			this._toggleReadingPaneLabel = this.q("label:has(.cb-reading-pane)");
+			this.q("label:has(.cb-reading-pane)");
 			this._toggleReadingPane = this.q(".cb-reading-pane");
 			this._resetPaneLayoutBtn = this.q(".toolbar-options-reset");
 			this._btnDemo = this.q(".btn-demo");
-			this._openFileBtn = this.q(".file-btn");
 			this._inputArchive = this.q(".input-archive");
 			this._wireEvents();
+			this._wireHints();
 		}
-		get toggleFilePane() {
-			return this._toggleFilePane;
+		/** Sync the Views-menu checkboxes and disabled/greyed state from app state. */
+		syncPaneToggles(opts) {
+			this._toggleFilePane.checked = opts.fileAvailable && opts.file;
+			this._toggleFilePane.disabled = !opts.fileAvailable;
+			this._toggleFilePaneLabel.classList.toggle("toolbar-options-item-disabled", !opts.fileAvailable);
+			this._togglePagePane.checked = opts.pageAvailable && opts.page;
+			this._togglePagePane.disabled = !opts.pageAvailable;
+			this._togglePagePaneLabel.classList.toggle("toolbar-options-item-disabled", !opts.pageAvailable);
+			this._toggleMarkupPane.checked = opts.markup;
+			this._toggleMarkupPane.disabled = !opts.hasState;
+			this._toggleReadingPane.checked = opts.reading;
+			this._toggleReadingPane.disabled = !opts.hasState;
+			for (const input of [this._toggleMarkupPane, this._toggleReadingPane]) input.closest("label")?.classList.toggle("toolbar-options-item-disabled", input.disabled);
+			this._resetPaneLayoutBtn.disabled = !opts.hasState;
 		}
-		get toggleFilePaneLabel() {
-			return this._toggleFilePaneLabel;
-		}
-		get togglePagePane() {
-			return this._togglePagePane;
-		}
-		get togglePagePaneLabel() {
-			return this._togglePagePaneLabel;
-		}
-		get toggleMarkupPane() {
-			return this._toggleMarkupPane;
-		}
-		get toggleMarkupPaneLabel() {
-			return this._toggleMarkupPaneLabel;
-		}
-		get toggleReadingPane() {
-			return this._toggleReadingPane;
-		}
-		get toggleReadingPaneLabel() {
-			return this._toggleReadingPaneLabel;
-		}
-		get resetPaneLayoutBtn() {
-			return this._resetPaneLayoutBtn;
-		}
-		get toolbarOptionsBtn() {
-			return this._toolbarOptionsBtn;
-		}
-		get btnDemo() {
-			return this._btnDemo;
-		}
-		get openFileBtn() {
-			return this._openFileBtn;
-		}
-		get inputArchive() {
-			return this._inputArchive;
+		setDemoLoading(loading) {
+			this._btnDemo.disabled = loading;
 		}
 		setOptionsOpen(open) {
 			this._panelOpen = open;
@@ -321,152 +456,29 @@
 				composed: true
 			})));
 		}
+		_wireHints() {
+			const fileBtn = this.shadow.querySelector(".file-btn");
+			if (!fileBtn) return;
+			fileBtn.addEventListener("mousemove", (e) => {
+				this.dispatchEvent(new CustomEvent("doclang-hint", {
+					bubbles: true,
+					composed: true,
+					detail: {
+						text: OPEN_FILE_HINT,
+						clientX: e.clientX,
+						clientY: e.clientY
+					}
+				}));
+			});
+			fileBtn.addEventListener("mouseleave", () => {
+				this.dispatchEvent(new CustomEvent("doclang-hint-hide", {
+					bubbles: true,
+					composed: true
+				}));
+			});
+		}
 	};
 	customElements.define("doclang-toolbar", DoclangToolbar);
-	//#endregion
-	//#region src/constants.ts
-	var SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
-	var OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
-	var VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
-	var FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
-	var FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
-	var FRAGMENT_NAV_HINT_PREV = "Previous fragment";
-	var FRAGMENT_NAV_HINT_NEXT = "Next fragment";
-	var PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
-	var NO_MARKUP = "(No markup to be shown.)";
-	var NO_IMAGE = "(No page image available.)";
-	var FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
-	var PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
-	var INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
-	/** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
-	var SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
-	var HEAD_TAGS = /* @__PURE__ */ new Set([
-		"label",
-		"thread",
-		"xref",
-		"href",
-		"layer",
-		"location",
-		"caption",
-		"description",
-		"summary",
-		"custom"
-	]);
-	var SEMANTIC_TAGS = /* @__PURE__ */ new Set([
-		"text",
-		"heading",
-		"footnote",
-		"page_header",
-		"page_footer",
-		"field_region",
-		"list",
-		"table",
-		"index",
-		"formula",
-		"code",
-		"picture",
-		"marker",
-		"group",
-		"field_heading",
-		"field_item",
-		"key",
-		"value",
-		"hint",
-		"caption",
-		"page_break"
-	]);
-	var CELL_TOKENS = /* @__PURE__ */ new Set([
-		"fcel",
-		"ecel",
-		"ched",
-		"rhed",
-		"corn",
-		"srow",
-		"lcel",
-		"ucel",
-		"xcel",
-		"nl"
-	]);
-	var CELL_CONTENT_TAGS = /* @__PURE__ */ new Set([
-		"fcel",
-		"ecel",
-		"ched",
-		"rhed",
-		"corn",
-		"srow"
-	]);
-	var CELL_SPAN_TAGS = /* @__PURE__ */ new Set([
-		"lcel",
-		"ucel",
-		"xcel"
-	]);
-	var OTSL_CONTAINER_TAGS = /* @__PURE__ */ new Set([
-		"table",
-		"index",
-		"tabular"
-	]);
-	var RENDER_BLOCK_TAGS = /* @__PURE__ */ new Set([
-		"text",
-		"heading",
-		"field_heading",
-		"footnote",
-		"page_header",
-		"page_footer",
-		"list",
-		"code",
-		"formula",
-		"picture",
-		"group",
-		"field_region",
-		"field_item",
-		"table",
-		"index",
-		"tabular"
-	]);
-	var RENDER_FORMAT_TAGS = /* @__PURE__ */ new Set([
-		"bold",
-		"italic",
-		"underline",
-		"strikethrough",
-		"superscript",
-		"subscript",
-		"handwriting",
-		"rtl",
-		"content"
-	]);
-	var FORMAT_HTML_TAG = {
-		bold: "strong",
-		italic: "em",
-		underline: "u",
-		strikethrough: "s",
-		superscript: "sup",
-		subscript: "sub"
-	};
-	var OVERLAY_BADGE_FONT_SIZE = 16.5 * .8;
-	/** Demo page size; overlay lengths are calibrated to match pre-fix sizing on these images. */
-	var OVERLAY_REF_IMAGE_WIDTH = 1224;
-	var OVERLAY_REF_IMAGE_HEIGHT = 1584;
-	var LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
-	var PANE_MIN_RATIO = .12;
-	var PANE_KEYS = [
-		"file",
-		"page",
-		"markup",
-		"reading"
-	];
-	var DEFAULT_PANE_RATIOS = [
-		1,
-		1,
-		1,
-		1
-	];
-	var DEFAULT_USER_PANE_VISIBLE = {
-		file: false,
-		page: true,
-		markup: true,
-		reading: true
-	};
-	var LAYOUT_STACK_BREAKPOINT_PX = 1200;
 	//#endregion
 	//#region src/components/file-pane/file-pane.css?inline
 	var file_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n  overflow: hidden;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.35rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.35rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  padding-inline: calc(0.75rem - 0.35rem);\n}\n.file-pane-close-all {\n  appearance: none;\n  border: 1px solid transparent;\n  border-radius: 0.25rem;\n  background: transparent;\n  color: var(--muted);\n  font: inherit;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  padding: 0 0.15rem;\n  height: 1.25rem;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n}\n.file-pane-close-all:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.file-pane-close-all:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-body {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 0.375rem var(--file-pane-pad-x, 0.5rem);\n  min-width: 0;\n}\n.file-view-list {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n  width: 100%;\n}\n.file-view-list > li {\n  width: 100%;\n  max-width: 100%;\n}\n.file-view-item {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 0.35rem;\n  width: 100%;\n  max-width: 100%;\n  box-sizing: border-box;\n  border: none;\n  border-radius: 0;\n  background: transparent;\n  color: var(--text);\n  font: inherit;\n  font-size: 0.8125rem;\n  line-height: 1.35;\n  text-align: center;\n  padding: 0.5rem var(--file-item-pad-x, 0.35rem);\n  cursor: pointer;\n}\n.file-view-thumb-wrap {\n  position: relative;\n  flex-shrink: 0;\n}\n.file-view-close {\n  position: absolute;\n  top: -0.25rem;\n  right: -0.25rem;\n  appearance: none;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 1rem;\n  height: 1rem;\n  padding: 0;\n  border: 1px solid var(--border);\n  border-radius: 50%;\n  background: var(--bg);\n  color: var(--muted);\n  font: inherit;\n  font-size: 0.75rem;\n  line-height: 1;\n  cursor: pointer;\n  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);\n  z-index: 1;\n}\n.file-view-close:hover {\n  color: var(--text);\n  background: var(--panel);\n}\n.file-view-close:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 1px;\n}\n.file-view-thumb {\n  flex-shrink: 0;\n  width: var(--file-thumb-size, 3.75rem);\n  height: var(--file-thumb-size, 3.75rem);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.file-view-thumb img {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n}\n.file-view-thumb-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 100%;\n  height: 100%;\n  color: var(--muted);\n}\n.file-view-thumb-placeholder svg {\n  display: block;\n  width: 1.875rem;\n  height: 1.875rem;\n}\n.file-view-label {\n  width: 100%;\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.file-view-item:hover {\n  background: var(--markup-hover);\n}\n.file-view-item.is-active {\n  background: var(--markup-selected);\n  color: var(--accent);\n  font-weight: 500;\n}\n.file-view-item:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n";
@@ -476,6 +488,7 @@
 	//#endregion
 	//#region src/components/file-pane/file-pane.ts
 	/** <doclang-file-pane> — file list sidebar */
+	init_constants();
 	var DoclangFilePane = class extends DoclangHTMLElement {
 		_closeAllBtn;
 		_body;
@@ -488,9 +501,6 @@
 				bubbles: true,
 				composed: true
 			})));
-		}
-		get section() {
-			return this;
 		}
 		get body() {
 			return this._body;
@@ -580,377 +590,7 @@
 	};
 	customElements.define("doclang-file-pane", DoclangFilePane);
 	//#endregion
-	//#region src/components/markup-pane/markup-pane.css?inline
-	var markup_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-body {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 0;\n  background: var(--markup-bg);\n  color: var(--markup-fg);\n}\n.pane-body .placeholder {\n  margin: 1rem;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\npre.markup {\n  margin: 0;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.markup {\n  margin: 0;\n  padding: 0.75rem 1rem 1rem;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.55;\n  tab-size: 2;\n  --markup-indent: 2ch;\n  --markup-gutter-width: 1rem;\n}\n.markup-ghost-tag-part {\n  opacity: 0.35;\n  cursor: help;\n}\n.head-tooltip {\n  border-collapse: collapse;\n  width: 100%;\n  font-size: 0.6875rem;\n  line-height: 1.4;\n}\n.head-tooltip th {\n  padding: 0.1rem 0.55rem 0.1rem 0;\n  color: var(--muted);\n  font-weight: 600;\n  text-align: left;\n  vertical-align: top;\n  white-space: nowrap;\n}\n.head-tooltip td {\n  padding: 0.1rem 0;\n  vertical-align: top;\n  word-break: break-word;\n}\n.head-tooltip .head-default {\n  color: var(--muted);\n  font-style: italic;\n  white-space: nowrap;\n}\n.markup-el {\n  cursor: pointer;\n  border-radius: 0.2rem;\n}\n.markup-el:hover {\n  background: var(--markup-hover);\n}\n.markup-el.selected {\n  background: var(--markup-selected);\n  box-shadow: inset 0 0 0 1px var(--accent);\n}\n.markup-line {\n  white-space: pre-wrap;\n  word-break: break-word;\n  cursor: pointer;\n  padding: 0 0.25rem;\n  border-radius: 0.15rem;\n}\n.markup-line-content {\n  display: flex;\n  align-items: baseline;\n  min-width: 0;\n  padding-left: calc(var(--markup-depth, 0) * var(--markup-indent));\n}\n.markup-gutter {\n  flex: 0 0 var(--markup-gutter-width);\n  width: var(--markup-gutter-width);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.markup-line-body {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n.markup-fold-toggle {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: var(--markup-gutter-width);\n  height: 1rem;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 0.15rem;\n  background: transparent;\n  color: var(--muted);\n  cursor: pointer;\n  flex-shrink: 0;\n}\n.markup-fold-toggle::before {\n  content: '';\n  display: block;\n  width: 0;\n  height: 0;\n  border-top: 4px solid transparent;\n  border-bottom: 4px solid transparent;\n  border-left: 5px solid currentColor;\n  transform: rotate(90deg);\n  transition: transform 0.12s ease;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-toggle::before {\n  transform: rotate(0deg);\n}\n.markup-fold-toggle:hover {\n  background: var(--markup-hover);\n  color: var(--markup-fg);\n}\n.markup-fold-suffix {\n  display: none;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-suffix {\n  display: inline;\n}\n.markup-el-foldable.markup-collapsed > .markup-fold-body {\n  display: none;\n}\n.xml-tag {\n  color: var(--xml-tag);\n}\n.xml-bracket {\n  color: var(--xml-bracket);\n}\n.xml-attr-name {\n  color: var(--xml-attr-name);\n}\n.xml-attr-value {\n  color: var(--xml-attr-value);\n}\n.xml-attr-value-truncatable {\n  display: inline;\n}\n.xml-attr-value-chip {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  gap: 0.3em;\n  margin: 0 0 0 0.35em;\n  padding: 0.08em 0.45em 0.08em 0.5em;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  background: var(--placeholder-bg);\n  color: var(--muted);\n  font-family: var(--font-ui, system-ui, sans-serif);\n  font-size: 0.72em;\n  font-weight: 600;\n  line-height: 1.35;\n  cursor: pointer;\n  vertical-align: baseline;\n  white-space: nowrap;\n}\n.xml-attr-value-chip::after {\n  content: '';\n  width: 0;\n  height: 0;\n  border-top: 0.28em solid currentColor;\n  border-left: 0.22em solid transparent;\n  border-right: 0.22em solid transparent;\n  opacity: 0.75;\n  transition: transform 0.12s ease;\n}\n.xml-attr-value-chip[aria-expanded='true']::after {\n  transform: rotate(180deg);\n}\n.xml-attr-value-chip:hover,\n.xml-attr-value-chip[aria-expanded='true'] {\n  border-color: var(--accent);\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));\n}\n.markup-embedded-uri-panel {\n  cursor: text;\n}\n.markup-embedded-uri-panel:hover {\n  background: transparent;\n}\n.markup-embedded-uri-panel-body {\n  margin: 0.1rem 0 0.25rem;\n  padding: 0.45rem 0.6rem;\n  max-height: 8rem;\n  overflow: auto;\n  color: var(--xml-attr-value);\n  word-break: break-all;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  user-select: text;\n}\n.xml-text {\n  color: var(--xml-text);\n}\n.xml-cdata {\n  color: var(--xml-cdata);\n}\n.xml-cdata-delimiter {\n  color: var(--xml-cdata-delimiter);\n}\n";
-	//#endregion
-	//#region src/components/markup-pane/markup-pane.html?raw
-	var markup_pane_default = "<div class=\"pane-header\">DocLang</div>\n<div class=\"pane-body\" id=\"markup-pane\"></div>\n";
-	//#endregion
-	//#region src/components/markup-pane/markup-pane.ts
-	/** <doclang-markup-pane> — DocLang XML markup view */
-	var DoclangMarkupPane = class extends DoclangHTMLElement {
-		_body;
-		constructor() {
-			super(markup_pane_default$1, markup_pane_default);
-			this.classList.add("pane", "pane-markup");
-			this._body = this.q(".pane-body");
-		}
-		get section() {
-			return this;
-		}
-		get body() {
-			return this._body;
-		}
-		setVisible(visible) {
-			this.hidden = !visible;
-		}
-		setLastPane(isLast) {
-			this.classList.toggle("pane-layout-last", isLast);
-		}
-	};
-	customElements.define("doclang-markup-pane", DoclangMarkupPane);
-	//#endregion
-	//#region src/components/page-view-pane/page-view-pane.css?inline
-	var page_view_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-page-controls {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n.page-zoom-control {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  user-select: none;\n}\n.page-zoom-control-label {\n  font-size: 0.625rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  cursor: pointer;\n}\n.page-zoom-control input[type='range'] {\n  width: 5.5rem;\n  height: 1rem;\n  margin: 0;\n  cursor: pointer;\n}\n.page-zoom-reset {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--bg);\n  color: var(--muted);\n  border-radius: 0.375rem;\n  padding: 0 0.45rem;\n  height: 1.25rem;\n  font: inherit;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n  line-height: 1;\n  cursor: pointer;\n  min-width: 2.75rem;\n}\n.page-zoom-reset:not(:disabled):hover {\n  border-color: var(--accent);\n  color: var(--text);\n}\n.page-zoom-reset:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-page-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  padding: 0.75rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-option-primary + .settings-subgroup {\n  margin-top: 0.65rem;\n}\n.settings-option-primary {\n  font-weight: 600;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-reading-order-group {\n  gap: 0.35rem;\n  padding-left: 1.6rem;\n}\n.settings-option-nested {\n  padding-left: 0;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.settings-option-disabled input {\n  cursor: not-allowed;\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.page-view-port {\n  display: flex;\n  overflow: auto;\n  flex: 1 1 auto;\n  width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  scrollbar-gutter: stable;\n}\n.pane-body.can-pan {\n  cursor: grab;\n}\n.pane-body.is-panning {\n  cursor: grabbing;\n  user-select: none;\n}\n.pane-body:focus {\n  outline: none;\n}\n.pane-body:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\n.page-view {\n  position: relative;\n  display: block;\n  width: fit-content;\n  flex-shrink: 0;\n  margin: auto;\n  line-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.page-view img {\n  display: block;\n  width: auto;\n  height: auto;\n  max-width: none;\n  max-height: none;\n  border: none;\n  border-radius: 0;\n}\n.page-view img:not([data-layout-ready]) {\n  opacity: 0;\n}\n.page-view svg.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  pointer-events: auto;\n  overflow: hidden;\n}\n.overlay rect.bbox.bbox-hidden,\n.overlay .overlay-badge.bbox-hidden {\n  display: none;\n}\n.overlay rect.bbox {\n  stroke-width: 2;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n}\n.overlay rect.bbox.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n  stroke-width: 3.5;\n  filter: drop-shadow(\n    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)\n  );\n}\n.overlay rect.bbox.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture,\n.overlay rect.bbox.layer-background {\n  fill: url(#layer-hatch) !important;\n  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);\n}\n.overlay .layer-hatch-stripe {\n  fill: var(--muted);\n  fill-opacity: 0.06;\n}\n.overlay rect.bbox.layer-furniture.selected,\n.overlay rect.bbox.layer-background.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 22%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture.related:not(.selected),\n.overlay rect.bbox.layer-background.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 18%,\n    transparent\n  ) !important;\n}\n.overlay .bbox-text {\n  fill: color-mix(in srgb, var(--kind-text) 14%, transparent);\n  stroke: var(--kind-text);\n}\n.overlay .bbox-heading {\n  fill: color-mix(in srgb, var(--kind-heading) 14%, transparent);\n  stroke: var(--kind-heading);\n}\n.overlay .bbox-list,\n.overlay .bbox-ldiv {\n  fill: color-mix(in srgb, var(--kind-list) 14%, transparent);\n  stroke: var(--kind-list);\n}\n.overlay .bbox-table {\n  fill: color-mix(in srgb, var(--kind-table) 14%, transparent);\n  stroke: var(--kind-table);\n}\n.overlay .bbox-index {\n  fill: color-mix(in srgb, var(--kind-index) 14%, transparent);\n  stroke: var(--kind-index);\n}\n.overlay .bbox-formula {\n  fill: color-mix(in srgb, var(--kind-formula) 14%, transparent);\n  stroke: var(--kind-formula);\n}\n.overlay .bbox-code {\n  fill: color-mix(in srgb, var(--kind-code) 16%, transparent);\n  stroke: var(--kind-code);\n}\n.overlay .bbox-picture {\n  fill: color-mix(in srgb, var(--kind-picture) 14%, transparent);\n  stroke: var(--kind-picture);\n}\n.overlay .bbox-group {\n  fill: color-mix(in srgb, var(--kind-group) 14%, transparent);\n  stroke: var(--kind-group);\n}\n.overlay .bbox-footnote {\n  fill: color-mix(in srgb, var(--kind-footnote) 14%, transparent);\n  stroke: var(--kind-footnote);\n}\n.overlay .bbox-page_header,\n.overlay .bbox-page_footer {\n  fill: color-mix(in srgb, var(--kind-page_header) 14%, transparent);\n  stroke: var(--kind-page_header);\n}\n.overlay .bbox-caption {\n  fill: color-mix(in srgb, var(--kind-caption) 14%, transparent);\n  stroke: var(--kind-caption);\n}\n.overlay line.caption-link {\n  color: var(--kind-caption);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.caption-link.bbox-hidden {\n  display: none;\n}\n.overlay line.xref-link {\n  color: var(--kind-footnote);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.xref-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link {\n  pointer-events: none;\n}\n.overlay .fragment-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link-path {\n  color: var(--overlay-fragment);\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-link-path-dashed {\n  stroke-dasharray: 6 4;\n}\n.overlay .fragment-nav {\n  pointer-events: none;\n}\n.overlay .fragment-nav.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-nav-btn {\n  pointer-events: auto;\n  cursor: pointer;\n}\n.overlay .fragment-nav-btn-disabled {\n  pointer-events: none;\n  cursor: default;\n  opacity: 0.35;\n}\n.overlay .fragment-nav-btn-bg {\n  fill: var(--panel);\n  stroke: var(--overlay-fragment);\n  stroke-width: 1;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-nav-btn-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg {\n  fill: color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel));\n}\n.overlay .fragment-link-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 600;\n  font-style: italic;\n  text-anchor: middle;\n  dominant-baseline: middle;\n  paint-order: stroke fill;\n  stroke: var(--panel);\n  stroke-width: 3px;\n}\n.overlay .reading-order-step {\n  color: var(--overlay-reading-order);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-dasharray: 5 4;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay .reading-order-step.bbox-hidden,\n.overlay .reading-order-badge.bbox-hidden {\n  display: none;\n}\n.overlay .overlay-badge {\n  pointer-events: none;\n}\n.overlay .overlay-badge-bg {\n  fill-opacity: 1;\n  stroke: none;\n}\n.reading-order-badge .overlay-badge-bg {\n  fill: var(--overlay-reading-order);\n}\n.overlay .element-badge {\n  opacity: 0.8;\n  pointer-events: auto;\n  cursor: help;\n}\n.overlay .element-badge .overlay-badge-bg {\n  fill: var(--kind-stroke, var(--accent));\n}\n.overlay .overlay-badge-label {\n  fill: #ffffff;\n  fill-opacity: 1;\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .bbox-field {\n  fill: color-mix(in srgb, var(--kind-field) 14%, transparent);\n  stroke: var(--kind-field);\n}\n.overlay .bbox-default {\n  fill: color-mix(in srgb, var(--kind-default) 12%, transparent);\n  stroke: var(--kind-default);\n}\n@media (prefers-color-scheme: dark) {\n  .overlay .bbox-text {\n    fill: color-mix(in srgb, var(--kind-text) 20%, transparent);\n  }\n  .overlay .bbox-heading {\n    fill: color-mix(in srgb, var(--kind-heading) 20%, transparent);\n  }\n  .overlay .bbox-list,\n  .overlay .bbox-ldiv {\n    fill: color-mix(in srgb, var(--kind-list) 20%, transparent);\n  }\n  .overlay .bbox-table {\n    fill: color-mix(in srgb, var(--kind-table) 18%, transparent);\n  }\n  .overlay .bbox-index {\n    fill: color-mix(in srgb, var(--kind-index) 18%, transparent);\n  }\n  .overlay .bbox-formula {\n    fill: color-mix(in srgb, var(--kind-formula) 18%, transparent);\n  }\n  .overlay .bbox-code {\n    fill: color-mix(in srgb, var(--kind-code) 20%, transparent);\n  }\n  .overlay .bbox-picture {\n    fill: color-mix(in srgb, var(--kind-picture) 20%, transparent);\n  }\n  .overlay .bbox-group {\n    fill: color-mix(in srgb, var(--kind-group) 20%, transparent);\n  }\n  .overlay .bbox-footnote {\n    fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent);\n  }\n  .overlay .bbox-page_header,\n  .overlay .bbox-page_footer {\n    fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent);\n  }\n  .overlay .bbox-caption {\n    fill: color-mix(in srgb, var(--kind-caption) 18%, transparent);\n  }\n  .overlay .bbox-field {\n    fill: color-mix(in srgb, var(--kind-field) 18%, transparent);\n  }\n  .overlay .bbox-default {\n    fill: color-mix(in srgb, var(--kind-default) 18%, transparent);\n  }\n}\n";
-	//#endregion
-	//#region src/components/page-view-pane/page-view-pane.html?raw
-	var page_view_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Original page</span>\n  <div class=\"pane-page-controls\">\n    <div class=\"page-zoom-control\" hidden>\n      <label class=\"page-zoom-control-label\">\n        <span aria-hidden=\"true\">Zoom</span>\n        <input\n          type=\"range\"\n          class=\"zoom-input\"\n          min=\"100\"\n          max=\"300\"\n          step=\"10\"\n          value=\"100\"\n          aria-valuemin=\"100\"\n          aria-valuemax=\"300\"\n          aria-valuenow=\"100\"\n          aria-label=\"Page zoom\"\n        />\n      </label>\n      <button\n        type=\"button\"\n        class=\"page-zoom-reset\"\n        title=\"Reset zoom\"\n        aria-label=\"Reset zoom\"\n        disabled\n      >\n        100%\n      </button>\n    </div>\n    <button type=\"button\" class=\"pane-settings-toggle\" aria-expanded=\"false\" hidden>\n      Overlays\n    </button>\n  </div>\n</div>\n<div class=\"pane-page-layout\">\n  <div class=\"pane-body\" id=\"page-pane\" tabindex=\"0\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close overlays\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"page-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"page-settings-title\">Overlays</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close overlays\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <label class=\"settings-option settings-option-primary\">\n          <input type=\"checkbox\" class=\"cb-all-bboxes\" checked />\n          <span>Layout</span>\n        </label>\n        <div class=\"settings-subgroup\">\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-reading-order\" />\n            <span>Reading order</span>\n          </label>\n          <div class=\"settings-subgroup settings-reading-order-group\">\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-arrows\" checked />\n              <span>Arrows</span>\n            </label>\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-global\" />\n              <span>Global numbering</span>\n            </label>\n          </div>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-picture-contents\" />\n            <span>Picture contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-table-contents\" />\n            <span>Table contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-fragment-links\" />\n            <span>Fragments</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-xref-links\" />\n            <span>Cross-references</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-caption-links\" />\n            <span>Captions</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-layout-badges\" checked />\n            <span>Badges</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
-	//#endregion
-	//#region src/components/page-view-pane/page-view-pane.ts
-	/** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
-	var DoclangPageViewPane = class extends DoclangHTMLElement {
-		_body;
-		_settingsToggle;
-		_settingsLayer;
-		_settingsScrim;
-		_settingsClose;
-		_zoomLabel;
-		_zoomInput;
-		_zoomReset;
-		_showAllBboxes;
-		_showAllBboxesLabel;
-		_layoutSubtoggles;
-		_showLayoutBadges;
-		_showLayoutBadgesLabel;
-		_showReadingOrder;
-		_showReadingOrderLabel;
-		_readingOrderSubtoggles;
-		_readingOrderArrows;
-		_readingOrderArrowsLabel;
-		_readingOrderGlobal;
-		_readingOrderGlobalLabel;
-		_showPictureContents;
-		_showPictureContentsLabel;
-		_showTableContents;
-		_showTableContentsLabel;
-		_showFragmentLinks;
-		_showFragmentLinksLabel;
-		_showXrefLinks;
-		_showXrefLinksLabel;
-		_showCaptionLinks;
-		_showCaptionLinksLabel;
-		constructor() {
-			super(page_view_pane_default$1, page_view_pane_default);
-			this.classList.add("pane", "pane-page-view");
-			this._body = this.q(".pane-body");
-			this._zoomLabel = this.q(".page-zoom-control");
-			this._zoomInput = this.q(".zoom-input");
-			this._zoomReset = this.q(".page-zoom-reset");
-			this._settingsToggle = this.q(".pane-settings-toggle");
-			this._settingsLayer = this.q(".viewer-settings-layer");
-			this._settingsScrim = this.q(".viewer-settings-scrim");
-			this._settingsClose = this.q(".viewer-settings-close");
-			this._showAllBboxesLabel = this.q("label:has(.cb-all-bboxes)");
-			this._showAllBboxes = this.q(".cb-all-bboxes");
-			this._layoutSubtoggles = this.q(".settings-subgroup");
-			this._showReadingOrderLabel = this.q("label:has(.cb-reading-order)");
-			this._showReadingOrder = this.q(".cb-reading-order");
-			this._readingOrderSubtoggles = this.q(".settings-reading-order-group");
-			this._readingOrderArrowsLabel = this.q("label:has(.cb-reading-order-arrows)");
-			this._readingOrderArrows = this.q(".cb-reading-order-arrows");
-			this._readingOrderGlobalLabel = this.q("label:has(.cb-reading-order-global)");
-			this._readingOrderGlobal = this.q(".cb-reading-order-global");
-			this._showPictureContentsLabel = this.q("label:has(.cb-picture-contents)");
-			this._showPictureContents = this.q(".cb-picture-contents");
-			this._showTableContentsLabel = this.q("label:has(.cb-table-contents)");
-			this._showTableContents = this.q(".cb-table-contents");
-			this._showFragmentLinksLabel = this.q("label:has(.cb-fragment-links)");
-			this._showFragmentLinks = this.q(".cb-fragment-links");
-			this._showXrefLinksLabel = this.q("label:has(.cb-xref-links)");
-			this._showXrefLinks = this.q(".cb-xref-links");
-			this._showCaptionLinksLabel = this.q("label:has(.cb-caption-links)");
-			this._showCaptionLinks = this.q(".cb-caption-links");
-			this._showLayoutBadgesLabel = this.q("label:has(.cb-layout-badges)");
-			this._showLayoutBadges = this.q(".cb-layout-badges");
-			this._wireEvents();
-		}
-		get section() {
-			return this;
-		}
-		get body() {
-			return this._body;
-		}
-		get settingsToggle() {
-			return this._settingsToggle;
-		}
-		get settingsLayer() {
-			return this._settingsLayer;
-		}
-		get zoomLabel() {
-			return this._zoomLabel;
-		}
-		get zoomInput() {
-			return this._zoomInput;
-		}
-		get zoomReset() {
-			return this._zoomReset;
-		}
-		get showAllBboxes() {
-			return this._showAllBboxes;
-		}
-		get showAllBboxesLabel() {
-			return this._showAllBboxesLabel;
-		}
-		get showLayoutBadges() {
-			return this._showLayoutBadges;
-		}
-		get showLayoutBadgesLabel() {
-			return this._showLayoutBadgesLabel;
-		}
-		get showReadingOrder() {
-			return this._showReadingOrder;
-		}
-		get showReadingOrderLabel() {
-			return this._showReadingOrderLabel;
-		}
-		get readingOrderArrows() {
-			return this._readingOrderArrows;
-		}
-		get readingOrderArrowsLabel() {
-			return this._readingOrderArrowsLabel;
-		}
-		get readingOrderGlobal() {
-			return this._readingOrderGlobal;
-		}
-		get readingOrderGlobalLabel() {
-			return this._readingOrderGlobalLabel;
-		}
-		get showPictureContents() {
-			return this._showPictureContents;
-		}
-		get showPictureContentsLabel() {
-			return this._showPictureContentsLabel;
-		}
-		get showTableContents() {
-			return this._showTableContents;
-		}
-		get showTableContentsLabel() {
-			return this._showTableContentsLabel;
-		}
-		get showFragmentLinks() {
-			return this._showFragmentLinks;
-		}
-		get showFragmentLinksLabel() {
-			return this._showFragmentLinksLabel;
-		}
-		get showXrefLinks() {
-			return this._showXrefLinks;
-		}
-		get showXrefLinksLabel() {
-			return this._showXrefLinksLabel;
-		}
-		get showCaptionLinks() {
-			return this._showCaptionLinks;
-		}
-		get showCaptionLinksLabel() {
-			return this._showCaptionLinksLabel;
-		}
-		get layoutSubtoggles() {
-			return this._layoutSubtoggles;
-		}
-		get readingOrderSubtoggles() {
-			return this._readingOrderSubtoggles;
-		}
-		setVisible(visible) {
-			this.hidden = !visible;
-		}
-		setLastPane(isLast) {
-			this.classList.toggle("pane-layout-last", isLast);
-		}
-		setSettingsOpen(open) {
-			this._settingsLayer.hidden = !open;
-			this._settingsToggle.setAttribute("aria-expanded", String(open));
-		}
-		_wireEvents() {
-			this._settingsToggle.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-page-settings-toggle", {
-				bubbles: true,
-				composed: true
-			})));
-			this._settingsClose.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-page-settings-close", {
-				bubbles: true,
-				composed: true
-			})));
-			this._settingsScrim.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-page-settings-close", {
-				bubbles: true,
-				composed: true
-			})));
-			this._zoomInput.addEventListener("input", () => this.dispatchEvent(new CustomEvent("doclang-zoom-change", {
-				bubbles: true,
-				composed: true,
-				detail: { value: Number(this._zoomInput.value) }
-			})));
-			this._zoomReset.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-zoom-reset", {
-				bubbles: true,
-				composed: true
-			})));
-			for (const [el, name] of [
-				[this._showAllBboxes, "doclang-show-all-bboxes"],
-				[this._showLayoutBadges, "doclang-show-layout-badges"],
-				[this._showReadingOrder, "doclang-show-reading-order"],
-				[this._readingOrderArrows, "doclang-reading-order-arrows"],
-				[this._readingOrderGlobal, "doclang-reading-order-global"],
-				[this._showPictureContents, "doclang-show-picture-contents"],
-				[this._showTableContents, "doclang-show-table-contents"],
-				[this._showFragmentLinks, "doclang-show-fragment-links"],
-				[this._showXrefLinks, "doclang-show-xref-links"],
-				[this._showCaptionLinks, "doclang-show-caption-links"]
-			]) el.addEventListener("change", () => this.dispatchEvent(new CustomEvent(name, {
-				bubbles: true,
-				composed: true,
-				detail: { checked: el.checked }
-			})));
-		}
-	};
-	customElements.define("doclang-page-view-pane", DoclangPageViewPane);
-	//#endregion
-	//#region src/components/reading-pane/reading-pane.css?inline
-	var reading_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-reading-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: auto;\n  padding: 1rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.rendered-doc {\n  max-width: 42rem;\n  margin: 0 auto;\n  line-height: 1.6;\n}\n.rendered-el-virtual-text > p,\n.rendered-el-virtual-text > div {\n  margin: 0;\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text {\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text > p,\n.rendered-doc li > .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-el-virtual-text > div > .rendered-el {\n  display: block;\n  margin: 0.25rem 0;\n}\n.rendered-el {\n  cursor: pointer;\n  border-radius: 0.25rem;\n}\n.rendered-el:hover {\n  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);\n}\n.rendered-el.selected {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  background: color-mix(in srgb, var(--accent) 8%, transparent);\n}\n.rendered-doc p {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc h1,\n.rendered-doc h2,\n.rendered-doc h3,\n.rendered-doc h4,\n.rendered-doc h5,\n.rendered-doc h6 {\n  margin: 1.25rem 0 0.5rem;\n  line-height: 1.25;\n}\n.rendered-doc h1:first-child,\n.rendered-doc h2:first-child,\n.rendered-doc h3:first-child {\n  margin-top: 0;\n}\n.rendered-doc ul,\n.rendered-doc ol {\n  margin: 0 0 0.75rem;\n  padding-left: 1.5rem;\n}\n.rendered-doc li {\n  margin: 0.25rem 0;\n}\n.rendered-doc li > .rendered-el > p:first-child,\n.rendered-doc li > .rendered-el > h1:first-child,\n.rendered-doc li > .rendered-el > h2:first-child,\n.rendered-doc li > .rendered-el > h3:first-child,\n.rendered-doc li > .rendered-el > h4:first-child,\n.rendered-doc li > .rendered-el > h5:first-child,\n.rendered-doc li > .rendered-el > h6:first-child {\n  margin-top: 0;\n}\n.rendered-marker {\n  margin-right: 0.35rem;\n}\n.rendered-handwriting {\n  font-family: 'Segoe Print', 'Bradley Hand', cursive;\n}\n.rendered-doc pre {\n  margin: 0 0 0.75rem;\n  padding: 0.75rem 1rem;\n  overflow-x: auto;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-doc code {\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc pre code {\n  font-size: inherit;\n  background: none;\n  border: none;\n  padding: 0;\n}\n.rendered-code-label {\n  display: block;\n  margin-bottom: 0.25rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n}\n.rendered-formula {\n  display: block;\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-family: var(--font-mono);\n  font-size: 0.875rem;\n  background: var(--placeholder-bg);\n  border-left: 3px solid var(--border);\n  overflow-x: auto;\n}\n.rendered-formula-inline {\n  display: inline;\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc figure {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc figure img {\n  max-width: 100%;\n  height: auto;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n}\n.rendered-doc figure img.rendered-picture-unavailable {\n  display: inline-block;\n  min-width: 3rem;\n  min-height: 2.5rem;\n  object-fit: contain;\n  vertical-align: middle;\n}\n.rendered-doc figcaption {\n  margin-top: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-picture-contents {\n  margin-top: 0.5rem;\n  font-size: 0.875rem;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--placeholder-bg);\n}\n.rendered-picture-contents summary {\n  padding: 0.4rem 0.65rem;\n  cursor: pointer;\n  font-weight: 600;\n  color: var(--muted);\n  user-select: none;\n}\n.rendered-picture-contents summary:hover {\n  color: var(--text);\n}\n.rendered-picture-contents-body {\n  padding: 0.5rem 0.75rem 0.75rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-picture-contents-body .rendered-el > p {\n  margin-bottom: 0.35rem;\n  font-size: 0.8125rem;\n}\n.rendered-table {\n  width: 100%;\n  margin: 0 0 0.75rem;\n  border-collapse: collapse;\n  font-size: 0.875rem;\n}\n.rendered-table caption {\n  caption-side: top;\n  margin-bottom: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n  text-align: left;\n}\n.rendered-table th,\n.rendered-table td {\n  border: 1px solid var(--border);\n  padding: 0.35rem 0.5rem;\n  vertical-align: top;\n  text-align: left;\n}\n.rendered-table th {\n  background: color-mix(in srgb, var(--border) 35%, var(--panel));\n  font-weight: 600;\n}\n.rendered-table .rendered-table-cell-text {\n  display: inline;\n}\n.rendered-table .rendered-el {\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  margin: 0;\n}\n.rendered-table .rendered-table {\n  margin: 0.25rem 0 0;\n}\n.rendered-page-header,\n.rendered-page-footer {\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-page-header {\n  margin-bottom: 1rem;\n  padding-bottom: 0.5rem;\n  border-bottom: 1px solid var(--border);\n}\n.rendered-page-footer {\n  margin-top: 1rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-doc:not(.show-reading-furniture)\n  .rendered-el[data-doclang-layer='furniture'] {\n  display: none;\n}\n.rendered-doc:not(.show-reading-background)\n  .rendered-el[data-doclang-layer='background'] {\n  display: none;\n}\n.rendered-el[data-doclang-layer='furniture'],\n.rendered-el[data-doclang-layer='background'] {\n  position: relative;\n}\n.rendered-el[data-doclang-layer='furniture']::before,\n.rendered-el[data-doclang-layer='background']::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  border-radius: inherit;\n  pointer-events: none;\n  background: repeating-linear-gradient(\n    -45deg,\n    transparent 0 10px,\n    color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px\n  );\n}\n.rendered-el.rendered-footnote > aside {\n  font-size: 0.875rem;\n  color: var(--muted);\n  border-left: 2px solid var(--border);\n  padding-left: 0.75rem;\n  margin: 0 0 0.75rem;\n}\n.rendered-unsupported {\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.8125rem;\n  font-style: italic;\n  color: var(--muted);\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-field-region {\n  margin: 0 0 1rem;\n  padding: 0.75rem 1rem;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: color-mix(in srgb, var(--kind-field) 6%, transparent);\n}\n.rendered-field-region > .rendered-field-heading:first-child,\n.rendered-field-region\n  > .rendered-el.rendered-field_heading\n  > .rendered-field-heading:first-child {\n  margin-top: 0;\n}\n.rendered-field-item {\n  margin: 0.5rem 0;\n}\n.rendered-field-item > .rendered-el.rendered-field-key,\n.rendered-field-key {\n  font-weight: 600;\n}\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {\n  margin-top: 0.15rem;\n}\n.rendered-field-value-fillable .rendered-field-fillable-slot {\n  display: inline-block;\n  min-width: 6rem;\n  min-height: 1.25em;\n  border-bottom: 1px solid color-mix(in srgb, var(--text) 55%, transparent);\n  vertical-align: bottom;\n}\n.rendered-field-hint {\n  font-size: 0.85em;\n  color: var(--muted);\n  font-style: italic;\n}\n.rendered-field-heading {\n  color: var(--text);\n}\n.rendered-checkbox {\n  margin: 0 0.25rem 0 0;\n  vertical-align: middle;\n  accent-color: var(--kind-field);\n}\n.rendered-checkbox-wrap {\n  display: inline;\n}\n";
-	//#endregion
-	//#region src/components/reading-pane/reading-pane.html?raw
-	var reading_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Reading view</span>\n  <button\n    type=\"button\"\n    class=\"pane-settings-toggle\"\n    aria-expanded=\"false\"\n    aria-controls=\"reading-settings\"\n    hidden\n  >\n    Layers\n  </button>\n</div>\n<div class=\"pane-reading-layout\">\n  <div class=\"pane-body\" id=\"rendered-pane\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close layers\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"reading-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"reading-settings-title\">Layers</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close layers\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <div\n          class=\"settings-subgroup\"\n          role=\"group\"\n          aria-labelledby=\"reading-settings-title\"\n        >\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-furniture\" checked />\n            <span>Furniture</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-background\" checked />\n            <span>Background</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
-	//#endregion
-	//#region src/components/reading-pane/reading-pane.ts
-	/** <doclang-reading-pane> — reading/rendered view with layers settings panel */
-	var DoclangReadingPane = class extends DoclangHTMLElement {
-		_body;
-		_settingsToggle;
-		_settingsLayer;
-		_settingsScrim;
-		_settingsClose;
-		_showFurniture;
-		_showFurnitureLabel;
-		_showBackground;
-		_showBackgroundLabel;
-		constructor() {
-			super(reading_pane_default$1, reading_pane_default);
-			this.classList.add("pane", "pane-reading");
-			this._body = this.q(".pane-body");
-			this._settingsToggle = this.q(".pane-settings-toggle");
-			this._settingsLayer = this.q(".viewer-settings-layer");
-			this._settingsScrim = this.q(".viewer-settings-scrim");
-			this._settingsClose = this.q(".viewer-settings-close");
-			this._showFurnitureLabel = this.q("label:has(.cb-furniture)");
-			this._showFurniture = this.q(".cb-furniture");
-			this._showBackgroundLabel = this.q("label:has(.cb-background)");
-			this._showBackground = this.q(".cb-background");
-			this._wireEvents();
-		}
-		get section() {
-			return this;
-		}
-		get body() {
-			return this._body;
-		}
-		get settingsToggle() {
-			return this._settingsToggle;
-		}
-		get settingsLayer() {
-			return this._settingsLayer;
-		}
-		get showFurniture() {
-			return this._showFurniture;
-		}
-		get showFurnitureLabel() {
-			return this._showFurnitureLabel;
-		}
-		get showBackground() {
-			return this._showBackground;
-		}
-		get showBackgroundLabel() {
-			return this._showBackgroundLabel;
-		}
-		setVisible(visible) {
-			this.hidden = !visible;
-		}
-		setLastPane(isLast) {
-			this.classList.toggle("pane-layout-last", isLast);
-		}
-		setSettingsOpen(open) {
-			this._settingsLayer.hidden = !open;
-			this._settingsToggle.setAttribute("aria-expanded", String(open));
-		}
-		syncCheckboxes(furniture, background) {
-			this._showFurniture.checked = furniture;
-			this._showBackground.checked = background;
-		}
-		_wireEvents() {
-			this._settingsToggle.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-toggle", {
-				bubbles: true,
-				composed: true
-			})));
-			this._settingsClose.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
-				bubbles: true,
-				composed: true
-			})));
-			this._settingsScrim.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
-				bubbles: true,
-				composed: true
-			})));
-			this._showFurniture.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
-				bubbles: true,
-				composed: true,
-				detail: { checked: this._showFurniture.checked }
-			})));
-			this._showBackground.addEventListener("change", () => this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
-				bubbles: true,
-				composed: true,
-				detail: { checked: this._showBackground.checked }
-			})));
-		}
-	};
-	customElements.define("doclang-reading-pane", DoclangReadingPane);
-	//#endregion
-	//#region src/components/empty-state/empty-state.css?inline
-	var empty_state_default$1 = ":host {\n  display: contents;\n}\n.empty-state {\n  flex: 1 1 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 0;\n  margin: 1rem;\n  padding: 2rem 1.5rem;\n  border: 2px dashed var(--border);\n  border-radius: 0.75rem;\n  background: var(--placeholder-bg);\n  text-align: center;\n  color: var(--muted);\n}\n.empty-state-inner {\n  max-width: 28rem;\n}\n.empty-state-loading {\n  display: none;\n  flex-direction: column;\n  align-items: center;\n}\n:host(.demo-loading) .empty-state-loading {\n  display: flex;\n}\n:host(.demo-loading) .empty-state-prompt {\n  display: none;\n}\n.loading-spinner {\n  width: 2rem;\n  height: 2rem;\n  margin: 0 auto 1rem;\n  border: 2px solid var(--border);\n  border-top-color: var(--accent);\n  border-radius: 50%;\n  animation: loading-spin 0.7s linear infinite;\n}\n@keyframes loading-spin {\n  to {\n    transform: rotate(360deg);\n  }\n}\n.empty-state-title {\n  margin: 0 0 0.75rem;\n  font-size: 1.05rem;\n  color: var(--text);\n}\n.empty-state p {\n  margin: 0.5rem 0;\n}\n.empty-state-action {\n  margin: 0 0 0.75rem;\n}\n.text-link {\n  color: var(--accent);\n  text-decoration: underline;\n}\n.text-link:hover {\n  opacity: 0.85;\n}\n.empty-state-meta {\n  font-size: 0.875rem;\n}\ncode {\n  font-family: var(--font-mono);\n}\n";
-	//#endregion
-	//#region src/components/empty-state/empty-state.html?raw
-	var empty_state_default = "<div class=\"empty-state\">\n  <div class=\"empty-state-inner\">\n    <div\n      class=\"empty-state-loading\"\n      role=\"status\"\n      aria-live=\"polite\"\n      aria-label=\"Loading demo document\"\n    >\n      <div class=\"loading-spinner\" aria-hidden=\"true\"></div>\n      <p class=\"empty-state-title\">Loading demo&#x2026;</p>\n      <p class=\"empty-state-meta\">Preparing the sample document</p>\n    </div>\n    <div class=\"empty-state-prompt\">\n      <p class=\"empty-state-title\">Drop a DocLang file here</p>\n      <p class=\"empty-state-meta\">\n        Supported file types: <span class=\"file-types\"></span>\n      </p>\n      <p class=\"empty-state-action\">or <a href=\"#\" class=\"text-link\">load demo</a></p>\n    </div>\n  </div>\n</div>\n";
-	//#endregion
-	//#region src/components/empty-state/empty-state.ts
-	/** <doclang-empty-state> — loading/prompt empty state */
-	var DoclangEmptyState = class extends DoclangHTMLElement {
-		_fileTypesSpan;
-		constructor() {
-			super(empty_state_default$1, empty_state_default);
-			this._fileTypesSpan = this.q(".file-types");
-			this.q(".text-link").addEventListener("click", (e) => {
-				e.preventDefault();
-				this.dispatchEvent(new CustomEvent("doclang-load-demo", {
-					bubbles: true,
-					composed: true
-				}));
-			});
-		}
-		setFileTypeHints(extensions) {
-			this._fileTypesSpan.innerHTML = extensions.map((ext) => `<code>${ext}</code>`).join(", ");
-		}
-		setDemoLoading(loading) {
-			this.classList.toggle("demo-loading", loading);
-		}
-	};
-	customElements.define("doclang-empty-state", DoclangEmptyState);
-	//#endregion
-	//#region src/xml.ts
+	//#region src/doclang/dom.ts
 	function isTextLikeNode(node) {
 		return node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE;
 	}
@@ -1158,11 +798,6 @@
 		if (idx < 0) return "body";
 		return layerFromHeadNodes(nodes, idx + 1);
 	}
-	var ELEMENT_LAYERS = /* @__PURE__ */ new Set([
-		"body",
-		"background",
-		"furniture"
-	]);
 	function layerFromHeadNodes(nodes, startIdx) {
 		let i = startIdx;
 		while (i < nodes.length) {
@@ -1232,8 +867,39 @@
 		const own = headLocations(el);
 		return own.length === 4 ? own : virtualTextHeadLocations(el);
 	}
+	function isPictureContentElement(el) {
+		if (!el) return false;
+		const tag = localName(el);
+		if (tag === "picture" || tag === "caption") return false;
+		let node = el.parentElement;
+		while (node) {
+			if (localName(node) === "picture") return true;
+			node = node.parentElement;
+		}
+		return false;
+	}
+	function isTableContentElement(el) {
+		if (!el) return false;
+		const tag = localName(el);
+		if (OTSL_CONTAINER_TAGS.has(tag) || tag === "caption") return false;
+		let node = el.parentElement;
+		while (node) {
+			if (OTSL_CONTAINER_TAGS.has(localName(node))) return true;
+			node = node.parentElement;
+		}
+		return false;
+	}
+	var ELEMENT_LAYERS;
+	var init_dom = __esmMin((() => {
+		init_constants();
+		ELEMENT_LAYERS = /* @__PURE__ */ new Set([
+			"body",
+			"background",
+			"furniture"
+		]);
+	}));
 	//#endregion
-	//#region src/zip.ts
+	//#region src/doclang/zip.ts
 	async function unzip(buffer, { shouldExtract } = {}) {
 		if (typeof DecompressionStream === "undefined") throw new Error("ZIP decompression requires a browser with DecompressionStream support");
 		const bytes = new Uint8Array(buffer);
@@ -1367,58 +1033,34 @@
 			default: return "application/octet-stream";
 		}
 	}
+	var init_zip = __esmMin((() => {
+		init_constants();
+	}));
 	//#endregion
-	//#region src/xml-overlay.ts
-	function isPictureContentElement(el) {
-		if (!el) return false;
-		const tag = localName(el);
-		if (tag === "picture" || tag === "caption") return false;
-		let node = el.parentElement;
-		while (node) {
-			if (localName(node) === "picture") return true;
-			node = node.parentElement;
-		}
-		return false;
-	}
-	function isTableContentElement(el) {
-		if (!el) return false;
-		const tag = localName(el);
-		if (OTSL_CONTAINER_TAGS.has(tag) || tag === "caption") return false;
-		let node = el.parentElement;
-		while (node) {
-			if (OTSL_CONTAINER_TAGS.has(localName(node))) return true;
-			node = node.parentElement;
-		}
-		return false;
-	}
-	function elementKindKey(kind) {
-		if (kind.startsWith("field_") || kind === "key" || kind === "value" || kind === "hint") return "field";
-		if (kind === "tabular") return "table";
-		return (/* @__PURE__ */ new Set([
-			"text",
-			"heading",
-			"list",
-			"ldiv",
-			"table",
-			"index",
-			"formula",
-			"code",
-			"picture",
-			"group",
-			"footnote",
-			"page_header",
-			"page_footer",
-			"caption"
-		])).has(kind) ? kind : "default";
-	}
-	function kindClassForTag(tag) {
-		return `kind-${elementKindKey(tag)}`;
-	}
-	function bboxClassForKind(kind) {
-		return elementKindKey(kind);
-	}
-	//#endregion
-	//#region src/document.ts
+	//#region src/doclang/document.ts
+	var document_exports = /* @__PURE__ */ __exportAll({
+		assignElementIds: () => assignElementIds,
+		buildDocumentState: () => buildDocumentState,
+		buildElementPageMap: () => buildElementPageMap,
+		buildThreadNavByElement: () => buildThreadNavByElement,
+		buildThreadPagesById: () => buildThreadPagesById,
+		collectBoundingBoxes: () => collectBoundingBoxes,
+		collectCaptionLinks: () => collectCaptionLinks,
+		collectFragmentLinks: () => collectFragmentLinks,
+		collectFragmentNavItems: () => collectFragmentNavItems,
+		collectReadingOrderSteps: () => collectReadingOrderSteps,
+		collectXrefLinks: () => collectXrefLinks,
+		computeReadingOrder: () => computeReadingOrder,
+		computeReadingOrderDisplayNumbers: () => computeReadingOrderDisplayNumbers,
+		extractArchiveFromFiles: () => extractArchiveFromFiles,
+		extractArchiveFromZipBuffer: () => extractArchiveFromZipBuffer,
+		invertElementIds: () => invertElementIds,
+		readDefaultResolution: () => readDefaultResolution,
+		revokeDocumentState: () => revokeDocumentState,
+		segmentHasMarkup: () => segmentHasMarkup,
+		serializeSegment: () => serializeSegment,
+		splitIntoSegments: () => splitIntoSegments
+	});
 	function splitIntoSegments(root) {
 		const body = childElements(root).filter((el) => localName(el) !== "head");
 		const segments = [[]];
@@ -1873,8 +1515,166 @@
 		for (const url of docState.pageImages.values()) if (url.startsWith("blob:")) URL.revokeObjectURL(url);
 		for (const url of docState.assetUrls.values()) if (url.startsWith("blob:")) URL.revokeObjectURL(url);
 	}
+	function serializeSegment(segment) {
+		return segment.map((el) => serializeElement(el, 0)).join("\n");
+	}
+	function serializeElement(el, depth) {
+		const pad = "  ".repeat(depth);
+		const tag = localName(el);
+		const attrs = [...el.attributes].filter((a) => a.name !== "xmlns" || a.value !== "https://www.doclang.ai/ns/v0").map((a) => `${a.name}="${a.value}"`).join(" ");
+		const attrStr = attrs ? ` ${attrs}` : "";
+		if (!el.childNodes.length) return `${pad}<${tag}${attrStr}/>`;
+		const meaningfulText = [...el.childNodes].filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
+		if (meaningfulText.length > 0 && meaningfulText.every(isTextLikeNode) && !childElements(el).length) {
+			const text = serializeMarkupTextNodes(el.childNodes);
+			if (text) return `${pad}<${tag}${attrStr}>${text}</${tag}>`;
+		}
+		const parts = [`${pad}<${tag}${attrStr}>`];
+		for (const child of el.childNodes) if (isTextLikeNode(child)) {
+			const text = formatMarkupTextNode(child);
+			if (text) parts.push("  ".repeat(depth + 1) + text);
+		} else if (child.nodeType === Node.ELEMENT_NODE) parts.push(serializeElement(child, depth + 1));
+		parts.push(`${pad}</${tag}>`);
+		return parts.join("\n");
+	}
+	var init_document = __esmMin((() => {
+		init_constants();
+		init_dom();
+		init_zip();
+	}));
 	//#endregion
-	//#region src/markup.ts
+	//#region src/components/base/document-base.ts
+	/**
+	* Base class for doclang web components that render document content.
+	*
+	* Supports three ways to provide the DocLang document:
+	*
+	*   1. `src` attribute — a URL (http:, data:, blob:) pointing to either a
+	*      raw XML markup string or a .dclx/.zip archive.  The component fetches
+	*      and parses it automatically.
+	*
+	*   2. Inline child `<script type="application/doclang+xml">` — the XML is
+	*      taken from the element's text content during `connectedCallback`.
+	*
+	*   3. `component.document = state` — set an already-parsed `DocumentState`
+	*      directly via the JS property (fastest path, used by the viewer app).
+	*
+	* Once a document is available, `_renderDocument()` is called.  Subclasses
+	* must implement that method.  They may also override `_clearDocument()` to
+	* reset their view when the document is removed.
+	*
+	* The `page` attribute / property controls which page is rendered.  Setting
+	* `page="3"` in HTML or `component.page = 3` in JS both trigger a re-render.
+	*/
+	init_document();
+	init_dom();
+	var DoclangPageElement = class extends DoclangHTMLElement {
+		static get observedAttributes() {
+			return [
+				"src",
+				"page",
+				"selected"
+			];
+		}
+		_docState = null;
+		_currentPage = 1;
+		_selectedId = null;
+		_peerIds = /* @__PURE__ */ new Set();
+		get document() {
+			return this._docState;
+		}
+		set document(state) {
+			this._docState = state;
+			this._currentPage = state ? state.currentPage : 1;
+			if (state) this._renderDocument();
+			else this._clearDocument();
+		}
+		get selected() {
+			return this._selectedId;
+		}
+		set selected(id) {
+			this._selectedId = id;
+			this._peerIds = id ? this._computePeerIds(id) : /* @__PURE__ */ new Set();
+			if (id) this.setAttribute("selected", id);
+			else this.removeAttribute("selected");
+			this._applySelection();
+		}
+		get page() {
+			return this._currentPage;
+		}
+		set page(n) {
+			if (!this._docState) return;
+			const p = Math.min(Math.max(1, n), this._docState.pageCount);
+			if (p === this._currentPage) return;
+			this._currentPage = p;
+			this._docState.currentPage = p;
+			this.setAttribute("page", String(p));
+			this._renderDocument();
+		}
+		connectedCallback() {
+			if (!this._docState && !this.hasAttribute("src")) {
+				const script = this.querySelector("script[type=\"application/doclang+xml\"]");
+				if (script?.textContent?.trim()) this._loadXmlString(script.textContent.trim(), this.getAttribute("label") ?? "");
+			}
+		}
+		attributeChangedCallback(name, _old, next) {
+			if (name === "src" && next) this._loadFromUrl(next);
+			if (name === "page" && next) {
+				const n = parseInt(next, 10);
+				if (!isNaN(n)) this.page = n;
+			}
+			if (name === "selected") this.selected = next || null;
+		}
+		/** Called when the selected element changes. Default: no-op. */
+		_applySelection() {}
+		/** Called when the document is removed (set to null). Default: no-op. */
+		_clearDocument() {}
+		_computePeerIds(elementId) {
+			const peers = /* @__PURE__ */ new Set();
+			if (!this._docState?.elementIds || !this._docState.idToElement) return peers;
+			const el = this._docState.idToElement.get(elementId);
+			const threadId = el ? elementThreadId(el) : null;
+			if (!threadId) return peers;
+			for (const [node, id] of this._docState.elementIds) if (elementThreadId(node) === threadId) peers.add(id);
+			return peers;
+		}
+		_loadXmlString(xml, label) {
+			const state = buildDocumentState(xml, /* @__PURE__ */ new Map(), label, /* @__PURE__ */ new Map(), { markupOnly: true });
+			if (state) this.document = state;
+		}
+		async _loadFromUrl(url) {
+			try {
+				const res = await fetch(url);
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				if (url.includes(".dclx") || url.includes(".zip") || res.headers.get("content-type")?.includes("zip")) {
+					const { extractArchiveFromZipBuffer } = await Promise.resolve().then(() => (init_document(), document_exports));
+					const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(await res.arrayBuffer());
+					const state = buildDocumentState(markupXml, pageImages, url.split("/").pop() ?? "", assetUrls, { markupOnly: false });
+					if (state) this.document = state;
+				} else {
+					const xml = await res.text();
+					const label = url.split("/").pop() ?? "";
+					this._loadXmlString(xml, label);
+				}
+			} catch (err) {
+				this.dispatchEvent(new CustomEvent("doclang-load-error", {
+					bubbles: true,
+					composed: true,
+					detail: { error: err }
+				}));
+			}
+		}
+	};
+	//#endregion
+	//#region src/components/markup-pane/markup-pane.css?inline
+	var markup_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-body {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 0;\n  background: var(--markup-bg);\n  color: var(--markup-fg);\n}\n.pane-body .placeholder {\n  margin: 1rem;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\npre.markup {\n  margin: 0;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.markup {\n  margin: 0;\n  padding: 0.75rem 1rem 1rem;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.55;\n  tab-size: 2;\n  --markup-indent: 2ch;\n  --markup-gutter-width: 1rem;\n}\n.markup-ghost-tag-part {\n  opacity: 0.35;\n  cursor: help;\n}\n.head-tooltip {\n  border-collapse: collapse;\n  width: 100%;\n  font-size: 0.6875rem;\n  line-height: 1.4;\n}\n.head-tooltip th {\n  padding: 0.1rem 0.55rem 0.1rem 0;\n  color: var(--muted);\n  font-weight: 600;\n  text-align: left;\n  vertical-align: top;\n  white-space: nowrap;\n}\n.head-tooltip td {\n  padding: 0.1rem 0;\n  vertical-align: top;\n  word-break: break-word;\n}\n.head-tooltip .head-default {\n  color: var(--muted);\n  font-style: italic;\n  white-space: nowrap;\n}\n.markup-el {\n  cursor: pointer;\n  border-radius: 0.2rem;\n}\n.markup-el:hover {\n  background: var(--markup-hover);\n}\n.markup-el.selected {\n  background: var(--markup-selected);\n  box-shadow: inset 0 0 0 1px var(--accent);\n}\n.markup-line {\n  white-space: pre-wrap;\n  word-break: break-word;\n  cursor: pointer;\n  padding: 0 0.25rem;\n  border-radius: 0.15rem;\n}\n.markup-line-content {\n  display: flex;\n  align-items: baseline;\n  min-width: 0;\n  padding-left: calc(var(--markup-depth, 0) * var(--markup-indent));\n}\n.markup-gutter {\n  flex: 0 0 var(--markup-gutter-width);\n  width: var(--markup-gutter-width);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.markup-line-body {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n.markup-fold-toggle {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: var(--markup-gutter-width);\n  height: 1rem;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 0.15rem;\n  background: transparent;\n  color: var(--muted);\n  cursor: pointer;\n  flex-shrink: 0;\n}\n.markup-fold-toggle::before {\n  content: '';\n  display: block;\n  width: 0;\n  height: 0;\n  border-top: 4px solid transparent;\n  border-bottom: 4px solid transparent;\n  border-left: 5px solid currentColor;\n  transform: rotate(90deg);\n  transition: transform 0.12s ease;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-toggle::before {\n  transform: rotate(0deg);\n}\n.markup-fold-toggle:hover {\n  background: var(--markup-hover);\n  color: var(--markup-fg);\n}\n.markup-fold-suffix {\n  display: none;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-suffix {\n  display: inline;\n}\n.markup-el-foldable.markup-collapsed > .markup-fold-body {\n  display: none;\n}\n.xml-tag {\n  color: var(--xml-tag);\n}\n.xml-bracket {\n  color: var(--xml-bracket);\n}\n.xml-attr-name {\n  color: var(--xml-attr-name);\n}\n.xml-attr-value {\n  color: var(--xml-attr-value);\n}\n.xml-attr-value-truncatable {\n  display: inline;\n}\n.xml-attr-value-chip {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  gap: 0.3em;\n  margin: 0 0 0 0.35em;\n  padding: 0.08em 0.45em 0.08em 0.5em;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  background: var(--placeholder-bg);\n  color: var(--muted);\n  font-family: var(--font-ui, system-ui, sans-serif);\n  font-size: 0.72em;\n  font-weight: 600;\n  line-height: 1.35;\n  cursor: pointer;\n  vertical-align: baseline;\n  white-space: nowrap;\n}\n.xml-attr-value-chip::after {\n  content: '';\n  width: 0;\n  height: 0;\n  border-top: 0.28em solid currentColor;\n  border-left: 0.22em solid transparent;\n  border-right: 0.22em solid transparent;\n  opacity: 0.75;\n  transition: transform 0.12s ease;\n}\n.xml-attr-value-chip[aria-expanded='true']::after {\n  transform: rotate(180deg);\n}\n.xml-attr-value-chip:hover,\n.xml-attr-value-chip[aria-expanded='true'] {\n  border-color: var(--accent);\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));\n}\n.markup-embedded-uri-panel {\n  cursor: text;\n}\n.markup-embedded-uri-panel:hover {\n  background: transparent;\n}\n.markup-embedded-uri-panel-body {\n  margin: 0.1rem 0 0.25rem;\n  padding: 0.45rem 0.6rem;\n  max-height: 8rem;\n  overflow: auto;\n  color: var(--xml-attr-value);\n  word-break: break-all;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  user-select: text;\n}\n.xml-text {\n  color: var(--xml-text);\n}\n.xml-cdata {\n  color: var(--xml-cdata);\n}\n.xml-cdata-delimiter {\n  color: var(--xml-cdata-delimiter);\n}\n";
+	//#endregion
+	//#region src/components/markup-pane/markup-pane.html?raw
+	var markup_pane_default = "<div class=\"pane-header\">DocLang</div>\n<div class=\"pane-body\" id=\"markup-pane\"></div>\n";
+	//#endregion
+	//#region src/components/markup-pane/markup.ts
+	init_constants();
+	init_dom();
 	function isTruncatableEmbeddedImageUri(value) {
 		if (!value || value.length <= 30) return false;
 		return /^(data:image\/|blob:)/i.test(value);
@@ -2302,11 +2102,1288 @@
 		return root;
 	}
 	//#endregion
-	//#region src/rendered.ts
-	var getState = () => null;
-	function setStateAccessor(fn) {
-		getState = fn;
+	//#region src/components/markup-pane/markup-pane.ts
+	/** <doclang-markup-pane> — DocLang XML markup view */
+	init_document();
+	init_constants();
+	var DoclangMarkupPane = class extends DoclangPageElement {
+		_body;
+		constructor() {
+			super(markup_pane_default$1, markup_pane_default);
+			this.classList.add("pane", "pane-markup");
+			this._body = this.q(".pane-body");
+			this._wireHints();
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+		}
+		_applySelection() {
+			for (const el of this._body.querySelectorAll(".markup-el.selected")) el.classList.remove("selected");
+			if (!this._selectedId) return;
+			const target = this._body.querySelector(`.markup-el-virtual-text[data-element-id="${this._selectedId}"]`) ?? this._body.querySelector(`[data-element-id="${this._selectedId}"]`);
+			if (target) {
+				target.classList.add("selected");
+				target.scrollIntoView({
+					block: "nearest",
+					behavior: "smooth"
+				});
+			}
+		}
+		_renderDocument() {
+			const state = this._docState;
+			this._body.innerHTML = "";
+			if (!state) return;
+			const segment = state.segments[this._currentPage - 1] ?? [];
+			const elementIds = assignElementIds(segment);
+			state.elementIds = elementIds;
+			state.idToElement = invertElementIds(elementIds);
+			if (segmentHasMarkup(segment)) this._body.appendChild(buildMarkupView(segment, elementIds, (id) => this.dispatchEvent(new CustomEvent("doclang-element-select", {
+				bubbles: true,
+				composed: true,
+				detail: { id }
+			}))));
+			else this._body.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+		}
+		_clearDocument() {
+			this._body.innerHTML = "";
+		}
+		_wireHints() {
+			this.addEventListener("mousemove", (e) => {
+				if (!e.target.closest(".markup-ghost-tag-part")) {
+					this._hideHint();
+					return;
+				}
+				this.dispatchEvent(new CustomEvent("doclang-hint", {
+					bubbles: true,
+					composed: true,
+					detail: {
+						text: VIRTUAL_TEXT_TAG_HINT,
+						clientX: e.clientX,
+						clientY: e.clientY
+					}
+				}));
+			});
+			this.addEventListener("mouseleave", () => this._hideHint());
+		}
+		_hideHint() {
+			this.dispatchEvent(new CustomEvent("doclang-hint-hide", {
+				bubbles: true,
+				composed: true
+			}));
+		}
+	};
+	customElements.define("doclang-markup-pane", DoclangMarkupPane);
+	//#endregion
+	//#region src/components/page-view-pane/page-view-pane.css?inline
+	var page_view_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-page-controls {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n.page-zoom-control {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  user-select: none;\n}\n.page-zoom-control-label {\n  font-size: 0.625rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  cursor: pointer;\n}\n.page-zoom-control input[type='range'] {\n  width: 5.5rem;\n  height: 1rem;\n  margin: 0;\n  cursor: pointer;\n}\n.page-zoom-reset {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--bg);\n  color: var(--muted);\n  border-radius: 0.375rem;\n  padding: 0 0.45rem;\n  height: 1.25rem;\n  font: inherit;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n  line-height: 1;\n  cursor: pointer;\n  min-width: 2.75rem;\n}\n.page-zoom-reset:not(:disabled):hover {\n  border-color: var(--accent);\n  color: var(--text);\n}\n.page-zoom-reset:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-page-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  padding: 0.75rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-option-primary + .settings-subgroup {\n  margin-top: 0.65rem;\n}\n.settings-option-primary {\n  font-weight: 600;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-reading-order-group {\n  gap: 0.35rem;\n  padding-left: 1.6rem;\n}\n.settings-option-nested {\n  padding-left: 0;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.settings-option-disabled input {\n  cursor: not-allowed;\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.page-view-port {\n  display: flex;\n  overflow: auto;\n  flex: 1 1 auto;\n  width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  scrollbar-gutter: stable;\n}\n.pane-body.can-pan {\n  cursor: grab;\n}\n.pane-body.is-panning {\n  cursor: grabbing;\n  user-select: none;\n}\n.pane-body:focus {\n  outline: none;\n}\n.pane-body:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\n.page-view {\n  position: relative;\n  display: block;\n  width: fit-content;\n  flex-shrink: 0;\n  margin: auto;\n  line-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.page-view img {\n  display: block;\n  width: auto;\n  height: auto;\n  max-width: none;\n  max-height: none;\n  border: none;\n  border-radius: 0;\n}\n.page-view img:not([data-layout-ready]) {\n  opacity: 0;\n}\n.page-view svg.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  pointer-events: auto;\n  overflow: hidden;\n}\n.overlay rect.bbox.bbox-hidden,\n.overlay .overlay-badge.bbox-hidden {\n  display: none;\n}\n.overlay rect.bbox {\n  stroke-width: 2;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n}\n.overlay rect.bbox.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n  stroke-width: 3.5;\n  filter: drop-shadow(\n    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)\n  );\n}\n.overlay rect.bbox.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture,\n.overlay rect.bbox.layer-background {\n  fill: url(#layer-hatch) !important;\n  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);\n}\n.overlay .layer-hatch-stripe {\n  fill: var(--muted);\n  fill-opacity: 0.06;\n}\n.overlay rect.bbox.layer-furniture.selected,\n.overlay rect.bbox.layer-background.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 22%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture.related:not(.selected),\n.overlay rect.bbox.layer-background.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 18%,\n    transparent\n  ) !important;\n}\n.overlay .bbox-text {\n  fill: color-mix(in srgb, var(--kind-text) 14%, transparent);\n  stroke: var(--kind-text);\n}\n.overlay .bbox-heading {\n  fill: color-mix(in srgb, var(--kind-heading) 14%, transparent);\n  stroke: var(--kind-heading);\n}\n.overlay .bbox-list,\n.overlay .bbox-ldiv {\n  fill: color-mix(in srgb, var(--kind-list) 14%, transparent);\n  stroke: var(--kind-list);\n}\n.overlay .bbox-table {\n  fill: color-mix(in srgb, var(--kind-table) 14%, transparent);\n  stroke: var(--kind-table);\n}\n.overlay .bbox-index {\n  fill: color-mix(in srgb, var(--kind-index) 14%, transparent);\n  stroke: var(--kind-index);\n}\n.overlay .bbox-formula {\n  fill: color-mix(in srgb, var(--kind-formula) 14%, transparent);\n  stroke: var(--kind-formula);\n}\n.overlay .bbox-code {\n  fill: color-mix(in srgb, var(--kind-code) 16%, transparent);\n  stroke: var(--kind-code);\n}\n.overlay .bbox-picture {\n  fill: color-mix(in srgb, var(--kind-picture) 14%, transparent);\n  stroke: var(--kind-picture);\n}\n.overlay .bbox-group {\n  fill: color-mix(in srgb, var(--kind-group) 14%, transparent);\n  stroke: var(--kind-group);\n}\n.overlay .bbox-footnote {\n  fill: color-mix(in srgb, var(--kind-footnote) 14%, transparent);\n  stroke: var(--kind-footnote);\n}\n.overlay .bbox-page_header,\n.overlay .bbox-page_footer {\n  fill: color-mix(in srgb, var(--kind-page_header) 14%, transparent);\n  stroke: var(--kind-page_header);\n}\n.overlay .bbox-caption {\n  fill: color-mix(in srgb, var(--kind-caption) 14%, transparent);\n  stroke: var(--kind-caption);\n}\n.overlay line.caption-link {\n  color: var(--kind-caption);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.caption-link.bbox-hidden {\n  display: none;\n}\n.overlay line.xref-link {\n  color: var(--kind-footnote);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.xref-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link {\n  pointer-events: none;\n}\n.overlay .fragment-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link-path {\n  color: var(--overlay-fragment);\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-link-path-dashed {\n  stroke-dasharray: 6 4;\n}\n.overlay .fragment-nav {\n  pointer-events: none;\n}\n.overlay .fragment-nav.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-nav-btn {\n  pointer-events: auto;\n  cursor: pointer;\n}\n.overlay .fragment-nav-btn-disabled {\n  pointer-events: none;\n  cursor: default;\n  opacity: 0.35;\n}\n.overlay .fragment-nav-btn-bg {\n  fill: var(--panel);\n  stroke: var(--overlay-fragment);\n  stroke-width: 1;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-nav-btn-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg {\n  fill: color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel));\n}\n.overlay .fragment-link-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 600;\n  font-style: italic;\n  text-anchor: middle;\n  dominant-baseline: middle;\n  paint-order: stroke fill;\n  stroke: var(--panel);\n  stroke-width: 3px;\n}\n.overlay .reading-order-step {\n  color: var(--overlay-reading-order);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-dasharray: 5 4;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay .reading-order-step.bbox-hidden,\n.overlay .reading-order-badge.bbox-hidden {\n  display: none;\n}\n.overlay .overlay-badge {\n  pointer-events: none;\n}\n.overlay .overlay-badge-bg {\n  fill-opacity: 1;\n  stroke: none;\n}\n.reading-order-badge .overlay-badge-bg {\n  fill: var(--overlay-reading-order);\n}\n.overlay .element-badge {\n  opacity: 0.8;\n  pointer-events: auto;\n  cursor: help;\n}\n.overlay .element-badge .overlay-badge-bg {\n  fill: var(--kind-stroke, var(--accent));\n}\n.overlay .overlay-badge-label {\n  fill: #ffffff;\n  fill-opacity: 1;\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .bbox-field {\n  fill: color-mix(in srgb, var(--kind-field) 14%, transparent);\n  stroke: var(--kind-field);\n}\n.overlay .bbox-default {\n  fill: color-mix(in srgb, var(--kind-default) 12%, transparent);\n  stroke: var(--kind-default);\n}\n@media (prefers-color-scheme: dark) {\n  .overlay .bbox-text {\n    fill: color-mix(in srgb, var(--kind-text) 20%, transparent);\n  }\n  .overlay .bbox-heading {\n    fill: color-mix(in srgb, var(--kind-heading) 20%, transparent);\n  }\n  .overlay .bbox-list,\n  .overlay .bbox-ldiv {\n    fill: color-mix(in srgb, var(--kind-list) 20%, transparent);\n  }\n  .overlay .bbox-table {\n    fill: color-mix(in srgb, var(--kind-table) 18%, transparent);\n  }\n  .overlay .bbox-index {\n    fill: color-mix(in srgb, var(--kind-index) 18%, transparent);\n  }\n  .overlay .bbox-formula {\n    fill: color-mix(in srgb, var(--kind-formula) 18%, transparent);\n  }\n  .overlay .bbox-code {\n    fill: color-mix(in srgb, var(--kind-code) 20%, transparent);\n  }\n  .overlay .bbox-picture {\n    fill: color-mix(in srgb, var(--kind-picture) 20%, transparent);\n  }\n  .overlay .bbox-group {\n    fill: color-mix(in srgb, var(--kind-group) 20%, transparent);\n  }\n  .overlay .bbox-footnote {\n    fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent);\n  }\n  .overlay .bbox-page_header,\n  .overlay .bbox-page_footer {\n    fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent);\n  }\n  .overlay .bbox-caption {\n    fill: color-mix(in srgb, var(--kind-caption) 18%, transparent);\n  }\n  .overlay .bbox-field {\n    fill: color-mix(in srgb, var(--kind-field) 18%, transparent);\n  }\n  .overlay .bbox-default {\n    fill: color-mix(in srgb, var(--kind-default) 18%, transparent);\n  }\n}\n";
+	//#endregion
+	//#region src/components/page-view-pane/page-view-pane.html?raw
+	var page_view_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Original page</span>\n  <div class=\"pane-page-controls\">\n    <div class=\"page-zoom-control\" hidden>\n      <label class=\"page-zoom-control-label\">\n        <span aria-hidden=\"true\">Zoom</span>\n        <input\n          type=\"range\"\n          class=\"zoom-input\"\n          min=\"100\"\n          max=\"300\"\n          step=\"10\"\n          value=\"100\"\n          aria-valuemin=\"100\"\n          aria-valuemax=\"300\"\n          aria-valuenow=\"100\"\n          aria-label=\"Page zoom\"\n        />\n      </label>\n      <button\n        type=\"button\"\n        class=\"page-zoom-reset\"\n        title=\"Reset zoom\"\n        aria-label=\"Reset zoom\"\n        disabled\n      >\n        100%\n      </button>\n    </div>\n    <button type=\"button\" class=\"pane-settings-toggle\" aria-expanded=\"false\" hidden>\n      Overlays\n    </button>\n  </div>\n</div>\n<div class=\"pane-page-layout\">\n  <div class=\"pane-body\" id=\"page-pane\" tabindex=\"0\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close overlays\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"page-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"page-settings-title\">Overlays</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close overlays\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <label class=\"settings-option settings-option-primary\">\n          <input type=\"checkbox\" class=\"cb-all-bboxes\" checked />\n          <span>Layout</span>\n        </label>\n        <div class=\"settings-subgroup\">\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-reading-order\" />\n            <span>Reading order</span>\n          </label>\n          <div class=\"settings-subgroup settings-reading-order-group\">\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-arrows\" checked />\n              <span>Arrows</span>\n            </label>\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-global\" />\n              <span>Global numbering</span>\n            </label>\n          </div>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-picture-contents\" />\n            <span>Picture contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-table-contents\" />\n            <span>Table contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-fragment-links\" />\n            <span>Fragments</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-xref-links\" />\n            <span>Cross-references</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-caption-links\" />\n            <span>Captions</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-layout-badges\" checked />\n            <span>Badges</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
+	//#endregion
+	//#region src/components/page-view-pane/overlay.ts
+	init_constants();
+	init_dom();
+	function elementKindKey(kind) {
+		if (kind.startsWith("field_") || kind === "key" || kind === "value" || kind === "hint") return "field";
+		if (kind === "tabular") return "table";
+		return (/* @__PURE__ */ new Set([
+			"text",
+			"heading",
+			"list",
+			"ldiv",
+			"table",
+			"index",
+			"formula",
+			"code",
+			"picture",
+			"group",
+			"footnote",
+			"page_header",
+			"page_footer",
+			"caption"
+		])).has(kind) ? kind : "default";
 	}
+	function kindClassForTag(tag) {
+		return `kind-${elementKindKey(tag)}`;
+	}
+	function bboxClassForKind(kind) {
+		return elementKindKey(kind);
+	}
+	function pageZoomFactor(ctx) {
+		return ctx.zoomPct / 100;
+	}
+	function paneContentSize(pane) {
+		const style = getComputedStyle(pane);
+		const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+		const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+		return {
+			w: pane.clientWidth - padX,
+			h: pane.clientHeight - padY
+		};
+	}
+	function getCachedFitScale(img, pane, ctx) {
+		const { w: paneW, h: paneH } = paneContentSize(pane);
+		const imgW = img.naturalWidth;
+		const imgH = img.naturalHeight;
+		const cache = ctx.layoutCache;
+		if (cache && cache.paneW === paneW && cache.paneH === paneH && cache.imgW === imgW && cache.imgH === imgH) return cache.fitScale;
+		const fitScale = paneW > 0 && paneH > 0 && imgW > 0 && imgH > 0 ? Math.min((paneW - 2) / imgW, (paneH - 2) / imgH) : 1;
+		ctx.setLayoutCache({
+			paneW,
+			paneH,
+			imgW,
+			imgH,
+			fitScale
+		});
+		return fitScale;
+	}
+	function overlayUserLength(baseUserPx, ctx, img) {
+		const resolvedImg = img ?? ctx.pane.querySelector(".page-view img");
+		const zoom = pageZoomFactor(ctx);
+		if (!(zoom > 0)) return baseUserPx;
+		const { pane } = ctx;
+		if (!resolvedImg?.naturalWidth || !resolvedImg.naturalHeight) return baseUserPx / zoom;
+		const { w: paneW, h: paneH } = paneContentSize(pane);
+		if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
+		const refFit = Math.min((paneW - 2) / OVERLAY_REF_IMAGE_WIDTH, (paneH - 2) / OVERLAY_REF_IMAGE_HEIGHT);
+		const fitScale = getCachedFitScale(resolvedImg, pane, ctx);
+		if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
+		return baseUserPx * refFit / (fitScale * zoom);
+	}
+	function applyPageImageSize(img, pane, ctx) {
+		if (!img?.naturalWidth || !img.naturalHeight) return false;
+		const zoomPct = Math.max(100, ctx.zoomPct);
+		const scale = getCachedFitScale(img, pane, ctx) * (zoomPct / 100);
+		const w = Math.floor(img.naturalWidth * scale);
+		const h = Math.floor(img.naturalHeight * scale);
+		const nextW = `${w}px`;
+		const nextH = `${h}px`;
+		const unchanged = img.style.width === nextW && img.style.height === nextH;
+		if (!unchanged) {
+			img.style.width = nextW;
+			img.style.height = nextH;
+			img.style.maxWidth = "none";
+			img.style.maxHeight = "none";
+		}
+		img.dataset.layoutReady = "1";
+		return !unchanged;
+	}
+	function boxPixelRect(b, img) {
+		const x = b.x0 / b.resW * img.naturalWidth;
+		const y = b.y0 / b.resH * img.naturalHeight;
+		const w = (b.x1 - b.x0) / b.resW * img.naturalWidth;
+		const h = (b.y1 - b.y0) / b.resH * img.naturalHeight;
+		return {
+			x,
+			y,
+			w,
+			h,
+			area: w * h
+		};
+	}
+	function boxCenter(rect) {
+		return {
+			x: rect.x + rect.w / 2,
+			y: rect.y + rect.h / 2
+		};
+	}
+	function overlayBoxPaintPriority(box) {
+		if (box.kind === "text") return 0;
+		if (box.kind === "list" || box.kind === "table" || box.kind === "index" || box.kind === "tabular") return 2;
+		return 1;
+	}
+	function overlayLayerPriority(layer) {
+		if (layer === "background") return 0;
+		if (layer === "furniture") return 1;
+		return 2;
+	}
+	function compareOverlayBoxPaintOrder(a, b, selectedId) {
+		const byLayer = overlayLayerPriority(a.layer ?? "body") - overlayLayerPriority(b.layer ?? "body");
+		if (byLayer !== 0) return byLayer;
+		const byPriority = overlayBoxPaintPriority(a) - overlayBoxPaintPriority(b);
+		if (byPriority !== 0) return byPriority;
+		if (selectedId) {
+			const aSelected = a.elementId === selectedId;
+			if (aSelected !== (b.elementId === selectedId)) return aSelected ? 1 : -1;
+		}
+		return 0;
+	}
+	function sortedOverlayBoxes(boxes, selectedId) {
+		return [...boxes].sort((a, b) => compareOverlayBoxPaintOrder(a, b, selectedId));
+	}
+	function ensureArrowMarker(defs, markerId) {
+		if (defs.querySelector(`#${markerId}`)) return;
+		const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+		marker.setAttribute("id", markerId);
+		marker.setAttribute("viewBox", "0 0 6 6");
+		marker.setAttribute("refX", "6");
+		marker.setAttribute("refY", "3");
+		marker.setAttribute("markerWidth", "5");
+		marker.setAttribute("markerHeight", "5");
+		marker.setAttribute("orient", "auto");
+		const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+		arrowPath.setAttribute("d", "M0,0 L6,3 L0,6 Z");
+		arrowPath.setAttribute("fill", "currentColor");
+		marker.appendChild(arrowPath);
+		defs.appendChild(marker);
+	}
+	function alignDashedLineToEnd(line, start, end) {
+		const dash = 6;
+		const gap = 4;
+		const period = 10;
+		const len = Math.hypot(end.x - start.x, end.y - start.y);
+		if (!len) return;
+		line.setAttribute("stroke-dasharray", `${dash} ${gap}`);
+		const offset = len % period;
+		if (offset > .01) line.setAttribute("stroke-dashoffset", String(offset));
+	}
+	function ensureLayerHatchPatterns(defs) {
+		if (defs.querySelector("#layer-hatch")) return;
+		const pattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
+		pattern.setAttribute("id", "layer-hatch");
+		pattern.setAttribute("width", "16");
+		pattern.setAttribute("height", "16");
+		pattern.setAttribute("patternUnits", "userSpaceOnUse");
+		pattern.setAttribute("patternTransform", "rotate(45 8 8)");
+		const stripe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+		stripe.setAttribute("class", "layer-hatch-stripe");
+		stripe.setAttribute("x", "10");
+		stripe.setAttribute("y", "-4");
+		stripe.setAttribute("width", "6");
+		stripe.setAttribute("height", "24");
+		pattern.appendChild(stripe);
+		defs.appendChild(pattern);
+	}
+	function ensureOverlayDefs(svg) {
+		let defs = svg.querySelector("defs");
+		if (!defs) {
+			defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+			svg.insertBefore(defs, svg.firstChild);
+		}
+		return defs;
+	}
+	function overlayBadgeLayout(svg, text, fontSizeUser, ctx) {
+		const padXUser = overlayUserLength(3, ctx);
+		const padYUser = overlayUserLength(2, ctx);
+		const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
+		probe.setAttribute("class", "overlay-badge-label");
+		probe.setAttribute("font-size", String(fontSizeUser));
+		probe.setAttribute("font-weight", "700");
+		probe.setAttribute("text-anchor", "start");
+		probe.setAttribute("dominant-baseline", "text-before-edge");
+		probe.setAttribute("visibility", "hidden");
+		probe.textContent = String(text);
+		svg.appendChild(probe);
+		let width;
+		let height;
+		try {
+			const bbox = probe.getBBox();
+			width = bbox.width + padXUser * 2;
+			height = bbox.height + padYUser * 2;
+		} catch {
+			width = overlayUserLength(String(text).length * OVERLAY_BADGE_FONT_SIZE * .55 + 6, ctx);
+			height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + 4, ctx);
+		}
+		probe.remove();
+		return {
+			width,
+			height
+		};
+	}
+	function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }, ctx) {
+		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
+		const { width, height } = overlayBadgeLayout(svg, text, fontSize, ctx);
+		const radius = overlayUserLength(3, ctx);
+		const badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
+		badge.setAttribute("class", `overlay-badge ${extraClass}`);
+		badge.setAttribute("data-element-id", elementId);
+		const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+		bg.setAttribute("class", "overlay-badge-bg");
+		bg.setAttribute("x", String(anchorX - width / 2));
+		bg.setAttribute("y", String(anchorY - height / 2));
+		bg.setAttribute("width", String(width));
+		bg.setAttribute("height", String(height));
+		bg.setAttribute("rx", String(radius));
+		bg.setAttribute("ry", String(radius));
+		badge.appendChild(bg);
+		const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+		label.setAttribute("class", "overlay-badge-label");
+		label.setAttribute("x", String(anchorX));
+		label.setAttribute("y", String(anchorY));
+		label.setAttribute("font-size", String(fontSize));
+		label.textContent = String(text);
+		badge.appendChild(label);
+		svg.appendChild(badge);
+		return badge;
+	}
+	function syncOverlayBadges(img, svg, boxes, readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder, ctx) {
+		if (!img.naturalWidth) return;
+		svg.querySelectorAll(".element-badge, .reading-order-badge").forEach((b) => b.remove());
+		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
+		const badgeGap = overlayUserLength(2, ctx);
+		const readingOrderByElementId = /* @__PURE__ */ new Map();
+		if (showAllBboxes && showReadingOrder) for (const step of readingOrderSteps) readingOrderByElementId.set(step.elementId, step);
+		const sorted = sortedOverlayBoxes(boxes, ctx.selectedId);
+		for (const b of sorted) {
+			const { x, y } = boxPixelRect(b, img);
+			let tagLayout = { width: 0 };
+			if (showAllBboxes && showLayoutBadges) {
+				tagLayout = overlayBadgeLayout(svg, b.tag, fontSize, ctx);
+				appendOverlayBadge(svg, x, y, b.tag, {
+					extraClass: `element-badge ${kindClassForTag(b.kind)}`,
+					elementId: b.elementId
+				}, ctx);
+			}
+			const step = readingOrderByElementId.get(b.elementId);
+			if (step) {
+				const orderText = String(step.order);
+				const orderLayout = overlayBadgeLayout(svg, orderText, fontSize, ctx);
+				appendOverlayBadge(svg, showAllBboxes && showLayoutBadges ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2 : x, y, orderText, {
+					extraClass: "reading-order-badge",
+					elementId: b.elementId
+				}, ctx);
+			}
+		}
+	}
+	function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, toIdAttr }) {
+		if (!links.length) return;
+		ensureArrowMarker(ensureOverlayDefs(svg), markerId);
+		for (const link of links) {
+			const fromBox = link.captionBox ?? link.fromBox;
+			const toBox = link.hostBox ?? link.toBox;
+			const from = boxPixelRect(fromBox, img);
+			const to = boxPixelRect(toBox, img);
+			const start = boxCenter(from);
+			const end = boxCenter(to);
+			const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+			line.setAttribute("class", linkClass);
+			line.setAttribute("x1", String(start.x));
+			line.setAttribute("y1", String(start.y));
+			line.setAttribute("x2", String(end.x));
+			line.setAttribute("y2", String(end.y));
+			line.setAttribute("marker-end", `url(#${markerId})`);
+			const fromId = link.captionElementId ?? link.fromElementId;
+			const toId = link.hostElementId ?? link.toElementId;
+			line.setAttribute(fromIdAttr, fromId);
+			line.setAttribute(toIdAttr, toId);
+			svg.appendChild(line);
+		}
+	}
+	function appendCaptionLinks(svg, img, captionLinks) {
+		appendOverlayLinks(svg, img, captionLinks, {
+			markerId: "caption-arrowhead",
+			linkClass: "caption-link",
+			fromIdAttr: "data-caption-id",
+			toIdAttr: "data-host-id"
+		});
+	}
+	function appendXrefLinks(svg, img, xrefLinks) {
+		appendOverlayLinks(svg, img, xrefLinks, {
+			markerId: "xref-arrowhead",
+			linkClass: "xref-link",
+			fromIdAttr: "data-xref-from-id",
+			toIdAttr: "data-xref-to-id"
+		});
+	}
+	function docPointToPixel(xDoc, yDoc, resW, resH, img) {
+		return {
+			x: xDoc / resW * img.naturalWidth,
+			y: yDoc / resH * img.naturalHeight
+		};
+	}
+	function pageCornerTarget(img, defaultResolution, corner, ctx) {
+		const { width: resW, height: resH } = defaultResolution;
+		const inset = overlayUserLength(5, ctx);
+		const tl = docPointToPixel(0, 0, resW, resH, img);
+		const br = docPointToPixel(resW, resH, resW, resH, img);
+		if (corner === "tl") return {
+			x: Math.min(tl.x + inset, br.x - inset),
+			y: Math.min(tl.y + inset, br.y - inset)
+		};
+		return {
+			x: Math.max(br.x - inset, tl.x + inset),
+			y: Math.max(br.y - inset, tl.y + inset)
+		};
+	}
+	function appendFragmentLinks(svg, img, links, defaultResolution, ctx) {
+		if (!links.length) return;
+		ensureArrowMarker(ensureOverlayDefs(svg), "fragment-arrowhead");
+		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
+		for (const link of links) {
+			const fromRect = boxPixelRect(link.fromBox, img);
+			const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+			group.setAttribute("class", "fragment-link");
+			group.setAttribute("data-thread-id", link.threadId);
+			group.setAttribute("data-fragment-from-id", link.fromElementId);
+			if (link.toElementId) group.setAttribute("data-fragment-to-id", link.toElementId);
+			let labelAt;
+			if (link.toBox) {
+				const toRect = boxPixelRect(link.toBox, img);
+				const start = boxCenter(fromRect);
+				const end = boxCenter(toRect);
+				const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+				line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
+				line.setAttribute("x1", String(start.x));
+				line.setAttribute("y1", String(start.y));
+				line.setAttribute("x2", String(end.x));
+				line.setAttribute("y2", String(end.y));
+				line.setAttribute("marker-end", "url(#fragment-arrowhead)");
+				alignDashedLineToEnd(line, start, end);
+				group.appendChild(line);
+				labelAt = {
+					x: (start.x + end.x) / 2,
+					y: (start.y + end.y) / 2
+				};
+			} else {
+				const corner = link.targetCorner ?? "br";
+				const cornerPoint = pageCornerTarget(img, defaultResolution, corner, ctx);
+				const elementAnchor = boxCenter(fromRect);
+				const incoming = corner === "tl";
+				const start = incoming ? cornerPoint : elementAnchor;
+				const end = incoming ? elementAnchor : cornerPoint;
+				const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+				line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
+				line.setAttribute("x1", String(start.x));
+				line.setAttribute("y1", String(start.y));
+				line.setAttribute("x2", String(end.x));
+				line.setAttribute("y2", String(end.y));
+				line.setAttribute("marker-end", "url(#fragment-arrowhead)");
+				alignDashedLineToEnd(line, start, end);
+				group.appendChild(line);
+				labelAt = {
+					x: (start.x + end.x) / 2,
+					y: (start.y + end.y) / 2
+				};
+			}
+			const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+			text.setAttribute("class", "fragment-link-label");
+			text.setAttribute("x", String(labelAt.x));
+			text.setAttribute("y", String(labelAt.y));
+			text.setAttribute("font-size", String(fontSize));
+			text.textContent = link.toBox ? FRAGMENT_LINK_LABEL_SAME_PAGE : FRAGMENT_LINK_LABEL_CROSS_PAGE;
+			group.appendChild(text);
+			svg.appendChild(group);
+		}
+	}
+	function appendFragmentNavButtons(svg, img, items, ctx) {
+		if (!items.length) return;
+		const btnSize = overlayUserLength(19.5, ctx);
+		const gap = overlayUserLength(2, ctx);
+		const inset = overlayUserLength(3, ctx);
+		const fontSize = overlayUserLength(15, ctx);
+		const radius = overlayUserLength(3, ctx);
+		for (const item of items) {
+			const { x, y, w, h } = boxPixelRect(item.box, img);
+			const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+			group.setAttribute("class", "fragment-nav");
+			group.setAttribute("data-element-id", item.elementId);
+			const rowY = y + h - inset - btnSize;
+			const nextX = x + w - inset - btnSize;
+			appendFragmentNavButton(group, nextX - gap - btnSize, rowY, btnSize, radius, fontSize, "prev", "‹", item.hasPrev);
+			appendFragmentNavButton(group, nextX, rowY, btnSize, radius, fontSize, "next", "›", item.hasNext);
+			svg.appendChild(group);
+		}
+	}
+	function appendFragmentNavButton(group, x, y, size, radius, fontSize, direction, label, enabled) {
+		const btn = document.createElementNS("http://www.w3.org/2000/svg", "g");
+		btn.setAttribute("class", `fragment-nav-btn fragment-nav-btn-${direction}${enabled ? "" : " fragment-nav-btn-disabled"}`);
+		btn.setAttribute("data-nav", direction);
+		if (enabled) {
+			btn.setAttribute("role", "button");
+			btn.setAttribute("aria-label", direction === "prev" ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT);
+		}
+		const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+		bg.setAttribute("class", "fragment-nav-btn-bg");
+		bg.setAttribute("x", String(x));
+		bg.setAttribute("y", String(y));
+		bg.setAttribute("width", String(size));
+		bg.setAttribute("height", String(size));
+		bg.setAttribute("rx", String(radius));
+		bg.setAttribute("ry", String(radius));
+		btn.appendChild(bg);
+		const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+		text.setAttribute("class", "fragment-nav-btn-label");
+		text.setAttribute("x", String(x + size / 2));
+		text.setAttribute("y", String(y + size / 2));
+		text.setAttribute("font-size", String(fontSize));
+		text.textContent = label;
+		btn.appendChild(text);
+		group.appendChild(btn);
+	}
+	function appendReadingOrderOverlay(svg, img, steps) {
+		if (!steps.length) return;
+		if (steps.length >= 2) {
+			ensureArrowMarker(ensureOverlayDefs(svg), "reading-order-arrowhead");
+			for (let i = 0; i < steps.length - 1; i += 1) {
+				const from = boxPixelRect(steps[i].box, img);
+				const to = boxPixelRect(steps[i + 1].box, img);
+				const start = boxCenter(from);
+				const end = boxCenter(to);
+				const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+				line.setAttribute("class", "reading-order-step");
+				line.setAttribute("x1", String(start.x));
+				line.setAttribute("y1", String(start.y));
+				line.setAttribute("x2", String(end.x));
+				line.setAttribute("y2", String(end.y));
+				line.setAttribute("marker-end", "url(#reading-order-arrowhead)");
+				svg.appendChild(line);
+			}
+		}
+	}
+	function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = {
+		width: 512,
+		height: 512
+	}, onSelectElement, onNavigateFragment, onClearSelection, getPagPanSuppressClick, setPagPanSuppressClick, ctx) {
+		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		svg.classList.add("overlay");
+		svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
+		svg.setAttribute("overflow", "hidden");
+		appendCaptionLinks(svg, img, captionLinks);
+		appendXrefLinks(svg, img, xrefLinks);
+		appendFragmentLinks(svg, img, fragmentLinks, defaultResolution, ctx);
+		appendReadingOrderOverlay(svg, img, readingOrderSteps);
+		ensureLayerHatchPatterns(ensureOverlayDefs(svg));
+		for (const b of sortedOverlayBoxes(boxes, ctx.selectedId)) {
+			const { x, y, w, h } = boxPixelRect(b, img);
+			const cls = bboxClassForKind(b.kind);
+			const kindClass = kindClassForTag(b.kind);
+			const layerClass = layerClassForValue(b.layer ?? "body");
+			const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+			rect.setAttribute("class", `bbox bbox-${cls} ${kindClass}${layerClass ? ` ${layerClass}` : ""}`);
+			rect.setAttribute("x", String(x));
+			rect.setAttribute("y", String(y));
+			rect.setAttribute("width", String(Math.max(w, 1)));
+			rect.setAttribute("height", String(Math.max(h, 1)));
+			rect.setAttribute("data-element-id", b.elementId);
+			svg.appendChild(rect);
+		}
+		appendFragmentNavButtons(svg, img, fragmentNavItems, ctx);
+		svg.addEventListener("click", (e) => {
+			if (getPagPanSuppressClick()) {
+				setPagPanSuppressClick(false);
+				return;
+			}
+			const target = e.target;
+			const navBtn = target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
+			if (navBtn) {
+				e.stopPropagation();
+				const elementId = navBtn.closest(".fragment-nav")?.getAttribute("data-element-id");
+				const direction = navBtn.getAttribute("data-nav");
+				if (elementId && direction) onNavigateFragment(elementId, direction);
+				return;
+			}
+			const badge = target.closest(".overlay-badge[data-element-id]");
+			if (badge) {
+				const id = badge.getAttribute("data-element-id");
+				if (id) onSelectElement(id);
+				return;
+			}
+			const coords = imageCoordsFromEvent(svg, e);
+			if (!coords) return;
+			const hit = hitTestBoxes(boxes, img, coords.x, coords.y);
+			if (hit) onSelectElement(hit.elementId);
+			else onClearSelection();
+		});
+		svg.addEventListener("mousemove", (e) => {
+			const coords = imageCoordsFromEvent(svg, e);
+			svg.style.cursor = coords && hitTestBoxes(boxes, img, coords.x, coords.y) ? "pointer" : "";
+		});
+		svg.addEventListener("mouseleave", () => {
+			svg.style.cursor = "";
+		});
+		return svg;
+	}
+	function imageCoordsFromEvent(svg, evt) {
+		const pt = svg.createSVGPoint();
+		pt.x = evt.clientX;
+		pt.y = evt.clientY;
+		const ctm = svg.getScreenCTM()?.inverse();
+		if (!ctm) return null;
+		const p = pt.matrixTransform(ctm);
+		return {
+			x: p.x,
+			y: p.y
+		};
+	}
+	function hitTestBoxes(boxes, img, x, y) {
+		let best = null;
+		let bestArea = Infinity;
+		for (const b of boxes) {
+			const { x: bx, y: by, w, h, area } = boxPixelRect(b, img);
+			if (x >= bx && x <= bx + w && y >= by && y <= by + h && area < bestArea) {
+				best = b;
+				bestArea = area;
+			}
+		}
+		return best;
+	}
+	//#endregion
+	//#region src/components/page-view-pane/page-view-pane.ts
+	/** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
+	init_constants();
+	init_document();
+	init_dom();
+	var DoclangPageViewPane = class extends DoclangPageElement {
+		_body;
+		_settingsToggle;
+		_settingsLayer;
+		_settingsScrim;
+		_settingsClose;
+		_zoomLabel;
+		_zoomInput;
+		_zoomReset;
+		_showAllBboxes;
+		_layoutSubtoggles;
+		_showLayoutBadges;
+		_showReadingOrder;
+		_readingOrderSubtoggles;
+		_readingOrderArrows;
+		_readingOrderGlobal;
+		_showPictureContents;
+		_showTableContents;
+		_showFragmentLinks;
+		_showXrefLinks;
+		_showCaptionLinks;
+		_settingsOpen = false;
+		_zoomPct = 100;
+		_opts = {
+			showAllBboxes: true,
+			showLayoutBadges: true,
+			showReadingOrder: false,
+			readingOrderArrows: true,
+			readingOrderGlobal: false,
+			showPictureContents: false,
+			showTableContents: false,
+			showFragmentLinks: false,
+			showXrefLinks: false,
+			showCaptionLinks: false
+		};
+		_panDrag = null;
+		_suppressClick = false;
+		_layoutCache = null;
+		_layoutFrame = 0;
+		_resizeObserver = null;
+		constructor() {
+			super(page_view_pane_default$1, page_view_pane_default);
+			this.classList.add("pane", "pane-page-view");
+			this._body = this.q(".pane-body");
+			this._zoomLabel = this.q(".page-zoom-control");
+			this._zoomInput = this.q(".zoom-input");
+			this._zoomReset = this.q(".page-zoom-reset");
+			this._settingsToggle = this.q(".pane-settings-toggle");
+			this._settingsLayer = this.q(".viewer-settings-layer");
+			this._settingsScrim = this.q(".viewer-settings-scrim");
+			this._settingsClose = this.q(".viewer-settings-close");
+			this._showAllBboxes = this.q(".cb-all-bboxes");
+			this._layoutSubtoggles = this.q(".settings-subgroup");
+			this._showReadingOrder = this.q(".cb-reading-order");
+			this._readingOrderSubtoggles = this.q(".settings-reading-order-group");
+			this._readingOrderArrows = this.q(".cb-reading-order-arrows");
+			this._readingOrderGlobal = this.q(".cb-reading-order-global");
+			this._showPictureContents = this.q(".cb-picture-contents");
+			this._showTableContents = this.q(".cb-table-contents");
+			this._showFragmentLinks = this.q(".cb-fragment-links");
+			this._showXrefLinks = this.q(".cb-xref-links");
+			this._showCaptionLinks = this.q(".cb-caption-links");
+			this._showLayoutBadges = this.q(".cb-layout-badges");
+			this._wirePanEvents();
+			this._wireSettingsEvents();
+			this._wireHints();
+		}
+		get zoomPercent() {
+			return this._zoomPct;
+		}
+		get overlaySettings() {
+			return this._opts;
+		}
+		get suppressClick() {
+			return this._suppressClick;
+		}
+		setSuppressClick(v) {
+			this._suppressClick = v;
+		}
+		/** The scrollable viewport pane (page-view-port div, or body if absent). */
+		get scrollPane() {
+			return this._scrollPane();
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+			this._settingsToggle.hidden = this.hidden;
+			this._zoomLabel.hidden = this.hidden;
+			this._body.tabIndex = visible ? 0 : -1;
+		}
+		/**
+		* Recalculate image size and re-sync overlay badge positions.
+		* Also ensures the ResizeObserver is attached (idempotent).
+		*/
+		refreshLayout() {
+			if (!this._resizeObserver) {
+				this._resizeObserver = new ResizeObserver(() => this.refreshLayout());
+				this._resizeObserver.observe(this._body);
+			}
+			cancelAnimationFrame(this._layoutFrame);
+			this._layoutFrame = requestAnimationFrame(() => {
+				this._layoutFrame = 0;
+				const img = this._body.querySelector(".page-view img");
+				if (img?.naturalWidth) {
+					applyPageImageSize(img, this._body, this._overlayCtx());
+					this._updatePanCursor();
+					this._syncOverlayBadgesForImg(img);
+					this.dispatchEvent(new CustomEvent("doclang-layout-refresh", {
+						bubbles: true,
+						composed: true
+					}));
+				}
+			});
+		}
+		activateZoom(pct) {
+			this._zoomPct = pct;
+			this._layoutCache = null;
+			this._syncZoomUI();
+			this._resetScroll();
+		}
+		resetZoom() {
+			this._zoomPct = 100;
+			this._layoutCache = null;
+			this._syncZoomUI();
+			this._resetScroll();
+			this.dispatchEvent(new CustomEvent("doclang-zoom-change", {
+				bubbles: true,
+				composed: true,
+				detail: { pct: this._zoomPct }
+			}));
+		}
+		toggleSettings() {
+			this._setSettingsOpen(!this._settingsOpen);
+		}
+		closeSettings() {
+			if (this._settingsOpen) this._setSettingsOpen(false);
+		}
+		_applySelection() {
+			for (const el of this._body.querySelectorAll(".bbox.selected, .overlay-badge.selected")) el.classList.remove("selected");
+			if (this._selectedId && this._docState?.hasPageView) for (const el of this._body.querySelectorAll(`[data-element-id="${this._selectedId}"]`)) el.classList.add("selected");
+			const img = this._body.querySelector(".page-view img");
+			if (img) this._syncOverlayBadgesForImg(img);
+			this._applyBboxVisibility();
+		}
+		_renderDocument() {
+			const state = this._docState;
+			this._body.innerHTML = "";
+			this._layoutCache = null;
+			this._selectedId = null;
+			this._peerIds = /* @__PURE__ */ new Set();
+			if (!state?.hasPageView) return;
+			const imageUrl = state.pageImages.get(this._currentPage);
+			if (!imageUrl) {
+				this._body.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
+				return;
+			}
+			const port = document.createElement("div");
+			port.className = "page-view-port";
+			const wrap = document.createElement("div");
+			wrap.className = "page-view";
+			const img = document.createElement("img");
+			img.alt = `Page ${this._currentPage}`;
+			const pageNum = this._currentPage;
+			const onImageReady = () => {
+				if (img.dataset.layoutGeneration === String(pageNum)) return;
+				img.dataset.layoutGeneration = String(pageNum);
+				applyPageImageSize(img, this._body, this._overlayCtx());
+				const segment = state.segments[pageNum - 1] ?? [];
+				const elementIds = assignElementIds(segment);
+				state.elementIds = elementIds;
+				state.idToElement = invertElementIds(elementIds);
+				const boxes = collectBoundingBoxes(segment, state.defaultResolution, elementIds);
+				const existing = wrap.querySelector("svg.overlay");
+				if (existing) existing.remove();
+				const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder, this._opts.readingOrderGlobal, state.readingOrderDisplayNumbers);
+				state.pageViewOverlay = {
+					boxes,
+					readingOrderSteps
+				};
+				if (boxes.length) wrap.appendChild(buildOverlay(img, boxes, collectCaptionLinks(segment, elementIds, boxes), collectXrefLinks(segment, elementIds, boxes), readingOrderSteps, collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById), collectFragmentNavItems(segment, elementIds, boxes, state.threadNavByElement), state.defaultResolution, (id) => this.dispatchEvent(new CustomEvent("doclang-element-select", {
+					bubbles: true,
+					composed: true,
+					detail: { id }
+				})), (elementId, direction) => this.dispatchEvent(new CustomEvent("doclang-navigate-thread", {
+					bubbles: true,
+					composed: true,
+					detail: {
+						elementId,
+						direction
+					}
+				})), () => this.dispatchEvent(new CustomEvent("doclang-clear-selection", {
+					bubbles: true,
+					composed: true
+				})), () => this._suppressClick, (v) => {
+					this._suppressClick = v;
+				}, this._overlayCtx()));
+				this._syncOverlayBadgesForImg(img);
+				this._applyBboxVisibility();
+				const pending = state.pendingSelectElement;
+				if (pending) {
+					state.pendingSelectElement = null;
+					const id = this._findElementIdOnPage(pending, elementIds);
+					if (id) this.dispatchEvent(new CustomEvent("doclang-element-select", {
+						bubbles: true,
+						composed: true,
+						detail: { id }
+					}));
+				}
+			};
+			img.addEventListener("load", onImageReady, { once: true });
+			wrap.appendChild(img);
+			port.appendChild(wrap);
+			this._body.appendChild(port);
+			img.src = imageUrl;
+			if (img.complete) onImageReady();
+			this.refreshLayout();
+		}
+		_clearDocument() {
+			this._body.innerHTML = "";
+			this._layoutCache = null;
+		}
+		_overlayCtx() {
+			return {
+				zoomPct: this._zoomPct,
+				pane: this._body,
+				layoutCache: this._layoutCache,
+				setLayoutCache: (c) => {
+					this._layoutCache = c;
+				},
+				selectedId: this._selectedId
+			};
+		}
+		_syncOverlayBadgesForImg(img) {
+			const svg = img.parentElement?.querySelector("svg.overlay");
+			const overlay = this._docState?.pageViewOverlay;
+			if (!svg || !overlay) return;
+			const { showAllBboxes, showLayoutBadges, showReadingOrder } = this._opts;
+			syncOverlayBadges(img, svg, overlay.boxes, overlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder, this._overlayCtx());
+		}
+		_isContentsOptionHidden(elementId, clickVisible) {
+			if (clickVisible) return false;
+			const xmlEl = this._docState?.idToElement?.get(elementId) ?? null;
+			if (!this._opts.showPictureContents && isPictureContentElement(xmlEl)) return true;
+			if (!this._opts.showTableContents && isTableContentElement(xmlEl)) return true;
+			return false;
+		}
+		_isFragmentLinkRelevant(linkEl) {
+			const fromId = linkEl.getAttribute("data-fragment-from-id");
+			const toId = linkEl.getAttribute("data-fragment-to-id");
+			if (fromId && this._peerIds.has(fromId)) return true;
+			if (toId && this._peerIds.has(toId)) return true;
+			return false;
+		}
+		_applyBboxVisibility() {
+			if (!this._docState?.hasPageView) return;
+			const { showAllBboxes, showLayoutBadges, showCaptionLinks, showXrefLinks, showFragmentLinks, showReadingOrder, readingOrderArrows } = this._opts;
+			const selectedId = this._selectedId;
+			const peerIds = this._peerIds;
+			for (const el of this._body.querySelectorAll(".bbox")) {
+				el.classList.remove("related");
+				const elementId = el.getAttribute("data-element-id") ?? "";
+				const clickVisible = elementId === selectedId || peerIds.has(elementId);
+				if (showAllBboxes) {
+					if (this._isContentsOptionHidden(elementId, clickVisible)) el.classList.add("bbox-hidden");
+					else {
+						el.classList.remove("bbox-hidden");
+						if (peerIds.has(elementId)) el.classList.add("related");
+					}
+					continue;
+				}
+				if (elementId === selectedId) el.classList.remove("bbox-hidden");
+				else if (peerIds.has(elementId)) {
+					el.classList.remove("bbox-hidden");
+					el.classList.add("related");
+				} else el.classList.add("bbox-hidden");
+			}
+			for (const el of this._body.querySelectorAll(".element-badge")) {
+				const elementId = el.getAttribute("data-element-id") ?? "";
+				const clickVisible = elementId === selectedId || peerIds.has(elementId);
+				if (!showAllBboxes || !showLayoutBadges) {
+					el.classList.add("bbox-hidden");
+					continue;
+				}
+				if (this._isContentsOptionHidden(elementId, clickVisible)) el.classList.add("bbox-hidden");
+				else el.classList.remove("bbox-hidden");
+			}
+			for (const el of this._body.querySelectorAll(".caption-link")) el.classList.toggle("bbox-hidden", !showAllBboxes || !showCaptionLinks);
+			for (const el of this._body.querySelectorAll(".xref-link")) el.classList.toggle("bbox-hidden", !showAllBboxes || !showXrefLinks);
+			for (const el of this._body.querySelectorAll(".fragment-link")) {
+				const clickVisible = Boolean(selectedId && this._isFragmentLinkRelevant(el));
+				el.classList.toggle("bbox-hidden", !(clickVisible || showAllBboxes && showFragmentLinks));
+			}
+			for (const el of this._body.querySelectorAll(".fragment-nav")) {
+				const elementId = el.getAttribute("data-element-id") ?? "";
+				const clickVisible = elementId === selectedId || peerIds.has(elementId);
+				el.classList.toggle("bbox-hidden", !(clickVisible || showAllBboxes && showFragmentLinks));
+			}
+			for (const el of this._body.querySelectorAll(".reading-order-badge")) {
+				const elementId = el.getAttribute("data-element-id") ?? "";
+				const clickVisible = elementId === selectedId || peerIds.has(elementId);
+				if (!showAllBboxes || !showReadingOrder) {
+					el.classList.add("bbox-hidden");
+					continue;
+				}
+				const xmlEl = this._docState?.idToElement?.get(elementId) ?? null;
+				if (isPictureContentElement(xmlEl) || isTableContentElement(xmlEl) || this._isContentsOptionHidden(elementId, clickVisible)) {
+					el.classList.add("bbox-hidden");
+					continue;
+				}
+				el.classList.remove("bbox-hidden");
+			}
+			for (const el of this._body.querySelectorAll(".reading-order-step")) el.classList.toggle("bbox-hidden", !showAllBboxes || !showReadingOrder || !readingOrderArrows);
+		}
+		_findElementIdOnPage(el, elementIds) {
+			return elementIds.get(el) ?? null;
+		}
+		_scrollPane() {
+			return this._body.querySelector(".page-view-port") ?? this._body;
+		}
+		_isScrollable() {
+			const pane = this._scrollPane();
+			if (!pane) return false;
+			return pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
+		}
+		_resetScroll() {
+			const port = this._scrollPane();
+			if (port) {
+				port.scrollLeft = 0;
+				port.scrollTop = 0;
+			}
+		}
+		_updatePanCursor() {
+			this._body.classList.toggle("can-pan", this._isScrollable() && !this._panDrag);
+		}
+		_setSettingsOpen(open) {
+			this._settingsOpen = open;
+			this._settingsLayer.hidden = !open;
+			this._settingsToggle.setAttribute("aria-expanded", String(open));
+		}
+		_syncZoomUI() {
+			this._zoomInput.value = String(this._zoomPct);
+			this._zoomInput.setAttribute("aria-valuenow", String(this._zoomPct));
+			this._zoomReset.textContent = `${this._zoomPct}%`;
+			this._zoomReset.disabled = this._zoomPct === 100;
+		}
+		_syncSubtoggles() {
+			const layoutEnabled = this._opts.showAllBboxes;
+			const readingOrderEnabled = layoutEnabled && this._opts.showReadingOrder;
+			for (const label of this._layoutSubtoggles.querySelectorAll("label.settings-option-sub:not(.settings-reading-order-group label)")) {
+				label.classList.toggle("settings-option-disabled", !layoutEnabled);
+				const input = label.querySelector("input");
+				if (input) input.disabled = !layoutEnabled;
+			}
+			for (const label of this._readingOrderSubtoggles.querySelectorAll("label.settings-option-sub")) {
+				label.classList.toggle("settings-option-disabled", !readingOrderEnabled);
+				const input = label.querySelector("input");
+				if (input) input.disabled = !readingOrderEnabled;
+			}
+		}
+		_emitOverlayChange() {
+			this.dispatchEvent(new CustomEvent("doclang-overlay-change", {
+				bubbles: true,
+				composed: true,
+				detail: { ...this._opts }
+			}));
+		}
+		_wirePanEvents() {
+			this._body.addEventListener("pointerdown", (e) => {
+				if (e.button !== 0) return;
+				if (!(e.target instanceof Element) || !e.target.closest(".page-view")) return;
+				if (!this._isScrollable()) return;
+				const scrollPane = this._scrollPane();
+				if (!scrollPane) return;
+				this._panDrag = {
+					pointerId: e.pointerId,
+					startX: e.clientX,
+					startY: e.clientY,
+					scrollLeft: scrollPane.scrollLeft,
+					scrollTop: scrollPane.scrollTop,
+					moved: false
+				};
+			});
+			this._body.addEventListener("pointermove", (e) => {
+				if (!this._panDrag || e.pointerId !== this._panDrag.pointerId) return;
+				const dx = e.clientX - this._panDrag.startX;
+				const dy = e.clientY - this._panDrag.startY;
+				if (!this._panDrag.moved && Math.hypot(dx, dy) >= 5) {
+					this._panDrag.moved = true;
+					this._body.classList.add("is-panning");
+					this._body.classList.remove("can-pan");
+					this._body.setPointerCapture(e.pointerId);
+					this.dispatchEvent(new CustomEvent("doclang-panning-change", {
+						bubbles: true,
+						composed: true,
+						detail: { panning: true }
+					}));
+				}
+				if (!this._panDrag.moved) return;
+				const scrollPane = this._scrollPane();
+				if (!scrollPane) return;
+				scrollPane.scrollLeft = this._panDrag.scrollLeft + this._panDrag.startX - e.clientX;
+				scrollPane.scrollTop = this._panDrag.scrollTop + this._panDrag.startY - e.clientY;
+				e.preventDefault();
+			});
+			const endPan = (e) => {
+				if (!this._panDrag || e.pointerId !== this._panDrag.pointerId) return;
+				const wasPanning = this._panDrag.moved;
+				if (wasPanning) this._suppressClick = true;
+				this._panDrag = null;
+				this._body.classList.remove("is-panning");
+				if (wasPanning) this.dispatchEvent(new CustomEvent("doclang-panning-change", {
+					bubbles: true,
+					composed: true,
+					detail: { panning: false }
+				}));
+				if (this._body.hasPointerCapture(e.pointerId)) this._body.releasePointerCapture(e.pointerId);
+				this._updatePanCursor();
+			};
+			this._body.addEventListener("pointerup", (e) => endPan(e));
+			this._body.addEventListener("pointercancel", (e) => endPan(e));
+			this._body.tabIndex = 0;
+			this._body.setAttribute("role", "region");
+			this._body.setAttribute("aria-label", "Original page");
+			this._body.addEventListener("pointerdown", () => {
+				if (this._docState?.hasPageView) this._body.focus({ preventScroll: true });
+			});
+			this._body.addEventListener("keydown", (e) => {
+				if (!this._docState?.hasPageView) return;
+				let dir = 0;
+				switch (e.key) {
+					case "ArrowDown":
+					case "PageDown":
+					case "ArrowRight":
+						dir = 1;
+						break;
+					case "ArrowUp":
+					case "PageUp":
+					case "ArrowLeft": dir = -1;
+				}
+				if (dir) {
+					e.preventDefault();
+					this.dispatchEvent(new CustomEvent("doclang-page-key-nav", {
+						bubbles: true,
+						composed: true,
+						detail: { dir }
+					}));
+				}
+			});
+		}
+		_wireSettingsEvents() {
+			this._settingsToggle.addEventListener("click", () => this.toggleSettings());
+			this._settingsClose.addEventListener("click", () => this._setSettingsOpen(false));
+			this._settingsScrim.addEventListener("click", () => this._setSettingsOpen(false));
+			this._zoomInput.addEventListener("input", () => {
+				this._zoomPct = Math.max(100, Number(this._zoomInput.value));
+				this._layoutCache = null;
+				this._syncZoomUI();
+				this.dispatchEvent(new CustomEvent("doclang-zoom-change", {
+					bubbles: true,
+					composed: true,
+					detail: { pct: this._zoomPct }
+				}));
+			});
+			this._zoomReset.addEventListener("click", () => {
+				if (this._zoomPct !== 100) this.resetZoom();
+			});
+			for (const [el, key] of [
+				[this._showAllBboxes, "showAllBboxes"],
+				[this._showLayoutBadges, "showLayoutBadges"],
+				[this._showReadingOrder, "showReadingOrder"],
+				[this._readingOrderArrows, "readingOrderArrows"],
+				[this._readingOrderGlobal, "readingOrderGlobal"],
+				[this._showPictureContents, "showPictureContents"],
+				[this._showTableContents, "showTableContents"],
+				[this._showFragmentLinks, "showFragmentLinks"],
+				[this._showXrefLinks, "showXrefLinks"],
+				[this._showCaptionLinks, "showCaptionLinks"]
+			]) el.addEventListener("change", () => {
+				this._opts[key] = el.checked;
+				this._syncSubtoggles();
+				if (key === "readingOrderGlobal" && this._docState) this._renderDocument();
+				const img = this._body.querySelector(".page-view img");
+				if (img) this._syncOverlayBadgesForImg(img);
+				this._applyBboxVisibility();
+				this._emitOverlayChange();
+			});
+		}
+		_wireHints() {
+			this.addEventListener("doclang-panning-change", (e) => {
+				if (e.detail.panning) this._hideHint();
+			});
+			this.addEventListener("mousemove", (e) => {
+				if (this._panDrag?.moved) {
+					this._hideHint();
+					return;
+				}
+				const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
+				if (navBtn) {
+					const hint = navBtn.getAttribute("data-nav") === "prev" ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT;
+					this._showHint({
+						text: hint,
+						clientX: e.clientX,
+						clientY: e.clientY
+					});
+					return;
+				}
+				const badge = e.target.closest(".element-badge[data-element-id]");
+				if (!badge || !this._docState?.idToElement) {
+					this._hideHint();
+					return;
+				}
+				const elementId = badge.getAttribute("data-element-id");
+				const xmlEl = elementId ? this._docState.idToElement.get(elementId) : null;
+				if (!xmlEl) {
+					this._hideHint();
+					return;
+				}
+				this._showHint({
+					html: this._elementHeadTooltipHtml(xmlEl, this._docState.defaultResolution),
+					clientX: e.clientX,
+					clientY: e.clientY
+				});
+			});
+			this.addEventListener("mouseleave", () => this._hideHint());
+		}
+		_showHint(detail) {
+			this.dispatchEvent(new CustomEvent("doclang-hint", {
+				bubbles: true,
+				composed: true,
+				detail
+			}));
+		}
+		_hideHint() {
+			this.dispatchEvent(new CustomEvent("doclang-hint-hide", {
+				bubbles: true,
+				composed: true
+			}));
+		}
+		_elementHeadTooltipHtml(el, defaultResolution) {
+			return `<table class="head-tooltip"><tbody>${this._collectElementHeadInfo(el, defaultResolution).map(({ key, value, isDefault }) => {
+				const rendered = escapeHtml(value);
+				const suffix = isDefault ? " <span class=\"head-default\">(default)</span>" : "";
+				return `<tr><th scope="row">${escapeHtml(key)}</th><td>${rendered}${suffix}</td></tr>`;
+			}).join("")}</tbody></table>`;
+		}
+		_collectElementHeadInfo(el, defaultResolution) {
+			const labelEl = firstHeadChild(el, "label");
+			const threadEl = firstHeadChild(el, "thread");
+			const xrefEl = firstHeadChild(el, "xref");
+			const hrefEl = firstHeadChild(el, "href");
+			const layerEl = firstHeadChild(el, "layer");
+			const captionEl = firstHeadChild(el, "caption");
+			const descriptionEl = firstHeadChild(el, "description");
+			const summaryEl = firstHeadChild(el, "summary");
+			const customEl = firstHeadChild(el, "custom");
+			const locs = elementHeadLocations(el);
+			const rows = [{
+				key: "element",
+				value: elementLabel(el),
+				isDefault: false
+			}];
+			rows.push({
+				key: "label",
+				value: labelEl?.getAttribute("value") ?? "undefined",
+				isDefault: !labelEl?.hasAttribute("value")
+			});
+			if (threadEl) rows.push({
+				key: "thread_id",
+				value: threadEl.getAttribute("thread_id") ?? "—",
+				isDefault: false
+			});
+			else rows.push({
+				key: "thread",
+				value: "—",
+				isDefault: true
+			});
+			if (xrefEl) rows.push({
+				key: "xref",
+				value: `thread_id ${xrefEl.getAttribute("thread_id") ?? "—"}`,
+				isDefault: false
+			});
+			else rows.push({
+				key: "xref",
+				value: "—",
+				isDefault: true
+			});
+			if (hrefEl) rows.push({
+				key: "href",
+				value: hrefEl.getAttribute("uri") ?? "—",
+				isDefault: false
+			});
+			else rows.push({
+				key: "href",
+				value: "—",
+				isDefault: true
+			});
+			rows.push({
+				key: "layer",
+				value: layerEl?.getAttribute("value") ?? "body",
+				isDefault: !layerEl?.hasAttribute("value")
+			});
+			const cornerLabels = [
+				"x_min",
+				"y_min",
+				"x_max",
+				"y_max"
+			];
+			if (locs.length === 4) for (let idx = 0; idx < 4; idx += 1) {
+				const loc = locs[idx];
+				const resolution = locationResolution(loc, idx % 2 === 0 ? defaultResolution.width : defaultResolution.height);
+				const value = loc.getAttribute("value") ?? "0";
+				rows.push({
+					key: cornerLabels[idx],
+					value: `${value} @ ${resolution}`,
+					isDefault: false
+				});
+			}
+			else for (const key of cornerLabels) rows.push({
+				key,
+				value: "—",
+				isDefault: false
+			});
+			const headTextPreview = (headEl, maxLen = 72) => {
+				const text = headEl.textContent?.replace(/\s+/g, " ").trim() ?? "";
+				if (!text) return "—";
+				return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+			};
+			rows.push({
+				key: "caption",
+				value: captionEl ? headTextPreview(captionEl) : "—",
+				isDefault: !captionEl
+			});
+			rows.push({
+				key: "description",
+				value: descriptionEl ? headTextPreview(descriptionEl) : "—",
+				isDefault: !descriptionEl
+			});
+			rows.push({
+				key: "summary",
+				value: summaryEl ? headTextPreview(summaryEl) : "—",
+				isDefault: !summaryEl
+			});
+			rows.push({
+				key: "custom",
+				value: customEl ? headTextPreview(customEl) : "—",
+				isDefault: !customEl
+			});
+			return rows;
+		}
+	};
+	customElements.define("doclang-page-view-pane", DoclangPageViewPane);
+	//#endregion
+	//#region src/components/reading-pane/reading-pane.css?inline
+	var reading_pane_default$1 = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-reading-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: auto;\n  padding: 1rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.rendered-doc {\n  max-width: 42rem;\n  margin: 0 auto;\n  line-height: 1.6;\n}\n.rendered-el-virtual-text > p,\n.rendered-el-virtual-text > div {\n  margin: 0;\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text {\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text > p,\n.rendered-doc li > .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-el-virtual-text > div > .rendered-el {\n  display: block;\n  margin: 0.25rem 0;\n}\n.rendered-el {\n  cursor: pointer;\n  border-radius: 0.25rem;\n}\n.rendered-el:hover {\n  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);\n}\n.rendered-el.selected {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  background: color-mix(in srgb, var(--accent) 8%, transparent);\n}\n.rendered-doc p {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc h1,\n.rendered-doc h2,\n.rendered-doc h3,\n.rendered-doc h4,\n.rendered-doc h5,\n.rendered-doc h6 {\n  margin: 1.25rem 0 0.5rem;\n  line-height: 1.25;\n}\n.rendered-doc h1:first-child,\n.rendered-doc h2:first-child,\n.rendered-doc h3:first-child {\n  margin-top: 0;\n}\n.rendered-doc ul,\n.rendered-doc ol {\n  margin: 0 0 0.75rem;\n  padding-left: 1.5rem;\n}\n.rendered-doc li {\n  margin: 0.25rem 0;\n}\n.rendered-doc li > .rendered-el > p:first-child,\n.rendered-doc li > .rendered-el > h1:first-child,\n.rendered-doc li > .rendered-el > h2:first-child,\n.rendered-doc li > .rendered-el > h3:first-child,\n.rendered-doc li > .rendered-el > h4:first-child,\n.rendered-doc li > .rendered-el > h5:first-child,\n.rendered-doc li > .rendered-el > h6:first-child {\n  margin-top: 0;\n}\n.rendered-marker {\n  margin-right: 0.35rem;\n}\n.rendered-handwriting {\n  font-family: 'Segoe Print', 'Bradley Hand', cursive;\n}\n.rendered-doc pre {\n  margin: 0 0 0.75rem;\n  padding: 0.75rem 1rem;\n  overflow-x: auto;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-doc code {\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc pre code {\n  font-size: inherit;\n  background: none;\n  border: none;\n  padding: 0;\n}\n.rendered-code-label {\n  display: block;\n  margin-bottom: 0.25rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n}\n.rendered-formula {\n  display: block;\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-family: var(--font-mono);\n  font-size: 0.875rem;\n  background: var(--placeholder-bg);\n  border-left: 3px solid var(--border);\n  overflow-x: auto;\n}\n.rendered-formula-inline {\n  display: inline;\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc figure {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc figure img {\n  max-width: 100%;\n  height: auto;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n}\n.rendered-doc figure img.rendered-picture-unavailable {\n  display: inline-block;\n  min-width: 3rem;\n  min-height: 2.5rem;\n  object-fit: contain;\n  vertical-align: middle;\n}\n.rendered-doc figcaption {\n  margin-top: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-picture-contents {\n  margin-top: 0.5rem;\n  font-size: 0.875rem;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--placeholder-bg);\n}\n.rendered-picture-contents summary {\n  padding: 0.4rem 0.65rem;\n  cursor: pointer;\n  font-weight: 600;\n  color: var(--muted);\n  user-select: none;\n}\n.rendered-picture-contents summary:hover {\n  color: var(--text);\n}\n.rendered-picture-contents-body {\n  padding: 0.5rem 0.75rem 0.75rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-picture-contents-body .rendered-el > p {\n  margin-bottom: 0.35rem;\n  font-size: 0.8125rem;\n}\n.rendered-table {\n  width: 100%;\n  margin: 0 0 0.75rem;\n  border-collapse: collapse;\n  font-size: 0.875rem;\n}\n.rendered-table caption {\n  caption-side: top;\n  margin-bottom: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n  text-align: left;\n}\n.rendered-table th,\n.rendered-table td {\n  border: 1px solid var(--border);\n  padding: 0.35rem 0.5rem;\n  vertical-align: top;\n  text-align: left;\n}\n.rendered-table th {\n  background: color-mix(in srgb, var(--border) 35%, var(--panel));\n  font-weight: 600;\n}\n.rendered-table .rendered-table-cell-text {\n  display: inline;\n}\n.rendered-table .rendered-el {\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  margin: 0;\n}\n.rendered-table .rendered-table {\n  margin: 0.25rem 0 0;\n}\n.rendered-page-header,\n.rendered-page-footer {\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-page-header {\n  margin-bottom: 1rem;\n  padding-bottom: 0.5rem;\n  border-bottom: 1px solid var(--border);\n}\n.rendered-page-footer {\n  margin-top: 1rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-doc:not(.show-reading-furniture)\n  .rendered-el[data-doclang-layer='furniture'] {\n  display: none;\n}\n.rendered-doc:not(.show-reading-background)\n  .rendered-el[data-doclang-layer='background'] {\n  display: none;\n}\n.rendered-el[data-doclang-layer='furniture'],\n.rendered-el[data-doclang-layer='background'] {\n  position: relative;\n}\n.rendered-el[data-doclang-layer='furniture']::before,\n.rendered-el[data-doclang-layer='background']::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  border-radius: inherit;\n  pointer-events: none;\n  background: repeating-linear-gradient(\n    -45deg,\n    transparent 0 10px,\n    color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px\n  );\n}\n.rendered-el.rendered-footnote > aside {\n  font-size: 0.875rem;\n  color: var(--muted);\n  border-left: 2px solid var(--border);\n  padding-left: 0.75rem;\n  margin: 0 0 0.75rem;\n}\n.rendered-unsupported {\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.8125rem;\n  font-style: italic;\n  color: var(--muted);\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-field-region {\n  margin: 0 0 1rem;\n  padding: 0.75rem 1rem;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: color-mix(in srgb, var(--kind-field) 6%, transparent);\n}\n.rendered-field-region > .rendered-field-heading:first-child,\n.rendered-field-region\n  > .rendered-el.rendered-field_heading\n  > .rendered-field-heading:first-child {\n  margin-top: 0;\n}\n.rendered-field-item {\n  margin: 0.5rem 0;\n}\n.rendered-field-item > .rendered-el.rendered-field-key,\n.rendered-field-key {\n  font-weight: 600;\n}\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {\n  margin-top: 0.15rem;\n}\n.rendered-field-value-fillable .rendered-field-fillable-slot {\n  display: inline-block;\n  min-width: 6rem;\n  min-height: 1.25em;\n  border-bottom: 1px solid color-mix(in srgb, var(--text) 55%, transparent);\n  vertical-align: bottom;\n}\n.rendered-field-hint {\n  font-size: 0.85em;\n  color: var(--muted);\n  font-style: italic;\n}\n.rendered-field-heading {\n  color: var(--text);\n}\n.rendered-checkbox {\n  margin: 0 0.25rem 0 0;\n  vertical-align: middle;\n  accent-color: var(--kind-field);\n}\n.rendered-checkbox-wrap {\n  display: inline;\n}\n";
+	//#endregion
+	//#region src/components/reading-pane/reading-pane.html?raw
+	var reading_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Reading view</span>\n  <button\n    type=\"button\"\n    class=\"pane-settings-toggle\"\n    aria-expanded=\"false\"\n    aria-controls=\"reading-settings\"\n    hidden\n  >\n    Layers\n  </button>\n</div>\n<div class=\"pane-reading-layout\">\n  <div class=\"pane-body\" id=\"rendered-pane\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close layers\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"reading-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"reading-settings-title\">Layers</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close layers\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <div\n          class=\"settings-subgroup\"\n          role=\"group\"\n          aria-labelledby=\"reading-settings-title\"\n        >\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-furniture\" checked />\n            <span>Furniture</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-background\" checked />\n            <span>Background</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
+	//#endregion
+	//#region src/components/reading-pane/rendered.ts
+	init_constants();
+	init_dom();
+	var _assetUrls;
 	function applyElementLayerAttr(sourceEl, domEl) {
 		domEl.setAttribute("data-doclang-layer", elementLayer(sourceEl));
 	}
@@ -2316,7 +3393,7 @@
 		if (!trimmed) return null;
 		if (SAFE_DATA_IMAGE_RE.test(trimmed)) return trimmed.length <= 2097152 ? trimmed : null;
 		if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith("//")) return null;
-		return getState()?.assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
+		return _assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
 	}
 	function markPictureUnavailable(img) {
 		img.classList.add("rendered-picture-unavailable");
@@ -2996,601 +4073,233 @@
 		root.classList.toggle("show-reading-furniture", showFurniture);
 		root.classList.toggle("show-reading-background", showBackground);
 	}
-	function buildRenderedView(segment, elementIds, showFurniture, showBackground, onSelectElement) {
-		const intraPageThreads = collectIntraPageThreads(segment);
-		const skipElements = /* @__PURE__ */ new Set();
-		const mergeGroups = /* @__PURE__ */ new Map();
-		for (const [, members] of intraPageThreads) {
-			mergeGroups.set(members[0], members);
-			for (let i = 1; i < members.length; i += 1) skipElements.add(members[i]);
+	function buildRenderedView(segment, elementIds, showFurniture, showBackground, onSelectElement, assetUrls) {
+		_assetUrls = assetUrls;
+		try {
+			const intraPageThreads = collectIntraPageThreads(segment);
+			const skipElements = /* @__PURE__ */ new Set();
+			const mergeGroups = /* @__PURE__ */ new Map();
+			for (const [, members] of intraPageThreads) {
+				mergeGroups.set(members[0], members);
+				for (let i = 1; i < members.length; i += 1) skipElements.add(members[i]);
+			}
+			const root = document.createElement("article");
+			root.className = "rendered-doc";
+			for (const el of segment) {
+				if (el.nodeType !== Node.ELEMENT_NODE) continue;
+				if (localName(el) === "page_break") continue;
+				if (skipElements.has(el)) continue;
+				const mergeGroup = mergeGroups.get(el);
+				const rendered = mergeGroup ? renderMergedIntraPageFragments(mergeGroup, elementIds) : renderBlockElement(el, elementIds, { inline: false });
+				if (rendered) root.appendChild(rendered);
+			}
+			root.addEventListener("click", (e) => {
+				const target = e.target;
+				const ghostText = target.closest(".rendered-el-virtual-text");
+				const elementId = ghostText?.hasAttribute("data-element-id") ? ghostText.getAttribute("data-element-id") : target.closest(".rendered-el[data-element-id]")?.getAttribute("data-element-id") ?? null;
+				if (elementId) onSelectElement(elementId);
+			});
+			applyReadingLayerClasses(root, showFurniture, showBackground);
+			return root;
+		} finally {
+			_assetUrls = void 0;
 		}
-		const root = document.createElement("article");
-		root.className = "rendered-doc";
-		for (const el of segment) {
-			if (el.nodeType !== Node.ELEMENT_NODE) continue;
-			if (localName(el) === "page_break") continue;
-			if (skipElements.has(el)) continue;
-			const mergeGroup = mergeGroups.get(el);
-			const rendered = mergeGroup ? renderMergedIntraPageFragments(mergeGroup, elementIds) : renderBlockElement(el, elementIds, { inline: false });
-			if (rendered) root.appendChild(rendered);
-		}
-		root.addEventListener("click", (e) => {
-			const target = e.target;
-			const ghostText = target.closest(".rendered-el-virtual-text");
-			const elementId = ghostText?.hasAttribute("data-element-id") ? ghostText.getAttribute("data-element-id") : target.closest(".rendered-el[data-element-id]")?.getAttribute("data-element-id") ?? null;
-			if (elementId) onSelectElement(elementId);
-		});
-		applyReadingLayerClasses(root, showFurniture, showBackground);
-		return root;
 	}
 	//#endregion
-	//#region src/overlay.ts
-	var getPageZoomPercent = () => 100;
-	var getPagePane = () => null;
-	var getPageLayoutCache = () => null;
-	var setPageLayoutCache = () => {};
-	var getSelectedElementId = () => null;
-	function setOverlayAccessors(opts) {
-		getPageZoomPercent = opts.getPageZoomPercent;
-		getPagePane = opts.getPagePane;
-		getPageLayoutCache = opts.getPageLayoutCache;
-		setPageLayoutCache = opts.setPageLayoutCache;
-		getSelectedElementId = opts.getSelectedElementId;
-	}
-	function pageZoomFactor() {
-		return getPageZoomPercent() / 100;
-	}
-	function paneContentSize(pane) {
-		const style = getComputedStyle(pane);
-		const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-		const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-		return {
-			w: pane.clientWidth - padX,
-			h: pane.clientHeight - padY
-		};
-	}
-	function getCachedFitScale(img, pane) {
-		const { w: paneW, h: paneH } = paneContentSize(pane);
-		const imgW = img.naturalWidth;
-		const imgH = img.naturalHeight;
-		const cache = getPageLayoutCache();
-		if (cache && cache.paneW === paneW && cache.paneH === paneH && cache.imgW === imgW && cache.imgH === imgH) return cache.fitScale;
-		const fitScale = paneW > 0 && paneH > 0 && imgW > 0 && imgH > 0 ? Math.min((paneW - 2) / imgW, (paneH - 2) / imgH) : 1;
-		setPageLayoutCache({
-			paneW,
-			paneH,
-			imgW,
-			imgH,
-			fitScale
-		});
-		return fitScale;
-	}
-	function overlayUserLength(baseUserPx, img) {
-		const resolvedImg = img ?? getPagePane()?.querySelector(".page-view img");
-		const zoom = pageZoomFactor();
-		if (!(zoom > 0)) return baseUserPx;
-		const pane = getPagePane();
-		if (!resolvedImg?.naturalWidth || !resolvedImg.naturalHeight || !pane) return baseUserPx / zoom;
-		const { w: paneW, h: paneH } = paneContentSize(pane);
-		if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
-		const refFit = Math.min((paneW - 2) / OVERLAY_REF_IMAGE_WIDTH, (paneH - 2) / OVERLAY_REF_IMAGE_HEIGHT);
-		const fitScale = getCachedFitScale(resolvedImg, pane);
-		if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
-		return baseUserPx * refFit / (fitScale * zoom);
-	}
-	function applyPageImageSize(img, pane) {
-		if (!img?.naturalWidth || !img.naturalHeight) return false;
-		const zoomPct = Math.max(100, getPageZoomPercent());
-		const scale = getCachedFitScale(img, pane) * (zoomPct / 100);
-		const w = Math.floor(img.naturalWidth * scale);
-		const h = Math.floor(img.naturalHeight * scale);
-		const nextW = `${w}px`;
-		const nextH = `${h}px`;
-		const unchanged = img.style.width === nextW && img.style.height === nextH;
-		if (!unchanged) {
-			img.style.width = nextW;
-			img.style.height = nextH;
-			img.style.maxWidth = "none";
-			img.style.maxHeight = "none";
+	//#region src/components/reading-pane/reading-pane.ts
+	/** <doclang-reading-pane> — reading/rendered view with layers settings panel */
+	init_document();
+	init_dom();
+	init_constants();
+	var DoclangReadingPane = class extends DoclangPageElement {
+		_body;
+		_settingsToggle;
+		_settingsLayer;
+		_settingsScrim;
+		_settingsClose;
+		_showFurniture;
+		_showFurnitureLabel;
+		_showBackground;
+		_showBackgroundLabel;
+		_showFurnitureState = true;
+		_showBackgroundState = true;
+		constructor() {
+			super(reading_pane_default$1, reading_pane_default);
+			this.classList.add("pane", "pane-reading");
+			this._body = this.q(".pane-body");
+			this._settingsToggle = this.q(".pane-settings-toggle");
+			this._settingsLayer = this.q(".viewer-settings-layer");
+			this._settingsScrim = this.q(".viewer-settings-scrim");
+			this._settingsClose = this.q(".viewer-settings-close");
+			this._showFurnitureLabel = this.q("label:has(.cb-furniture)");
+			this._showFurniture = this.q(".cb-furniture");
+			this._showBackgroundLabel = this.q("label:has(.cb-background)");
+			this._showBackground = this.q(".cb-background");
+			this._wireEvents();
 		}
-		img.dataset.layoutReady = "1";
-		return !unchanged;
-	}
-	function boxPixelRect(b, img) {
-		const x = b.x0 / b.resW * img.naturalWidth;
-		const y = b.y0 / b.resH * img.naturalHeight;
-		const w = (b.x1 - b.x0) / b.resW * img.naturalWidth;
-		const h = (b.y1 - b.y0) / b.resH * img.naturalHeight;
-		return {
-			x,
-			y,
-			w,
-			h,
-			area: w * h
-		};
-	}
-	function boxCenter(rect) {
-		return {
-			x: rect.x + rect.w / 2,
-			y: rect.y + rect.h / 2
-		};
-	}
-	function overlayBoxPaintPriority(box) {
-		if (box.kind === "text") return 0;
-		if (box.kind === "list" || box.kind === "table" || box.kind === "index" || box.kind === "tabular") return 2;
-		return 1;
-	}
-	function overlayLayerPriority(layer) {
-		if (layer === "background") return 0;
-		if (layer === "furniture") return 1;
-		return 2;
-	}
-	function compareOverlayBoxPaintOrder(a, b) {
-		const byLayer = overlayLayerPriority(a.layer ?? "body") - overlayLayerPriority(b.layer ?? "body");
-		if (byLayer !== 0) return byLayer;
-		const byPriority = overlayBoxPaintPriority(a) - overlayBoxPaintPriority(b);
-		if (byPriority !== 0) return byPriority;
-		const selectedId = getSelectedElementId();
-		if (selectedId) {
-			const aSelected = a.elementId === selectedId;
-			if (aSelected !== (b.elementId === selectedId)) return aSelected ? 1 : -1;
+		setVisible(visible) {
+			this.hidden = !visible;
+			this._settingsToggle.hidden = this.hidden;
 		}
-		return 0;
-	}
-	function sortedOverlayBoxes(boxes) {
-		return [...boxes].sort(compareOverlayBoxPaintOrder);
-	}
-	function ensureArrowMarker(defs, markerId) {
-		if (defs.querySelector(`#${markerId}`)) return;
-		const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-		marker.setAttribute("id", markerId);
-		marker.setAttribute("viewBox", "0 0 6 6");
-		marker.setAttribute("refX", "6");
-		marker.setAttribute("refY", "3");
-		marker.setAttribute("markerWidth", "5");
-		marker.setAttribute("markerHeight", "5");
-		marker.setAttribute("orient", "auto");
-		const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-		arrowPath.setAttribute("d", "M0,0 L6,3 L0,6 Z");
-		arrowPath.setAttribute("fill", "currentColor");
-		marker.appendChild(arrowPath);
-		defs.appendChild(marker);
-	}
-	function alignDashedLineToEnd(line, start, end) {
-		const dash = 6;
-		const gap = 4;
-		const period = 10;
-		const len = Math.hypot(end.x - start.x, end.y - start.y);
-		if (!len) return;
-		line.setAttribute("stroke-dasharray", `${dash} ${gap}`);
-		const offset = len % period;
-		if (offset > .01) line.setAttribute("stroke-dashoffset", String(offset));
-	}
-	function ensureLayerHatchPatterns(defs) {
-		if (defs.querySelector("#layer-hatch")) return;
-		const pattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
-		pattern.setAttribute("id", "layer-hatch");
-		pattern.setAttribute("width", "16");
-		pattern.setAttribute("height", "16");
-		pattern.setAttribute("patternUnits", "userSpaceOnUse");
-		pattern.setAttribute("patternTransform", "rotate(45 8 8)");
-		const stripe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-		stripe.setAttribute("class", "layer-hatch-stripe");
-		stripe.setAttribute("x", "10");
-		stripe.setAttribute("y", "-4");
-		stripe.setAttribute("width", "6");
-		stripe.setAttribute("height", "24");
-		pattern.appendChild(stripe);
-		defs.appendChild(pattern);
-	}
-	function ensureOverlayDefs(svg) {
-		let defs = svg.querySelector("defs");
-		if (!defs) {
-			defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-			svg.insertBefore(defs, svg.firstChild);
+		setSettingsOpen(open) {
+			this._settingsLayer.hidden = !open;
+			this._settingsToggle.setAttribute("aria-expanded", String(open));
 		}
-		return defs;
-	}
-	function overlayBadgeLayout(svg, text, fontSizeUser) {
-		const padXUser = overlayUserLength(3);
-		const padYUser = overlayUserLength(2);
-		const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
-		probe.setAttribute("class", "overlay-badge-label");
-		probe.setAttribute("font-size", String(fontSizeUser));
-		probe.setAttribute("font-weight", "700");
-		probe.setAttribute("text-anchor", "start");
-		probe.setAttribute("dominant-baseline", "text-before-edge");
-		probe.setAttribute("visibility", "hidden");
-		probe.textContent = String(text);
-		svg.appendChild(probe);
-		let width;
-		let height;
-		try {
-			const bbox = probe.getBBox();
-			width = bbox.width + padXUser * 2;
-			height = bbox.height + padYUser * 2;
-		} catch {
-			width = overlayUserLength(String(text).length * OVERLAY_BADGE_FONT_SIZE * .55 + 6);
-			height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + 4);
+		_applySelection() {
+			for (const el of this._body.querySelectorAll(".rendered-el.selected")) el.classList.remove("selected");
+			if (!this._selectedId) return;
+			const renderedEl = this._findRenderedElement(this._selectedId, this._peerIds);
+			if (!renderedEl) return;
+			this._revealContext(renderedEl);
+			renderedEl.classList.add("selected");
+			renderedEl.scrollIntoView({
+				block: "nearest",
+				behavior: "smooth"
+			});
 		}
-		probe.remove();
-		return {
-			width,
-			height
-		};
-	}
-	function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }) {
-		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-		const { width, height } = overlayBadgeLayout(svg, text, fontSize);
-		const radius = overlayUserLength(3);
-		const badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
-		badge.setAttribute("class", `overlay-badge ${extraClass}`);
-		badge.setAttribute("data-element-id", elementId);
-		const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-		bg.setAttribute("class", "overlay-badge-bg");
-		bg.setAttribute("x", String(anchorX - width / 2));
-		bg.setAttribute("y", String(anchorY - height / 2));
-		bg.setAttribute("width", String(width));
-		bg.setAttribute("height", String(height));
-		bg.setAttribute("rx", String(radius));
-		bg.setAttribute("ry", String(radius));
-		badge.appendChild(bg);
-		const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-		label.setAttribute("class", "overlay-badge-label");
-		label.setAttribute("x", String(anchorX));
-		label.setAttribute("y", String(anchorY));
-		label.setAttribute("font-size", String(fontSize));
-		label.textContent = String(text);
-		badge.appendChild(label);
-		svg.appendChild(badge);
-		return badge;
-	}
-	function syncOverlayBadges(img, svg, boxes, readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder) {
-		if (!img.naturalWidth) return;
-		svg.querySelectorAll(".element-badge, .reading-order-badge").forEach((b) => b.remove());
-		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-		const badgeGap = overlayUserLength(2);
-		const readingOrderByElementId = /* @__PURE__ */ new Map();
-		if (showAllBboxes && showReadingOrder) for (const step of readingOrderSteps) readingOrderByElementId.set(step.elementId, step);
-		const sorted = sortedOverlayBoxes(boxes);
-		for (const b of sorted) {
-			const { x, y } = boxPixelRect(b, img);
-			let tagLayout = { width: 0 };
-			if (showAllBboxes && showLayoutBadges) {
-				tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
-				appendOverlayBadge(svg, x, y, b.tag, {
-					extraClass: `element-badge ${kindClassForTag(b.kind)}`,
-					elementId: b.elementId
-				});
-			}
-			const step = readingOrderByElementId.get(b.elementId);
-			if (step) {
-				const orderText = String(step.order);
-				const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
-				appendOverlayBadge(svg, showAllBboxes && showLayoutBadges ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2 : x, y, orderText, {
-					extraClass: "reading-order-badge",
-					elementId: b.elementId
-				});
+		_renderDocument() {
+			const state = this._docState;
+			this._body.innerHTML = "";
+			if (!state) return;
+			const segment = state.segments[this._currentPage - 1] ?? [];
+			const elementIds = state.elementIds.size ? state.elementIds : assignElementIds(segment);
+			state.elementIds = elementIds;
+			if (segmentHasMarkup(segment)) this._body.appendChild(buildRenderedView(segment, elementIds, this._showFurnitureState, this._showBackgroundState, (id) => this.dispatchEvent(new CustomEvent("doclang-element-select", {
+				bubbles: true,
+				composed: true,
+				detail: { id }
+			})), this._docState?.assetUrls));
+			else this._body.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+		}
+		_clearDocument() {
+			this._body.innerHTML = "";
+		}
+		_findRenderedElement(elementId, peerIds) {
+			const direct = this._body.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ?? this._body.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
+			if (direct) return direct;
+			const xmlEl = this._docState?.idToElement?.get(elementId);
+			const threadId = xmlEl ? elementThreadId(xmlEl) : null;
+			if (!threadId) return null;
+			const merged = this._body.querySelector(`.rendered-fragment-merged[data-thread-id="${threadId}"]`);
+			if (!merged) return null;
+			const primaryId = merged.getAttribute("data-element-id");
+			if (!primaryId || primaryId === elementId) return merged;
+			return peerIds.has(elementId) ? merged : null;
+		}
+		_revealContext(renderedEl) {
+			const pictureContents = renderedEl.closest(".rendered-picture-contents");
+			if (pictureContents && !pictureContents.open) pictureContents.open = true;
+			this._revealLayer(renderedEl);
+		}
+		_revealLayer(renderedEl) {
+			const layer = renderedEl.getAttribute("data-doclang-layer");
+			if (!layer || layer === "body") return;
+			if (layer === "furniture" && !this._showFurnitureState) {
+				this._showFurnitureState = true;
+				this._showFurniture.checked = true;
+				this._applyLayerClasses();
+				this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
+					bubbles: true,
+					composed: true,
+					detail: { checked: true }
+				}));
+			} else if (layer === "background" && !this._showBackgroundState) {
+				this._showBackgroundState = true;
+				this._showBackground.checked = true;
+				this._applyLayerClasses();
+				this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
+					bubbles: true,
+					composed: true,
+					detail: { checked: true }
+				}));
 			}
 		}
-	}
-	function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, toIdAttr }) {
-		if (!links.length) return;
-		ensureArrowMarker(ensureOverlayDefs(svg), markerId);
-		for (const link of links) {
-			const fromBox = link.captionBox ?? link.fromBox;
-			const toBox = link.hostBox ?? link.toBox;
-			const from = boxPixelRect(fromBox, img);
-			const to = boxPixelRect(toBox, img);
-			const start = boxCenter(from);
-			const end = boxCenter(to);
-			const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-			line.setAttribute("class", linkClass);
-			line.setAttribute("x1", String(start.x));
-			line.setAttribute("y1", String(start.y));
-			line.setAttribute("x2", String(end.x));
-			line.setAttribute("y2", String(end.y));
-			line.setAttribute("marker-end", `url(#${markerId})`);
-			const fromId = link.captionElementId ?? link.fromElementId;
-			const toId = link.hostElementId ?? link.toElementId;
-			line.setAttribute(fromIdAttr, fromId);
-			line.setAttribute(toIdAttr, toId);
-			svg.appendChild(line);
+		_applyLayerClasses() {
+			const root = this._body.querySelector(".rendered-doc");
+			if (root) applyReadingLayerClasses(root, this._showFurnitureState, this._showBackgroundState);
 		}
-	}
-	function appendCaptionLinks(svg, img, captionLinks) {
-		appendOverlayLinks(svg, img, captionLinks, {
-			markerId: "caption-arrowhead",
-			linkClass: "caption-link",
-			fromIdAttr: "data-caption-id",
-			toIdAttr: "data-host-id"
-		});
-	}
-	function appendXrefLinks(svg, img, xrefLinks) {
-		appendOverlayLinks(svg, img, xrefLinks, {
-			markerId: "xref-arrowhead",
-			linkClass: "xref-link",
-			fromIdAttr: "data-xref-from-id",
-			toIdAttr: "data-xref-to-id"
-		});
-	}
-	function docPointToPixel(xDoc, yDoc, resW, resH, img) {
-		return {
-			x: xDoc / resW * img.naturalWidth,
-			y: yDoc / resH * img.naturalHeight
-		};
-	}
-	function pageCornerTarget(img, defaultResolution, corner) {
-		const { width: resW, height: resH } = defaultResolution;
-		const inset = overlayUserLength(5);
-		const tl = docPointToPixel(0, 0, resW, resH, img);
-		const br = docPointToPixel(resW, resH, resW, resH, img);
-		if (corner === "tl") return {
-			x: Math.min(tl.x + inset, br.x - inset),
-			y: Math.min(tl.y + inset, br.y - inset)
-		};
-		return {
-			x: Math.max(br.x - inset, tl.x + inset),
-			y: Math.max(br.y - inset, tl.y + inset)
-		};
-	}
-	function appendFragmentLinks(svg, img, links, defaultResolution) {
-		if (!links.length) return;
-		ensureArrowMarker(ensureOverlayDefs(svg), "fragment-arrowhead");
-		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-		for (const link of links) {
-			const fromRect = boxPixelRect(link.fromBox, img);
-			const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-			group.setAttribute("class", "fragment-link");
-			group.setAttribute("data-thread-id", link.threadId);
-			group.setAttribute("data-fragment-from-id", link.fromElementId);
-			if (link.toElementId) group.setAttribute("data-fragment-to-id", link.toElementId);
-			let labelAt;
-			if (link.toBox) {
-				const toRect = boxPixelRect(link.toBox, img);
-				const start = boxCenter(fromRect);
-				const end = boxCenter(toRect);
-				const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-				line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
-				line.setAttribute("x1", String(start.x));
-				line.setAttribute("y1", String(start.y));
-				line.setAttribute("x2", String(end.x));
-				line.setAttribute("y2", String(end.y));
-				line.setAttribute("marker-end", "url(#fragment-arrowhead)");
-				alignDashedLineToEnd(line, start, end);
-				group.appendChild(line);
-				labelAt = {
-					x: (start.x + end.x) / 2,
-					y: (start.y + end.y) / 2
-				};
-			} else {
-				const corner = link.targetCorner ?? "br";
-				const cornerPoint = pageCornerTarget(img, defaultResolution, corner);
-				const elementAnchor = boxCenter(fromRect);
-				const incoming = corner === "tl";
-				const start = incoming ? cornerPoint : elementAnchor;
-				const end = incoming ? elementAnchor : cornerPoint;
-				const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-				line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
-				line.setAttribute("x1", String(start.x));
-				line.setAttribute("y1", String(start.y));
-				line.setAttribute("x2", String(end.x));
-				line.setAttribute("y2", String(end.y));
-				line.setAttribute("marker-end", "url(#fragment-arrowhead)");
-				alignDashedLineToEnd(line, start, end);
-				group.appendChild(line);
-				labelAt = {
-					x: (start.x + end.x) / 2,
-					y: (start.y + end.y) / 2
-				};
-			}
-			const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-			text.setAttribute("class", "fragment-link-label");
-			text.setAttribute("x", String(labelAt.x));
-			text.setAttribute("y", String(labelAt.y));
-			text.setAttribute("font-size", String(fontSize));
-			text.textContent = link.toBox ? FRAGMENT_LINK_LABEL_SAME_PAGE : FRAGMENT_LINK_LABEL_CROSS_PAGE;
-			group.appendChild(text);
-			svg.appendChild(group);
+		_wireEvents() {
+			this._settingsToggle.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-toggle", {
+				bubbles: true,
+				composed: true
+			})));
+			this._settingsClose.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
+				bubbles: true,
+				composed: true
+			})));
+			this._settingsScrim.addEventListener("click", () => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
+				bubbles: true,
+				composed: true
+			})));
+			this._showFurniture.addEventListener("change", () => {
+				this._showFurnitureState = this._showFurniture.checked;
+				this._applyLayerClasses();
+				this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
+					bubbles: true,
+					composed: true,
+					detail: { checked: this._showFurniture.checked }
+				}));
+			});
+			this._showBackground.addEventListener("change", () => {
+				this._showBackgroundState = this._showBackground.checked;
+				this._applyLayerClasses();
+				this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
+					bubbles: true,
+					composed: true,
+					detail: { checked: this._showBackground.checked }
+				}));
+			});
 		}
-	}
-	function appendFragmentNavButtons(svg, img, items) {
-		if (!items.length) return;
-		const btnSize = overlayUserLength(19.5);
-		const gap = overlayUserLength(2);
-		const inset = overlayUserLength(3);
-		const fontSize = overlayUserLength(15);
-		const radius = overlayUserLength(3);
-		for (const item of items) {
-			const { x, y, w, h } = boxPixelRect(item.box, img);
-			const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-			group.setAttribute("class", "fragment-nav");
-			group.setAttribute("data-element-id", item.elementId);
-			const rowY = y + h - inset - btnSize;
-			const nextX = x + w - inset - btnSize;
-			appendFragmentNavButton(group, nextX - gap - btnSize, rowY, btnSize, radius, fontSize, "prev", "‹", item.hasPrev);
-			appendFragmentNavButton(group, nextX, rowY, btnSize, radius, fontSize, "next", "›", item.hasNext);
-			svg.appendChild(group);
+	};
+	customElements.define("doclang-reading-pane", DoclangReadingPane);
+	//#endregion
+	//#region src/components/empty-state/empty-state.css?inline
+	var empty_state_default$1 = ":host {\n  display: contents;\n}\n.empty-state {\n  flex: 1 1 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 0;\n  margin: 1rem;\n  padding: 2rem 1.5rem;\n  border: 2px dashed var(--border);\n  border-radius: 0.75rem;\n  background: var(--placeholder-bg);\n  text-align: center;\n  color: var(--muted);\n}\n.empty-state-inner {\n  max-width: 28rem;\n}\n.empty-state-loading {\n  display: none;\n  flex-direction: column;\n  align-items: center;\n}\n:host(.demo-loading) .empty-state-loading {\n  display: flex;\n}\n:host(.demo-loading) .empty-state-prompt {\n  display: none;\n}\n.loading-spinner {\n  width: 2rem;\n  height: 2rem;\n  margin: 0 auto 1rem;\n  border: 2px solid var(--border);\n  border-top-color: var(--accent);\n  border-radius: 50%;\n  animation: loading-spin 0.7s linear infinite;\n}\n@keyframes loading-spin {\n  to {\n    transform: rotate(360deg);\n  }\n}\n.empty-state-title {\n  margin: 0 0 0.75rem;\n  font-size: 1.05rem;\n  color: var(--text);\n}\n.empty-state p {\n  margin: 0.5rem 0;\n}\n.empty-state-action {\n  margin: 0 0 0.75rem;\n}\n.text-link {\n  color: var(--accent);\n  text-decoration: underline;\n}\n.text-link:hover {\n  opacity: 0.85;\n}\n.empty-state-meta {\n  font-size: 0.875rem;\n}\ncode {\n  font-family: var(--font-mono);\n}\n";
+	//#endregion
+	//#region src/components/empty-state/empty-state.html?raw
+	var empty_state_default = "<div class=\"empty-state\">\n  <div class=\"empty-state-inner\">\n    <div\n      class=\"empty-state-loading\"\n      role=\"status\"\n      aria-live=\"polite\"\n      aria-label=\"Loading demo document\"\n    >\n      <div class=\"loading-spinner\" aria-hidden=\"true\"></div>\n      <p class=\"empty-state-title\">Loading demo&#x2026;</p>\n      <p class=\"empty-state-meta\">Preparing the sample document</p>\n    </div>\n    <div class=\"empty-state-prompt\">\n      <p class=\"empty-state-title\">Drop a DocLang file here</p>\n      <p class=\"empty-state-meta\">\n        Supported file types: <span class=\"file-types\"></span>\n      </p>\n      <p class=\"empty-state-action\">or <a href=\"#\" class=\"text-link\">load demo</a></p>\n    </div>\n  </div>\n</div>\n";
+	//#endregion
+	//#region src/components/empty-state/empty-state.ts
+	/** <doclang-empty-state> — loading/prompt empty state */
+	var DoclangEmptyState = class extends DoclangHTMLElement {
+		_fileTypesSpan;
+		constructor() {
+			super(empty_state_default$1, empty_state_default);
+			this._fileTypesSpan = this.q(".file-types");
+			this.q(".text-link").addEventListener("click", (e) => {
+				e.preventDefault();
+				this.dispatchEvent(new CustomEvent("doclang-load-demo", {
+					bubbles: true,
+					composed: true
+				}));
+			});
 		}
-	}
-	function appendFragmentNavButton(group, x, y, size, radius, fontSize, direction, label, enabled) {
-		const btn = document.createElementNS("http://www.w3.org/2000/svg", "g");
-		btn.setAttribute("class", `fragment-nav-btn fragment-nav-btn-${direction}${enabled ? "" : " fragment-nav-btn-disabled"}`);
-		btn.setAttribute("data-nav", direction);
-		if (enabled) {
-			btn.setAttribute("role", "button");
-			btn.setAttribute("aria-label", direction === "prev" ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT);
+		setFileTypeHints(extensions) {
+			this._fileTypesSpan.innerHTML = extensions.map((ext) => `<code>${ext}</code>`).join(", ");
 		}
-		const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-		bg.setAttribute("class", "fragment-nav-btn-bg");
-		bg.setAttribute("x", String(x));
-		bg.setAttribute("y", String(y));
-		bg.setAttribute("width", String(size));
-		bg.setAttribute("height", String(size));
-		bg.setAttribute("rx", String(radius));
-		bg.setAttribute("ry", String(radius));
-		btn.appendChild(bg);
-		const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-		text.setAttribute("class", "fragment-nav-btn-label");
-		text.setAttribute("x", String(x + size / 2));
-		text.setAttribute("y", String(y + size / 2));
-		text.setAttribute("font-size", String(fontSize));
-		text.textContent = label;
-		btn.appendChild(text);
-		group.appendChild(btn);
-	}
-	function appendReadingOrderOverlay(svg, img, steps) {
-		if (!steps.length) return;
-		if (steps.length >= 2) {
-			ensureArrowMarker(ensureOverlayDefs(svg), "reading-order-arrowhead");
-			for (let i = 0; i < steps.length - 1; i += 1) {
-				const from = boxPixelRect(steps[i].box, img);
-				const to = boxPixelRect(steps[i + 1].box, img);
-				const start = boxCenter(from);
-				const end = boxCenter(to);
-				const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-				line.setAttribute("class", "reading-order-step");
-				line.setAttribute("x1", String(start.x));
-				line.setAttribute("y1", String(start.y));
-				line.setAttribute("x2", String(end.x));
-				line.setAttribute("y2", String(end.y));
-				line.setAttribute("marker-end", "url(#reading-order-arrowhead)");
-				svg.appendChild(line);
-			}
+		setDemoLoading(loading) {
+			this.classList.toggle("demo-loading", loading);
 		}
-	}
-	function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = {
-		width: 512,
-		height: 512
-	}, onSelectElement, onNavigateFragment, onClearSelection, getPagPanSuppressClick, setPagPanSuppressClick) {
-		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-		svg.classList.add("overlay");
-		svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
-		svg.setAttribute("overflow", "hidden");
-		appendCaptionLinks(svg, img, captionLinks);
-		appendXrefLinks(svg, img, xrefLinks);
-		appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
-		appendReadingOrderOverlay(svg, img, readingOrderSteps);
-		ensureLayerHatchPatterns(ensureOverlayDefs(svg));
-		for (const b of sortedOverlayBoxes(boxes)) {
-			const { x, y, w, h } = boxPixelRect(b, img);
-			const cls = bboxClassForKind(b.kind);
-			const kindClass = kindClassForTag(b.kind);
-			const layerClass = layerClassForValue(b.layer ?? "body");
-			const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-			rect.setAttribute("class", `bbox bbox-${cls} ${kindClass}${layerClass ? ` ${layerClass}` : ""}`);
-			rect.setAttribute("x", String(x));
-			rect.setAttribute("y", String(y));
-			rect.setAttribute("width", String(Math.max(w, 1)));
-			rect.setAttribute("height", String(Math.max(h, 1)));
-			rect.setAttribute("data-element-id", b.elementId);
-			svg.appendChild(rect);
-		}
-		appendFragmentNavButtons(svg, img, fragmentNavItems);
-		svg.addEventListener("click", (e) => {
-			if (getPagPanSuppressClick()) {
-				setPagPanSuppressClick(false);
-				return;
-			}
-			const target = e.target;
-			const navBtn = target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
-			if (navBtn) {
-				e.stopPropagation();
-				const elementId = navBtn.closest(".fragment-nav")?.getAttribute("data-element-id");
-				const direction = navBtn.getAttribute("data-nav");
-				if (elementId && direction) onNavigateFragment(elementId, direction);
-				return;
-			}
-			const badge = target.closest(".overlay-badge[data-element-id]");
-			if (badge) {
-				const id = badge.getAttribute("data-element-id");
-				if (id) onSelectElement(id);
-				return;
-			}
-			const coords = imageCoordsFromEvent(svg, e);
-			if (!coords) return;
-			const hit = hitTestBoxes(boxes, img, coords.x, coords.y);
-			if (hit) onSelectElement(hit.elementId);
-			else onClearSelection();
-		});
-		svg.addEventListener("mousemove", (e) => {
-			const coords = imageCoordsFromEvent(svg, e);
-			svg.style.cursor = coords && hitTestBoxes(boxes, img, coords.x, coords.y) ? "pointer" : "";
-		});
-		svg.addEventListener("mouseleave", () => {
-			svg.style.cursor = "";
-		});
-		return svg;
-	}
-	function imageCoordsFromEvent(svg, evt) {
-		const pt = svg.createSVGPoint();
-		pt.x = evt.clientX;
-		pt.y = evt.clientY;
-		const ctm = svg.getScreenCTM()?.inverse();
-		if (!ctm) return null;
-		const p = pt.matrixTransform(ctm);
-		return {
-			x: p.x,
-			y: p.y
-		};
-	}
-	function hitTestBoxes(boxes, img, x, y) {
-		let best = null;
-		let bestArea = Infinity;
-		for (const b of boxes) {
-			const { x: bx, y: by, w, h, area } = boxPixelRect(b, img);
-			if (x >= bx && x <= bx + w && y >= by && y <= by + h && area < bestArea) {
-				best = b;
-				bestArea = area;
-			}
-		}
-		return best;
-	}
+	};
+	customElements.define("doclang-empty-state", DoclangEmptyState);
 	//#endregion
 	//#region src/main.ts
+	init_constants();
+	init_dom();
+	init_document();
+	init_zip();
 	var state = null;
 	var fileCatalog = [];
 	var activeFileIndex = -1;
 	var filePaneUserToggled = false;
-	var pagePaneResizeObserver = null;
-	var selectedElementId = null;
-	var showAllBboxes = true;
-	var showLayoutBadges = true;
-	var showCaptionLinks = false;
-	var showPictureContents = false;
-	var showTableContents = false;
-	var showFragmentLinks = false;
-	var showXrefLinks = false;
-	var showReadingOrder = false;
-	var showReadingOrderArrows = true;
-	var readingOrderGlobalNumbering = false;
-	var showReadingFurniture = true;
-	var showReadingBackground = true;
-	var pageSettingsOpen = false;
 	var readingSettingsOpen = false;
-	var pageZoomPercent = 100;
-	var pagePanDrag = null;
-	var pagePanSuppressClick = false;
-	var pageLayoutCache = null;
 	var userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 	var paneRatios = [...DEFAULT_PANE_RATIOS];
 	var filePaneWidthPx = null;
 	var toolbarOptionsOpen = false;
 	var paneDrag = null;
 	var layoutStackQuery = null;
-	var pageLayoutFrame = 0;
 	var demoLoadInProgress = false;
-	setStateAccessor(() => state);
-	setOverlayAccessors({
-		getPageZoomPercent: () => pageZoomPercent,
-		getPagePane: () => els.pagePane,
-		getPageLayoutCache: () => pageLayoutCache,
-		setPageLayoutCache: (c) => {
-			pageLayoutCache = c;
-		},
-		getSelectedElementId: () => selectedElementId
-	});
-	var doclangCursorHint = document.querySelector("doclang-cursor-hint");
 	var doclangPageNav = document.querySelector("doclang-page-nav");
 	var doclangToolbar = document.querySelector("doclang-toolbar");
 	var doclangFilePane = document.querySelector("doclang-file-pane");
@@ -3599,287 +4308,29 @@
 	var doclangReadingPane = document.querySelector("doclang-reading-pane");
 	var doclangEmptyState = document.querySelector("doclang-empty-state");
 	var els = {
-		openFileBtn: doclangToolbar?.openFileBtn ?? null,
 		docLabel: document.getElementById("doc-label"),
-		filePane: doclangFilePane?.body ?? null,
-		filePaneCloseAll: null,
-		pageNav: doclangPageNav ?? null,
-		pageNumberInput: doclangPageNav?.pageNumberInput ?? null,
-		pageCountIndicator: doclangPageNav?.pageCountIndicator ?? null,
-		btnPrev: doclangPageNav?.btnPrev ?? null,
-		btnNext: doclangPageNav?.btnNext ?? null,
-		showAllBboxes: doclangPageViewPane?.showAllBboxes ?? null,
-		showLayoutBadges: doclangPageViewPane?.showLayoutBadges ?? null,
-		showLayoutBadgesLabel: doclangPageViewPane?.showLayoutBadgesLabel ?? null,
-		settingsToggle: doclangPageViewPane?.settingsToggle ?? null,
-		readingSettingsToggle: doclangReadingPane?.settingsToggle ?? null,
-		pageSettingsLayer: doclangPageViewPane?.settingsLayer ?? null,
-		pageSettingsScrim: null,
-		pageSettingsClose: null,
-		readingSettingsLayer: doclangReadingPane?.settingsLayer ?? null,
-		readingSettingsScrim: null,
-		readingSettingsClose: null,
-		showReadingFurniture: doclangReadingPane?.showFurniture ?? null,
-		showReadingFurnitureLabel: doclangReadingPane?.showFurnitureLabel ?? null,
-		showReadingBackground: doclangReadingPane?.showBackground ?? null,
-		showReadingBackgroundLabel: doclangReadingPane?.showBackgroundLabel ?? null,
-		showCaptionLinks: doclangPageViewPane?.showCaptionLinks ?? null,
-		showCaptionLinksLabel: doclangPageViewPane?.showCaptionLinksLabel ?? null,
-		showPictureContents: doclangPageViewPane?.showPictureContents ?? null,
-		showPictureContentsLabel: doclangPageViewPane?.showPictureContentsLabel ?? null,
-		showTableContents: doclangPageViewPane?.showTableContents ?? null,
-		showTableContentsLabel: doclangPageViewPane?.showTableContentsLabel ?? null,
-		showFragmentLinks: doclangPageViewPane?.showFragmentLinks ?? null,
-		showFragmentLinksLabel: doclangPageViewPane?.showFragmentLinksLabel ?? null,
-		showXrefLinks: doclangPageViewPane?.showXrefLinks ?? null,
-		showXrefLinksLabel: doclangPageViewPane?.showXrefLinksLabel ?? null,
-		showReadingOrder: doclangPageViewPane?.showReadingOrder ?? null,
-		showReadingOrderLabel: doclangPageViewPane?.showReadingOrderLabel ?? null,
-		readingOrderArrows: doclangPageViewPane?.readingOrderArrows ?? null,
-		readingOrderArrowsLabel: doclangPageViewPane?.readingOrderArrowsLabel ?? null,
-		readingOrderGlobal: doclangPageViewPane?.readingOrderGlobal ?? null,
-		readingOrderGlobalLabel: doclangPageViewPane?.readingOrderGlobalLabel ?? null,
-		pageZoom: doclangPageViewPane?.zoomInput ?? null,
-		pageZoomLabel: doclangPageViewPane?.zoomLabel ?? null,
-		pageZoomReset: doclangPageViewPane?.zoomReset ?? null,
 		main: document.getElementById("main"),
 		emptyState: doclangEmptyState ?? null,
-		markupPane: doclangMarkupPane?.body ?? null,
-		renderedPane: doclangReadingPane?.body ?? null,
-		pagePane: doclangPageViewPane?.body ?? null,
-		paneFile: doclangFilePane?.section ?? null,
-		panePageView: doclangPageViewPane?.section ?? null,
-		paneMarkup: doclangMarkupPane?.section ?? null,
-		paneReading: doclangReadingPane?.section ?? null,
+		paneFile: doclangFilePane ?? null,
+		panePageView: doclangPageViewPane ?? null,
+		paneMarkup: doclangMarkupPane ?? null,
+		paneReading: doclangReadingPane ?? null,
 		splitters: [
 			document.getElementById("splitter-0"),
 			document.getElementById("splitter-1"),
 			document.getElementById("splitter-2")
-		],
-		toolbarOptionsBtn: doclangToolbar?.toolbarOptionsBtn ?? null,
-		toolbarOptionsPanel: null,
-		toggleFilePane: doclangToolbar?.toggleFilePane ?? null,
-		toggleFilePaneLabel: doclangToolbar?.toggleFilePaneLabel ?? null,
-		togglePagePane: doclangToolbar?.togglePagePane ?? null,
-		toggleMarkupPane: doclangToolbar?.toggleMarkupPane ?? null,
-		toggleReadingPane: doclangToolbar?.toggleReadingPane ?? null,
-		togglePagePaneLabel: doclangToolbar?.togglePagePaneLabel ?? null,
-		resetPaneLayoutBtn: doclangToolbar?.resetPaneLayoutBtn ?? null
+		]
 	};
-	function hideCursorHint() {
-		doclangCursorHint?.hide();
-	}
-	function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
-		doclangCursorHint?.show(content, clientX, clientY, detail);
-	}
-	function showCursorHintHtml(html, clientX, clientY) {
-		doclangCursorHint?.showHtml(html, clientX, clientY);
-	}
-	function headTextPreview(el, maxLen = 72) {
-		const text = el.textContent?.replace(/\s+/g, " ").trim() ?? "";
-		if (!text) return "—";
-		return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
-	}
-	function collectElementHeadInfo(el, defaultResolution) {
-		const labelEl = firstHeadChild(el, "label");
-		const threadEl = firstHeadChild(el, "thread");
-		const xrefEl = firstHeadChild(el, "xref");
-		const hrefEl = firstHeadChild(el, "href");
-		const layerEl = firstHeadChild(el, "layer");
-		const captionEl = firstHeadChild(el, "caption");
-		const descriptionEl = firstHeadChild(el, "description");
-		const summaryEl = firstHeadChild(el, "summary");
-		const customEl = firstHeadChild(el, "custom");
-		const locs = elementHeadLocations(el);
-		const rows = [{
-			key: "element",
-			value: elementLabel(el),
-			isDefault: false
-		}];
-		rows.push({
-			key: "label",
-			value: labelEl?.getAttribute("value") ?? "undefined",
-			isDefault: !labelEl?.hasAttribute("value")
-		});
-		if (threadEl) rows.push({
-			key: "thread_id",
-			value: threadEl.getAttribute("thread_id") ?? "—",
-			isDefault: false
-		});
-		else rows.push({
-			key: "thread",
-			value: "—",
-			isDefault: true
-		});
-		if (xrefEl) rows.push({
-			key: "xref",
-			value: `thread_id ${xrefEl.getAttribute("thread_id") ?? "—"}`,
-			isDefault: false
-		});
-		else rows.push({
-			key: "xref",
-			value: "—",
-			isDefault: true
-		});
-		if (hrefEl) rows.push({
-			key: "href",
-			value: hrefEl.getAttribute("uri") ?? "—",
-			isDefault: false
-		});
-		else rows.push({
-			key: "href",
-			value: "—",
-			isDefault: true
-		});
-		rows.push({
-			key: "layer",
-			value: layerEl?.getAttribute("value") ?? "body",
-			isDefault: !layerEl?.hasAttribute("value")
-		});
-		const cornerLabels = [
-			"x_min",
-			"y_min",
-			"x_max",
-			"y_max"
-		];
-		if (locs.length === 4) for (let idx = 0; idx < 4; idx += 1) {
-			const loc = locs[idx];
-			const resolution = locationResolution(loc, idx % 2 === 0 ? defaultResolution.width : defaultResolution.height);
-			const value = loc.getAttribute("value") ?? "0";
-			rows.push({
-				key: cornerLabels[idx],
-				value: `${value} @ ${resolution}`,
-				isDefault: false
-			});
-		}
-		else for (const key of cornerLabels) rows.push({
-			key,
-			value: "—",
-			isDefault: false
-		});
-		rows.push({
-			key: "caption",
-			value: captionEl ? headTextPreview(captionEl) : "—",
-			isDefault: !captionEl
-		});
-		rows.push({
-			key: "description",
-			value: descriptionEl ? headTextPreview(descriptionEl) : "—",
-			isDefault: !descriptionEl
-		});
-		rows.push({
-			key: "summary",
-			value: summaryEl ? headTextPreview(summaryEl) : "—",
-			isDefault: !summaryEl
-		});
-		rows.push({
-			key: "custom",
-			value: customEl ? headTextPreview(customEl) : "—",
-			isDefault: !customEl
-		});
-		return rows;
-	}
-	function elementHeadTooltipHtml(el, defaultResolution) {
-		return `<table class="head-tooltip"><tbody>${collectElementHeadInfo(el, defaultResolution).map(({ key, value, isDefault }) => {
-			const rendered = escapeHtml(value);
-			const suffix = isDefault ? " <span class=\"head-default\">(default)</span>" : "";
-			return `<tr><th scope="row">${escapeHtml(key)}</th><td>${rendered}${suffix}</td></tr>`;
-		}).join("")}</tbody></table>`;
-	}
-	function syncReadingLayerCheckboxes() {
-		if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
-		if (els.showReadingBackground) els.showReadingBackground.checked = showReadingBackground;
-	}
-	function syncReadingLayerVisibility() {
-		const root = els.renderedPane?.querySelector(".rendered-doc");
-		if (root) applyReadingLayerClasses(root, showReadingFurniture, showReadingBackground);
-	}
-	function updatePageZoomResetButton() {
-		if (!els.pageZoomReset) return;
-		els.pageZoomReset.textContent = `${pageZoomPercent}%`;
-		els.pageZoomReset.disabled = pageZoomPercent === 100;
-	}
-	function pageViewScrollPane() {
-		if (!els.pagePane) return null;
-		return els.pagePane.querySelector(".page-view-port") ?? els.pagePane;
-	}
-	function isPagePaneScrollable() {
-		const pane = pageViewScrollPane();
-		if (!pane) return false;
-		return pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
-	}
 	function resetPageZoom() {
-		pageZoomPercent = 100;
-		if (els.pageZoom) {
-			els.pageZoom.value = String(100);
-			els.pageZoom.setAttribute("aria-valuenow", String(100));
-		}
-		updatePageZoomResetButton();
-		const port = pageViewScrollPane();
-		if (port) {
-			port.scrollLeft = 0;
-			port.scrollTop = 0;
-		}
-		refreshPageViewLayout();
-	}
-	function refreshPageViewLayout() {
-		if (!els.pagePane) return;
-		cancelAnimationFrame(pageLayoutFrame);
-		pageLayoutFrame = requestAnimationFrame(() => {
-			pageLayoutFrame = 0;
-			const img = els.pagePane?.querySelector(".page-view img");
-			if (img?.naturalWidth) applyPageLayout(img);
-		});
-	}
-	function applyPageLayout(img, pane = els.pagePane) {
-		applyPageImageSize(img, pane);
-		syncPageViewChrome(img);
-	}
-	function syncPageViewChrome(img) {
-		const svg = img.parentElement?.querySelector("svg.overlay");
-		if (svg && state?.pageViewOverlay) syncOverlayBadges(img, svg, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
-		updatePagePanePanCursor();
-		applyBboxVisibility();
-	}
-	function updatePagePanePanCursor() {
-		if (!els.pagePane) return;
-		els.pagePane.classList.toggle("can-pan", isPagePaneScrollable() && !pagePanDrag);
-	}
-	function setPageSettingsOpen(open) {
-		pageSettingsOpen = open;
-		doclangPageViewPane?.setSettingsOpen(open);
+		doclangPageViewPane?.resetZoom();
 	}
 	function setReadingSettingsOpen(open) {
 		readingSettingsOpen = open;
 		doclangReadingPane?.setSettingsOpen(open);
 	}
 	function closeAllSettings() {
-		setPageSettingsOpen(false);
+		doclangPageViewPane?.closeSettings();
 		setReadingSettingsOpen(false);
-	}
-	function syncLayoutSubtoggles() {
-		const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
-		for (const label of [
-			els.showLayoutBadgesLabel,
-			els.showPictureContentsLabel,
-			els.showTableContentsLabel,
-			els.showFragmentLinksLabel,
-			els.showCaptionLinksLabel,
-			els.showXrefLinksLabel,
-			els.showReadingOrderLabel
-		]) {
-			if (!label) continue;
-			label.classList.toggle("settings-option-disabled", !layoutEnabled);
-			const input = label.querySelector("input");
-			if (input) input.disabled = !layoutEnabled;
-		}
-		const readingOrderEnabled = layoutEnabled && showReadingOrder;
-		for (const label of [els.readingOrderArrowsLabel, els.readingOrderGlobalLabel]) {
-			if (!label) continue;
-			label.classList.toggle("settings-option-disabled", !readingOrderEnabled);
-			const input = label.querySelector("input");
-			if (input) input.disabled = !readingOrderEnabled;
-		}
 	}
 	function paneDef(key) {
 		return {
@@ -4118,8 +4569,8 @@
 				if (!def?.el) continue;
 				def.el.style.gridRow = String(row++);
 			}
-			refreshPageViewLayout();
-			if (els.readingSettingsToggle) els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
+			doclangPageViewPane?.refreshLayout();
+			doclangReadingPane?.setVisible(isPaneVisible("reading"));
 			return;
 		}
 		const contentFr = contentPaneFrWeights(keys);
@@ -4150,45 +4601,23 @@
 				}
 			}
 		});
-		refreshPageViewLayout();
-		if (els.readingSettingsToggle) els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
+		doclangPageViewPane?.refreshLayout();
+		doclangReadingPane?.setVisible(isPaneVisible("reading"));
 	}
 	function setToolbarOptionsOpen(open) {
 		toolbarOptionsOpen = open;
 		doclangToolbar?.setOptionsOpen(open);
 	}
 	function syncToolbarPaneCheckboxes() {
-		if (els.toggleFilePane) {
-			const available = isPaneAvailable("file");
-			els.toggleFilePane.checked = available && userPaneVisible.file;
-			els.toggleFilePane.disabled = !available;
-		}
-		if (els.toggleFilePaneLabel) els.toggleFilePaneLabel.classList.toggle("toolbar-options-item-disabled", !isPaneAvailable("file"));
-		if (els.togglePagePane) {
-			const available = isPaneAvailable("page");
-			els.togglePagePane.checked = available && userPaneVisible.page;
-			els.togglePagePane.disabled = !available;
-		}
-		if (els.togglePagePaneLabel) els.togglePagePaneLabel.classList.toggle("toolbar-options-item-disabled", !isPaneAvailable("page"));
-		if (els.toggleMarkupPane) {
-			els.toggleMarkupPane.checked = userPaneVisible.markup;
-			els.toggleMarkupPane.disabled = !state;
-		}
-		if (els.toggleReadingPane) {
-			els.toggleReadingPane.checked = userPaneVisible.reading;
-			els.toggleReadingPane.disabled = !state;
-		}
-		for (const label of [
-			els.toggleFilePaneLabel,
-			els.togglePagePaneLabel,
-			document.getElementById("toggle-markup-pane-label"),
-			document.getElementById("toggle-reading-pane-label")
-		]) {
-			if (!label) continue;
-			const input = label.querySelector("input");
-			label.classList.toggle("toolbar-options-item-disabled", Boolean(input?.disabled));
-		}
-		if (els.resetPaneLayoutBtn) els.resetPaneLayoutBtn.disabled = !state;
+		doclangToolbar?.syncPaneToggles({
+			file: userPaneVisible.file,
+			page: userPaneVisible.page,
+			markup: userPaneVisible.markup,
+			reading: userPaneVisible.reading,
+			fileAvailable: isPaneAvailable("file"),
+			pageAvailable: isPaneAvailable("page"),
+			hasState: Boolean(state)
+		});
 	}
 	function initToolbarOptions() {
 		if (!doclangToolbar) return;
@@ -4296,20 +4725,20 @@
 	}
 	function goToPage(n) {
 		if (!state) return;
-		setPageSettingsOpen(false);
+		doclangPageViewPane?.closeSettings();
 		const page = Math.min(Math.max(1, n), state.pageCount);
 		state.currentPage = page;
-		renderPage(page);
+		if (doclangMarkupPane) doclangMarkupPane.page = page;
+		if (doclangReadingPane) doclangReadingPane.page = page;
+		if (doclangPageViewPane) doclangPageViewPane.page = page;
+		setPageIndicator(page, state.pageCount);
 	}
 	function setPageIndicator(pageNum, pageCount) {
 		doclangPageNav?.setIndicator(pageNum, pageCount);
 	}
 	function syncPagePaneControls() {
 		const pageVisible = isPaneVisible("page");
-		if (els.settingsToggle) els.settingsToggle.hidden = !pageVisible;
-		if (els.pageZoomLabel) els.pageZoomLabel.hidden = !pageVisible;
-		if (pageVisible) updatePageZoomResetButton();
-		if (els.pagePane) els.pagePane.tabIndex = pageVisible ? 0 : -1;
+		doclangPageViewPane?.setVisible(pageVisible);
 	}
 	function findElementIdOnPage(el) {
 		if (!state?.elementIds) return null;
@@ -4418,258 +4847,14 @@
 	}
 	function selectElement(elementId) {
 		if (!elementId) return;
-		selectedElementId = elementId;
-		applySelection();
+		if (doclangMarkupPane) doclangMarkupPane.selected = elementId;
+		if (doclangReadingPane) doclangReadingPane.selected = elementId;
+		if (doclangPageViewPane) doclangPageViewPane.selected = elementId;
 	}
 	function clearSelection() {
-		selectedElementId = null;
-		applySelection();
-	}
-	function fragmentPeerElementIds(elementId) {
-		const peers = /* @__PURE__ */ new Set();
-		if (!elementId || !state?.elementIds || !state.idToElement) return peers;
-		const el = state.idToElement.get(elementId);
-		const threadId = el ? elementThreadId(el) : null;
-		if (!threadId) return peers;
-		for (const [node, id] of state.elementIds) if (elementThreadId(node) === threadId) peers.add(id);
-		return peers;
-	}
-	function isPictureContentOverlayElement(elementId) {
-		return isPictureContentElement(state?.idToElement?.get(elementId) ?? null);
-	}
-	function isTableContentOverlayElement(elementId) {
-		return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
-	}
-	function isContentsOptionHidden(elementId, clickVisible) {
-		if (clickVisible) return false;
-		if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
-		if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
-		return false;
-	}
-	function isFragmentLinkRelevant(linkEl, peerIds) {
-		const fromId = linkEl.getAttribute("data-fragment-from-id");
-		const toId = linkEl.getAttribute("data-fragment-to-id");
-		if (fromId && peerIds.has(fromId)) return true;
-		if (toId && peerIds.has(toId)) return true;
-		return false;
-	}
-	function applyBboxVisibility() {
-		if (!state?.hasPageView || !els.pagePane) return;
-		const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : /* @__PURE__ */ new Set();
-		for (const el of els.pagePane.querySelectorAll(".bbox")) {
-			el.classList.remove("related");
-			const elementId = el.getAttribute("data-element-id") ?? "";
-			const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-			if (showAllBboxes) {
-				if (isContentsOptionHidden(elementId, clickVisible)) el.classList.add("bbox-hidden");
-				else {
-					el.classList.remove("bbox-hidden");
-					if (peerIds.has(elementId)) el.classList.add("related");
-				}
-				continue;
-			}
-			if (elementId === selectedElementId) el.classList.remove("bbox-hidden");
-			else if (peerIds.has(elementId)) {
-				el.classList.remove("bbox-hidden");
-				el.classList.add("related");
-			} else el.classList.add("bbox-hidden");
-		}
-		for (const el of els.pagePane.querySelectorAll(".element-badge")) {
-			const elementId = el.getAttribute("data-element-id") ?? "";
-			const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-			if (!showAllBboxes || !showLayoutBadges) {
-				el.classList.add("bbox-hidden");
-				continue;
-			}
-			if (isContentsOptionHidden(elementId, clickVisible)) el.classList.add("bbox-hidden");
-			else el.classList.remove("bbox-hidden");
-		}
-		for (const el of els.pagePane.querySelectorAll(".caption-link")) {
-			if (!showAllBboxes || !showCaptionLinks) {
-				el.classList.add("bbox-hidden");
-				continue;
-			}
-			el.classList.remove("bbox-hidden");
-		}
-		for (const el of els.pagePane.querySelectorAll(".xref-link")) {
-			if (!showAllBboxes || !showXrefLinks) {
-				el.classList.add("bbox-hidden");
-				continue;
-			}
-			el.classList.remove("bbox-hidden");
-		}
-		for (const el of els.pagePane.querySelectorAll(".fragment-link")) {
-			const clickVisible = Boolean(selectedElementId && isFragmentLinkRelevant(el, peerIds));
-			el.classList.toggle("bbox-hidden", !(clickVisible || showAllBboxes && showFragmentLinks));
-		}
-		for (const el of els.pagePane.querySelectorAll(".fragment-nav")) {
-			const elementId = el.getAttribute("data-element-id") ?? "";
-			const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-			el.classList.toggle("bbox-hidden", !(clickVisible || showAllBboxes && showFragmentLinks));
-		}
-		for (const el of els.pagePane.querySelectorAll(".reading-order-badge")) {
-			const elementId = el.getAttribute("data-element-id") ?? "";
-			const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-			if (!showAllBboxes || !showReadingOrder) {
-				el.classList.add("bbox-hidden");
-				continue;
-			}
-			if (isPictureContentOverlayElement(elementId) || isTableContentOverlayElement(elementId) || isContentsOptionHidden(elementId, clickVisible)) {
-				el.classList.add("bbox-hidden");
-				continue;
-			}
-			el.classList.remove("bbox-hidden");
-		}
-		for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
-			if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
-				el.classList.add("bbox-hidden");
-				continue;
-			}
-			el.classList.remove("bbox-hidden");
-		}
-	}
-	function findMarkupElementForSelection(elementId) {
-		if (!els.markupPane) return null;
-		return els.markupPane.querySelector(`.markup-el-virtual-text[data-element-id="${elementId}"]`) || els.markupPane.querySelector(`[data-element-id="${elementId}"]`);
-	}
-	function findRenderedElementForSelection(elementId) {
-		if (!els.renderedPane) return null;
-		const direct = els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) || els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
-		if (direct) return direct;
-		const xmlEl = state?.idToElement?.get(elementId);
-		const threadId = xmlEl ? elementThreadId(xmlEl) : null;
-		if (!threadId) return null;
-		const merged = els.renderedPane.querySelector(`.rendered-fragment-merged[data-thread-id="${threadId}"]`);
-		if (!merged) return null;
-		const primaryId = merged.getAttribute("data-element-id");
-		if (!primaryId || primaryId === elementId) return merged;
-		return fragmentPeerElementIds(primaryId).has(elementId) ? merged : null;
-	}
-	function revealReadingLayerForSelection(renderedEl) {
-		const layer = renderedEl.getAttribute("data-doclang-layer");
-		if (!layer || layer === "body") return;
-		let changed = false;
-		if (layer === "furniture" && !showReadingFurniture) {
-			showReadingFurniture = true;
-			changed = true;
-		} else if (layer === "background" && !showReadingBackground) {
-			showReadingBackground = true;
-			changed = true;
-		}
-		if (!changed) return;
-		syncReadingLayerCheckboxes();
-		syncReadingLayerVisibility();
-	}
-	function revealRenderedSelectionContext(renderedEl) {
-		const pictureContents = renderedEl.closest(".rendered-picture-contents");
-		if (pictureContents && !pictureContents.open) pictureContents.open = true;
-		revealReadingLayerForSelection(renderedEl);
-	}
-	function applySelection() {
-		els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => el.classList.remove("selected"));
-		els.renderedPane?.querySelectorAll(".rendered-el.selected").forEach((el) => el.classList.remove("selected"));
-		if (!els.pagePane) return;
-		els.pagePane.querySelectorAll(".bbox.selected, .overlay-badge.selected").forEach((el) => el.classList.remove("selected"));
-		if (!selectedElementId) {
-			const img = els.pagePane.querySelector(".page-view img");
-			if (img) {
-				const svg = img.parentElement?.querySelector("svg.overlay");
-				if (svg && state?.pageViewOverlay) syncOverlayBadges(img, svg, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
-			}
-			applyBboxVisibility();
-			return;
-		}
-		const markupEl = findMarkupElementForSelection(selectedElementId);
-		if (markupEl) {
-			markupEl.classList.add("selected");
-			markupEl.scrollIntoView({
-				block: "nearest",
-				behavior: "smooth"
-			});
-		}
-		const renderedEl = findRenderedElementForSelection(selectedElementId);
-		if (renderedEl) {
-			revealRenderedSelectionContext(renderedEl);
-			renderedEl.classList.add("selected");
-			renderedEl.scrollIntoView({
-				block: "nearest",
-				behavior: "smooth"
-			});
-		}
-		if (state?.hasPageView) for (const el of els.pagePane.querySelectorAll(`[data-element-id="${selectedElementId}"]`)) el.classList.add("selected");
-		const img = els.pagePane.querySelector(".page-view img");
-		if (img) {
-			const svg = img.parentElement?.querySelector("svg.overlay");
-			if (svg && state?.pageViewOverlay) syncOverlayBadges(img, svg, state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
-		}
-		applyBboxVisibility();
-	}
-	function renderPage(pageNum) {
-		if (!state) return;
-		const { segments, pageImages, pageCount, defaultResolution } = state;
-		const segment = segments[pageNum - 1] ?? [];
-		selectedElementId = null;
-		setPageIndicator(pageNum, pageCount);
-		if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
-		if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
-		if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
-		els.markupPane.innerHTML = "";
-		const elementIds = assignElementIds(segment);
-		state.elementIds = elementIds;
-		state.idToElement = invertElementIds(elementIds);
-		if (segmentHasMarkup(segment)) {
-			els.markupPane.appendChild(buildMarkupView(segment, elementIds, (id) => selectElement(resolveSelectionElementId(id) ?? id)));
-			els.renderedPane.innerHTML = "";
-			els.renderedPane.appendChild(buildRenderedView(segment, elementIds, showReadingFurniture, showReadingBackground, (id) => selectElement(resolveSelectionElementId(id) ?? id)));
-		} else {
-			els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-			els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-		}
-		els.pagePane.innerHTML = "";
-		if (state.hasPageView) {
-			const imageUrl = pageImages.get(pageNum);
-			if (imageUrl) {
-				const port = document.createElement("div");
-				port.className = "page-view-port";
-				const wrap = document.createElement("div");
-				wrap.className = "page-view";
-				const img = document.createElement("img");
-				img.alt = `Page ${pageNum}`;
-				const onImageReady = () => {
-					if (img.dataset.layoutGeneration === String(pageNum)) return;
-					img.dataset.layoutGeneration = String(pageNum);
-					applyPageImageSize(img, els.pagePane);
-					const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
-					const existing = wrap.querySelector("svg.overlay");
-					if (existing) existing.remove();
-					const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder, readingOrderGlobalNumbering, state.readingOrderDisplayNumbers);
-					state.pageViewOverlay = {
-						boxes,
-						readingOrderSteps
-					};
-					if (boxes.length) wrap.appendChild(buildOverlay(img, boxes, collectCaptionLinks(segment, elementIds, boxes), collectXrefLinks(segment, elementIds, boxes), readingOrderSteps, collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById), collectFragmentNavItems(segment, elementIds, boxes, state.threadNavByElement), defaultResolution, (id) => selectElement(resolveSelectionElementId(id) ?? id), navigateThreadFragment, clearSelection, () => pagePanSuppressClick, (v) => {
-						pagePanSuppressClick = v;
-					}));
-					syncPageViewChrome(img);
-					const pending = state.pendingSelectElement;
-					if (pending) {
-						state.pendingSelectElement = null;
-						const id = findElementIdOnPage(pending);
-						if (id) selectElement(id);
-					}
-				};
-				img.addEventListener("load", onImageReady, { once: true });
-				wrap.appendChild(img);
-				port.appendChild(wrap);
-				els.pagePane.appendChild(port);
-				img.src = imageUrl;
-				if (img.complete) onImageReady();
-				if (!pagePaneResizeObserver) {
-					pagePaneResizeObserver = new ResizeObserver(() => refreshPageViewLayout());
-					pagePaneResizeObserver.observe(els.pagePane);
-				}
-			} else els.pagePane.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
-		}
+		if (doclangMarkupPane) doclangMarkupPane.selected = null;
+		if (doclangReadingPane) doclangReadingPane.selected = null;
+		if (doclangPageViewPane) doclangPageViewPane.selected = null;
 	}
 	function setDocLabel(label) {
 		if (!els.docLabel) return;
@@ -4692,33 +4877,24 @@
 		document.body.classList.toggle("has-page-view", visible);
 		syncPagePaneControls();
 		syncToolbarPaneCheckboxes();
-		if (!visible) setPageSettingsOpen(false);
+		if (!visible) doclangPageViewPane?.closeSettings();
 		applyPaneLayout();
-		syncLayoutSubtoggles();
 	}
 	function resetViewer() {
 		setDemoLoading(false);
 		clearFileCatalog();
 		filePaneUserToggled = false;
-		selectedElementId = null;
-		pagePanDrag = null;
-		pagePanSuppressClick = false;
-		showReadingFurniture = true;
-		showReadingBackground = true;
-		syncReadingLayerCheckboxes();
 		resetPageZoom();
 		setDocLabel(null);
 		setDocumentOpen(false);
 		document.body.classList.remove("has-page-view");
 		closeAllSettings();
 		setToolbarOptionsOpen(false);
-		if (els.markupPane) els.markupPane.innerHTML = "";
-		if (els.renderedPane) els.renderedPane.innerHTML = "";
-		if (els.pagePane) els.pagePane.innerHTML = "";
+		if (doclangMarkupPane) doclangMarkupPane.document = null;
+		if (doclangReadingPane) doclangReadingPane.document = null;
+		if (doclangPageViewPane) doclangPageViewPane.document = null;
+		doclangFilePane?.renderFiles([]);
 		setPageIndicator(1, 1);
-		if (els.btnPrev) els.btnPrev.disabled = true;
-		if (els.btnNext) els.btnNext.disabled = true;
-		if (els.filePane) els.filePane.replaceChildren();
 		updateFileView();
 		applyPaneLayout();
 	}
@@ -4830,7 +5006,7 @@
 		const entry = fileCatalog[activeFileIndex];
 		if (!entry) return;
 		entry.currentPage = state.currentPage;
-		entry.pageZoom = pageZoomPercent;
+		entry.pageZoom = doclangPageViewPane?.zoomPercent ?? 100;
 	}
 	function releaseActiveDocument() {
 		if (activeFileIndex >= 0) {
@@ -4842,9 +5018,6 @@
 		}
 		if (state) revokeDocumentState(state);
 		state = null;
-		selectedElementId = null;
-		pagePanDrag = null;
-		pagePanSuppressClick = false;
 	}
 	function clearFileCatalog() {
 		releaseActiveDocument();
@@ -4937,29 +5110,21 @@
 	}
 	function activateDocument(docState, entry) {
 		state = docState;
-		pageLayoutCache = null;
 		closeAllSettings();
-		pageZoomPercent = entry.pageZoom ?? 100;
-		if (els.pageZoom) {
-			els.pageZoom.value = String(pageZoomPercent);
-			els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
-		}
-		updatePageZoomResetButton();
-		const port = pageViewScrollPane();
-		if (port) {
-			port.scrollLeft = 0;
-			port.scrollTop = 0;
-		}
+		doclangPageViewPane?.activateZoom(entry.pageZoom ?? 100);
 		setDocLabel(entry.label);
 		setDocumentOpen(true, { markupOnly: state.markupOnly });
 		setPageViewVisible(state.hasPageView);
-		renderPage(state.currentPage);
+		setPageIndicator(state.currentPage, state.pageCount);
+		if (doclangMarkupPane) doclangMarkupPane.document = docState;
+		if (doclangReadingPane) doclangReadingPane.document = docState;
+		if (doclangPageViewPane) doclangPageViewPane.document = docState;
 		updateFileView();
 	}
 	function setDemoLoading(loading) {
 		document.body.classList.toggle("demo-loading", loading);
 		doclangEmptyState?.setDemoLoading(loading);
-		if (doclangToolbar) doclangToolbar.btnDemo.disabled = loading;
+		doclangToolbar?.setDemoLoading(loading);
 	}
 	async function loadDemo() {
 		if (demoLoadInProgress) return;
@@ -5040,7 +5205,6 @@
 		if (supported.length) await addFilesToCatalog(supported, { replace: false });
 	}
 	function initPageWheelNav() {
-		if (!els.pagePane) return;
 		let pixelAccum = 0;
 		let pixelGestureUntil = 0;
 		let lastFlipAt = 0;
@@ -5089,134 +5253,25 @@
 				pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight;
 			});
 		}
-		els.pagePane.addEventListener("wheel", (e) => {
+		doclangPageViewPane?.addEventListener("wheel", (e) => {
 			if (!state?.hasPageView) return;
-			const pane = pageViewScrollPane();
-			if (!pane) return;
-			if (pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth) {
-				onScrollPaneWheel(e, pane);
+			const scrollPane = doclangPageViewPane?.scrollPane ?? null;
+			if (!scrollPane) return;
+			if (scrollPane.scrollHeight > scrollPane.clientHeight || scrollPane.scrollWidth > scrollPane.clientWidth) {
+				onScrollPaneWheel(e, scrollPane);
 				return;
 			}
 			e.preventDefault();
 			const dir = wheelDir(e);
 			if (dir) tryFlipPage(dir);
 		}, { passive: false });
-		for (const pane of [els.markupPane, els.renderedPane]) {
+		for (const pane of [doclangMarkupPane, doclangReadingPane]) {
 			if (!pane) continue;
 			pane.addEventListener("wheel", (e) => onScrollPaneWheel(e, pane), { passive: false });
 		}
-		els.pagePane.tabIndex = 0;
-		els.pagePane.setAttribute("role", "region");
-		els.pagePane.setAttribute("aria-label", "Original page");
-		els.pagePane.addEventListener("pointerdown", () => {
-			if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
-		});
-		els.pagePane.addEventListener("keydown", (e) => {
-			if (!state?.hasPageView) return;
-			switch (e.key) {
-				case "ArrowDown":
-				case "PageDown":
-				case "ArrowRight":
-					e.preventDefault();
-					tryFlipPage(1);
-					break;
-				case "ArrowUp":
-				case "PageUp":
-				case "ArrowLeft":
-					e.preventDefault();
-					tryFlipPage(-1);
-			}
-		});
-	}
-	function canStartPagePan(event) {
-		if (!(event.target instanceof Element)) return false;
-		if (!event.target.closest(".page-view")) return false;
-		return isPagePaneScrollable();
-	}
-	function initPageViewControls() {
-		if (!els.pagePane) return;
-		els.pagePane.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0 || !canStartPagePan(e)) return;
-			const scrollPane = pageViewScrollPane();
-			if (!scrollPane) return;
-			pagePanDrag = {
-				pointerId: e.pointerId,
-				startX: e.clientX,
-				startY: e.clientY,
-				scrollLeft: scrollPane.scrollLeft,
-				scrollTop: scrollPane.scrollTop,
-				moved: false
-			};
-		});
-		els.pagePane.addEventListener("pointermove", (e) => {
-			if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
-			const dx = e.clientX - pagePanDrag.startX;
-			const dy = e.clientY - pagePanDrag.startY;
-			if (!pagePanDrag.moved && Math.hypot(dx, dy) >= 5) {
-				pagePanDrag.moved = true;
-				els.pagePane.classList.add("is-panning");
-				els.pagePane.classList.remove("can-pan");
-				els.pagePane.setPointerCapture(e.pointerId);
-			}
-			if (!pagePanDrag.moved) return;
-			const scrollPane = pageViewScrollPane();
-			if (!scrollPane) return;
-			scrollPane.scrollLeft = pagePanDrag.scrollLeft + pagePanDrag.startX - e.clientX;
-			scrollPane.scrollTop = pagePanDrag.scrollTop + pagePanDrag.startY - e.clientY;
-			e.preventDefault();
-		});
-		function endPagePan(e) {
-			if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
-			if (pagePanDrag.moved) pagePanSuppressClick = true;
-			pagePanDrag = null;
-			els.pagePane.classList.remove("is-panning");
-			if (els.pagePane.hasPointerCapture(e.pointerId)) els.pagePane.releasePointerCapture(e.pointerId);
-			updatePagePanePanCursor();
-		}
-		els.pagePane.addEventListener("pointerup", (e) => endPagePan(e));
-		els.pagePane.addEventListener("pointercancel", (e) => endPagePan(e));
 	}
 	function initFileTypeHints() {
 		doclangEmptyState?.setFileTypeHints(SUPPORTED_FILE_EXTENSIONS);
-	}
-	function initCursorHints() {
-		els.markupPane?.addEventListener("mousemove", (e) => {
-			if (!e.target.closest(".markup-ghost-tag-part")) {
-				hideCursorHint();
-				return;
-			}
-			showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
-		});
-		els.markupPane?.addEventListener("mouseleave", hideCursorHint);
-		els.openFileBtn?.addEventListener("mousemove", (e) => showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY));
-		els.openFileBtn?.addEventListener("mouseleave", hideCursorHint);
-	}
-	function initBboxHints() {
-		if (!els.pagePane) return;
-		els.pagePane.addEventListener("mousemove", (e) => {
-			if (pagePanDrag?.moved || els.pagePane.classList.contains("is-panning")) {
-				hideCursorHint();
-				return;
-			}
-			const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
-			if (navBtn) {
-				showCursorHint(navBtn.getAttribute("data-nav") === "prev" ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT, e.clientX, e.clientY);
-				return;
-			}
-			const badge = e.target.closest(".element-badge[data-element-id]");
-			if (!badge || !state?.idToElement) {
-				hideCursorHint();
-				return;
-			}
-			const elementId = badge.getAttribute("data-element-id");
-			const xmlEl = elementId ? state.idToElement.get(elementId) : null;
-			if (!xmlEl) {
-				hideCursorHint();
-				return;
-			}
-			showCursorHintHtml(elementHeadTooltipHtml(xmlEl, state.defaultResolution), e.clientX, e.clientY);
-		});
-		els.pagePane.addEventListener("mouseleave", hideCursorHint);
 	}
 	function initDragDrop() {
 		document.body.addEventListener("dragenter", (e) => {
@@ -5257,82 +5312,42 @@
 	doclangPageNav?.addEventListener("doclang-go-to-page", (e) => {
 		goToPage(e.detail.page);
 	});
-	doclangPageViewPane?.addEventListener("doclang-page-settings-toggle", () => setPageSettingsOpen(!pageSettingsOpen));
-	doclangPageViewPane?.addEventListener("doclang-page-settings-close", () => setPageSettingsOpen(false));
-	doclangPageViewPane?.addEventListener("doclang-zoom-change", (e) => {
-		pageZoomPercent = Math.max(100, e.detail.value);
-		if (doclangPageViewPane) {
-			doclangPageViewPane.zoomInput.value = String(pageZoomPercent);
-			doclangPageViewPane.zoomInput.setAttribute("aria-valuenow", String(pageZoomPercent));
+	document.addEventListener("doclang-element-select", (e) => {
+		const rawId = e.detail.id;
+		selectElement(resolveSelectionElementId(rawId) ?? rawId);
+	});
+	document.addEventListener("doclang-navigate-thread", (e) => {
+		const { elementId, direction } = e.detail;
+		navigateThreadFragment(elementId, direction);
+	});
+	document.addEventListener("doclang-clear-selection", () => {
+		clearSelection();
+	});
+	document.addEventListener("doclang-page-key-nav", (e) => {
+		const { dir } = e.detail;
+		if (state) goToPage(state.currentPage + dir);
+	});
+	doclangPageViewPane?.addEventListener("doclang-zoom-change", () => {
+		doclangPageViewPane?.refreshLayout();
+	});
+	var prevReadingOrderGlobal = false;
+	doclangPageViewPane?.addEventListener("doclang-overlay-change", (e) => {
+		const detail = e.detail;
+		if (detail.readingOrderGlobal !== prevReadingOrderGlobal) {
+			prevReadingOrderGlobal = detail.readingOrderGlobal;
+			if (state) {
+				if (doclangMarkupPane) doclangMarkupPane.document = state;
+				if (doclangReadingPane) doclangReadingPane.document = state;
+				if (doclangPageViewPane) doclangPageViewPane.document = state;
+			}
 		}
-		updatePageZoomResetButton();
-		refreshPageViewLayout();
-	});
-	doclangPageViewPane?.addEventListener("doclang-zoom-reset", () => {
-		if (pageZoomPercent !== 100) resetPageZoom();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-all-bboxes", (e) => {
-		showAllBboxes = e.detail.checked;
-		syncLayoutSubtoggles();
-		const img = els.pagePane?.querySelector(".page-view img");
-		if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement.querySelector("svg.overlay"), state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-layout-badges", (e) => {
-		showLayoutBadges = e.detail.checked;
-		const img = els.pagePane?.querySelector(".page-view img");
-		if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement.querySelector("svg.overlay"), state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-reading-order", (e) => {
-		showReadingOrder = e.detail.checked;
-		syncLayoutSubtoggles();
-		const img = els.pagePane?.querySelector(".page-view img");
-		if (img && state?.pageViewOverlay) syncOverlayBadges(img, img.parentElement.querySelector("svg.overlay"), state.pageViewOverlay.boxes, state.pageViewOverlay.readingOrderSteps, showAllBboxes, showLayoutBadges, showReadingOrder);
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-reading-order-arrows", (e) => {
-		showReadingOrderArrows = e.detail.checked;
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-reading-order-global", (e) => {
-		readingOrderGlobalNumbering = e.detail.checked;
-		if (state) renderPage(state.currentPage);
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-picture-contents", (e) => {
-		showPictureContents = e.detail.checked;
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-table-contents", (e) => {
-		showTableContents = e.detail.checked;
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-fragment-links", (e) => {
-		showFragmentLinks = e.detail.checked;
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-xref-links", (e) => {
-		showXrefLinks = e.detail.checked;
-		applyBboxVisibility();
-	});
-	doclangPageViewPane?.addEventListener("doclang-show-caption-links", (e) => {
-		showCaptionLinks = e.detail.checked;
-		applyBboxVisibility();
 	});
 	doclangReadingPane?.addEventListener("doclang-reading-settings-toggle", () => setReadingSettingsOpen(!readingSettingsOpen));
 	doclangReadingPane?.addEventListener("doclang-reading-settings-close", () => setReadingSettingsOpen(false));
-	doclangReadingPane?.addEventListener("doclang-show-reading-furniture", (e) => {
-		showReadingFurniture = e.detail.checked;
-		syncReadingLayerVisibility();
-	});
-	doclangReadingPane?.addEventListener("doclang-show-reading-background", (e) => {
-		showReadingBackground = e.detail.checked;
-		syncReadingLayerVisibility();
-	});
 	document.addEventListener("keydown", (e) => {
 		if (e.key !== "Escape") return;
 		if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
-		else if (pageSettingsOpen) setPageSettingsOpen(false);
+		else if (doclangPageViewPane) doclangPageViewPane.closeSettings();
 		else if (readingSettingsOpen) setReadingSettingsOpen(false);
 	});
 	loadLayoutPrefs();
@@ -5341,13 +5356,10 @@
 	initPaneSplitters();
 	initLayoutStackListener();
 	initFileTypeHints();
-	initCursorHints();
-	initBboxHints();
 	initDragDrop();
 	initFilePaneCloseAll();
 	initPageWheelNav();
-	initPageViewControls();
 	if (document.body.classList.contains("demo-loading")) doclangEmptyState?.setDemoLoading(true);
-	if (doclangToolbar?.btnDemo) loadDemo();
+	if (doclangToolbar) loadDemo();
 	//#endregion
 })();

@@ -3,6 +3,7 @@
 import { DoclangHTMLElement } from '../base/base';
 import styles from './toolbar.css?inline';
 import template from './toolbar.html?raw';
+import { OPEN_FILE_HINT } from '../../constants';
 
 export class DoclangToolbar extends DoclangHTMLElement {
   private _toolbarOptionsBtn: HTMLButtonElement;
@@ -12,12 +13,9 @@ export class DoclangToolbar extends DoclangHTMLElement {
   private _togglePagePane: HTMLInputElement;
   private _togglePagePaneLabel: HTMLLabelElement;
   private _toggleMarkupPane: HTMLInputElement;
-  private _toggleMarkupPaneLabel: HTMLLabelElement;
   private _toggleReadingPane: HTMLInputElement;
-  private _toggleReadingPaneLabel: HTMLLabelElement;
   private _resetPaneLayoutBtn: HTMLButtonElement;
   private _btnDemo: HTMLButtonElement;
-  private _openFileBtn: HTMLLabelElement;
   private _inputArchive: HTMLInputElement;
   private _panelOpen = false;
 
@@ -29,56 +27,59 @@ export class DoclangToolbar extends DoclangHTMLElement {
     this._toggleFilePane = this.q('.cb-file-pane');
     this._togglePagePaneLabel = this.q('label:has(.cb-page-pane)');
     this._togglePagePane = this.q('.cb-page-pane');
-    this._toggleMarkupPaneLabel = this.q('label:has(.cb-markup-pane)');
+    this.q<HTMLLabelElement>('label:has(.cb-markup-pane)'); // not stored; handled via syncPaneToggles
     this._toggleMarkupPane = this.q('.cb-markup-pane');
-    this._toggleReadingPaneLabel = this.q('label:has(.cb-reading-pane)');
+    this.q<HTMLLabelElement>('label:has(.cb-reading-pane)'); // not stored; label state is toggled via syncPaneToggles
     this._toggleReadingPane = this.q('.cb-reading-pane');
     this._resetPaneLayoutBtn = this.q('.toolbar-options-reset');
     this._btnDemo = this.q('.btn-demo');
-    this._openFileBtn = this.q('.file-btn');
     this._inputArchive = this.q('.input-archive');
 
     this._wireEvents();
+    this._wireHints();
   }
 
-  get toggleFilePane(): HTMLInputElement {
-    return this._toggleFilePane;
+  /** Sync the Views-menu checkboxes and disabled/greyed state from app state. */
+  syncPaneToggles(opts: {
+    file: boolean;
+    page: boolean;
+    markup: boolean;
+    reading: boolean;
+    fileAvailable: boolean;
+    pageAvailable: boolean;
+    hasState: boolean;
+  }): void {
+    this._toggleFilePane.checked = opts.fileAvailable && opts.file;
+    this._toggleFilePane.disabled = !opts.fileAvailable;
+    this._toggleFilePaneLabel.classList.toggle(
+      'toolbar-options-item-disabled',
+      !opts.fileAvailable
+    );
+
+    this._togglePagePane.checked = opts.pageAvailable && opts.page;
+    this._togglePagePane.disabled = !opts.pageAvailable;
+    this._togglePagePaneLabel.classList.toggle(
+      'toolbar-options-item-disabled',
+      !opts.pageAvailable
+    );
+
+    this._toggleMarkupPane.checked = opts.markup;
+    this._toggleMarkupPane.disabled = !opts.hasState;
+
+    this._toggleReadingPane.checked = opts.reading;
+    this._toggleReadingPane.disabled = !opts.hasState;
+
+    // Sync label disabled class for markup/reading (labels don't have stored refs)
+    for (const input of [this._toggleMarkupPane, this._toggleReadingPane]) {
+      const label = input.closest('label');
+      label?.classList.toggle('toolbar-options-item-disabled', input.disabled);
+    }
+
+    this._resetPaneLayoutBtn.disabled = !opts.hasState;
   }
-  get toggleFilePaneLabel(): HTMLLabelElement {
-    return this._toggleFilePaneLabel;
-  }
-  get togglePagePane(): HTMLInputElement {
-    return this._togglePagePane;
-  }
-  get togglePagePaneLabel(): HTMLLabelElement {
-    return this._togglePagePaneLabel;
-  }
-  get toggleMarkupPane(): HTMLInputElement {
-    return this._toggleMarkupPane;
-  }
-  get toggleMarkupPaneLabel(): HTMLLabelElement {
-    return this._toggleMarkupPaneLabel;
-  }
-  get toggleReadingPane(): HTMLInputElement {
-    return this._toggleReadingPane;
-  }
-  get toggleReadingPaneLabel(): HTMLLabelElement {
-    return this._toggleReadingPaneLabel;
-  }
-  get resetPaneLayoutBtn(): HTMLButtonElement {
-    return this._resetPaneLayoutBtn;
-  }
-  get toolbarOptionsBtn(): HTMLButtonElement {
-    return this._toolbarOptionsBtn;
-  }
-  get btnDemo(): HTMLButtonElement {
-    return this._btnDemo;
-  }
-  get openFileBtn(): HTMLLabelElement {
-    return this._openFileBtn;
-  }
-  get inputArchive(): HTMLInputElement {
-    return this._inputArchive;
+
+  setDemoLoading(loading: boolean): void {
+    this._btnDemo.disabled = loading;
   }
 
   setOptionsOpen(open: boolean): void {
@@ -164,6 +165,29 @@ export class DoclangToolbar extends DoclangHTMLElement {
         new CustomEvent('doclang-reset-pane-layout', { bubbles: true, composed: true })
       )
     );
+  }
+
+  private _wireHints(): void {
+    const fileBtn = this.shadow.querySelector('.file-btn');
+    if (!fileBtn) return;
+    fileBtn.addEventListener('mousemove', e => {
+      this.dispatchEvent(
+        new CustomEvent('doclang-hint', {
+          bubbles: true,
+          composed: true,
+          detail: {
+            text: OPEN_FILE_HINT,
+            clientX: (e as MouseEvent).clientX,
+            clientY: (e as MouseEvent).clientY,
+          },
+        })
+      );
+    });
+    fileBtn.addEventListener('mouseleave', () => {
+      this.dispatchEvent(
+        new CustomEvent('doclang-hint-hide', { bubbles: true, composed: true })
+      );
+    });
   }
 }
 

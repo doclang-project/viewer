@@ -7,12 +7,42 @@ import template from './cursor-hint.html?raw';
 const OFFSET = 10;
 const MARGIN = 8;
 
+/** Detail shape for the `doclang-hint` custom event. */
+export interface DoclangHintDetail {
+  /** Raw HTML to set via innerHTML (shown as detail-size tooltip). */
+  html?: string;
+  /** Plain-text content (shown as normal-size tooltip). */
+  text?: string;
+  clientX: number;
+  clientY: number;
+}
+
 export class DoclangCursorHint extends DoclangHTMLElement {
   private _hint: HTMLElement;
+  private _onHint = (e: Event): void => {
+    const { html, text, clientX, clientY } = (e as CustomEvent<DoclangHintDetail>)
+      .detail;
+    if (html !== undefined) {
+      this.showHtml(html, clientX, clientY);
+    } else if (text !== undefined) {
+      this.show(text, clientX, clientY);
+    }
+  };
+  private _onHide = (): void => this.hide();
 
   constructor() {
     super(styles, template);
     this._hint = this.q('.cursor-hint');
+  }
+
+  connectedCallback(): void {
+    document.addEventListener('doclang-hint', this._onHint);
+    document.addEventListener('doclang-hint-hide', this._onHide);
+  }
+
+  disconnectedCallback(): void {
+    document.removeEventListener('doclang-hint', this._onHint);
+    document.removeEventListener('doclang-hint-hide', this._onHide);
   }
 
   hide(): void {

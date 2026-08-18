@@ -1,4 +1,4 @@
-import type { PaneKey } from './constants';
+import type { PaneKey } from '../constants';
 
 export interface BoundingBox {
   kind: string;

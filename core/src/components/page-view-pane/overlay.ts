@@ -11,8 +11,8 @@ import {
   FRAGMENT_LINK_LABEL_SAME_PAGE,
   FRAGMENT_NAV_HINT_PREV,
   FRAGMENT_NAV_HINT_NEXT,
-} from './constants';
-import { layerClassForValue, kindClassForTag, bboxClassForKind } from './xml-overlay';
+} from '../../constants';
+import { layerClassForValue } from '../../doclang/dom';
 import type {
   BoundingBox,
   Resolution,
@@ -23,42 +23,65 @@ import type {
   FragmentNavItem,
   OverlayLinkOptions,
   PageLayoutCache,
-} from './types';
-
-// We re-export the overlay box paint utilities needed by main.ts
-export { elementKindKey, kindClassForTag, bboxClassForKind } from './xml-overlay';
+} from '../../doclang/types';
 
 // ---------------------------------------------------------------------------
-// State accessors — injected by main.ts
+// Overlay box CSS class helpers
 // ---------------------------------------------------------------------------
-let getPageZoomPercent: () => number = () => PAGE_ZOOM_DEFAULT;
-let getPagePane: () => HTMLElement | null = () => null;
-let getPageLayoutCache: () => PageLayoutCache | null = () => null;
-let setPageLayoutCache: (c: PageLayoutCache) => void = () => {
-  /* noop */
-};
-let getSelectedElementId: () => string | null = () => null;
 
-export function setOverlayAccessors(opts: {
-  getPageZoomPercent: () => number;
-  getPagePane: () => HTMLElement | null;
-  getPageLayoutCache: () => PageLayoutCache | null;
-  setPageLayoutCache: (c: PageLayoutCache) => void;
-  getSelectedElementId: () => string | null;
-}): void {
-  getPageZoomPercent = opts.getPageZoomPercent;
-  getPagePane = opts.getPagePane;
-  getPageLayoutCache = opts.getPageLayoutCache;
-  setPageLayoutCache = opts.setPageLayoutCache;
-  getSelectedElementId = opts.getSelectedElementId;
+export function elementKindKey(kind: string): string {
+  if (
+    kind.startsWith('field_') ||
+    kind === 'key' ||
+    kind === 'value' ||
+    kind === 'hint'
+  )
+    return 'field';
+  if (kind === 'tabular') return 'table';
+  const known = new Set([
+    'text',
+    'heading',
+    'list',
+    'ldiv',
+    'table',
+    'index',
+    'formula',
+    'code',
+    'picture',
+    'group',
+    'footnote',
+    'page_header',
+    'page_footer',
+    'caption',
+  ]);
+  return known.has(kind) ? kind : 'default';
+}
+
+export function kindClassForTag(tag: string): string {
+  return `kind-${elementKindKey(tag)}`;
+}
+
+export function bboxClassForKind(kind: string): string {
+  return elementKindKey(kind);
+}
+
+// ---------------------------------------------------------------------------
+// Overlay context — passed explicitly by page-view-pane instead of globals
+// ---------------------------------------------------------------------------
+export interface OverlayCtx {
+  zoomPct: number;
+  pane: HTMLElement;
+  layoutCache: PageLayoutCache | null;
+  setLayoutCache: (c: PageLayoutCache) => void;
+  selectedId: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Page layout helpers
 // ---------------------------------------------------------------------------
 
-function pageZoomFactor(): number {
-  return getPageZoomPercent() / PAGE_ZOOM_DEFAULT;
+function pageZoomFactor(ctx: OverlayCtx): number {
+  return ctx.zoomPct / PAGE_ZOOM_DEFAULT;
 }
 
 function paneContentSize(pane: HTMLElement): { w: number; h: number } {
@@ -68,11 +91,15 @@ function paneContentSize(pane: HTMLElement): { w: number; h: number } {
   return { w: pane.clientWidth - padX, h: pane.clientHeight - padY };
 }
 
-export function getCachedFitScale(img: HTMLImageElement, pane: HTMLElement): number {
+export function getCachedFitScale(
+  img: HTMLImageElement,
+  pane: HTMLElement,
+  ctx: OverlayCtx
+): number {
   const { w: paneW, h: paneH } = paneContentSize(pane);
   const imgW = img.naturalWidth;
   const imgH = img.naturalHeight;
-  const cache = getPageLayoutCache();
+  const cache = ctx.layoutCache;
   if (
     cache &&
     cache.paneW === paneW &&
@@ -89,20 +116,21 @@ export function getCachedFitScale(img: HTMLImageElement, pane: HTMLElement): num
           (paneH - PAGE_VIEW_BORDER_PX) / imgH
         )
       : 1;
-  setPageLayoutCache({ paneW, paneH, imgW, imgH, fitScale });
+  ctx.setLayoutCache({ paneW, paneH, imgW, imgH, fitScale });
   return fitScale;
 }
 
 export function overlayUserLength(
   baseUserPx: number,
+  ctx: OverlayCtx,
   img?: HTMLImageElement | null
 ): number {
   const resolvedImg =
-    img ?? (getPagePane()?.querySelector('.page-view img') as HTMLImageElement | null);
-  const zoom = pageZoomFactor();
+    img ?? (ctx.pane.querySelector('.page-view img') as HTMLImageElement | null);
+  const zoom = pageZoomFactor(ctx);
   if (!(zoom > 0)) return baseUserPx;
-  const pane = getPagePane();
-  if (!resolvedImg?.naturalWidth || !resolvedImg.naturalHeight || !pane) {
+  const { pane } = ctx;
+  if (!resolvedImg?.naturalWidth || !resolvedImg.naturalHeight) {
     return baseUserPx / zoom;
   }
 
@@ -113,16 +141,20 @@ export function overlayUserLength(
     (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
     (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT
   );
-  const fitScale = getCachedFitScale(resolvedImg, pane);
+  const fitScale = getCachedFitScale(resolvedImg, pane, ctx);
   if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
 
   return (baseUserPx * refFit) / (fitScale * zoom);
 }
 
-export function applyPageImageSize(img: HTMLImageElement, pane: HTMLElement): boolean {
+export function applyPageImageSize(
+  img: HTMLImageElement,
+  pane: HTMLElement,
+  ctx: OverlayCtx
+): boolean {
   if (!img?.naturalWidth || !img.naturalHeight) return false;
-  const zoomPct = Math.max(PAGE_ZOOM_DEFAULT, getPageZoomPercent());
-  const fitScale = getCachedFitScale(img, pane);
+  const zoomPct = Math.max(PAGE_ZOOM_DEFAULT, ctx.zoomPct);
+  const fitScale = getCachedFitScale(img, pane, ctx);
   const scale = fitScale * (zoomPct / PAGE_ZOOM_DEFAULT);
   const w = Math.floor(img.naturalWidth * scale);
   const h = Math.floor(img.naturalHeight * scale);
@@ -178,13 +210,16 @@ function overlayLayerPriority(layer: string): number {
   return 2;
 }
 
-function compareOverlayBoxPaintOrder(a: BoundingBox, b: BoundingBox): number {
+function compareOverlayBoxPaintOrder(
+  a: BoundingBox,
+  b: BoundingBox,
+  selectedId: string | null
+): number {
   const byLayer =
     overlayLayerPriority(a.layer ?? 'body') - overlayLayerPriority(b.layer ?? 'body');
   if (byLayer !== 0) return byLayer;
   const byPriority = overlayBoxPaintPriority(a) - overlayBoxPaintPriority(b);
   if (byPriority !== 0) return byPriority;
-  const selectedId = getSelectedElementId();
   if (selectedId) {
     const aSelected = a.elementId === selectedId;
     const bSelected = b.elementId === selectedId;
@@ -193,8 +228,11 @@ function compareOverlayBoxPaintOrder(a: BoundingBox, b: BoundingBox): number {
   return 0;
 }
 
-export function sortedOverlayBoxes(boxes: BoundingBox[]): BoundingBox[] {
-  return [...boxes].sort(compareOverlayBoxPaintOrder);
+export function sortedOverlayBoxes(
+  boxes: BoundingBox[],
+  selectedId: string | null
+): BoundingBox[] {
+  return [...boxes].sort((a, b) => compareOverlayBoxPaintOrder(a, b, selectedId));
 }
 
 // ---------------------------------------------------------------------------
@@ -267,10 +305,11 @@ function ensureOverlayDefs(svg: SVGSVGElement): SVGDefsElement {
 function overlayBadgeLayout(
   svg: SVGSVGElement,
   text: string | number,
-  fontSizeUser: number
+  fontSizeUser: number,
+  ctx: OverlayCtx
 ): { width: number; height: number } {
-  const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X);
-  const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y);
+  const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X, ctx);
+  const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y, ctx);
   const probe = document.createElementNS('http://www.w3.org/2000/svg', 'text');
   probe.setAttribute('class', 'overlay-badge-label');
   probe.setAttribute('font-size', String(fontSizeUser));
@@ -290,9 +329,13 @@ function overlayBadgeLayout(
   } catch {
     const label = String(text);
     width = overlayUserLength(
-      label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2
+      label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2,
+      ctx
     );
-    height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + OVERLAY_BADGE_PAD_Y * 2);
+    height = overlayUserLength(
+      OVERLAY_BADGE_FONT_SIZE * 1.1 + OVERLAY_BADGE_PAD_Y * 2,
+      ctx
+    );
   }
   probe.remove();
   return { width, height };
@@ -303,11 +346,12 @@ export function appendOverlayBadge(
   anchorX: number,
   anchorY: number,
   text: string | number,
-  { extraClass, elementId }: { extraClass: string; elementId: string }
+  { extraClass, elementId }: { extraClass: string; elementId: string },
+  ctx: OverlayCtx
 ): SVGGElement {
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-  const { width, height } = overlayBadgeLayout(svg, text, fontSize);
-  const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX);
+  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
+  const { width, height } = overlayBadgeLayout(svg, text, fontSize, ctx);
+  const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX, ctx);
 
   const badge = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   badge.setAttribute('class', `overlay-badge ${extraClass}`);
@@ -342,14 +386,15 @@ export function syncOverlayBadges(
   readingOrderSteps: { order: number; box: BoundingBox; elementId: string }[],
   showAllBboxes: boolean,
   showLayoutBadges: boolean,
-  showReadingOrder: boolean
+  showReadingOrder: boolean,
+  ctx: OverlayCtx
 ): void {
   if (!img.naturalWidth) return;
 
   svg.querySelectorAll('.element-badge, .reading-order-badge').forEach(b => b.remove());
 
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-  const badgeGap = overlayUserLength(2);
+  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
+  const badgeGap = overlayUserLength(2, ctx);
   const readingOrderByElementId = new Map<
     string,
     { order: number; box: BoundingBox; elementId: string }
@@ -360,31 +405,45 @@ export function syncOverlayBadges(
     }
   }
 
-  const sorted = sortedOverlayBoxes(boxes);
+  const sorted = sortedOverlayBoxes(boxes, ctx.selectedId);
 
   for (const b of sorted) {
     const { x, y } = boxPixelRect(b, img);
     let tagLayout = { width: 0 };
     if (showAllBboxes && showLayoutBadges) {
-      tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
-      appendOverlayBadge(svg, x, y, b.tag, {
-        extraClass: `element-badge ${kindClassForTag(b.kind)}`,
-        elementId: b.elementId,
-      });
+      tagLayout = overlayBadgeLayout(svg, b.tag, fontSize, ctx);
+      appendOverlayBadge(
+        svg,
+        x,
+        y,
+        b.tag,
+        {
+          extraClass: `element-badge ${kindClassForTag(b.kind)}`,
+          elementId: b.elementId,
+        },
+        ctx
+      );
     }
 
     const step = readingOrderByElementId.get(b.elementId);
     if (step) {
       const orderText = String(step.order);
-      const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
+      const orderLayout = overlayBadgeLayout(svg, orderText, fontSize, ctx);
       const orderAnchorX =
         showAllBboxes && showLayoutBadges
           ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2
           : x;
-      appendOverlayBadge(svg, orderAnchorX, y, orderText, {
-        extraClass: 'reading-order-badge',
-        elementId: b.elementId,
-      });
+      appendOverlayBadge(
+        svg,
+        orderAnchorX,
+        y,
+        orderText,
+        {
+          extraClass: 'reading-order-badge',
+          elementId: b.elementId,
+        },
+        ctx
+      );
     }
   }
 }
@@ -469,10 +528,11 @@ function docPointToPixel(
 function pageCornerTarget(
   img: HTMLImageElement,
   defaultResolution: Resolution,
-  corner: 'tl' | 'br'
+  corner: 'tl' | 'br',
+  ctx: OverlayCtx
 ): { x: number; y: number } {
   const { width: resW, height: resH } = defaultResolution;
-  const inset = overlayUserLength(5);
+  const inset = overlayUserLength(5, ctx);
   const tl = docPointToPixel(0, 0, resW, resH, img);
   const br = docPointToPixel(resW, resH, resW, resH, img);
   if (corner === 'tl') {
@@ -491,12 +551,13 @@ export function appendFragmentLinks(
   svg: SVGSVGElement,
   img: HTMLImageElement,
   links: FragmentLink[],
-  defaultResolution: Resolution
+  defaultResolution: Resolution,
+  ctx: OverlayCtx
 ): void {
   if (!links.length) return;
   const defs = ensureOverlayDefs(svg);
   ensureArrowMarker(defs, 'fragment-arrowhead');
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
+  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
 
   for (const link of links) {
     const fromRect = boxPixelRect(link.fromBox, img);
@@ -525,7 +586,7 @@ export function appendFragmentLinks(
       labelAt = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     } else {
       const corner = link.targetCorner ?? 'br';
-      const cornerPoint = pageCornerTarget(img, defaultResolution, corner);
+      const cornerPoint = pageCornerTarget(img, defaultResolution, corner, ctx);
       const elementAnchor = boxCenter(fromRect);
       const incoming = corner === 'tl';
       const start = incoming ? cornerPoint : elementAnchor;
@@ -560,15 +621,16 @@ export function appendFragmentLinks(
 export function appendFragmentNavButtons(
   svg: SVGSVGElement,
   img: HTMLImageElement,
-  items: FragmentNavItem[]
+  items: FragmentNavItem[],
+  ctx: OverlayCtx
 ): void {
   if (!items.length) return;
 
-  const btnSize = overlayUserLength(13 * 1.5);
-  const gap = overlayUserLength(2);
-  const inset = overlayUserLength(3);
-  const fontSize = overlayUserLength(10 * 1.5);
-  const radius = overlayUserLength(2 * 1.5);
+  const btnSize = overlayUserLength(13 * 1.5, ctx);
+  const gap = overlayUserLength(2, ctx);
+  const inset = overlayUserLength(3, ctx);
+  const fontSize = overlayUserLength(10 * 1.5, ctx);
+  const radius = overlayUserLength(2 * 1.5, ctx);
 
   for (const item of items) {
     const { x, y, w, h } = boxPixelRect(item.box, img);
@@ -692,7 +754,8 @@ export function buildOverlay(
   onNavigateFragment: (elementId: string, direction: string) => void,
   onClearSelection: () => void,
   getPagPanSuppressClick: () => boolean,
-  setPagPanSuppressClick: (v: boolean) => void
+  setPagPanSuppressClick: (v: boolean) => void,
+  ctx: OverlayCtx
 ): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('overlay');
@@ -701,13 +764,13 @@ export function buildOverlay(
 
   appendCaptionLinks(svg, img, captionLinks);
   appendXrefLinks(svg, img, xrefLinks);
-  appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
+  appendFragmentLinks(svg, img, fragmentLinks, defaultResolution, ctx);
   appendReadingOrderOverlay(svg, img, readingOrderSteps);
 
   const defs = ensureOverlayDefs(svg);
   ensureLayerHatchPatterns(defs);
 
-  for (const b of sortedOverlayBoxes(boxes)) {
+  for (const b of sortedOverlayBoxes(boxes, ctx.selectedId)) {
     const { x, y, w, h } = boxPixelRect(b, img);
     const cls = bboxClassForKind(b.kind);
     const kindClass = kindClassForTag(b.kind);
@@ -726,7 +789,7 @@ export function buildOverlay(
     svg.appendChild(rect);
   }
 
-  appendFragmentNavButtons(svg, img, fragmentNavItems);
+  appendFragmentNavButtons(svg, img, fragmentNavItems, ctx);
 
   svg.addEventListener('click', e => {
     if (getPagPanSuppressClick()) {

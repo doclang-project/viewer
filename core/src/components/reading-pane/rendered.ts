@@ -8,7 +8,7 @@ import {
   MAX_DATA_IMAGE_URI_LENGTH,
   INVALID_PICTURE_SRC,
   PICTURE_UNAVAILABLE_ALT,
-} from './constants';
+} from '../../constants';
 import {
   isTextLikeNode,
   isWhitespaceOnlyText,
@@ -25,27 +25,22 @@ import {
   elementThreadId,
   normalizeArchivePath,
   isSemanticElement,
-} from './xml';
-import type { DocumentState, RenderCtx, OtslCell, ParsedOtslCell } from './types';
-
-// ---------------------------------------------------------------------------
-// State accessor — injected at runtime by main.ts
-// ---------------------------------------------------------------------------
-let getState: () => DocumentState | null = () => null;
-
-export function setStateAccessor(fn: () => DocumentState | null): void {
-  getState = fn;
-}
+} from '../../doclang/dom';
+import type { RenderCtx, OtslCell, ParsedOtslCell } from '../../doclang/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Set for the duration of a buildRenderedView call; avoids threading assetUrls
+// through every private render helper.
+let _assetUrls: Map<string, string> | undefined;
+
 function applyElementLayerAttr(sourceEl: Element, domEl: HTMLElement): void {
   domEl.setAttribute('data-doclang-layer', elementLayer(sourceEl));
 }
 
-export function resolveArchiveUri(uri: string | null | undefined): string | null {
+function resolveArchiveUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
   const trimmed = uri.trim();
   if (!trimmed) return null;
@@ -56,7 +51,7 @@ export function resolveArchiveUri(uri: string | null | undefined): string | null
   // Reject any other scheme (http, https, blob, javascript, …) and protocol-relative URLs.
   if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith('//')) return null;
 
-  return getState()?.assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
+  return _assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
 }
 
 function markPictureUnavailable(img: HTMLImageElement): void {
@@ -992,42 +987,48 @@ export function buildRenderedView(
   elementIds: Map<Element, string>,
   showFurniture: boolean,
   showBackground: boolean,
-  onSelectElement: (id: string) => void
+  onSelectElement: (id: string) => void,
+  assetUrls?: Map<string, string>
 ): HTMLElement {
-  const intraPageThreads = collectIntraPageThreads(segment);
-  const skipElements = new Set<Element>();
-  const mergeGroups = new Map<Element, Element[]>();
+  _assetUrls = assetUrls;
+  try {
+    const intraPageThreads = collectIntraPageThreads(segment);
+    const skipElements = new Set<Element>();
+    const mergeGroups = new Map<Element, Element[]>();
 
-  for (const [, members] of intraPageThreads) {
-    mergeGroups.set(members[0]!, members);
-    for (let i = 1; i < members.length; i += 1) {
-      skipElements.add(members[i]!);
+    for (const [, members] of intraPageThreads) {
+      mergeGroups.set(members[0]!, members);
+      for (let i = 1; i < members.length; i += 1) {
+        skipElements.add(members[i]!);
+      }
     }
-  }
 
-  const root = document.createElement('article');
-  root.className = 'rendered-doc';
-  for (const el of segment) {
-    if (el.nodeType !== Node.ELEMENT_NODE) continue;
-    if (localName(el) === 'page_break') continue;
-    if (skipElements.has(el)) continue;
+    const root = document.createElement('article');
+    root.className = 'rendered-doc';
+    for (const el of segment) {
+      if (el.nodeType !== Node.ELEMENT_NODE) continue;
+      if (localName(el) === 'page_break') continue;
+      if (skipElements.has(el)) continue;
 
-    const mergeGroup = mergeGroups.get(el);
-    const rendered = mergeGroup
-      ? renderMergedIntraPageFragments(mergeGroup, elementIds)
-      : renderBlockElement(el, elementIds, { inline: false });
-    if (rendered) root.appendChild(rendered);
+      const mergeGroup = mergeGroups.get(el);
+      const rendered = mergeGroup
+        ? renderMergedIntraPageFragments(mergeGroup, elementIds)
+        : renderBlockElement(el, elementIds, { inline: false });
+      if (rendered) root.appendChild(rendered);
+    }
+    root.addEventListener('click', e => {
+      const target = e.target as Element;
+      const ghostText = target.closest('.rendered-el-virtual-text');
+      const elementId = ghostText?.hasAttribute('data-element-id')
+        ? ghostText.getAttribute('data-element-id')!
+        : (target
+            .closest('.rendered-el[data-element-id]')
+            ?.getAttribute('data-element-id') ?? null);
+      if (elementId) onSelectElement(elementId);
+    });
+    applyReadingLayerClasses(root, showFurniture, showBackground);
+    return root;
+  } finally {
+    _assetUrls = undefined;
   }
-  root.addEventListener('click', e => {
-    const target = e.target as Element;
-    const ghostText = target.closest('.rendered-el-virtual-text');
-    const elementId = ghostText?.hasAttribute('data-element-id')
-      ? ghostText.getAttribute('data-element-id')!
-      : (target
-          .closest('.rendered-el[data-element-id]')
-          ?.getAttribute('data-element-id') ?? null);
-    if (elementId) onSelectElement(elementId);
-  });
-  applyReadingLayerClasses(root, showFurniture, showBackground);
-  return root;
 }

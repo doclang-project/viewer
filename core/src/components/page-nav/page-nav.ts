@@ -47,19 +47,6 @@ export class DoclangPageNav extends DoclangHTMLElement {
   private _currentPage = 1;
   private _pageCount = 1;
 
-  get btnPrev(): HTMLButtonElement {
-    return this._btnPrev;
-  }
-  get btnNext(): HTMLButtonElement {
-    return this._btnNext;
-  }
-  get pageNumberInput(): HTMLInputElement {
-    return this._input;
-  }
-  get pageCountIndicator(): HTMLSpanElement {
-    return this._countSpan;
-  }
-
   setVisible(visible: boolean): void {
     this._nav.hidden = !visible;
   }

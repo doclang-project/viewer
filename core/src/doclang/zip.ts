@@ -4,7 +4,7 @@ import {
   ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES,
   ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES,
   ZIP_MAX_COMPRESSION_RATIO,
-} from './constants';
+} from '../constants';
 export interface ZipEntry {
   name: string;
   data: Uint8Array;

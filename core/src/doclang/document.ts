@@ -5,7 +5,7 @@ import {
   RENDER_FORMAT_TAGS,
   PAGE_IMAGE_RE,
   DOCLANG_NS,
-} from './constants';
+} from '../constants';
 import {
   childElements,
   localName,
@@ -26,7 +26,7 @@ import {
   elementLayer,
   elementLabel,
   isVirtualTextOverlayUnit,
-} from './xml';
+} from './dom';
 import type {
   DocumentState,
   Resolution,
@@ -39,7 +39,7 @@ import type {
   ThreadNav,
 } from './types';
 import { extractArchiveFromZipBuffer } from './zip';
-import { isPictureContentElement, isTableContentElement } from './xml-overlay';
+import { isPictureContentElement, isTableContentElement } from './dom';
 
 // ---------------------------------------------------------------------------
 // Document XML parsing helpers

@@ -4,7 +4,7 @@ import {
   HEAD_TAGS,
   CELL_SPAN_TAGS,
   OTSL_CONTAINER_TAGS,
-} from './constants';
+} from '../../constants';
 import {
   isTextLikeNode,
   isWhitespaceOnlyText,
@@ -17,7 +17,7 @@ import {
   skipUntilCellBoundary,
   isCellToken,
   isSemanticElement,
-} from './xml';
+} from '../../doclang/dom';
 
 // ---------------------------------------------------------------------------
 // Truncatable embedded URI helpers
