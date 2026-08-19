@@ -31,29 +31,6 @@ export class DoclangCursorHint extends LitElement {
   private _left = 0;
   private _top = 0;
 
-  private _onHint = (e: Event): void => {
-    const { html, text, clientX, clientY } = (e as CustomEvent<DoclangHintDetail>)
-      .detail;
-    if (html !== undefined) {
-      this.showHtml(html, clientX, clientY);
-    } else if (text !== undefined) {
-      this.show(text, clientX, clientY);
-    }
-  };
-  private _onHide = (): void => this.hide();
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    document.addEventListener('doclang-hint', this._onHint);
-    document.addEventListener('doclang-hint-hide', this._onHide);
-  }
-
-  override disconnectedCallback(): void {
-    super.disconnectedCallback();
-    document.removeEventListener('doclang-hint', this._onHint);
-    document.removeEventListener('doclang-hint-hide', this._onHide);
-  }
-
   hide(): void {
     this._content = null;
     this._isHtml = false;

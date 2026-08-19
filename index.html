@@ -10,60 +10,8 @@
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
   <link rel="stylesheet" href="viewer.css">
 </head>
-<body class="demo-loading">
-  <doclang-cursor-hint></doclang-cursor-hint>
-
-  <header>
-    <div class="header-brand">
-      <a href="#" class="header-logo-link" id="home-link" title="Back to start">
-        <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo">
-      </a>
-      <h1>DocLang Viewer</h1>
-      <doclang-page-nav></doclang-page-nav>
-    </div>
-    <div class="header-center">
-      <span class="doc-label" id="doc-label" hidden></span>
-    </div>
-    <doclang-toolbar></doclang-toolbar>
-  </header>
-
-  <p class="drop-banner" id="drop-banner">Drop to open another file</p>
-
-  <doclang-empty-state></doclang-empty-state>
-
-  <main class="split" id="main">
-    <doclang-file-pane></doclang-file-pane>
-    <div
-      class="pane-splitter"
-      id="splitter-0"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize Files and Original page panes"
-      tabindex="0"
-      hidden
-    ></div>
-    <doclang-page-view-pane></doclang-page-view-pane>
-    <div
-      class="pane-splitter"
-      id="splitter-1"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize Original page and DocLang panes"
-      tabindex="0"
-      hidden
-    ></div>
-    <doclang-markup-pane></doclang-markup-pane>
-    <div
-      class="pane-splitter"
-      id="splitter-2"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize DocLang and Reading view panes"
-      tabindex="0"
-      hidden
-    ></div>
-    <doclang-reading-pane></doclang-reading-pane>
-  </main>
+<body>
+  <doclang-viewer class="demo-loading"></doclang-viewer>
 
   <script src="demo-data.js"></script>
   <script src="viewer.js"></script>

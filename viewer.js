@@ -28,8 +28,8 @@
 	var t$4 = globalThis;
 	var e$7 = t$4.ShadowRoot && (void 0 === t$4.ShadyCSS || t$4.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 	var s$4 = Symbol();
-	var o$7 = /* @__PURE__ */ new WeakMap();
-	var n$6 = class {
+	var o$8 = /* @__PURE__ */ new WeakMap();
+	var n$7 = class {
 		constructor(t, e, o) {
 			if (this._$cssResult$ = !0, o !== s$4) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
 			this.cssText = t, this.t = e;
@@ -39,7 +39,7 @@
 			const s = this.t;
 			if (e$7 && void 0 === t) {
 				const e = void 0 !== s && 1 === s.length;
-				e && (t = o$7.get(s)), void 0 === t && ((this.o = t = new CSSStyleSheet()).replaceSync(this.cssText), e && o$7.set(s, t));
+				e && (t = o$8.get(s)), void 0 === t && ((this.o = t = new CSSStyleSheet()).replaceSync(this.cssText), e && o$8.set(s, t));
 			}
 			return t;
 		}
@@ -47,7 +47,7 @@
 			return this.cssText;
 		}
 	};
-	var r$6 = (t) => new n$6("string" == typeof t ? t : t + "", void 0, s$4);
+	var r$6 = (t) => new n$7("string" == typeof t ? t : t + "", void 0, s$4);
 	var S$1 = (s, o) => {
 		if (e$7) s.adoptedStyleSheets = o.map((t) => t instanceof CSSStyleSheet ? t : t.styleSheet);
 		else for (const e of o) {
@@ -66,7 +66,7 @@
 	* @license
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/ var { is: i$4, defineProperty: e$6, getOwnPropertyDescriptor: h$4, getOwnPropertyNames: r$5, getOwnPropertySymbols: o$6, getPrototypeOf: n$5 } = Object, a$1 = globalThis, c$4 = a$1.trustedTypes, l$2 = c$4 ? c$4.emptyScript : "", p$2 = a$1.reactiveElementPolyfillSupport, d$2 = (t, s) => t, u$3 = {
+	*/ var { is: i$5, defineProperty: e$6, getOwnPropertyDescriptor: h$4, getOwnPropertyNames: r$5, getOwnPropertySymbols: o$7, getPrototypeOf: n$6 } = Object, a$1 = globalThis, c$4 = a$1.trustedTypes, l$2 = c$4 ? c$4.emptyScript : "", p$2 = a$1.reactiveElementPolyfillSupport, d$2 = (t, s) => t, u$3 = {
 		toAttribute(t, s) {
 			switch (s) {
 				case Boolean:
@@ -95,7 +95,7 @@
 			}
 			return i;
 		}
-	}, f$3 = (t, s) => !i$4(t, s), b$1 = {
+	}, f$3 = (t, s) => !i$5(t, s), b$1 = {
 		attribute: !0,
 		type: String,
 		converter: u$3,
@@ -141,13 +141,13 @@
 		}
 		static _$Ei() {
 			if (this.hasOwnProperty(d$2("elementProperties"))) return;
-			const t = n$5(this);
+			const t = n$6(this);
 			t.finalize(), void 0 !== t.l && (this.l = [...t.l]), this.elementProperties = new Map(t.elementProperties);
 		}
 		static finalize() {
 			if (this.hasOwnProperty(d$2("finalized"))) return;
 			if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(d$2("properties"))) {
-				const t = this.properties, s = [...r$5(t), ...o$6(t)];
+				const t = this.properties, s = [...r$5(t), ...o$7(t)];
 				for (const i of s) this.createProperty(i, t[i]);
 			}
 			const t = this[Symbol.metadata];
@@ -298,13 +298,13 @@
 	* SPDX-License-Identifier: BSD-3-Clause
 	*/
 	var t$3 = globalThis;
-	var i$3 = (t) => t;
+	var i$4 = (t) => t;
 	var s$3 = t$3.trustedTypes;
 	var e$5 = s$3 ? s$3.createPolicy("lit-html", { createHTML: (t) => t }) : void 0;
 	var h$3 = "$lit$";
-	var o$5 = `lit$${Math.random().toFixed(9).slice(2)}$`;
-	var n$4 = "?" + o$5;
-	var r$4 = `<${n$4}>`;
+	var o$6 = `lit$${Math.random().toFixed(9).slice(2)}$`;
+	var n$5 = "?" + o$6;
+	var r$4 = `<${n$5}>`;
 	var l$1 = document;
 	var c$3 = () => l$1.createComment("");
 	var a = (t) => null === t || "object" != typeof t && "function" != typeof t;
@@ -340,7 +340,7 @@
 			let a, u, d = -1, f = 0;
 			for (; f < s.length && (c.lastIndex = f, u = c.exec(s), null !== u);) f = c.lastIndex, c === v$1 ? "!--" === u[1] ? c = _ : void 0 !== u[1] ? c = m$1 : void 0 !== u[2] ? (y.test(u[2]) && (n = RegExp("</" + u[2], "g")), c = p$1) : void 0 !== u[3] && (c = p$1) : c === p$1 ? ">" === u[0] ? (c = n ?? v$1, d = -1) : void 0 === u[1] ? d = -2 : (d = c.lastIndex - u[2].length, a = u[1], c = void 0 === u[3] ? p$1 : "\"" === u[3] ? $ : g) : c === $ || c === g ? c = p$1 : c === _ || c === m$1 ? c = v$1 : (c = p$1, n = void 0);
 			const x = c === p$1 && t[i + 1].startsWith("/>") ? " " : "";
-			l += c === v$1 ? s + r$4 : d >= 0 ? (e.push(a), s.slice(0, d) + h$3 + s.slice(d) + o$5 + x) : s + o$5 + (-2 === d ? i : x);
+			l += c === v$1 ? s + r$4 : d >= 0 ? (e.push(a), s.slice(0, d) + h$3 + s.slice(d) + o$6 + x) : s + o$6 + (-2 === d ? i : x);
 		}
 		return [V(t, l + (t[s] || "<?>") + (2 === i ? "</svg>" : 3 === i ? "</math>" : "")), e];
 	};
@@ -357,7 +357,7 @@
 			for (; null !== (r = P.nextNode()) && d.length < u;) {
 				if (1 === r.nodeType) {
 					if (r.hasAttributes()) for (const t of r.getAttributeNames()) if (t.endsWith(h$3)) {
-						const i = v[a++], s = r.getAttribute(t).split(o$5), e = /([.?@])?(.*)/.exec(i);
+						const i = v[a++], s = r.getAttribute(t).split(o$6), e = /([.?@])?(.*)/.exec(i);
 						d.push({
 							type: 1,
 							index: l,
@@ -365,12 +365,12 @@
 							strings: s,
 							ctor: "." === e[1] ? I : "?" === e[1] ? L : "@" === e[1] ? z : H
 						}), r.removeAttribute(t);
-					} else t.startsWith(o$5) && (d.push({
+					} else t.startsWith(o$6) && (d.push({
 						type: 6,
 						index: l
 					}), r.removeAttribute(t));
 					if (y.test(r.tagName)) {
-						const t = r.textContent.split(o$5), i = t.length - 1;
+						const t = r.textContent.split(o$6), i = t.length - 1;
 						if (i > 0) {
 							r.textContent = s$3 ? s$3.emptyScript : "";
 							for (let s = 0; s < i; s++) r.append(t[s], c$3()), P.nextNode(), d.push({
@@ -380,16 +380,16 @@
 							r.append(t[i], c$3());
 						}
 					}
-				} else if (8 === r.nodeType) if (r.data === n$4) d.push({
+				} else if (8 === r.nodeType) if (r.data === n$5) d.push({
 					type: 2,
 					index: l
 				});
 				else {
 					let t = -1;
-					for (; -1 !== (t = r.data.indexOf(o$5, t + 1));) d.push({
+					for (; -1 !== (t = r.data.indexOf(o$6, t + 1));) d.push({
 						type: 7,
 						index: l
-					}), t += o$5.length - 1;
+					}), t += o$6.length - 1;
 				}
 				l++;
 			}
@@ -484,8 +484,8 @@
 		}
 		_$AR(t = this._$AA.nextSibling, s) {
 			for (this._$AP?.(!1, !0, s); t !== this._$AB;) {
-				const s = i$3(t).nextSibling;
-				i$3(t).remove(), t = s;
+				const s = i$4(t).nextSibling;
+				i$4(t).remove(), t = s;
 			}
 		}
 		setConnected(t) {
@@ -559,8 +559,8 @@
 	};
 	var j$1 = {
 		M: h$3,
-		P: o$5,
-		A: n$4,
+		P: o$6,
+		A: n$5,
 		C: 1,
 		L: N,
 		R,
@@ -591,7 +591,7 @@
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
 	*/ var s$2 = globalThis;
-	var i$2 = class extends y$1 {
+	var i$3 = class extends y$1 {
 		constructor() {
 			super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
 		}
@@ -613,9 +613,9 @@
 			return E;
 		}
 	};
-	i$2._$litElement$ = !0, i$2["finalized"] = !0, s$2.litElementHydrateSupport?.({ LitElement: i$2 });
-	var o$4 = s$2.litElementPolyfillSupport;
-	o$4?.({ LitElement: i$2 });
+	i$3._$litElement$ = !0, i$3["finalized"] = !0, s$2.litElementHydrateSupport?.({ LitElement: i$3 });
+	var o$5 = s$2.litElementPolyfillSupport;
+	o$5?.({ LitElement: i$3 });
 	(s$2.litElementVersions ??= []).push("4.2.2");
 	//#endregion
 	//#region node_modules/@lit/reactive-element/decorators/custom-element.js
@@ -635,14 +635,14 @@
 	* @license
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/ var o$3 = {
+	*/ var o$4 = {
 		attribute: !0,
 		type: String,
 		converter: u$3,
 		reflect: !1,
 		hasChanged: f$3
 	};
-	var r$3 = (t = o$3, e, r) => {
+	var r$3 = (t = o$4, e, r) => {
 		const { kind: n, metadata: i } = r;
 		let s = globalThis.litPropertyMetadata.get(i);
 		if (void 0 === s && globalThis.litPropertyMetadata.set(i, s = /* @__PURE__ */ new Map()), "setter" === n && ((t = Object.create(t)).wrapped = !0), s.set(r.name, t), "accessor" === n) {
@@ -666,7 +666,7 @@
 		}
 		throw Error("Unsupported decorator location: " + n);
 	};
-	function n$3(t) {
+	function n$4(t) {
 		return (e, o) => "object" == typeof o ? r$3(t, e, o) : ((t, e, o) => {
 			const r = e.hasOwnProperty(o);
 			return e.constructor.createProperty(o, t), r ? Object.getOwnPropertyDescriptor(e, o) : void 0;
@@ -679,7 +679,7 @@
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
 	*/ function r$2(r) {
-		return n$3({
+		return n$4({
 			...r,
 			state: !0,
 			attribute: !1
@@ -704,7 +704,7 @@
 		_$litDirective$: t,
 		values: e
 	});
-	var i$1 = class {
+	var i$2 = class {
 		constructor(t) {}
 		get _$AU() {
 			return this._$AM._$AU;
@@ -725,7 +725,7 @@
 	* @license
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/ var e$3 = class extends i$1 {
+	*/ var e$3 = class extends i$2 {
 		constructor(i) {
 			if (super(i), this.it = A, i.type !== t$1.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
 		}
@@ -744,14 +744,14 @@
 		}
 	};
 	e$3.directiveName = "unsafeHTML", e$3.resultType = 1;
-	var o$2 = e$4(e$3);
+	var o$3 = e$4(e$3);
 	//#endregion
 	//#region node_modules/lit-html/directives/class-map.js
 	/**
 	* @license
 	* Copyright 2018 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/ var e$2 = e$4(class extends i$1 {
+	*/ var e$2 = e$4(class extends i$2 {
 		constructor(t) {
 			if (super(t), t.type !== t$1.ATTRIBUTE || "class" !== t.name || t.strings?.length > 2) throw Error("`classMap()` can only be used in the `class` attribute and must be the only part in the attribute.");
 		}
@@ -789,7 +789,7 @@
 	/** <doclang-cursor-hint> — floating tooltip that follows the pointer */
 	var OFFSET = 10;
 	var MARGIN = 8;
-	var DoclangCursorHint = class DoclangCursorHint extends i$2 {
+	var DoclangCursorHint = class DoclangCursorHint extends i$3 {
 		static styles = r$6(cursor_hint_default);
 		_content = null;
 		_isHtml = false;
@@ -797,22 +797,6 @@
 		_hidden = true;
 		_left = 0;
 		_top = 0;
-		_onHint = (e) => {
-			const { html, text, clientX, clientY } = e.detail;
-			if (html !== void 0) this.showHtml(html, clientX, clientY);
-			else if (text !== void 0) this.show(text, clientX, clientY);
-		};
-		_onHide = () => this.hide();
-		connectedCallback() {
-			super.connectedCallback();
-			document.addEventListener("doclang-hint", this._onHint);
-			document.addEventListener("doclang-hint-hide", this._onHide);
-		}
-		disconnectedCallback() {
-			super.disconnectedCallback();
-			document.removeEventListener("doclang-hint", this._onHint);
-			document.removeEventListener("doclang-hint-hide", this._onHide);
-		}
 		hide() {
 			this._content = null;
 			this._isHtml = false;
@@ -844,7 +828,7 @@
 			};
 			const style = `left:${this._left}px;top:${this._top}px`;
 			if (this._isHtml && typeof this._content === "string") return b`<div class=${e$2(classes)} role="tooltip" style=${style}>
-        ${o$2(this._content)}
+        ${o$3(this._content)}
       </div>`;
 			if (typeof this._content === "string") return b`<div class=${e$2(classes)} role="tooltip" style=${style}>
         ${this._content}
@@ -881,7 +865,7 @@
 	* @license
 	* Copyright 2020 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/ var { I: t } = j$1, i = (o) => o, r$1 = (o) => void 0 === o.strings, s$1 = () => document.createComment(""), v = (o, n, e) => {
+	*/ var { I: t } = j$1, i$1 = (o) => o, r$1 = (o) => void 0 === o.strings, s$1 = () => document.createComment(""), v = (o, n, e) => {
 		const l = o._$AA.parentNode, d = void 0 === n ? o._$AB : n._$AA;
 		if (void 0 === e) e = new t(l.insertBefore(s$1(), d), l.insertBefore(s$1(), d), o, o.options);
 		else {
@@ -893,8 +877,8 @@
 			if (t !== d || c) {
 				let o = e._$AA;
 				for (; o !== t;) {
-					const t = i(o).nextSibling;
-					i(l).insertBefore(o, d), o = t;
+					const t = i$1(o).nextSibling;
+					i$1(l).insertBefore(o, d), o = t;
 				}
 			}
 		}
@@ -914,7 +898,7 @@
 		for (const i of e) i._$AO?.(t, !1), s(i, t);
 		return !0;
 	};
-	var o$1 = (i) => {
+	var o$2 = (i) => {
 		let t, e;
 		do {
 			if (void 0 === (t = i._$AM)) break;
@@ -930,18 +914,18 @@
 		}
 	};
 	function h$1(i) {
-		void 0 !== this._$AN ? (o$1(this), this._$AM = i, r(this)) : this._$AM = i;
+		void 0 !== this._$AN ? (o$2(this), this._$AM = i, r(this)) : this._$AM = i;
 	}
-	function n$1(i, t = !1, e = 0) {
+	function n$2(i, t = !1, e = 0) {
 		const r = this._$AH, h = this._$AN;
-		if (void 0 !== h && 0 !== h.size) if (t) if (Array.isArray(r)) for (let i = e; i < r.length; i++) s(r[i], !1), o$1(r[i]);
-		else null != r && (s(r, !1), o$1(r));
+		if (void 0 !== h && 0 !== h.size) if (t) if (Array.isArray(r)) for (let i = e; i < r.length; i++) s(r[i], !1), o$2(r[i]);
+		else null != r && (s(r, !1), o$2(r));
 		else s(this, i);
 	}
 	var c$1 = (i) => {
-		i.type == t$1.CHILD && (i._$AP ??= n$1, i._$AQ ??= h$1);
+		i.type == t$1.CHILD && (i._$AP ??= n$2, i._$AQ ??= h$1);
 	};
-	var f = class extends i$1 {
+	var f = class extends i$2 {
 		constructor() {
 			super(...arguments), this._$AN = void 0;
 		}
@@ -949,7 +933,7 @@
 			super._$AT(i, t, e), r(this), this.isConnected = i._$AU;
 		}
 		_$AO(i, t = !0) {
-			i !== this.isConnected && (this.isConnected = i, i ? this.reconnected?.() : this.disconnected?.()), t && (s(this, i), o$1(this));
+			i !== this.isConnected && (this.isConnected = i, i ? this.reconnected?.() : this.disconnected?.()), t && (s(this, i), o$2(this));
 		}
 		setValue(t) {
 			if (r$1(this._$Ct)) this._$Ct._$AI(t, this);
@@ -969,8 +953,8 @@
 	* SPDX-License-Identifier: BSD-3-Clause
 	*/ var e = () => new h();
 	var h = class {};
-	var o = /* @__PURE__ */ new WeakMap();
-	var n = e$4(class extends f {
+	var o$1 = /* @__PURE__ */ new WeakMap();
+	var n$1 = e$4(class extends f {
 		render(i) {
 			return A;
 		}
@@ -981,12 +965,12 @@
 		rt(t) {
 			if (void 0 !== this.G) if (this.isConnected || (t = void 0), "function" == typeof this.G) {
 				const i = this.ht ?? globalThis;
-				let s = o.get(i);
-				void 0 === s && (s = /* @__PURE__ */ new WeakMap(), o.set(i, s)), void 0 !== s.get(this.G) && this.G.call(this.ht, void 0), s.set(this.G, t), void 0 !== t && this.G.call(this.ht, t);
+				let s = o$1.get(i);
+				void 0 === s && (s = /* @__PURE__ */ new WeakMap(), o$1.set(i, s)), void 0 !== s.get(this.G) && this.G.call(this.ht, void 0), s.set(this.G, t), void 0 !== t && this.G.call(this.ht, t);
 			} else this.G.value = t;
 		}
 		get lt() {
-			return "function" == typeof this.G ? o.get(this.ht ?? globalThis)?.get(this.G) : this.G?.value;
+			return "function" == typeof this.G ? o$1.get(this.ht ?? globalThis)?.get(this.G) : this.G?.value;
 		}
 		disconnected() {
 			this.lt === this.ct && this.rt(void 0);
@@ -1001,7 +985,7 @@
 	//#endregion
 	//#region src/components/page-nav/page-nav.ts
 	/** <doclang-page-nav> — page navigation (prev/next buttons + page indicator) */
-	var DoclangPageNav = class DoclangPageNav extends i$2 {
+	var DoclangPageNav = class DoclangPageNav extends i$3 {
 		static styles = r$6(page_nav_default);
 		_currentPage = 1;
 		_pageCount = 1;
@@ -1073,7 +1057,7 @@
         <div class="page-indicator">
           <span>Page&#xA0;</span>
           <input
-            ${n(this._inputRef)}
+            ${n$1(this._inputRef)}
             type="text"
             inputmode="numeric"
             class="page-number-input"
@@ -1144,7 +1128,7 @@
 	//#region src/components/toolbar/toolbar.ts
 	/** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
 	var OPEN_FILE_HINT = `Open a DocLang file (.dclx, .dclg)`;
-	var DoclangToolbar = class DoclangToolbar extends i$2 {
+	var DoclangToolbar = class DoclangToolbar extends i$3 {
 		static styles = r$6(toolbar_default);
 		_panelOpen = false;
 		_demoLoading = false;
@@ -1263,7 +1247,7 @@
           >
             Open file
             <input
-              ${n(this._inputArchiveRef)}
+              ${n$1(this._inputArchiveRef)}
               type="file"
               class="input-archive"
               multiple
@@ -1371,7 +1355,7 @@
 		for (let l = s; l <= t; l++) r.set(e[l], l);
 		return r;
 	};
-	var c = e$4(class extends i$1 {
+	var c = e$4(class extends i$2 {
 		constructor(e) {
 			if (super(e), e.type !== t$1.CHILD) throw Error("repeat() can only be used in text expressions");
 		}
@@ -1427,7 +1411,7 @@
 	//#region src/components/file-pane/file-pane.ts
 	/** <doclang-file-pane> — file list sidebar */
 	var FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
-	var DoclangFilePane = class DoclangFilePane extends i$2 {
+	var DoclangFilePane = class DoclangFilePane extends i$3 {
 		static styles = r$6(file_pane_default);
 		_entries = [];
 		connectedCallback() {
@@ -2596,7 +2580,7 @@
 	*/
 	init_document();
 	init_dom();
-	var DoclangPageElement = class extends i$2 {
+	var DoclangPageElement = class extends i$3 {
 		static get observedAttributes() {
 			return [
 				...super.observedAttributes,
@@ -3123,7 +3107,7 @@
 			return b`
       <div class="pane-header">DocLang</div>
       <div class="pane-body" id="markup-pane" @click=${this._onBodyClick}>
-        ${this._hasMarkup === false ? b`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true ? b`<div ${n(this._onContentRef)}></div>` : A}
+        ${this._hasMarkup === false ? b`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true ? b`<div ${n$1(this._onContentRef)}></div>` : A}
       </div>
     `;
 		}
@@ -3888,7 +3872,7 @@
           class="pane-body"
           id="page-pane"
           tabindex=${this._visible ? "0" : "-1"}
-          ${n(this._bodyRef)}
+          ${n$1(this._bodyRef)}
         ></div>
         ${this._settingsOpen ? b`
                 <div class="viewer-settings-layer">
@@ -5412,7 +5396,7 @@
       </div>
       <div class="pane-reading-layout">
         <div id="rendered-pane" class=${e$2(bodyClasses)} @click=${this._onBodyClick}>
-          ${this._hasMarkup === false ? b`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true ? b`<div ${n(this._onContentRef)}></div>` : A}
+          ${this._hasMarkup === false ? b`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true ? b`<div ${n$1(this._onContentRef)}></div>` : A}
         </div>
         ${this._settingsOpen ? this._renderSettings() : A}
       </div>
@@ -5646,7 +5630,7 @@
 	//#endregion
 	//#region src/components/empty-state/empty-state.ts
 	/** <doclang-empty-state> — loading/prompt empty state */
-	var DoclangEmptyState = class DoclangEmptyState extends i$2 {
+	var DoclangEmptyState = class DoclangEmptyState extends i$3 {
 		static styles = r$6(empty_state_default);
 		_extensions = [];
 		_demoLoading = false;
@@ -5703,7 +5687,43 @@
 	};
 	DoclangEmptyState = __decorate([t$2("doclang-empty-state")], DoclangEmptyState);
 	//#endregion
-	//#region src/main.ts
+	//#region node_modules/lit-html/directives/style-map.js
+	/**
+	* @license
+	* Copyright 2018 Google LLC
+	* SPDX-License-Identifier: BSD-3-Clause
+	*/ var n = "important";
+	var i = " !important";
+	var o = e$4(class extends i$2 {
+		constructor(t) {
+			if (super(t), t.type !== t$1.ATTRIBUTE || "style" !== t.name || t.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
+		}
+		render(t) {
+			return Object.keys(t).reduce((e, r) => {
+				const s = t[r];
+				return null == s ? e : e + `${r = r.includes("-") ? r : r.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, "-$&").toLowerCase()}:${s};`;
+			}, "");
+		}
+		update(e, [r]) {
+			const { style: s } = e.element;
+			if (void 0 === this.ft) return this.ft = new Set(Object.keys(r)), this.render(r);
+			for (const t of this.ft) r[t] ?? (this.ft.delete(t), t.includes("-") ? s.removeProperty(t) : s[t] = null);
+			for (const t in r) {
+				const e = r[t];
+				if (null != e) {
+					this.ft.add(t);
+					const r = "string" == typeof e && e.endsWith(i);
+					t.includes("-") || r ? s.setProperty(t, r ? e.slice(0, -11) : e, r ? n : "") : s[t] = e;
+				}
+			}
+			return E;
+		}
+	});
+	//#endregion
+	//#region src/components/viewer/viewer.css?inline
+	var viewer_default = "/* -----------------------------------------------------------------------\n   DoclangViewer host — full-page shell\n   ----------------------------------------------------------------------- */\n\n:host {\n  display: flex;\n  flex-direction: column;\n  min-height: 100vh;\n  font-family: var(--font-ui);\n  background: var(--bg);\n  color: var(--text);\n}\n\n:host(.drag-over) {\n  background: color-mix(in srgb, var(--accent) 6%, var(--bg));\n}\n\n:host(.drag-over) doclang-empty-state {\n  border-color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));\n}\n\n/* -----------------------------------------------------------------------\n   Header\n   ----------------------------------------------------------------------- */\n\nheader {\n  display: grid;\n  grid-template-columns: 1fr auto 1fr;\n  align-items: center;\n  gap: 1rem;\n  padding: 0.75rem 1rem;\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n\n.header-brand {\n  display: flex;\n  align-items: center;\n  gap: 1rem;\n  min-width: 0;\n  grid-column: 1;\n  justify-self: start;\n}\n\nheader h1 {\n  margin: 0;\n  font-size: 1.1rem;\n  font-weight: 600;\n}\n\n.header-center {\n  grid-column: 2;\n  justify-self: center;\n  min-width: 0;\n  text-align: center;\n}\n\n.doc-label {\n  color: var(--muted);\n  font-size: 0.8125rem;\n  font-weight: 400;\n  min-width: 0;\n  max-width: min(40vw, 28rem);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.header-logo-link {\n  display: block;\n  flex-shrink: 0;\n  border-radius: 0.25rem;\n  line-height: 0;\n  text-decoration: none;\n}\n\n.header-logo-link:hover { opacity: 0.8; }\n\n.header-logo {\n  display: block;\n  height: 2.25rem;\n  width: auto;\n}\n\n.header-logo-link:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n\n.toolbar-wrap {\n  grid-column: 3;\n  justify-self: end;\n}\n\n/* -----------------------------------------------------------------------\n   Drop banner\n   ----------------------------------------------------------------------- */\n\n.drop-banner {\n  display: none;\n  margin: 0;\n  padding: 0.35rem 1rem;\n  text-align: center;\n  font-size: 0.8125rem;\n  color: var(--muted);\n  background: color-mix(in srgb, var(--accent) 8%, var(--panel));\n  border-bottom: 1px solid var(--border);\n}\n\n:host(.loaded.drag-over) .drop-banner {\n  display: block;\n}\n\n/* -----------------------------------------------------------------------\n   Empty state\n   ----------------------------------------------------------------------- */\n\n:host(.loaded) doclang-empty-state {\n  display: none;\n}\n\n/* -----------------------------------------------------------------------\n   Pane grid\n   ----------------------------------------------------------------------- */\n\n.main {\n  display: none;\n  flex: 1 1 0;\n  min-height: 0;\n}\n\n:host(.loaded) .main {\n  display: grid;\n}\n\n:host(.loaded) .main.layout-stacked {\n  grid-template-columns: 1fr !important;\n}\n\n:host(.loaded) .main.layout-stacked .pane-splitter {\n  display: none !important;\n}\n\n:host(.loaded) .main.layout-stacked .pane {\n  border-right: none;\n  border-bottom: 1px solid var(--border);\n}\n\n:host(.loaded) .main.layout-stacked .pane-layout-last {\n  border-bottom: none;\n}\n\n:host(.loaded) .main:not(.layout-stacked) {\n  grid-template-rows: minmax(0, 1fr);\n}\n\n:host(.loaded) .main:not(.layout-stacked) .pane {\n  border-right: none;\n}\n\n.pane {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n\n.pane[hidden] {\n  display: none !important;\n}\n\n.pane-layout-last {\n  border-right: none;\n}\n\n/* -----------------------------------------------------------------------\n   Pane splitters\n   ----------------------------------------------------------------------- */\n\n.pane-splitter {\n  position: relative;\n  width: 1px;\n  margin: 0 -4px;\n  padding: 0 4px;\n  box-sizing: content-box;\n  cursor: col-resize;\n  touch-action: none;\n  z-index: 2;\n  background: transparent;\n}\n\n.pane-splitter::after {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 4px;\n  width: 1px;\n  background: var(--border);\n  transition: background 0.15s ease, width 0.15s ease;\n}\n\n.pane-splitter:hover::after,\n.pane-splitter:focus-visible::after,\n.pane-splitter.is-dragging::after {\n  width: 3px;\n  background: var(--accent);\n}\n\n.pane-splitter[hidden] {\n  display: none !important;\n}\n\n:host(.pane-drag-active) {\n  cursor: col-resize;\n  user-select: none;\n}\n\n:host(.pane-drag-active) .pane-splitter {\n  cursor: col-resize;\n}\n\n/* -----------------------------------------------------------------------\n   Page-nav visibility\n   ----------------------------------------------------------------------- */\n\n:host(:not(.loaded)) doclang-page-nav,\n:host(.markup-only) doclang-page-nav {\n  display: none !important;\n}\n\n/* -----------------------------------------------------------------------\n   Responsive stacked layout\n   ----------------------------------------------------------------------- */\n\n@media (max-width: 1200px) {\n  :host(.loaded) .main.layout-stacked .pane {\n    border-right: none;\n    border-bottom: 1px solid var(--border);\n  }\n\n  :host(.loaded) .main.layout-stacked .pane-layout-last {\n    border-bottom: none;\n  }\n}\n";
+	//#endregion
+	//#region src/components/viewer/viewer.ts
 	init_dom();
 	init_document();
 	init_zip();
@@ -5732,1082 +5752,1240 @@
 		reading: true
 	};
 	var LAYOUT_STACK_BREAKPOINT_PX = 1200;
-	var state = null;
-	var fileCatalog = [];
-	var activeFileIndex = -1;
-	var filePaneUserToggled = false;
-	var readingSettingsOpen = false;
-	var userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
-	var paneRatios = [...DEFAULT_PANE_RATIOS];
-	var filePaneWidthPx = null;
-	var toolbarOptionsOpen = false;
-	var paneDrag = null;
-	var layoutStackQuery = null;
-	var demoLoadInProgress = false;
-	var doclangPageNav = document.querySelector("doclang-page-nav");
-	var doclangToolbar = document.querySelector("doclang-toolbar");
-	var doclangFilePane = document.querySelector("doclang-file-pane");
-	var doclangMarkupPane = document.querySelector("doclang-markup-pane");
-	var doclangPageViewPane = document.querySelector("doclang-page-view-pane");
-	var doclangReadingPane = document.querySelector("doclang-reading-pane");
-	var doclangEmptyState = document.querySelector("doclang-empty-state");
-	var els = {
-		docLabel: document.getElementById("doc-label"),
-		main: document.getElementById("main"),
-		emptyState: doclangEmptyState ?? null,
-		paneFile: doclangFilePane ?? null,
-		panePageView: doclangPageViewPane ?? null,
-		paneMarkup: doclangMarkupPane ?? null,
-		paneReading: doclangReadingPane ?? null,
-		splitters: [
-			document.getElementById("splitter-0"),
-			document.getElementById("splitter-1"),
-			document.getElementById("splitter-2")
-		]
-	};
-	function resetPageZoom() {
-		doclangPageViewPane?.resetZoom();
-	}
-	function setReadingSettingsOpen(open) {
-		readingSettingsOpen = open;
-		doclangReadingPane?.setSettingsOpen(open);
-	}
-	function closeAllSettings() {
-		doclangPageViewPane?.closeSettings();
-		setReadingSettingsOpen(false);
-	}
-	function paneDef(key) {
-		return {
-			file: {
-				key: "file",
-				el: els.paneFile,
-				canShow: () => fileCatalog.length > 0
-			},
-			page: {
-				key: "page",
-				el: els.panePageView,
-				canShow: () => Boolean(state?.hasPageView)
-			},
-			markup: {
-				key: "markup",
-				el: els.paneMarkup,
-				canShow: () => Boolean(state)
-			},
-			reading: {
-				key: "reading",
-				el: els.paneReading,
-				canShow: () => Boolean(state)
-			}
-		}[key];
-	}
-	function isPaneAvailable(key) {
-		return paneDef(key)?.canShow() ?? false;
-	}
-	function isPaneVisible(key) {
-		if (!isPaneAvailable(key)) return false;
-		return Boolean(userPaneVisible[key]);
-	}
-	function visiblePaneKeys() {
-		return [...PANE_KEYS].filter((key) => isPaneVisible(key));
-	}
-	function paneMinRatio(_unused) {
-		return PANE_MIN_RATIO;
-	}
-	function filePaneFitWidthPx() {
-		const probe = document.createElement("div");
-		probe.style.cssText = "position:absolute;visibility:hidden;width:var(--file-pane-fit-width);";
-		document.documentElement.appendChild(probe);
-		const px = probe.getBoundingClientRect().width;
-		probe.remove();
-		return Math.ceil(px) || 108;
-	}
-	function resolvedFilePaneWidthPx() {
-		const fit = filePaneFitWidthPx();
-		return Math.max(fit, filePaneWidthPx ?? fit);
-	}
-	function contentPaneFrWeights(keys) {
-		const contentKeys = keys.filter((key) => key !== "file");
-		const weights = contentKeys.map((key) => paneRatios[paneRatioIndex(key)]);
-		const sum = weights.reduce((a, b) => a + b, 0) || contentKeys.length;
-		return weights.map((w) => w / sum);
-	}
-	function paneRatioIndex(key) {
-		return PANE_KEYS.indexOf(key);
-	}
-	function normalizePaneRatios() {
-		const sum = paneRatios.reduce((a, b) => a + b, 0);
-		if (sum <= 0) {
-			paneRatios = [...DEFAULT_PANE_RATIOS];
-			return;
+	var DoclangViewer = class DoclangViewer extends i$3 {
+		static styles = r$6(viewer_default);
+		_loaded = false;
+		_markupOnly = false;
+		_hasPageView = false;
+		_dragOver = false;
+		_paneDragActive = false;
+		_demoLoading = false;
+		_docLabel = null;
+		_pageNum = 1;
+		_pageCount = 1;
+		_stacked = false;
+		_mainGridStyle = {};
+		_paneGridCols = /* @__PURE__ */ new Map();
+		_paneGridRows = /* @__PURE__ */ new Map();
+		_splitterCols = [
+			null,
+			null,
+			null
+		];
+		_lastPaneKey = null;
+		_readingSettingsOpen = false;
+		_toolbarOptionsOpen = false;
+		_userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
+		_docState = null;
+		_fileCatalog = [];
+		_activeFileIndex = -1;
+		_filePaneUserToggled = false;
+		_paneRatios = [...DEFAULT_PANE_RATIOS];
+		_filePaneWidthPx = null;
+		_paneDrag = null;
+		_layoutStackQuery = null;
+		_demoLoadInProgress = false;
+		_prevReadingOrderGlobal = false;
+		_wheelPixelAccum = 0;
+		_wheelPixelGestureUntil = 0;
+		_wheelLastFlipAt = 0;
+		_pageNavRef = e();
+		_toolbarRef = e();
+		_filePaneRef = e();
+		_markupPaneRef = e();
+		_pageViewPaneRef = e();
+		_readingPaneRef = e();
+		_emptyStateRef = e();
+		_splitterRefs = [
+			e(),
+			e(),
+			e()
+		];
+		_mainRef = e();
+		connectedCallback() {
+			super.connectedCallback();
+			this._loadLayoutPrefs();
+			this._normalizePaneRatios();
+			this._initLayoutStackListener();
+			this._initDragDrop();
+			this._initPageWheelNav();
+			this.addEventListener("keydown", this._onGlobalKeydown);
 		}
-		paneRatios = paneRatios.map((r) => r / sum);
-	}
-	function loadLayoutPrefs() {
-		try {
-			const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
-			if (!raw) return;
-			const data = JSON.parse(raw);
-			if (data?.visible && typeof data.visible === "object") {
-				for (const key of PANE_KEYS) if (typeof data.visible[key] === "boolean") userPaneVisible[key] = data.visible[key];
-				if (typeof data.visible["file"] === "boolean") filePaneUserToggled = true;
+		disconnectedCallback() {
+			super.disconnectedCallback();
+			this._layoutStackQuery?.removeEventListener("change", this._onLayoutStackChange);
+			window.removeEventListener("pointermove", this._onWindowPointerMove);
+			window.removeEventListener("pointerup", this._onWindowPointerUp);
+			window.removeEventListener("pointercancel", this._onWindowPointerUp);
+			this.removeEventListener("keydown", this._onGlobalKeydown);
+		}
+		firstUpdated() {
+			const emptyState = this._emptyStateRef.value;
+			if (emptyState) emptyState.setFileTypeHints(SUPPORTED_FILE_EXTENSIONS);
+			if (this._demoLoading && emptyState) emptyState.setDemoLoading(true);
+			this._syncToolbarPaneCheckboxes();
+		}
+		render() {
+			this._loaded, this._markupOnly, this._dragOver, this._paneDragActive;
+			return b`
+      <header>
+        <div class="header-brand">
+          <a
+            href="#"
+            class="header-logo-link"
+            title="Back to start"
+            @click=${this._onHomeClick}
+          >
+            <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo" />
+          </a>
+          <h1>DocLang Viewer</h1>
+          <doclang-page-nav
+            ${n$1(this._pageNavRef)}
+            @doclang-prev-page=${() => this._docState && this._goToPage(this._docState.currentPage - 1)}
+            @doclang-next-page=${() => this._docState && this._goToPage(this._docState.currentPage + 1)}
+            @doclang-go-to-page=${(e) => this._goToPage(e.detail.page)}
+          ></doclang-page-nav>
+        </div>
+
+        <div class="header-center">
+          ${this._docLabel ? b`<span class="doc-label">${this._docLabel}</span>` : A}
+        </div>
+
+        <div class="toolbar-wrap">
+          <doclang-toolbar
+            ${n$1(this._toolbarRef)}
+            @doclang-load-demo=${this._onLoadDemo}
+            @doclang-open-files=${this._onOpenFiles}
+            @doclang-toggle-pane=${this._onTogglePane}
+            @doclang-reset-pane-layout=${this._onResetPaneLayout}
+          ></doclang-toolbar>
+        </div>
+      </header>
+
+      <p class="drop-banner">Drop to open another file</p>
+
+      <doclang-empty-state
+        ${n$1(this._emptyStateRef)}
+        @doclang-load-demo=${this._onLoadDemo}
+      ></doclang-empty-state>
+
+      <div
+        class=${e$2({
+				main: true,
+				"layout-stacked": this._stacked
+			})}
+        style=${o(this._mainGridStyle)}
+        ${n$1(this._mainRef)}
+      >
+        <doclang-file-pane
+          ${n$1(this._filePaneRef)}
+          style=${this._paneGridStyle("file")}
+          @doclang-file-select=${(e) => this._switchToFile(e.detail.index)}
+          @doclang-file-close=${(e) => this._closeCatalogFile(e.detail.index)}
+          @doclang-file-pane-close-all=${this._onFilePaneCloseAll}
+        ></doclang-file-pane>
+
+        <div
+          class=${e$2({ "pane-splitter": true })}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Files and Original page panes"
+          tabindex="0"
+          ?hidden=${this._splitterCols[0] === null}
+          style=${this._splitterGridStyle(0)}
+          ${n$1(this._splitterRefs[0])}
+          @pointerdown=${(e) => this._startPaneDrag(e, 0)}
+        ></div>
+
+        <doclang-page-view-pane
+          ${n$1(this._pageViewPaneRef)}
+          style=${this._paneGridStyle("page")}
+          @doclang-element-select=${this._onElementSelect}
+          @doclang-navigate-thread=${this._onNavigateThread}
+          @doclang-clear-selection=${this._onClearSelection}
+          @doclang-page-key-nav=${this._onPageKeyNav}
+          @doclang-zoom-change=${this._onZoomChange}
+          @doclang-overlay-change=${this._onOverlayChange}
+          @doclang-hint=${this._onHint}
+          @doclang-hint-hide=${this._onHintHide}
+          @doclang-panning-change=${this._onPanningChange}
+        ></doclang-page-view-pane>
+
+        <div
+          class="pane-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Original page and DocLang panes"
+          tabindex="0"
+          ?hidden=${this._splitterCols[1] === null}
+          style=${this._splitterGridStyle(1)}
+          ${n$1(this._splitterRefs[1])}
+          @pointerdown=${(e) => this._startPaneDrag(e, 1)}
+        ></div>
+
+        <doclang-markup-pane
+          ${n$1(this._markupPaneRef)}
+          style=${this._paneGridStyle("markup")}
+          @doclang-element-select=${this._onElementSelect}
+          @doclang-hint=${this._onHint}
+          @doclang-hint-hide=${this._onHintHide}
+        ></doclang-markup-pane>
+
+        <div
+          class="pane-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize DocLang and Reading view panes"
+          tabindex="0"
+          ?hidden=${this._splitterCols[2] === null}
+          style=${this._splitterGridStyle(2)}
+          ${n$1(this._splitterRefs[2])}
+          @pointerdown=${(e) => this._startPaneDrag(e, 2)}
+        ></div>
+
+        <doclang-reading-pane
+          ${n$1(this._readingPaneRef)}
+          style=${this._paneGridStyle("reading")}
+          @doclang-element-select=${this._onElementSelect}
+          @doclang-reading-settings-toggle=${() => this._setReadingSettingsOpen(!this._readingSettingsOpen)}
+          @doclang-reading-settings-close=${() => this._setReadingSettingsOpen(false)}
+        ></doclang-reading-pane>
+      </div>
+
+      <doclang-cursor-hint></doclang-cursor-hint>
+    `;
+		}
+		updated() {
+			this.classList.toggle("loaded", this._loaded);
+			this.classList.toggle("markup-only", this._markupOnly);
+			this.classList.toggle("drag-over", this._dragOver);
+			this.classList.toggle("pane-drag-active", this._paneDragActive);
+		}
+		_paneGridStyle(key) {
+			if (this._stacked) {
+				const row = this._paneGridRows.get(key);
+				return row !== void 0 ? `grid-row:${row}` : "";
 			}
-			if (Array.isArray(data?.ratios)) {
-				const valid = data.ratios.every((n) => typeof n === "number" && n > 0);
-				if (valid && data.ratios.length === 4) {
-					paneRatios = [...data.ratios];
-					normalizePaneRatios();
-				} else if (valid && data.ratios.length === 3) {
-					paneRatios = [1, ...data.ratios];
-					normalizePaneRatios();
+			const col = this._paneGridCols.get(key);
+			return col !== void 0 ? `grid-column:${col}` : "";
+		}
+		_splitterGridStyle(index) {
+			const col = this._splitterCols[index];
+			if (col === null || this._stacked) return "";
+			return `grid-column:${col}`;
+		}
+		_isPaneAvailable(key) {
+			if (key === "file") return this._fileCatalog.length > 0;
+			if (key === "page") return Boolean(this._docState?.hasPageView);
+			return Boolean(this._docState);
+		}
+		_isPaneVisible(key) {
+			if (!this._isPaneAvailable(key)) return false;
+			return Boolean(this._userPaneVisible[key]);
+		}
+		_visiblePaneKeys() {
+			return [...PANE_KEYS].filter((key) => this._isPaneVisible(key));
+		}
+		_filePaneFitWidthPx() {
+			const probe = document.createElement("div");
+			probe.style.cssText = "position:absolute;visibility:hidden;width:var(--file-pane-fit-width);";
+			(this.shadowRoot ?? document.documentElement).appendChild(probe);
+			const px = probe.getBoundingClientRect().width;
+			probe.remove();
+			return Math.ceil(px) || 108;
+		}
+		_resolvedFilePaneWidthPx() {
+			const fit = this._filePaneFitWidthPx();
+			return Math.max(fit, this._filePaneWidthPx ?? fit);
+		}
+		_contentPaneFrWeights(keys) {
+			const contentKeys = keys.filter((k) => k !== "file");
+			const weights = contentKeys.map((k) => this._paneRatios[this._paneRatioIndex(k)]);
+			const sum = weights.reduce((a, b) => a + b, 0) || contentKeys.length;
+			return weights.map((w) => w / sum);
+		}
+		_paneRatioIndex(key) {
+			return PANE_KEYS.indexOf(key);
+		}
+		_normalizePaneRatios() {
+			const sum = this._paneRatios.reduce((a, b) => a + b, 0);
+			if (sum <= 0) {
+				this._paneRatios = [...DEFAULT_PANE_RATIOS];
+				return;
+			}
+			this._paneRatios = this._paneRatios.map((r) => r / sum);
+		}
+		_paneKeysAdjacent(leftKey, rightKey) {
+			return PANE_KEYS.indexOf(leftKey) >= 0 && PANE_KEYS.indexOf(rightKey) === PANE_KEYS.indexOf(leftKey) + 1;
+		}
+		_onlyHiddenPanesBetween(leftKey, rightKey) {
+			const li = PANE_KEYS.indexOf(leftKey);
+			const ri = PANE_KEYS.indexOf(rightKey);
+			if (li < 0 || ri <= li) return false;
+			for (let i = li + 1; i < ri; i++) if (this._isPaneVisible(PANE_KEYS[i])) return false;
+			return true;
+		}
+		_shouldShowSplitter(leftKey, rightKey) {
+			if (!this._isPaneVisible(leftKey) || !this._isPaneVisible(rightKey)) return false;
+			if (this._paneKeysAdjacent(leftKey, rightKey)) return true;
+			return this._onlyHiddenPanesBetween(leftKey, rightKey);
+		}
+		_visibleNeighborAfter(key) {
+			const idx = PANE_KEYS.indexOf(key);
+			for (let i = idx + 1; i < PANE_KEYS.length; i++) if (this._isPaneVisible(PANE_KEYS[i])) return PANE_KEYS[i];
+			return null;
+		}
+		_visibleNeighborBefore(key) {
+			const idx = PANE_KEYS.indexOf(key);
+			for (let i = idx - 1; i >= 0; i--) if (this._isPaneVisible(PANE_KEYS[i])) return PANE_KEYS[i];
+			return null;
+		}
+		_applyPaneLayout() {
+			const stacked = this._loaded && Boolean(this._layoutStackQuery?.matches);
+			this._stacked = stacked;
+			let keys = this._visiblePaneKeys();
+			if (!keys.length) {
+				this._userPaneVisible.markup = true;
+				keys = this._visiblePaneKeys();
+			}
+			const gridCols = /* @__PURE__ */ new Map();
+			const gridRows = /* @__PURE__ */ new Map();
+			const splitterCols = [
+				null,
+				null,
+				null
+			];
+			if (!this._loaded) {
+				this._paneGridCols = gridCols;
+				this._paneGridRows = gridRows;
+				this._splitterCols = splitterCols;
+				this._mainGridStyle = {};
+				this._lastPaneKey = null;
+				this.requestUpdate();
+				return;
+			}
+			this._lastPaneKey = keys[keys.length - 1] ?? null;
+			if (stacked) {
+				let row = 1;
+				for (const key of keys) gridRows.set(key, row++);
+				this._paneGridCols = gridCols;
+				this._paneGridRows = gridRows;
+				this._splitterCols = splitterCols;
+				this._mainGridStyle = {};
+				this._pageViewPaneRef.value?.refreshLayout();
+				this._readingPaneRef.value?.setVisible(this._isPaneVisible("reading"));
+				this.requestUpdate();
+				return;
+			}
+			const contentFr = this._contentPaneFrWeights(keys);
+			const cols = [];
+			let frIndex = 0;
+			keys.forEach((key, i) => {
+				if (key === "file") cols.push(`${this._resolvedFilePaneWidthPx()}px`);
+				else cols.push(`minmax(0, ${contentFr[frIndex++].toFixed(6)}fr)`);
+				if (i < keys.length - 1 && this._shouldShowSplitter(keys[i], keys[i + 1])) cols.push("1px");
+			});
+			let col = 1;
+			keys.forEach((key, i) => {
+				gridCols.set(key, col++);
+				if (i < keys.length - 1) {
+					const lk = keys[i];
+					const rk = keys[i + 1];
+					if (!this._shouldShowSplitter(lk, rk)) return;
+					const physIdx = PANE_KEYS.indexOf(lk);
+					if (physIdx >= 0 && physIdx < 3) splitterCols[physIdx] = col++;
+				}
+			});
+			this._paneGridCols = gridCols;
+			this._paneGridRows = gridRows;
+			this._splitterCols = splitterCols;
+			this._mainGridStyle = { gridTemplateColumns: cols.join(" ") };
+			this._pageViewPaneRef.value?.refreshLayout();
+			this._readingPaneRef.value?.setVisible(this._isPaneVisible("reading"));
+			this.requestUpdate();
+		}
+		_setUserPaneVisible(key, visible) {
+			this._userPaneVisible[key] = visible;
+			if (key === "file") this._filePaneUserToggled = true;
+			if (key === "page") this._syncPagePaneControls();
+			if (key === "reading" && !visible) this._setReadingSettingsOpen(false);
+			this._syncToolbarPaneCheckboxes();
+			this._saveLayoutPrefs();
+			this._applyPaneLayout();
+		}
+		_syncPagePaneControls() {
+			this._pageViewPaneRef.value?.setVisible(this._isPaneVisible("page"));
+		}
+		_loadLayoutPrefs() {
+			try {
+				const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+				if (!raw) return;
+				const data = JSON.parse(raw);
+				if (data?.visible && typeof data.visible === "object") {
+					for (const key of PANE_KEYS) if (typeof data.visible[key] === "boolean") this._userPaneVisible[key] = data.visible[key];
+					if (typeof data.visible["file"] === "boolean") this._filePaneUserToggled = true;
+				}
+				if (Array.isArray(data?.ratios)) {
+					const valid = data.ratios.every((n) => typeof n === "number" && n > 0);
+					if (valid && data.ratios.length === 4) {
+						this._paneRatios = [...data.ratios];
+						this._normalizePaneRatios();
+					} else if (valid && data.ratios.length === 3) {
+						this._paneRatios = [1, ...data.ratios];
+						this._normalizePaneRatios();
+					}
+				}
+				if (typeof data?.filePaneWidthPx === "number" && data.filePaneWidthPx > 0) this._filePaneWidthPx = data.filePaneWidthPx;
+			} catch {}
+		}
+		_saveLayoutPrefs() {
+			try {
+				localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({
+					visible: this._userPaneVisible,
+					ratios: this._paneRatios,
+					filePaneWidthPx: this._filePaneWidthPx
+				}));
+			} catch {}
+		}
+		_resetPaneLayout() {
+			this._filePaneUserToggled = false;
+			this._userPaneVisible = {
+				file: this._defaultFilePaneVisible(),
+				page: true,
+				markup: true,
+				reading: true
+			};
+			this._paneRatios = [...DEFAULT_PANE_RATIOS];
+			this._normalizePaneRatios();
+			this._filePaneWidthPx = null;
+			this._setReadingSettingsOpen(false);
+			this._syncPagePaneControls();
+			this._syncToolbarPaneCheckboxes();
+			this._saveLayoutPrefs();
+			this._applyPaneLayout();
+		}
+		_onLayoutStackChange = () => {
+			this._applyPaneLayout();
+		};
+		_initLayoutStackListener() {
+			this._layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
+			this._layoutStackQuery.addEventListener("change", this._onLayoutStackChange);
+			this._onLayoutStackChange();
+		}
+		_contentPaneAvailableWidthPx() {
+			const main = this._mainRef.value;
+			if (!main) return 1;
+			const rect = main.getBoundingClientRect();
+			const keys = this._visiblePaneKeys();
+			let reserved = 0;
+			if (keys.includes("file")) reserved += this._resolvedFilePaneWidthPx();
+			for (let i = 0; i < keys.length - 1; i++) if (this._shouldShowSplitter(keys[i], keys[i + 1])) reserved += 1;
+			return Math.max(rect.width - reserved, 1);
+		}
+		_resolvedPhysicalSplitterKeys(physIdx) {
+			const leftPhysical = PANE_KEYS[physIdx];
+			const rightPhysical = PANE_KEYS[physIdx + 1];
+			if (!leftPhysical || !rightPhysical) return null;
+			const leftKey = this._isPaneVisible(leftPhysical) ? leftPhysical : this._visibleNeighborBefore(rightPhysical);
+			const rightKey = this._isPaneVisible(rightPhysical) ? rightPhysical : this._visibleNeighborAfter(leftPhysical);
+			if (!leftKey || !rightKey || leftKey === rightKey) return null;
+			if (!this._shouldShowSplitter(leftKey, rightKey)) return null;
+			if (PANE_KEYS.indexOf(leftKey) !== physIdx) return null;
+			return {
+				leftKey,
+				rightKey
+			};
+		}
+		_startPaneDrag(e, physIdx) {
+			if (e.button !== 0 || this._stacked || !this._loaded) return;
+			const resolved = this._resolvedPhysicalSplitterKeys(physIdx);
+			if (!resolved) return;
+			const { leftKey, rightKey } = resolved;
+			this._normalizePaneRatios();
+			const leftIndex = this._paneRatioIndex(leftKey);
+			const rightIndex = this._paneRatioIndex(rightKey);
+			const drag = {
+				physicalSplitterIndex: physIdx,
+				leftKey,
+				rightKey,
+				startX: e.clientX,
+				leftStart: this._paneRatios[leftIndex],
+				rightStart: this._paneRatios[rightIndex],
+				pointerId: e.pointerId
+			};
+			if (leftKey === "file") drag.leftStartPx = this._resolvedFilePaneWidthPx();
+			else if (rightKey === "file") drag.rightStartPx = this._resolvedFilePaneWidthPx();
+			this._paneDrag = drag;
+			e.preventDefault();
+			e.currentTarget.setPointerCapture(e.pointerId);
+			e.currentTarget.classList.add("is-dragging");
+			this._paneDragActive = true;
+			this.requestUpdate();
+		}
+		_onWindowPointerMove = (e) => {
+			const drag = this._paneDrag;
+			if (!drag || e.pointerId !== drag.pointerId) return;
+			if (drag.leftKey === "file" && typeof drag.leftStartPx === "number") {
+				this._filePaneWidthPx = Math.max(this._filePaneFitWidthPx(), drag.leftStartPx + (e.clientX - drag.startX));
+				this._applyPaneLayout();
+				return;
+			}
+			if (drag.rightKey === "file" && typeof drag.rightStartPx === "number") {
+				this._filePaneWidthPx = Math.max(this._filePaneFitWidthPx(), drag.rightStartPx - (e.clientX - drag.startX));
+				this._applyPaneLayout();
+				return;
+			}
+			const keys = this._visiblePaneKeys();
+			const frWeights = this._contentPaneFrWeights(keys);
+			const leftContentIdx = keys.filter((k) => k !== "file").indexOf(drag.leftKey);
+			if (leftContentIdx < 0 || leftContentIdx + 1 >= frWeights.length) return;
+			const pairFrTotal = frWeights[leftContentIdx] + frWeights[leftContentIdx + 1];
+			if (!(pairFrTotal > 0)) return;
+			const pairPixels = Math.max(this._contentPaneAvailableWidthPx() * pairFrTotal, 1);
+			const deltaRatio = (e.clientX - drag.startX) / pairPixels;
+			const leftIdx = this._paneRatioIndex(drag.leftKey);
+			const rightIdx = this._paneRatioIndex(drag.rightKey);
+			const pairTotal = drag.leftStart + drag.rightStart;
+			if (!(pairTotal > 0) || leftIdx < 0 || rightIdx < 0) return;
+			const leftMin = Math.min(PANE_MIN_RATIO, pairTotal / 2);
+			const rightMin = Math.min(PANE_MIN_RATIO, pairTotal / 2);
+			let nextLeft = drag.leftStart + deltaRatio * pairTotal;
+			nextLeft = Math.min(Math.max(nextLeft, leftMin), pairTotal - rightMin);
+			this._paneRatios[leftIdx] = nextLeft;
+			this._paneRatios[rightIdx] = pairTotal - nextLeft;
+			this._applyPaneLayout();
+		};
+		_onWindowPointerUp = (e) => {
+			const drag = this._paneDrag;
+			if (!drag || e.pointerId !== drag.pointerId) return;
+			const splitter = this._splitterRefs[drag.physicalSplitterIndex]?.value;
+			splitter?.classList.remove("is-dragging");
+			if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+			this._paneDrag = null;
+			this._paneDragActive = false;
+			this._normalizePaneRatios();
+			this._saveLayoutPrefs();
+			this.requestUpdate();
+		};
+		_goToPage(n) {
+			const s = this._docState;
+			if (!s) return;
+			this._pageViewPaneRef.value?.closeSettings();
+			const page = Math.min(Math.max(1, n), s.pageCount);
+			s.currentPage = page;
+			const markupPane = this._markupPaneRef.value;
+			const readingPane = this._readingPaneRef.value;
+			const pageViewPane = this._pageViewPaneRef.value;
+			if (markupPane) markupPane.page = page;
+			if (readingPane) readingPane.page = page;
+			if (pageViewPane) pageViewPane.page = page;
+			this._pageNum = page;
+			this.requestUpdate();
+			this._pageNavRef.value?.setIndicator(page, s.pageCount);
+		}
+		_findElementIdOnPage(el) {
+			if (!this._docState?.elementIds) return null;
+			for (const [node, id] of this._docState.elementIds) if (node === el) return id;
+			return null;
+		}
+		_navigateThreadFragment(elementId, direction) {
+			const s = this._docState;
+			const el = s?.idToElement?.get(elementId);
+			if (!el) return;
+			const nav = s?.threadNavByElement?.get(el);
+			if (!nav) return;
+			const target = direction === "prev" ? nav.prev : nav.next;
+			if (!target) return;
+			const page = s.elementPageByEl.get(target);
+			if (!page) return;
+			if (page === s.currentPage) {
+				const id = this._findElementIdOnPage(target);
+				if (id) this._selectElement(id);
+				return;
+			}
+			s.pendingSelectElement = target;
+			this._goToPage(page);
+		}
+		_findListVirtualTextHost(list, target) {
+			const nodes = [...list.childNodes];
+			let i = skipContainerLevelHead(nodes, 0);
+			while (i < nodes.length) {
+				const node = nodes[i];
+				if (node.nodeType !== Node.ELEMENT_NODE || localName(node) !== "ldiv") {
+					i++;
+					continue;
+				}
+				const ldiv = node;
+				i++;
+				const end = skipUntilListItemBoundary(nodes, i);
+				if (target === ldiv || nodes.slice(i, end).some((n) => xmlContains(target, n))) return ldiv;
+				i = end;
+			}
+			return null;
+		}
+		_findTableVirtualTextHost(container, target) {
+			const nodes = [...container.childNodes];
+			let i = skipContainerLevelHead(nodes, 0);
+			while (i < nodes.length) {
+				const node = nodes[i];
+				if (node.nodeType !== Node.ELEMENT_NODE) {
+					i++;
+					continue;
+				}
+				const tag = localName(node);
+				if (tag === "nl" || isVirtualTextHost(node) || CELL_SPAN_TAGS.has(tag) || !isCellToken(tag)) {
+					i++;
+					continue;
+				}
+				const cell = node;
+				i++;
+				const end = skipUntilCellBoundary(nodes, i);
+				if (target === cell || nodes.slice(i, end).some((n) => xmlContains(target, n))) return cell;
+				i = end;
+			}
+			return null;
+		}
+		_findVirtualTextHost(xmlEl) {
+			let node = xmlEl;
+			while (node) {
+				const parent = node.parentElement;
+				if (!parent) return null;
+				const tag = localName(parent);
+				if (tag === "list") {
+					const h = this._findListVirtualTextHost(parent, xmlEl);
+					if (h) return h;
+				}
+				if (OTSL_CONTAINER_TAGS.has(tag)) {
+					const h = this._findTableVirtualTextHost(parent, xmlEl);
+					if (h) return h;
+				}
+				node = parent;
+			}
+			return null;
+		}
+		_resolveSelectionElement(xmlEl) {
+			if (!xmlEl) return null;
+			if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
+			let node = xmlEl.parentElement;
+			while (node) {
+				if (localName(node) === "doclang") break;
+				if (isSemanticElement(node) && !isListOrOtslContainer(node)) return node;
+				node = node.parentElement;
+			}
+			const virtualHost = this._findVirtualTextHost(xmlEl);
+			if (virtualHost) return virtualHost;
+			node = xmlEl.parentElement;
+			while (node) {
+				if (localName(node) === "doclang") break;
+				if (isSemanticElement(node) || isVirtualTextHost(node)) return node;
+				node = node.parentElement;
+			}
+			return null;
+		}
+		_resolveSelectionElementId(rawId) {
+			const s = this._docState;
+			if (!rawId || !s?.idToElement || !s.elementIds) return null;
+			const xmlEl = s.idToElement.get(rawId);
+			if (!xmlEl) return null;
+			const resolved = this._resolveSelectionElement(xmlEl);
+			return resolved ? s.elementIds.get(resolved) ?? null : null;
+		}
+		_selectElement(elementId) {
+			if (!elementId) return;
+			const markup = this._markupPaneRef.value;
+			const reading = this._readingPaneRef.value;
+			const page = this._pageViewPaneRef.value;
+			if (markup) markup.selected = elementId;
+			if (reading) reading.selected = elementId;
+			if (page) page.selected = elementId;
+		}
+		_clearSelection() {
+			const markup = this._markupPaneRef.value;
+			const reading = this._readingPaneRef.value;
+			const page = this._pageViewPaneRef.value;
+			if (markup) markup.selected = null;
+			if (reading) reading.selected = null;
+			if (page) page.selected = null;
+		}
+		_setReadingSettingsOpen(open) {
+			this._readingSettingsOpen = open;
+			this._readingPaneRef.value?.setSettingsOpen(open);
+			this.requestUpdate();
+		}
+		_closeAllSettings() {
+			this._pageViewPaneRef.value?.closeSettings();
+			this._setReadingSettingsOpen(false);
+		}
+		_syncToolbarPaneCheckboxes() {
+			this._toolbarRef.value?.syncPaneToggles({
+				file: this._userPaneVisible.file,
+				page: this._userPaneVisible.page,
+				markup: this._userPaneVisible.markup,
+				reading: this._userPaneVisible.reading,
+				fileAvailable: this._isPaneAvailable("file"),
+				pageAvailable: this._isPaneAvailable("page"),
+				hasState: Boolean(this._docState)
+			});
+		}
+		_setDocumentOpen(open, { markupOnly = false } = {}) {
+			this._loaded = open;
+			this._markupOnly = open && markupOnly;
+			this._pageNavRef.value?.setVisible(open && !markupOnly);
+			this._syncToolbarPaneCheckboxes();
+			this._applyPaneLayout();
+			this.requestUpdate();
+		}
+		_setPageViewVisible(visible) {
+			this._hasPageView = visible;
+			this._syncPagePaneControls();
+			this._syncToolbarPaneCheckboxes();
+			if (!visible) this._pageViewPaneRef.value?.closeSettings();
+			this._applyPaneLayout();
+		}
+		_resetViewer() {
+			this._setDemoLoading(false);
+			this._clearFileCatalog();
+			this._filePaneUserToggled = false;
+			this._pageViewPaneRef.value?.resetZoom();
+			this._docLabel = null;
+			this._setDocumentOpen(false);
+			this._hasPageView = false;
+			this._closeAllSettings();
+			this._toolbarOptionsOpen = false;
+			this._toolbarRef.value?.setOptionsOpen(false);
+			const markup = this._markupPaneRef.value;
+			const reading = this._readingPaneRef.value;
+			const pageView = this._pageViewPaneRef.value;
+			if (markup) markup.document = null;
+			if (reading) reading.document = null;
+			if (pageView) pageView.document = null;
+			this._filePaneRef.value?.renderFiles([]);
+			this._pageNavRef.value?.setIndicator(1, 1);
+			this._pageNum = 1;
+			this._pageCount = 1;
+			this._updateFileView();
+			this._applyPaneLayout();
+			this.requestUpdate();
+		}
+		_activateDocument(docState, entry) {
+			this._docState = docState;
+			this._closeAllSettings();
+			this._pageViewPaneRef.value?.activateZoom(entry.pageZoom ?? 100);
+			this._docLabel = entry.label;
+			this._setDocumentOpen(true, { markupOnly: docState.markupOnly });
+			this._setPageViewVisible(docState.hasPageView);
+			this._pageNum = docState.currentPage;
+			this._pageCount = docState.pageCount;
+			this._pageNavRef.value?.setIndicator(docState.currentPage, docState.pageCount);
+			const markup = this._markupPaneRef.value;
+			const reading = this._readingPaneRef.value;
+			const pageView = this._pageViewPaneRef.value;
+			if (markup) markup.document = docState;
+			if (reading) reading.document = docState;
+			if (pageView) pageView.document = docState;
+			this._updateFileView();
+			this.requestUpdate();
+		}
+		_pageImageMimeFromExt(ext) {
+			const n = ext.toLowerCase().replace("jpeg", "jpg");
+			if (n === "png") return "image/png";
+			if (n === "webp") return "image/webp";
+			return "image/jpeg";
+		}
+		_createPageImageObjectUrl(data, ext) {
+			return URL.createObjectURL(new Blob([data], { type: this._pageImageMimeFromExt(ext) }));
+		}
+		_createFirstPageImageUrlFromFiles(files) {
+			let bestPage = Infinity;
+			let bestFile = null;
+			for (const f of files) {
+				const parts = (f.webkitRelativePath || f.name).split("/");
+				if (parts.length < 2 || parts[parts.length - 2] !== "pages") continue;
+				const m = PAGE_IMAGE_RE.exec(f.name);
+				if (!m) continue;
+				const pageNum = Number(m[1]);
+				if (pageNum < bestPage) {
+					bestPage = pageNum;
+					bestFile = f;
 				}
 			}
-			if (typeof data?.filePaneWidthPx === "number" && data.filePaneWidthPx > 0) filePaneWidthPx = data.filePaneWidthPx;
-		} catch {}
-	}
-	function saveLayoutPrefs() {
-		try {
-			localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({
-				visible: userPaneVisible,
-				ratios: paneRatios,
-				filePaneWidthPx
-			}));
-		} catch {}
-	}
-	function resetPaneLayout() {
-		filePaneUserToggled = false;
-		userPaneVisible = {
-			file: defaultFilePaneVisible(),
-			page: true,
-			markup: true,
-			reading: true
-		};
-		paneRatios = [...DEFAULT_PANE_RATIOS];
-		normalizePaneRatios();
-		filePaneWidthPx = null;
-		setReadingSettingsOpen(false);
-		syncPagePaneControls();
-		syncToolbarPaneCheckboxes();
-		saveLayoutPrefs();
-		applyPaneLayout();
-	}
-	function isLayoutStacked() {
-		return Boolean(layoutStackQuery?.matches);
-	}
-	function initLayoutStackListener() {
-		if (!els.main) return;
-		layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
-		const onChange = () => applyPaneLayout();
-		layoutStackQuery.addEventListener("change", onChange);
-		onChange();
-	}
-	function paneKeysAdjacent(leftKey, rightKey) {
-		const leftIdx = PANE_KEYS.indexOf(leftKey);
-		const rightIdx = PANE_KEYS.indexOf(rightKey);
-		return leftIdx >= 0 && rightIdx === leftIdx + 1;
-	}
-	function onlyHiddenPanesBetween(leftKey, rightKey) {
-		const leftIdx = PANE_KEYS.indexOf(leftKey);
-		const rightIdx = PANE_KEYS.indexOf(rightKey);
-		if (leftIdx < 0 || rightIdx <= leftIdx) return false;
-		for (let i = leftIdx + 1; i < rightIdx; i++) if (isPaneVisible(PANE_KEYS[i])) return false;
-		return true;
-	}
-	function shouldShowSplitterBetween(leftKey, rightKey) {
-		if (!isPaneVisible(leftKey) || !isPaneVisible(rightKey)) return false;
-		if (paneKeysAdjacent(leftKey, rightKey)) return true;
-		return onlyHiddenPanesBetween(leftKey, rightKey);
-	}
-	function splitterForLayoutGap(leftKey, rightKey) {
-		if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
-		const leftIdx = PANE_KEYS.indexOf(leftKey);
-		if (leftIdx < 0) return null;
-		return els.splitters[leftIdx] ?? null;
-	}
-	function visiblePaneNeighborAfter(key) {
-		const idx = PANE_KEYS.indexOf(key);
-		if (idx < 0) return null;
-		for (let i = idx + 1; i < PANE_KEYS.length; i++) {
-			const neighbor = PANE_KEYS[i];
-			if (isPaneVisible(neighbor)) return neighbor;
+			return bestFile ? URL.createObjectURL(bestFile) : null;
 		}
-		return null;
-	}
-	function visiblePaneNeighborBefore(key) {
-		const idx = PANE_KEYS.indexOf(key);
-		if (idx < 0) return null;
-		for (let i = idx - 1; i >= 0; i--) {
-			const neighbor = PANE_KEYS[i];
-			if (isPaneVisible(neighbor)) return neighbor;
-		}
-		return null;
-	}
-	function resolvedPhysicalSplitterKeys(physicalSplitterIndex) {
-		const leftPhysical = PANE_KEYS[physicalSplitterIndex];
-		const rightPhysical = PANE_KEYS[physicalSplitterIndex + 1];
-		if (!leftPhysical || !rightPhysical) return null;
-		const leftKey = isPaneVisible(leftPhysical) ? leftPhysical : visiblePaneNeighborBefore(rightPhysical);
-		const rightKey = isPaneVisible(rightPhysical) ? rightPhysical : visiblePaneNeighborAfter(leftPhysical);
-		if (!leftKey || !rightKey || leftKey === rightKey) return null;
-		if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
-		const canonical = splitterForLayoutGap(leftKey, rightKey);
-		if (!canonical || canonical !== els.splitters[physicalSplitterIndex]) return null;
-		return {
-			leftKey,
-			rightKey
-		};
-	}
-	function resetPaneGridStyles() {
-		for (const key of PANE_KEYS) {
-			const el = paneDef(key)?.el;
-			if (el) {
-				el.style.gridColumn = "";
-				el.style.gridRow = "";
-			}
-		}
-		for (const splitter of els.splitters) {
-			if (!splitter) continue;
-			splitter.style.gridColumn = "";
-			splitter.style.gridRow = "";
-			splitter.hidden = true;
-		}
-	}
-	function setUserPaneVisible(key, visible) {
-		userPaneVisible[key] = visible;
-		if (key === "file") filePaneUserToggled = true;
-		if (key === "page") syncPagePaneControls();
-		if (key === "reading" && !visible) setReadingSettingsOpen(false);
-		syncToolbarPaneCheckboxes();
-		saveLayoutPrefs();
-		applyPaneLayout();
-	}
-	function applyPaneLayout() {
-		if (!els.main) return;
-		const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
-		els.main.classList.toggle("layout-stacked", stacked);
-		for (const key of PANE_KEYS) {
-			const def = paneDef(key);
-			if (!def?.el) continue;
-			def.el.hidden = !isPaneVisible(key);
-			def.el.classList.remove("pane-layout-last");
-		}
-		if (!document.body.classList.contains("viewer-loaded")) {
-			resetPaneGridStyles();
-			els.main.style.gridTemplateColumns = "";
-			els.main.style.gridTemplateRows = "";
-			return;
-		}
-		let keys = visiblePaneKeys();
-		if (!keys.length) {
-			userPaneVisible.markup = true;
-			keys = visiblePaneKeys();
-		}
-		const lastKey = keys[keys.length - 1];
-		paneDef(lastKey)?.el?.classList.add("pane-layout-last");
-		resetPaneGridStyles();
-		if (stacked) {
-			els.main.style.gridTemplateRows = "";
-			els.main.style.gridTemplateColumns = "1fr";
-			let row = 1;
-			for (const key of keys) {
-				const def = paneDef(key);
-				if (!def?.el) continue;
-				def.el.style.gridRow = String(row++);
-			}
-			doclangPageViewPane?.refreshLayout();
-			doclangReadingPane?.setVisible(isPaneVisible("reading"));
-			return;
-		}
-		const contentFr = contentPaneFrWeights(keys);
-		const cols = [];
-		let contentFrIndex = 0;
-		keys.forEach((key, index) => {
-			if (key === "file") cols.push(`${resolvedFilePaneWidthPx()}px`);
-			else cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
-			if (index < keys.length - 1 && shouldShowSplitterBetween(keys[index], keys[index + 1])) cols.push("1px");
-		});
-		els.main.style.gridTemplateColumns = cols.join(" ");
-		els.main.style.gridTemplateRows = "minmax(0, 1fr)";
-		let col = 1;
-		keys.forEach((key, index) => {
-			const def = paneDef(key);
-			if (!def?.el) return;
-			def.el.style.gridColumn = String(col);
-			col += 1;
-			if (index < keys.length - 1) {
-				const leftKey = keys[index];
-				const rightKey = keys[index + 1];
-				if (!shouldShowSplitterBetween(leftKey, rightKey)) return;
-				const splitter = splitterForLayoutGap(leftKey, rightKey);
-				if (splitter) {
-					splitter.hidden = false;
-					splitter.style.gridColumn = String(col);
-					col += 1;
+		async _createFirstPageImageUrlFromZip(source) {
+			const entries = await unzip(source instanceof File ? await source.arrayBuffer() : source, { shouldExtract: (name) => /^pages\/\d+\.(png|jpe?g|webp)$/i.test(name) });
+			let bestPage = Infinity;
+			let bestEntry = null;
+			for (const e of entries) {
+				const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
+				if (!m) continue;
+				const pageNum = Number(m[1]);
+				if (pageNum < bestPage) {
+					bestPage = pageNum;
+					bestEntry = e;
 				}
 			}
-		});
-		doclangPageViewPane?.refreshLayout();
-		doclangReadingPane?.setVisible(isPaneVisible("reading"));
-	}
-	function setToolbarOptionsOpen(open) {
-		toolbarOptionsOpen = open;
-		doclangToolbar?.setOptionsOpen(open);
-	}
-	function syncToolbarPaneCheckboxes() {
-		doclangToolbar?.syncPaneToggles({
-			file: userPaneVisible.file,
-			page: userPaneVisible.page,
-			markup: userPaneVisible.markup,
-			reading: userPaneVisible.reading,
-			fileAvailable: isPaneAvailable("file"),
-			pageAvailable: isPaneAvailable("page"),
-			hasState: Boolean(state)
-		});
-	}
-	function initToolbarOptions() {
-		if (!doclangToolbar) return;
-		doclangToolbar.addEventListener("doclang-toggle-pane", (e) => {
-			const { pane, checked } = e.detail;
-			if (!state) {
-				syncToolbarPaneCheckboxes();
+			if (!bestEntry) return null;
+			return this._createPageImageObjectUrl(bestEntry.data, bestEntry.name.split(".").pop() ?? "png");
+		}
+		async _resolveCatalogEntryThumbnail(entry) {
+			if (entry.thumbnailUrl) return entry.thumbnailUrl;
+			if (entry.kind === "markup") return null;
+			try {
+				if (entry.kind === "folder") entry.thumbnailUrl = this._createFirstPageImageUrlFromFiles(entry.source);
+				else if (entry.kind === "archive") entry.thumbnailUrl = await this._createFirstPageImageUrlFromZip(entry.source);
+			} catch {
+				entry.thumbnailUrl = null;
+			}
+			return entry.thumbnailUrl;
+		}
+		_enrichCatalogEntryThumbnail(entry) {
+			this._resolveCatalogEntryThumbnail(entry).then((url) => {
+				if (!this._fileCatalog.includes(entry)) {
+					if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+					return;
+				}
+				if (url) this._renderFileView();
+			});
+		}
+		_revokeCatalogEntry(entry) {
+			if (entry?.thumbnailUrl?.startsWith("blob:")) URL.revokeObjectURL(entry.thumbnailUrl);
+			if (entry) entry.thumbnailUrl = null;
+		}
+		_createFileCatalogEntry(file) {
+			return {
+				id: crypto.randomUUID(),
+				label: file.name,
+				kind: this._isMarkupFile(file) ? "markup" : "archive",
+				source: file,
+				currentPage: 1,
+				pageZoom: 100,
+				snapshot: null,
+				thumbnailUrl: null
+			};
+		}
+		_isArchiveFile(file) {
+			return /\.dclx$/i.test(file.name) || /\.zip$/i.test(file.name);
+		}
+		_isMarkupFile(file) {
+			return /\.(?:dclg(?:\.xml)?|xml)$/i.test(file.name);
+		}
+		async _parseCatalogEntry(entry) {
+			try {
+				if (entry.kind === "markup") return buildDocumentState(entry.source instanceof File ? await entry.source.text() : new TextDecoder().decode(entry.source), /* @__PURE__ */ new Map(), entry.label, /* @__PURE__ */ new Map(), { markupOnly: true });
+				if (entry.kind === "archive") {
+					const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source);
+					return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+				}
+				if (entry.kind === "folder") {
+					const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
+					return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+				}
+			} catch (err) {
+				alert(`Failed to read ${entry.label}: ${err.message}`);
+			}
+			return null;
+		}
+		_persistActiveFileViewState() {
+			if (this._activeFileIndex < 0 || !this._docState) return;
+			const entry = this._fileCatalog[this._activeFileIndex];
+			if (!entry) return;
+			entry.currentPage = this._docState.currentPage;
+			entry.pageZoom = this._pageViewPaneRef.value?.zoomPercent ?? 100;
+		}
+		_releaseActiveDocument() {
+			if (this._activeFileIndex >= 0) {
+				const entry = this._fileCatalog[this._activeFileIndex];
+				if (entry?.snapshot) {
+					revokeDocumentState(entry.snapshot);
+					entry.snapshot = null;
+				}
+			}
+			if (this._docState) revokeDocumentState(this._docState);
+			this._docState = null;
+		}
+		_clearFileCatalog() {
+			this._releaseActiveDocument();
+			for (const entry of this._fileCatalog) this._revokeCatalogEntry(entry);
+			this._fileCatalog = [];
+			this._activeFileIndex = -1;
+		}
+		async _switchToFile(index) {
+			if (index < 0 || index >= this._fileCatalog.length) return;
+			this._persistActiveFileViewState();
+			this._releaseActiveDocument();
+			this._activeFileIndex = index;
+			const entry = this._fileCatalog[index];
+			const docState = await this._parseCatalogEntry(entry);
+			if (!docState) {
+				this._revokeCatalogEntry(entry);
+				this._fileCatalog.splice(index, 1);
+				this._activeFileIndex = -1;
+				if (this._fileCatalog.length) await this._switchToFile(Math.min(index, this._fileCatalog.length - 1));
+				else this._resetViewer();
 				return;
 			}
-			if (![...PANE_KEYS].filter((k) => k === pane ? checked : userPaneVisible[k] && isPaneAvailable(k)).length) {
-				syncToolbarPaneCheckboxes();
+			entry.snapshot = docState;
+			docState.currentPage = entry.currentPage ?? 1;
+			this._activateDocument(docState, entry);
+		}
+		_defaultFilePaneVisible() {
+			return this._fileCatalog.length > 1;
+		}
+		_syncFilePaneDefault() {
+			if (!this._filePaneUserToggled) {
+				const wasVisible = this._userPaneVisible.file;
+				const should = this._defaultFilePaneVisible();
+				this._userPaneVisible.file = should;
+				if (!wasVisible && should) {
+					this._paneRatios = [...DEFAULT_PANE_RATIOS];
+					this._normalizePaneRatios();
+					this._filePaneWidthPx = null;
+				}
+			}
+		}
+		async _closeCatalogFile(index) {
+			if (index < 0 || index >= this._fileCatalog.length) return;
+			const wasActive = index === this._activeFileIndex;
+			const entry = this._fileCatalog[index];
+			if (wasActive) {
+				this._releaseActiveDocument();
+				this._activeFileIndex = -1;
+			}
+			this._revokeCatalogEntry(entry);
+			this._fileCatalog.splice(index, 1);
+			if (!this._fileCatalog.length) {
+				this._resetViewer();
 				return;
 			}
-			setUserPaneVisible(pane, checked);
-		});
-		doclangToolbar.addEventListener("doclang-reset-pane-layout", () => {
-			if (state) resetPaneLayout();
-		});
-		syncToolbarPaneCheckboxes();
-	}
-	function contentPaneAvailableWidthPx() {
-		if (!els.main) return 1;
-		const rect = els.main.getBoundingClientRect();
-		const keys = visiblePaneKeys();
-		let reserved = 0;
-		if (keys.includes("file")) reserved += resolvedFilePaneWidthPx();
-		for (let i = 0; i < keys.length - 1; i++) if (shouldShowSplitterBetween(keys[i], keys[i + 1])) reserved += 1;
-		return Math.max(rect.width - reserved, 1);
-	}
-	function startPaneDrag(e, physicalSplitterIndex) {
-		if (e.button !== 0 || isLayoutStacked() || !document.body.classList.contains("viewer-loaded")) return;
-		const resolved = resolvedPhysicalSplitterKeys(physicalSplitterIndex);
-		if (!resolved) return;
-		const { leftKey, rightKey } = resolved;
-		normalizePaneRatios();
-		const leftIndex = paneRatioIndex(leftKey);
-		const rightIndex = paneRatioIndex(rightKey);
-		const dragState = {
-			physicalSplitterIndex,
-			leftKey,
-			rightKey,
-			startX: e.clientX,
-			leftStart: paneRatios[leftIndex],
-			rightStart: paneRatios[rightIndex],
-			pointerId: e.pointerId
-		};
-		if (leftKey === "file") dragState.leftStartPx = resolvedFilePaneWidthPx();
-		else if (rightKey === "file") dragState.rightStartPx = resolvedFilePaneWidthPx();
-		paneDrag = dragState;
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		e.currentTarget.classList.add("is-dragging");
-		document.body.classList.add("pane-drag-active");
-	}
-	function onPaneDragMove(e) {
-		if (!paneDrag || e.pointerId !== paneDrag.pointerId || !els.main) return;
-		if (paneDrag.leftKey === "file" && typeof paneDrag.leftStartPx === "number") {
-			filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.leftStartPx + (e.clientX - paneDrag.startX));
-			applyPaneLayout();
-			return;
-		}
-		if (paneDrag.rightKey === "file" && typeof paneDrag.rightStartPx === "number") {
-			filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.rightStartPx - (e.clientX - paneDrag.startX));
-			applyPaneLayout();
-			return;
-		}
-		const keys = visiblePaneKeys();
-		const contentFr = contentPaneFrWeights(keys);
-		const leftContentIndex = keys.filter((key) => key !== "file").indexOf(paneDrag.leftKey);
-		if (leftContentIndex < 0 || leftContentIndex + 1 >= contentFr.length) return;
-		const pairFrTotal = contentFr[leftContentIndex] + contentFr[leftContentIndex + 1];
-		if (!(pairFrTotal > 0)) return;
-		const pairPixels = Math.max(contentPaneAvailableWidthPx() * pairFrTotal, 1);
-		const deltaRatio = (e.clientX - paneDrag.startX) / pairPixels;
-		const leftIndex = paneRatioIndex(paneDrag.leftKey);
-		const rightIndex = paneRatioIndex(paneDrag.rightKey);
-		const pairStoredTotal = paneDrag.leftStart + paneDrag.rightStart;
-		if (!(pairStoredTotal > 0) || leftIndex < 0 || rightIndex < 0) return;
-		let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-		const leftMin = Math.min(paneMinRatio(paneDrag.leftKey), pairStoredTotal / 2);
-		const rightMin = Math.min(paneMinRatio(paneDrag.rightKey), pairStoredTotal / 2);
-		nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
-		paneRatios[leftIndex] = nextLeft;
-		paneRatios[rightIndex] = pairStoredTotal - nextLeft;
-		applyPaneLayout();
-	}
-	function endPaneDrag(e) {
-		if (!paneDrag || e.pointerId !== paneDrag.pointerId) return;
-		const splitter = els.splitters[paneDrag.physicalSplitterIndex];
-		splitter?.classList.remove("is-dragging");
-		if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
-		paneDrag = null;
-		document.body.classList.remove("pane-drag-active");
-		normalizePaneRatios();
-		saveLayoutPrefs();
-	}
-	function initPaneSplitters() {
-		for (const [index, splitter] of els.splitters.entries()) {
-			if (!splitter) continue;
-			splitter.addEventListener("pointerdown", (e) => startPaneDrag(e, index));
-		}
-		window.addEventListener("pointermove", (e) => onPaneDragMove(e));
-		window.addEventListener("pointerup", (e) => endPaneDrag(e));
-		window.addEventListener("pointercancel", (e) => endPaneDrag(e));
-	}
-	function goToPage(n) {
-		if (!state) return;
-		doclangPageViewPane?.closeSettings();
-		const page = Math.min(Math.max(1, n), state.pageCount);
-		state.currentPage = page;
-		if (doclangMarkupPane) doclangMarkupPane.page = page;
-		if (doclangReadingPane) doclangReadingPane.page = page;
-		if (doclangPageViewPane) doclangPageViewPane.page = page;
-		setPageIndicator(page, state.pageCount);
-	}
-	function setPageIndicator(pageNum, pageCount) {
-		doclangPageNav?.setIndicator(pageNum, pageCount);
-	}
-	function syncPagePaneControls() {
-		const pageVisible = isPaneVisible("page");
-		doclangPageViewPane?.setVisible(pageVisible);
-	}
-	function findElementIdOnPage(el) {
-		if (!state?.elementIds) return null;
-		for (const [node, id] of state.elementIds) if (node === el) return id;
-		return null;
-	}
-	function navigateThreadFragment(elementId, direction) {
-		const el = state?.idToElement?.get(elementId);
-		if (!el) return;
-		const nav = state?.threadNavByElement?.get(el);
-		if (!nav) return;
-		const target = direction === "prev" ? nav.prev : nav.next;
-		if (!target) return;
-		const page = state.elementPageByEl.get(target);
-		if (!page) return;
-		if (page === state.currentPage) {
-			const id = findElementIdOnPage(target);
-			if (id) selectElement(id);
-			return;
-		}
-		state.pendingSelectElement = target;
-		goToPage(page);
-	}
-	function findListVirtualTextHost(list, target) {
-		const nodes = [...list.childNodes];
-		let i = skipContainerLevelHead(nodes, 0);
-		while (i < nodes.length) {
-			const node = nodes[i];
-			if (node.nodeType !== Node.ELEMENT_NODE || localName(node) !== "ldiv") {
-				i += 1;
-				continue;
-			}
-			const ldiv = node;
-			i += 1;
-			const end = skipUntilListItemBoundary(nodes, i);
-			if (target === ldiv || nodes.slice(i, end).some((n) => xmlContains(target, n))) return ldiv;
-			i = end;
-		}
-		return null;
-	}
-	function findTableVirtualTextHost(container, target) {
-		const nodes = [...container.childNodes];
-		let i = skipContainerLevelHead(nodes, 0);
-		while (i < nodes.length) {
-			const node = nodes[i];
-			if (node.nodeType !== Node.ELEMENT_NODE) {
-				i += 1;
-				continue;
-			}
-			const tag = localName(node);
-			if (tag === "nl" || isVirtualTextHost(node) || CELL_SPAN_TAGS.has(tag) || !isCellToken(tag)) {
-				i += 1;
-				continue;
-			}
-			const cell = node;
-			i += 1;
-			const end = skipUntilCellBoundary(nodes, i);
-			if (target === cell || nodes.slice(i, end).some((n) => xmlContains(target, n))) return cell;
-			i = end;
-		}
-		return null;
-	}
-	function findVirtualTextHost(xmlEl) {
-		let node = xmlEl;
-		while (node) {
-			const parent = node.parentElement;
-			if (!parent) return null;
-			const tag = localName(parent);
-			if (tag === "list") {
-				const host = findListVirtualTextHost(parent, xmlEl);
-				if (host) return host;
-			}
-			if (OTSL_CONTAINER_TAGS.has(tag)) {
-				const host = findTableVirtualTextHost(parent, xmlEl);
-				if (host) return host;
-			}
-			node = parent;
-		}
-		return null;
-	}
-	function resolveSelectionElement(xmlEl) {
-		if (!xmlEl) return null;
-		if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
-		let node = xmlEl.parentElement;
-		while (node) {
-			if (localName(node) === "doclang") break;
-			if (isSemanticElement(node) && !isListOrOtslContainer(node)) return node;
-			node = node.parentElement;
-		}
-		const virtualHost = findVirtualTextHost(xmlEl);
-		if (virtualHost) return virtualHost;
-		node = xmlEl.parentElement;
-		while (node) {
-			if (localName(node) === "doclang") break;
-			if (isSemanticElement(node) || isVirtualTextHost(node)) return node;
-			node = node.parentElement;
-		}
-		return null;
-	}
-	function resolveSelectionElementId(rawElementId) {
-		if (!rawElementId || !state?.idToElement || !state.elementIds) return null;
-		const xmlEl = state.idToElement.get(rawElementId);
-		if (!xmlEl) return null;
-		const resolved = resolveSelectionElement(xmlEl);
-		return resolved ? state.elementIds.get(resolved) ?? null : null;
-	}
-	function selectElement(elementId) {
-		if (!elementId) return;
-		if (doclangMarkupPane) doclangMarkupPane.selected = elementId;
-		if (doclangReadingPane) doclangReadingPane.selected = elementId;
-		if (doclangPageViewPane) doclangPageViewPane.selected = elementId;
-	}
-	function clearSelection() {
-		if (doclangMarkupPane) doclangMarkupPane.selected = null;
-		if (doclangReadingPane) doclangReadingPane.selected = null;
-		if (doclangPageViewPane) doclangPageViewPane.selected = null;
-	}
-	function setDocLabel(label) {
-		if (!els.docLabel) return;
-		if (label) {
-			els.docLabel.textContent = label;
-			els.docLabel.hidden = false;
-		} else {
-			els.docLabel.textContent = "";
-			els.docLabel.hidden = true;
-		}
-	}
-	function setDocumentOpen(open, { markupOnly = false } = {}) {
-		document.body.classList.toggle("viewer-loaded", open);
-		document.body.classList.toggle("markup-only", open && markupOnly);
-		doclangPageNav?.setVisible(open && !markupOnly);
-		syncToolbarPaneCheckboxes();
-		applyPaneLayout();
-	}
-	function setPageViewVisible(visible) {
-		document.body.classList.toggle("has-page-view", visible);
-		syncPagePaneControls();
-		syncToolbarPaneCheckboxes();
-		if (!visible) doclangPageViewPane?.closeSettings();
-		applyPaneLayout();
-	}
-	function resetViewer() {
-		setDemoLoading(false);
-		clearFileCatalog();
-		filePaneUserToggled = false;
-		resetPageZoom();
-		setDocLabel(null);
-		setDocumentOpen(false);
-		document.body.classList.remove("has-page-view");
-		closeAllSettings();
-		setToolbarOptionsOpen(false);
-		if (doclangMarkupPane) doclangMarkupPane.document = null;
-		if (doclangReadingPane) doclangReadingPane.document = null;
-		if (doclangPageViewPane) doclangPageViewPane.document = null;
-		doclangFilePane?.renderFiles([]);
-		setPageIndicator(1, 1);
-		updateFileView();
-		applyPaneLayout();
-	}
-	function pageImageMimeFromExt(ext) {
-		const normalized = ext.toLowerCase().replace("jpeg", "jpg");
-		if (normalized === "png") return "image/png";
-		if (normalized === "webp") return "image/webp";
-		return "image/jpeg";
-	}
-	function createPageImageObjectUrl(data, ext) {
-		return URL.createObjectURL(new Blob([data], { type: pageImageMimeFromExt(ext) }));
-	}
-	function createFirstPageImageUrlFromFiles(files) {
-		let bestPage = Infinity;
-		let bestFile = null;
-		for (const f of files) {
-			const parts = (f.webkitRelativePath || f.name).split("/");
-			if (parts.length < 2 || parts[parts.length - 2] !== "pages") continue;
-			const m = PAGE_IMAGE_RE.exec(f.name);
-			if (!m) continue;
-			const pageNum = Number(m[1]);
-			if (pageNum < bestPage) {
-				bestPage = pageNum;
-				bestFile = f;
-			}
-		}
-		return bestFile ? URL.createObjectURL(bestFile) : null;
-	}
-	async function createFirstPageImageUrlFromZip(source) {
-		const entries = await unzip(source instanceof File ? await source.arrayBuffer() : source, { shouldExtract: (name) => /^pages\/\d+\.(png|jpe?g|webp)$/i.test(name) });
-		let bestPage = Infinity;
-		let bestEntry = null;
-		for (const e of entries) {
-			const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
-			if (!m) continue;
-			const pageNum = Number(m[1]);
-			if (pageNum < bestPage) {
-				bestPage = pageNum;
-				bestEntry = e;
-			}
-		}
-		if (!bestEntry) return null;
-		const ext = bestEntry.name.split(".").pop() ?? "png";
-		return createPageImageObjectUrl(bestEntry.data, ext);
-	}
-	async function resolveCatalogEntryThumbnail(entry) {
-		if (entry.thumbnailUrl) return entry.thumbnailUrl;
-		if (entry.kind === "markup") return null;
-		try {
-			if (entry.kind === "folder") entry.thumbnailUrl = createFirstPageImageUrlFromFiles(entry.source);
-			else if (entry.kind === "archive") entry.thumbnailUrl = await createFirstPageImageUrlFromZip(entry.source);
-		} catch {
-			entry.thumbnailUrl = null;
-		}
-		return entry.thumbnailUrl;
-	}
-	function enrichCatalogEntryThumbnail(entry) {
-		resolveCatalogEntryThumbnail(entry).then((url) => {
-			if (!fileCatalog.includes(entry)) {
-				if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+			if (wasActive) {
+				await this._switchToFile(Math.min(index, this._fileCatalog.length - 1));
 				return;
 			}
-			if (url) renderFileView();
-		});
-	}
-	function revokeCatalogEntry(entry) {
-		if (entry?.thumbnailUrl?.startsWith("blob:")) URL.revokeObjectURL(entry.thumbnailUrl);
-		if (entry) entry.thumbnailUrl = null;
-	}
-	function createFileCatalogEntry(file) {
-		return {
-			id: crypto.randomUUID(),
-			label: file.name,
-			kind: isMarkupFile(file) ? "markup" : "archive",
-			source: file,
-			currentPage: 1,
-			pageZoom: 100,
-			snapshot: null,
-			thumbnailUrl: null
-		};
-	}
-	function isArchiveFile(file) {
-		return /\.dclx$/i.test(file.name) || /\.zip$/i.test(file.name);
-	}
-	function isMarkupFile(file) {
-		return /\.(?:dclg(?:\.xml)?|xml)$/i.test(file.name);
-	}
-	function hasArchiveTransfer(dataTransfer) {
-		return Boolean(dataTransfer && [...dataTransfer.types].includes("Files"));
-	}
-	async function parseCatalogEntry(entry) {
-		try {
-			if (entry.kind === "markup") return buildDocumentState(entry.source instanceof File ? await entry.source.text() : new TextDecoder().decode(entry.source), /* @__PURE__ */ new Map(), entry.label, /* @__PURE__ */ new Map(), { markupOnly: true });
-			if (entry.kind === "archive") {
-				const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source);
-				return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
-			}
-			if (entry.kind === "folder") {
-				const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
-				return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
-			}
-		} catch (err) {
-			alert(`Failed to read ${entry.label}: ${err.message}`);
+			if (index < this._activeFileIndex) this._activeFileIndex -= 1;
+			this._updateFileView();
 		}
-		return null;
-	}
-	function persistActiveFileViewState() {
-		if (activeFileIndex < 0 || !state) return;
-		const entry = fileCatalog[activeFileIndex];
-		if (!entry) return;
-		entry.currentPage = state.currentPage;
-		entry.pageZoom = doclangPageViewPane?.zoomPercent ?? 100;
-	}
-	function releaseActiveDocument() {
-		if (activeFileIndex >= 0) {
-			const entry = fileCatalog[activeFileIndex];
-			if (entry?.snapshot) {
-				revokeDocumentState(entry.snapshot);
-				entry.snapshot = null;
+		_renderFileView() {
+			this._filePaneRef.value?.renderFiles(this._fileCatalog.map((entry, index) => ({
+				label: entry.label,
+				thumbnailUrl: entry.thumbnailUrl,
+				isActive: index === this._activeFileIndex
+			})));
+		}
+		_updateFileView() {
+			this._syncFilePaneDefault();
+			this._renderFileView();
+			this._syncToolbarPaneCheckboxes();
+			this._applyPaneLayout();
+		}
+		async _addFilesToCatalog(files, { replace = false } = {}) {
+			if (replace) {
+				this._clearFileCatalog();
+				this._filePaneUserToggled = false;
 			}
+			const startIndex = this._fileCatalog.length;
+			for (const file of files) {
+				const entry = this._createFileCatalogEntry(file);
+				this._fileCatalog.push(entry);
+				this._enrichCatalogEntryThumbnail(entry);
+			}
+			if (!this._fileCatalog.length) return;
+			await this._switchToFile(replace ? 0 : startIndex);
 		}
-		if (state) revokeDocumentState(state);
-		state = null;
-	}
-	function clearFileCatalog() {
-		releaseActiveDocument();
-		for (const entry of fileCatalog) revokeCatalogEntry(entry);
-		fileCatalog = [];
-		activeFileIndex = -1;
-	}
-	async function switchToFile(index) {
-		if (index < 0 || index >= fileCatalog.length) return;
-		persistActiveFileViewState();
-		releaseActiveDocument();
-		activeFileIndex = index;
-		const entry = fileCatalog[index];
-		const docState = await parseCatalogEntry(entry);
-		if (!docState) {
-			revokeCatalogEntry(entry);
-			fileCatalog.splice(index, 1);
-			activeFileIndex = -1;
-			if (fileCatalog.length) await switchToFile(Math.min(index, fileCatalog.length - 1));
-			else resetViewer();
-			return;
+		async _appendFolderArchive(files) {
+			if (!files.some((f) => f.name === "document.xml")) {
+				alert("Archive must contain document.xml at its root.");
+				return;
+			}
+			const rootName = (files[0].webkitRelativePath || files[0].name).split("/")[0] || "archive";
+			const entry = {
+				id: crypto.randomUUID(),
+				label: rootName,
+				kind: "folder",
+				source: files,
+				currentPage: 1,
+				pageZoom: 100,
+				snapshot: null,
+				thumbnailUrl: null
+			};
+			this._fileCatalog.push(entry);
+			this._enrichCatalogEntryThumbnail(entry);
+			await this._switchToFile(this._fileCatalog.length - 1);
 		}
-		entry.snapshot = docState;
-		docState.currentPage = entry.currentPage ?? 1;
-		activateDocument(docState, entry);
-	}
-	function defaultFilePaneVisible() {
-		return fileCatalog.length > 1;
-	}
-	function syncFilePaneDefault() {
-		if (!filePaneUserToggled) {
-			const wasVisible = userPaneVisible.file;
-			const shouldBeVisible = defaultFilePaneVisible();
-			userPaneVisible.file = shouldBeVisible;
-			if (!wasVisible && shouldBeVisible) {
-				paneRatios = [...DEFAULT_PANE_RATIOS];
-				normalizePaneRatios();
-				filePaneWidthPx = null;
+		async _addArchiveBufferToCatalog(buffer, label, { replace = false } = {}) {
+			if (replace) {
+				this._clearFileCatalog();
+				this._filePaneUserToggled = false;
+			}
+			const entry = {
+				id: crypto.randomUUID(),
+				label,
+				kind: "archive",
+				source: buffer,
+				currentPage: 1,
+				pageZoom: 100,
+				snapshot: null,
+				thumbnailUrl: null
+			};
+			this._fileCatalog.push(entry);
+			this._enrichCatalogEntryThumbnail(entry);
+			await this._switchToFile(replace ? 0 : this._fileCatalog.length - 1);
+		}
+		_setDemoLoading(loading) {
+			this._demoLoading = loading;
+			this._emptyStateRef.value?.setDemoLoading(loading);
+			this._toolbarRef.value?.setDemoLoading(loading);
+			this.requestUpdate();
+		}
+		async _loadDemo() {
+			if (this._demoLoadInProgress) return;
+			this._demoLoadInProgress = true;
+			this._setDemoLoading(true);
+			try {
+				const demoUrl = globalThis["DEMO_ARCHIVE_URL"];
+				if (!demoUrl) throw new Error("DEMO_ARCHIVE_URL not defined");
+				const res = await fetch(demoUrl);
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				const label = demoUrl.split("/").pop() || "demo.dclx";
+				await this._addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
+			} catch (err) {
+				alert(`Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`);
+			} finally {
+				this._demoLoadInProgress = false;
+				this._setDemoLoading(false);
 			}
 		}
-	}
-	async function closeCatalogFile(index) {
-		if (index < 0 || index >= fileCatalog.length) return;
-		const wasActive = index === activeFileIndex;
-		const entry = fileCatalog[index];
-		if (wasActive) {
-			releaseActiveDocument();
-			activeFileIndex = -1;
+		_hasArchiveTransfer(dataTransfer) {
+			return Boolean(dataTransfer && [...dataTransfer.types].includes("Files"));
 		}
-		revokeCatalogEntry(entry);
-		fileCatalog.splice(index, 1);
-		if (!fileCatalog.length) {
-			resetViewer();
-			return;
+		_initDragDrop() {
+			this.addEventListener("dragenter", (e) => {
+				if (!this._hasArchiveTransfer(e.dataTransfer)) return;
+				e.preventDefault();
+				this._dragOver = true;
+				this.requestUpdate();
+			});
+			this.addEventListener("dragover", (e) => {
+				if (!this._hasArchiveTransfer(e.dataTransfer)) return;
+				e.preventDefault();
+				if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+			});
+			this.addEventListener("dragleave", (e) => {
+				if (!this._hasArchiveTransfer(e.dataTransfer)) return;
+				if (e.relatedTarget && this.contains(e.relatedTarget)) return;
+				this._dragOver = false;
+				this.requestUpdate();
+			});
+			this.addEventListener("drop", async (e) => {
+				if (!this._hasArchiveTransfer(e.dataTransfer)) return;
+				e.preventDefault();
+				this._dragOver = false;
+				this.requestUpdate();
+				if (e.dataTransfer) await this._loadFromDrop(e.dataTransfer);
+			});
 		}
-		if (wasActive) {
-			await switchToFile(Math.min(index, fileCatalog.length - 1));
-			return;
+		async _loadFromDrop(dataTransfer) {
+			const files = [...dataTransfer.files];
+			if (files.some((f) => f.name === "document.xml")) {
+				await this._appendFolderArchive(files);
+				return;
+			}
+			const supported = files.filter((f) => this._isArchiveFile(f) || this._isMarkupFile(f));
+			if (supported.length) await this._addFilesToCatalog(supported, { replace: false });
 		}
-		if (index < activeFileIndex) activeFileIndex -= 1;
-		updateFileView();
-	}
-	function renderFileView() {
-		if (!doclangFilePane) return;
-		doclangFilePane.renderFiles(fileCatalog.map((entry, index) => ({
-			label: entry.label,
-			thumbnailUrl: entry.thumbnailUrl,
-			isActive: index === activeFileIndex
-		})));
-	}
-	function updateFileView() {
-		syncFilePaneDefault();
-		renderFileView();
-		syncToolbarPaneCheckboxes();
-		applyPaneLayout();
-	}
-	function initFilePaneCloseAll() {
-		doclangFilePane?.addEventListener("doclang-file-pane-close-all", () => {
-			if (!fileCatalog.length) return;
-			const count = fileCatalog.length;
-			const message = count === 1 ? `Remove "${fileCatalog[0].label}" from the viewer?` : `Remove all ${count} open files from the viewer?`;
-			if (confirm(message)) resetViewer();
-		});
-		doclangFilePane?.addEventListener("doclang-file-select", (e) => {
-			switchToFile(e.detail.index);
-		});
-		doclangFilePane?.addEventListener("doclang-file-close", (e) => {
-			closeCatalogFile(e.detail.index);
-		});
-	}
-	function activateDocument(docState, entry) {
-		state = docState;
-		closeAllSettings();
-		doclangPageViewPane?.activateZoom(entry.pageZoom ?? 100);
-		setDocLabel(entry.label);
-		setDocumentOpen(true, { markupOnly: state.markupOnly });
-		setPageViewVisible(state.hasPageView);
-		setPageIndicator(state.currentPage, state.pageCount);
-		if (doclangMarkupPane) doclangMarkupPane.document = docState;
-		if (doclangReadingPane) doclangReadingPane.document = docState;
-		if (doclangPageViewPane) doclangPageViewPane.document = docState;
-		updateFileView();
-	}
-	function setDemoLoading(loading) {
-		document.body.classList.toggle("demo-loading", loading);
-		doclangEmptyState?.setDemoLoading(loading);
-		doclangToolbar?.setDemoLoading(loading);
-	}
-	async function loadDemo() {
-		if (demoLoadInProgress) return;
-		demoLoadInProgress = true;
-		setDemoLoading(true);
-		try {
-			const res = await fetch(DEMO_ARCHIVE_URL);
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const label = DEMO_ARCHIVE_URL.split("/").pop() || "demo.dclx";
-			await addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
-		} catch (err) {
-			alert(`Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`);
-		} finally {
-			demoLoadInProgress = false;
-			setDemoLoading(false);
-		}
-	}
-	async function addFilesToCatalog(files, { replace = false } = {}) {
-		if (replace) {
-			clearFileCatalog();
-			filePaneUserToggled = false;
-		}
-		const startIndex = fileCatalog.length;
-		for (const file of files) {
-			const entry = createFileCatalogEntry(file);
-			fileCatalog.push(entry);
-			enrichCatalogEntryThumbnail(entry);
-		}
-		if (!fileCatalog.length) return;
-		await switchToFile(replace ? 0 : startIndex);
-	}
-	async function appendFolderArchive(files) {
-		if (!files.some((f) => f.name === "document.xml")) {
-			alert("Archive must contain document.xml at its root.");
-			return;
-		}
-		const rootName = (files[0].webkitRelativePath || files[0].name).split("/")[0] || "archive";
-		const entry = {
-			id: crypto.randomUUID(),
-			label: rootName,
-			kind: "folder",
-			source: files,
-			currentPage: 1,
-			pageZoom: 100,
-			snapshot: null,
-			thumbnailUrl: null
-		};
-		fileCatalog.push(entry);
-		enrichCatalogEntryThumbnail(entry);
-		await switchToFile(fileCatalog.length - 1);
-	}
-	async function addArchiveBufferToCatalog(buffer, label, { replace = false } = {}) {
-		if (replace) {
-			clearFileCatalog();
-			filePaneUserToggled = false;
-		}
-		const entry = {
-			id: crypto.randomUUID(),
-			label,
-			kind: "archive",
-			source: buffer,
-			currentPage: 1,
-			pageZoom: 100,
-			snapshot: null,
-			thumbnailUrl: null
-		};
-		fileCatalog.push(entry);
-		enrichCatalogEntryThumbnail(entry);
-		await switchToFile(replace ? 0 : fileCatalog.length - 1);
-	}
-	async function loadFromDrop(dataTransfer) {
-		const files = [...dataTransfer.files];
-		if (files.some((f) => f.name === "document.xml")) {
-			await appendFolderArchive(files);
-			return;
-		}
-		const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
-		if (supported.length) await addFilesToCatalog(supported, { replace: false });
-	}
-	function initPageWheelNav() {
-		let pixelAccum = 0;
-		let pixelGestureUntil = 0;
-		let lastFlipAt = 0;
-		function wheelDir(e) {
+		_wheelDir(e) {
 			if (e.deltaMode === 1) return e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0;
 			if (e.deltaMode === 2) return Math.sign(e.deltaY);
 			const now = performance.now();
-			if (now > pixelGestureUntil) pixelAccum = 0;
-			pixelGestureUntil = now + PAGE_WHEEL_GESTURE_MS;
-			pixelAccum += e.deltaY;
-			if (Math.abs(pixelAccum) >= PAGE_WHEEL_PIXEL_THRESHOLD) {
-				const dir = pixelAccum > 0 ? 1 : -1;
-				pixelAccum = 0;
+			if (now > this._wheelPixelGestureUntil) this._wheelPixelAccum = 0;
+			this._wheelPixelGestureUntil = now + PAGE_WHEEL_GESTURE_MS;
+			this._wheelPixelAccum += e.deltaY;
+			if (Math.abs(this._wheelPixelAccum) >= PAGE_WHEEL_PIXEL_THRESHOLD) {
+				const dir = this._wheelPixelAccum > 0 ? 1 : -1;
+				this._wheelPixelAccum = 0;
 				return dir;
 			}
 			return 0;
 		}
-		function tryFlipPage(dir) {
-			if (!dir || !state) return false;
+		_tryFlipPage(dir) {
+			const s = this._docState;
+			if (!dir || !s) return false;
 			const now = performance.now();
-			if (now - lastFlipAt < PAGE_WHEEL_COOLDOWN_MS) return false;
-			const before = state.currentPage;
-			goToPage(state.currentPage + dir);
-			if (state.currentPage !== before) {
-				lastFlipAt = now;
+			if (now - this._wheelLastFlipAt < PAGE_WHEEL_COOLDOWN_MS) return false;
+			const before = s.currentPage;
+			this._goToPage(s.currentPage + dir);
+			if (s.currentPage !== before) {
+				this._wheelLastFlipAt = now;
 				return true;
 			}
 			return false;
 		}
-		function isScrollAtTop(pane) {
-			return pane.scrollTop <= 0;
-		}
-		function isScrollAtBottom(pane) {
-			return pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
-		}
-		function onScrollPaneWheel(e, pane) {
-			if (!state || state.markupOnly || state.pageCount <= 1) return;
-			const dir = wheelDir(e);
+		_onScrollPaneWheel(e, pane) {
+			const s = this._docState;
+			if (!s || s.markupOnly || s.pageCount <= 1) return;
+			const dir = this._wheelDir(e);
 			if (!dir) return;
-			const atTop = isScrollAtTop(pane);
-			const atBottom = isScrollAtBottom(pane);
+			const atTop = pane.scrollTop <= 0;
+			const atBottom = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
 			if (!(dir < 0 && atTop) && !(dir > 0 && atBottom)) return;
 			e.preventDefault();
-			if (!tryFlipPage(dir)) return;
+			if (!this._tryFlipPage(dir)) return;
 			requestAnimationFrame(() => {
 				pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight;
 			});
 		}
-		doclangPageViewPane?.addEventListener("wheel", (e) => {
-			if (!state?.hasPageView) return;
-			const scrollPane = doclangPageViewPane?.scrollPane ?? null;
-			if (!scrollPane) return;
-			if (scrollPane.scrollHeight > scrollPane.clientHeight || scrollPane.scrollWidth > scrollPane.clientWidth) {
-				onScrollPaneWheel(e, scrollPane);
+		_initPageWheelNav() {
+			window.addEventListener("pointermove", this._onWindowPointerMove);
+			window.addEventListener("pointerup", this._onWindowPointerUp);
+			window.addEventListener("pointercancel", this._onWindowPointerUp);
+			this.updateComplete.then(() => {
+				const pageViewPane = this._pageViewPaneRef.value;
+				if (pageViewPane) pageViewPane.addEventListener("wheel", (e) => {
+					if (!this._docState?.hasPageView) return;
+					const scrollPane = pageViewPane.scrollPane ?? null;
+					if (!scrollPane) return;
+					if (scrollPane.scrollHeight > scrollPane.clientHeight || scrollPane.scrollWidth > scrollPane.clientWidth) {
+						this._onScrollPaneWheel(e, scrollPane);
+						return;
+					}
+					e.preventDefault();
+					const dir = this._wheelDir(e);
+					if (dir) this._tryFlipPage(dir);
+				}, { passive: false });
+				for (const ref of [this._markupPaneRef, this._readingPaneRef]) {
+					const pane = ref.value;
+					if (!pane) continue;
+					pane.addEventListener("wheel", (e) => {
+						const scrollPane = pane.scrollPane ?? null;
+						if (!scrollPane) return;
+						this._onScrollPaneWheel(e, scrollPane);
+					}, { passive: false });
+				}
+			});
+		}
+		_onHomeClick = (e) => {
+			e.preventDefault();
+			this._resetViewer();
+		};
+		_onLoadDemo = () => {
+			this._loadDemo();
+		};
+		_onOpenFiles = (e) => {
+			const files = e.detail.files.filter((f) => this._isArchiveFile(f) || this._isMarkupFile(f));
+			if (!files.length) return;
+			this._addFilesToCatalog(files, { replace: true });
+		};
+		_onTogglePane = (e) => {
+			const { pane, checked } = e.detail;
+			if (!this._docState) {
+				this._syncToolbarPaneCheckboxes();
 				return;
 			}
-			e.preventDefault();
-			const dir = wheelDir(e);
-			if (dir) tryFlipPage(dir);
-		}, { passive: false });
-		for (const pane of [doclangMarkupPane, doclangReadingPane]) {
-			if (!pane) continue;
-			pane.addEventListener("wheel", (e) => {
-				const scrollPane = pane.scrollPane ?? null;
-				if (!scrollPane) return;
-				onScrollPaneWheel(e, scrollPane);
-			}, { passive: false });
-		}
-	}
-	function initFileTypeHints() {
-		doclangEmptyState?.setFileTypeHints(SUPPORTED_FILE_EXTENSIONS);
-	}
-	function initDragDrop() {
-		document.body.addEventListener("dragenter", (e) => {
-			if (!hasArchiveTransfer(e.dataTransfer)) return;
-			e.preventDefault();
-			document.body.classList.add("drag-over");
-		});
-		document.body.addEventListener("dragover", (e) => {
-			if (!hasArchiveTransfer(e.dataTransfer)) return;
-			e.preventDefault();
-			if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-		});
-		document.body.addEventListener("dragleave", (e) => {
-			if (!hasArchiveTransfer(e.dataTransfer)) return;
-			if (e.relatedTarget && document.body.contains(e.relatedTarget)) return;
-			document.body.classList.remove("drag-over");
-		});
-		document.body.addEventListener("drop", async (e) => {
-			if (!hasArchiveTransfer(e.dataTransfer)) return;
-			e.preventDefault();
-			document.body.classList.remove("drag-over");
-			if (e.dataTransfer) await loadFromDrop(e.dataTransfer);
-		});
-	}
-	doclangToolbar?.addEventListener("doclang-load-demo", loadDemo);
-	doclangToolbar?.addEventListener("doclang-open-files", async (e) => {
-		const files = e.detail.files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
-		if (!files.length) return;
-		await addFilesToCatalog(files, { replace: true });
-	});
-	doclangEmptyState?.addEventListener("doclang-load-demo", loadDemo);
-	document.getElementById("home-link")?.addEventListener("click", (e) => {
-		e.preventDefault();
-		resetViewer();
-	});
-	doclangPageNav?.addEventListener("doclang-prev-page", () => state && goToPage(state.currentPage - 1));
-	doclangPageNav?.addEventListener("doclang-next-page", () => state && goToPage(state.currentPage + 1));
-	doclangPageNav?.addEventListener("doclang-go-to-page", (e) => {
-		goToPage(e.detail.page);
-	});
-	document.addEventListener("doclang-element-select", (e) => {
-		const rawId = e.detail.id;
-		selectElement(resolveSelectionElementId(rawId) ?? rawId);
-	});
-	document.addEventListener("doclang-navigate-thread", (e) => {
-		const { elementId, direction } = e.detail;
-		navigateThreadFragment(elementId, direction);
-	});
-	document.addEventListener("doclang-clear-selection", () => {
-		clearSelection();
-	});
-	document.addEventListener("doclang-page-key-nav", (e) => {
-		const { dir } = e.detail;
-		if (state) goToPage(state.currentPage + dir);
-	});
-	doclangPageViewPane?.addEventListener("doclang-zoom-change", () => {
-		doclangPageViewPane?.refreshLayout();
-	});
-	var prevReadingOrderGlobal = false;
-	doclangPageViewPane?.addEventListener("doclang-overlay-change", (e) => {
-		const detail = e.detail;
-		if (detail.readingOrderGlobal !== prevReadingOrderGlobal) {
-			prevReadingOrderGlobal = detail.readingOrderGlobal;
-			if (state) {
-				if (doclangMarkupPane) doclangMarkupPane.document = state;
-				if (doclangReadingPane) doclangReadingPane.document = state;
-				if (doclangPageViewPane) doclangPageViewPane.document = state;
+			if (![...PANE_KEYS].filter((k) => k === pane ? checked : this._userPaneVisible[k] && this._isPaneAvailable(k)).length) {
+				this._syncToolbarPaneCheckboxes();
+				return;
 			}
+			this._setUserPaneVisible(pane, checked);
+		};
+		_onResetPaneLayout = () => {
+			if (this._docState) this._resetPaneLayout();
+		};
+		_onFilePaneCloseAll = () => {
+			const count = this._fileCatalog.length;
+			if (!count) return;
+			const msg = count === 1 ? `Remove "${this._fileCatalog[0].label}" from the viewer?` : `Remove all ${count} open files from the viewer?`;
+			if (confirm(msg)) this._resetViewer();
+		};
+		_onElementSelect = (e) => {
+			const rawId = e.detail.id;
+			const resolved = this._resolveSelectionElementId(rawId) ?? rawId;
+			this._selectElement(resolved);
+		};
+		_onNavigateThread = (e) => {
+			const { elementId, direction } = e.detail;
+			this._navigateThreadFragment(elementId, direction);
+		};
+		_onClearSelection = () => {
+			this._clearSelection();
+		};
+		_onPageKeyNav = (e) => {
+			const { dir } = e.detail;
+			if (this._docState) this._goToPage(this._docState.currentPage + dir);
+		};
+		_onZoomChange = () => {
+			this._pageViewPaneRef.value?.refreshLayout();
+		};
+		_onOverlayChange = (e) => {
+			const detail = e.detail;
+			if (detail.readingOrderGlobal !== this._prevReadingOrderGlobal) {
+				this._prevReadingOrderGlobal = detail.readingOrderGlobal;
+				const s = this._docState;
+				if (s) {
+					const markup = this._markupPaneRef.value;
+					const reading = this._readingPaneRef.value;
+					const pageView = this._pageViewPaneRef.value;
+					if (markup) markup.document = s;
+					if (reading) reading.document = s;
+					if (pageView) pageView.document = s;
+				}
+			}
+		};
+		_onHint = (e) => {
+			const hint = this.shadowRoot?.querySelector("doclang-cursor-hint");
+			if (!hint) return;
+			const detail = e.detail;
+			if (detail.html !== void 0) hint.showHtml(detail.html, detail.clientX, detail.clientY);
+			else if (detail.text !== void 0) hint.show(detail.text, detail.clientX, detail.clientY);
+		};
+		_onHintHide = () => {
+			(this.shadowRoot?.querySelector("doclang-cursor-hint"))?.hide();
+		};
+		_onPanningChange = () => {};
+		_onGlobalKeydown = (e) => {
+			if (e.key !== "Escape") return;
+			if (this._toolbarOptionsOpen) {
+				this._toolbarOptionsOpen = false;
+				this._toolbarRef.value?.setOptionsOpen(false);
+				this.requestUpdate();
+			} else this._pageViewPaneRef.value?.closeSettings();
+			if (this._readingSettingsOpen) this._setReadingSettingsOpen(false);
+		};
+		/** Trigger demo load on startup — called by main.ts when DEMO_ARCHIVE_URL is defined. */
+		loadDemoOnBoot() {
+			this._loadDemo();
 		}
-	});
-	doclangReadingPane?.addEventListener("doclang-reading-settings-toggle", () => setReadingSettingsOpen(!readingSettingsOpen));
-	doclangReadingPane?.addEventListener("doclang-reading-settings-close", () => setReadingSettingsOpen(false));
-	document.addEventListener("keydown", (e) => {
-		if (e.key !== "Escape") return;
-		if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
-		else if (doclangPageViewPane) doclangPageViewPane.closeSettings();
-		else if (readingSettingsOpen) setReadingSettingsOpen(false);
-	});
-	loadLayoutPrefs();
-	normalizePaneRatios();
-	initToolbarOptions();
-	initPaneSplitters();
-	initLayoutStackListener();
-	initFileTypeHints();
-	initDragDrop();
-	initFilePaneCloseAll();
-	initPageWheelNav();
-	if (document.body.classList.contains("demo-loading")) doclangEmptyState?.setDemoLoading(true);
-	if (doclangToolbar) loadDemo();
+		/** Called by main.ts when body has demo-loading class set from HTML. */
+		setInitialDemoLoading() {
+			this._demoLoading = true;
+			this.requestUpdate();
+		}
+	};
+	__decorate([r$2()], DoclangViewer.prototype, "_loaded", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_markupOnly", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_hasPageView", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_dragOver", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_paneDragActive", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_demoLoading", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_docLabel", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_pageNum", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_pageCount", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_stacked", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_mainGridStyle", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_paneGridCols", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_paneGridRows", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_splitterCols", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_lastPaneKey", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_readingSettingsOpen", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_toolbarOptionsOpen", void 0);
+	__decorate([r$2()], DoclangViewer.prototype, "_userPaneVisible", void 0);
+	DoclangViewer = __decorate([t$2("doclang-viewer")], DoclangViewer);
+	//#endregion
+	//#region src/main.ts
+	var viewer = document.querySelector("doclang-viewer");
+	if (viewer) {
+		if (globalThis["DEMO_ARCHIVE_URL"]) {
+			if (viewer.classList.contains("demo-loading")) viewer.setInitialDemoLoading();
+			viewer.loadDemoOnBoot();
+		}
+	}
 	//#endregion
 })();
