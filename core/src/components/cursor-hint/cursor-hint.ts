@@ -1,8 +1,11 @@
 /** <doclang-cursor-hint> — floating tooltip that follows the pointer */
 
-import { DoclangHTMLElement } from '../base/element';
+import { LitElement, html, nothing } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { classMap } from 'lit/directives/class-map.js';
+import { unsafeCSS } from 'lit';
 import styles from './cursor-hint.css?inline';
-import template from './cursor-hint.html?raw';
 
 const OFFSET = 10;
 const MARGIN = 8;
@@ -17,8 +20,17 @@ export interface DoclangHintDetail {
   clientY: number;
 }
 
-export class DoclangCursorHint extends DoclangHTMLElement {
-  private _hint: HTMLElement;
+@customElement('doclang-cursor-hint')
+export class DoclangCursorHint extends LitElement {
+  static override styles = unsafeCSS(styles);
+
+  private _content: string | Node | null = null;
+  private _isHtml = false;
+  private _detail = false;
+  private _hidden = true;
+  private _left = 0;
+  private _top = 0;
+
   private _onHint = (e: Event): void => {
     const { html, text, clientX, clientY } = (e as CustomEvent<DoclangHintDetail>)
       .detail;
@@ -30,54 +42,86 @@ export class DoclangCursorHint extends DoclangHTMLElement {
   };
   private _onHide = (): void => this.hide();
 
-  constructor() {
-    super(styles, template);
-    this._hint = this.q('.cursor-hint');
-  }
-
-  connectedCallback(): void {
+  override connectedCallback(): void {
+    super.connectedCallback();
     document.addEventListener('doclang-hint', this._onHint);
     document.addEventListener('doclang-hint-hide', this._onHide);
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
     document.removeEventListener('doclang-hint', this._onHint);
     document.removeEventListener('doclang-hint-hide', this._onHide);
   }
 
   hide(): void {
-    this._hint.hidden = true;
-    this._hint.classList.remove('cursor-hint-detail');
-    this._hint.replaceChildren();
+    this._content = null;
+    this._isHtml = false;
+    this._detail = false;
+    this._hidden = true;
+    this.requestUpdate();
   }
 
   show(content: string | Node, clientX: number, clientY: number, detail = false): void {
-    this._hint.replaceChildren();
-    if (typeof content === 'string') this._hint.textContent = content;
-    else this._hint.appendChild(content);
-    this._hint.classList.toggle('cursor-hint-detail', detail);
-    this._hint.hidden = false;
+    this._content = content;
+    this._isHtml = false;
+    this._detail = detail;
+    this._hidden = false;
     this._position(clientX, clientY);
+    this.requestUpdate();
   }
 
   showHtml(html: string, clientX: number, clientY: number): void {
-    this._hint.innerHTML = html;
-    this._hint.classList.add('cursor-hint-detail');
-    this._hint.hidden = false;
+    this._content = html;
+    this._isHtml = true;
+    this._detail = true;
+    this._hidden = false;
     this._position(clientX, clientY);
+    this.requestUpdate();
+  }
+
+  override render() {
+    if (this._hidden || this._content === null) return nothing;
+    const classes = { 'cursor-hint': true, 'cursor-hint-detail': this._detail };
+    const style = `left:${this._left}px;top:${this._top}px`;
+    if (this._isHtml && typeof this._content === 'string') {
+      return html`<div class=${classMap(classes)} role="tooltip" style=${style}>
+        ${unsafeHTML(this._content)}
+      </div>`;
+    }
+    if (typeof this._content === 'string') {
+      return html`<div class=${classMap(classes)} role="tooltip" style=${style}>
+        ${this._content}
+      </div>`;
+    }
+    return html`<div class=${classMap(classes)} role="tooltip" style=${style}></div>`;
+  }
+
+  override updated() {
+    // For Node content we need to append it imperatively after render
+    if (!this._hidden && this._content instanceof Node) {
+      const hint = this.shadowRoot?.querySelector('.cursor-hint');
+      if (hint) {
+        hint.replaceChildren(this._content.cloneNode(true));
+        const rect = hint.getBoundingClientRect();
+        this._repositionFromRect(rect);
+      }
+    }
   }
 
   private _position(clientX: number, clientY: number): void {
-    let left = clientX + OFFSET;
-    let top = clientY + OFFSET;
-    const rect = this._hint.getBoundingClientRect();
-    if (left + rect.width > window.innerWidth - MARGIN)
-      left = clientX - rect.width - OFFSET;
-    if (top + rect.height > window.innerHeight - MARGIN)
-      top = clientY - rect.height - OFFSET;
-    this._hint.style.left = `${Math.max(MARGIN, left)}px`;
-    this._hint.style.top = `${Math.max(MARGIN, top)}px`;
+    this._left = Math.max(MARGIN, clientX + OFFSET);
+    this._top = Math.max(MARGIN, clientY + OFFSET);
+  }
+
+  private _repositionFromRect(rect: DOMRect): void {
+    const hint = this.shadowRoot?.querySelector<HTMLElement>('.cursor-hint');
+    if (!hint) return;
+    if (this._left + rect.width > window.innerWidth - MARGIN)
+      this._left = Math.max(MARGIN, this._left - rect.width - 2 * OFFSET);
+    if (this._top + rect.height > window.innerHeight - MARGIN)
+      this._top = Math.max(MARGIN, this._top - rect.height - 2 * OFFSET);
+    hint.style.left = `${this._left}px`;
+    hint.style.top = `${this._top}px`;
   }
 }
-
-customElements.define('doclang-cursor-hint', DoclangCursorHint);

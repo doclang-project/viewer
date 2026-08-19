@@ -1,9 +1,12 @@
 /** <doclang-file-pane> — file list sidebar */
 
-import { DoclangHTMLElement } from '../base/element';
-const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+import { LitElement, html, nothing } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { unsafeCSS } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import styles from './file-pane.css?inline';
-import template from './file-pane.html?raw';
+
+const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 
 export interface FileEntry {
   label: string;
@@ -11,28 +14,43 @@ export interface FileEntry {
   isActive: boolean;
 }
 
-export class DoclangFilePane extends DoclangHTMLElement {
-  private _closeAllBtn: HTMLButtonElement;
-  private _body: HTMLElement;
+@customElement('doclang-file-pane')
+export class DoclangFilePane extends LitElement {
+  static override styles = unsafeCSS(styles);
 
-  constructor() {
-    super(styles, template);
+  private _entries: FileEntry[] = [];
+
+  override connectedCallback(): void {
+    super.connectedCallback();
     this.classList.add('pane', 'pane-file');
-    this._closeAllBtn = this.q('.file-pane-close-all');
-    this._body = this.q('.pane-body');
-
-    this._closeAllBtn.addEventListener('click', () =>
-      this.dispatchEvent(
-        new CustomEvent('doclang-file-pane-close-all', {
-          bubbles: true,
-          composed: true,
-        })
-      )
-    );
   }
 
-  get body(): HTMLElement {
-    return this._body;
+  override render() {
+    const hasEntries = this._entries.length > 0;
+    const closeAllBtn = hasEntries
+      ? html`<button
+          type="button"
+          class="file-pane-close-all"
+          aria-label="Clear all open files"
+          @click=${this._onCloseAll}
+        >
+          Clear
+        </button>`
+      : nothing;
+    const list = hasEntries
+      ? html`
+          <ul class="file-view-list" role="listbox" aria-label="Open files">
+            ${repeat(this._entries, (_, i) => i, this._renderEntry)}
+          </ul>
+        `
+      : nothing;
+    return html`
+      <div class="pane-header">
+        <span class="pane-header-title">Files</span>
+        ${closeAllBtn}
+      </div>
+      <div class="pane-body">${list}</div>
+    `;
   }
 
   setVisible(visible: boolean): void {
@@ -44,96 +62,82 @@ export class DoclangFilePane extends DoclangHTMLElement {
   }
 
   renderFiles(entries: FileEntry[]): void {
-    this._body.replaceChildren();
-    this._closeAllBtn.hidden = entries.length === 0;
-    if (!entries.length) return;
+    this._entries = entries;
+    this.requestUpdate();
+  }
 
-    const list = document.createElement('ul');
-    list.className = 'file-view-list';
-    list.setAttribute('role', 'listbox');
-    list.setAttribute('aria-label', 'Open files');
+  private _onCloseAll = (): void => {
+    this.dispatchEvent(
+      new CustomEvent('doclang-file-pane-close-all', { bubbles: true, composed: true })
+    );
+  };
 
-    entries.forEach((entry, index) => {
-      const item = document.createElement('li');
-      const card = document.createElement('div');
-      card.className = 'file-view-item';
-      if (entry.isActive) {
-        card.classList.add('is-active');
-        card.setAttribute('aria-selected', 'true');
-      } else card.setAttribute('aria-selected', 'false');
-      card.title = entry.label;
-      card.tabIndex = 0;
-      card.setAttribute('role', 'option');
-
-      const thumbWrap = document.createElement('div');
-      thumbWrap.className = 'file-view-thumb-wrap';
-
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.className = 'file-view-close';
-      closeBtn.setAttribute('aria-label', `Close ${entry.label}`);
-      closeBtn.textContent = '×';
-      closeBtn.addEventListener('click', (e: Event) => {
-        e.stopPropagation();
-        this.dispatchEvent(
-          new CustomEvent('doclang-file-close', {
-            bubbles: true,
-            composed: true,
-            detail: { index },
-          })
-        );
-      });
-
-      const thumb = document.createElement('span');
-      thumb.className = 'file-view-thumb';
-      thumb.setAttribute('aria-hidden', 'true');
-      if (entry.thumbnailUrl) {
-        const img = document.createElement('img');
-        img.src = entry.thumbnailUrl;
-        img.alt = '';
-        thumb.appendChild(img);
-      } else {
-        const ph = document.createElement('span');
-        ph.className = 'file-view-thumb-placeholder';
-        ph.innerHTML = FILE_THUMB_PLACEHOLDER_SVG;
-        thumb.appendChild(ph);
+  private _renderEntry = (entry: FileEntry, index: number) => {
+    const onCardClick = (e: Event): void => {
+      if ((e.target as Element).closest('.file-view-close')) return;
+      this._emitFileSelect(index);
+    };
+    const onCardKeydown = (e: KeyboardEvent): void => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this._emitFileSelect(index);
       }
+    };
+    const onCloseClick = (e: Event): void => {
+      e.stopPropagation();
+      this._emitFileClose(index);
+    };
+    const thumb = entry.thumbnailUrl
+      ? html`<img src=${entry.thumbnailUrl} alt="" />`
+      : html`<span
+          class="file-view-thumb-placeholder"
+          .innerHTML=${FILE_THUMB_PLACEHOLDER_SVG}
+        ></span>`;
+    return html`
+      <li>
+        <div
+          class="file-view-item${entry.isActive ? ' is-active' : ''}"
+          title=${entry.label}
+          tabindex="0"
+          role="option"
+          aria-selected=${entry.isActive ? 'true' : 'false'}
+          @click=${onCardClick}
+          @keydown=${onCardKeydown}
+        >
+          <div class="file-view-thumb-wrap">
+            <span class="file-view-thumb" aria-hidden="true">${thumb}</span>
+            <button
+              type="button"
+              class="file-view-close"
+              aria-label="Close ${entry.label}"
+              @click=${onCloseClick}
+            >
+              ×
+            </button>
+          </div>
+          <span class="file-view-label">${entry.label}</span>
+        </div>
+      </li>
+    `;
+  };
 
-      thumbWrap.append(thumb, closeBtn);
-      const label = document.createElement('span');
-      label.className = 'file-view-label';
-      label.textContent = entry.label;
-      card.append(thumbWrap, label);
+  private _emitFileSelect(index: number): void {
+    this.dispatchEvent(
+      new CustomEvent('doclang-file-select', {
+        bubbles: true,
+        composed: true,
+        detail: { index },
+      })
+    );
+  }
 
-      card.addEventListener('click', (e: Event) => {
-        if ((e.target as Element).closest('.file-view-close')) return;
-        this.dispatchEvent(
-          new CustomEvent('doclang-file-select', {
-            bubbles: true,
-            composed: true,
-            detail: { index },
-          })
-        );
-      });
-      card.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this.dispatchEvent(
-            new CustomEvent('doclang-file-select', {
-              bubbles: true,
-              composed: true,
-              detail: { index },
-            })
-          );
-        }
-      });
-
-      item.appendChild(card);
-      list.appendChild(item);
-    });
-
-    this._body.appendChild(list);
+  private _emitFileClose(index: number): void {
+    this.dispatchEvent(
+      new CustomEvent('doclang-file-close', {
+        bubbles: true,
+        composed: true,
+        detail: { index },
+      })
+    );
   }
 }
-
-customElements.define('doclang-file-pane', DoclangFilePane);

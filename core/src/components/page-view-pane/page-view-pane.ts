@@ -1,8 +1,13 @@
 /** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
 
+import { html, nothing } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { unsafeCSS } from 'lit';
+import { ref, createRef } from 'lit/directives/ref.js';
+import type { Ref } from 'lit/directives/ref.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { DoclangPageElement } from '../base/page-element';
 import styles from './page-view-pane.css?inline';
-import template from './page-view-pane.html?raw';
 import {
   applyPageImageSize,
   buildOverlay,
@@ -49,30 +54,16 @@ export interface OverlaySettings {
   showCaptionLinks: boolean;
 }
 
+@customElement('doclang-page-view-pane')
 export class DoclangPageViewPane extends DoclangPageElement {
-  private _body: HTMLElement;
-  private _settingsToggle: HTMLButtonElement;
-  private _settingsLayer: HTMLElement;
-  private _settingsScrim: HTMLButtonElement;
-  private _settingsClose: HTMLButtonElement;
-  private _zoomLabel: HTMLDivElement;
-  private _zoomInput: HTMLInputElement;
-  private _zoomReset: HTMLButtonElement;
-  private _showAllBboxes: HTMLInputElement;
-  private _layoutSubtoggles: HTMLDivElement;
-  private _showLayoutBadges: HTMLInputElement;
-  private _showReadingOrder: HTMLInputElement;
-  private _readingOrderSubtoggles: HTMLDivElement;
-  private _readingOrderArrows: HTMLInputElement;
-  private _readingOrderGlobal: HTMLInputElement;
-  private _showPictureContents: HTMLInputElement;
-  private _showTableContents: HTMLInputElement;
-  private _showFragmentLinks: HTMLInputElement;
-  private _showXrefLinks: HTMLInputElement;
-  private _showCaptionLinks: HTMLInputElement;
+  static override styles = unsafeCSS(styles);
+
+  // Imperative body ref — page image + SVG overlay live here
+  private _bodyRef: Ref<HTMLElement> = createRef();
 
   // --- overlay settings state ---
   private _settingsOpen = false;
+  private _visible = false;
   private _zoomPct = PAGE_ZOOM_DEFAULT;
   private _opts: OverlaySettings = {
     showAllBboxes: true,
@@ -94,33 +85,338 @@ export class DoclangPageViewPane extends DoclangPageElement {
   private _layoutFrame = 0;
   private _resizeObserver: ResizeObserver | null = null;
 
-  constructor() {
-    super(styles, template);
+  override connectedCallback(): void {
+    super.connectedCallback();
     this.classList.add('pane', 'pane-page-view');
-    this._body = this.q('.pane-body');
-    this._zoomLabel = this.q('.page-zoom-control');
-    this._zoomInput = this.q('.zoom-input');
-    this._zoomReset = this.q('.page-zoom-reset');
-    this._settingsToggle = this.q('.pane-settings-toggle');
-    this._settingsLayer = this.q('.viewer-settings-layer');
-    this._settingsScrim = this.q('.viewer-settings-scrim');
-    this._settingsClose = this.q('.viewer-settings-close');
-    this._showAllBboxes = this.q('.cb-all-bboxes');
-    this._layoutSubtoggles = this.q('.settings-subgroup');
-    this._showReadingOrder = this.q('.cb-reading-order');
-    this._readingOrderSubtoggles = this.q('.settings-reading-order-group');
-    this._readingOrderArrows = this.q('.cb-reading-order-arrows');
-    this._readingOrderGlobal = this.q('.cb-reading-order-global');
-    this._showPictureContents = this.q('.cb-picture-contents');
-    this._showTableContents = this.q('.cb-table-contents');
-    this._showFragmentLinks = this.q('.cb-fragment-links');
-    this._showXrefLinks = this.q('.cb-xref-links');
-    this._showCaptionLinks = this.q('.cb-caption-links');
-    this._showLayoutBadges = this.q('.cb-layout-badges');
+    this.addEventListener(
+      'doclang-panning-change',
+      this._onPanningChange as EventListener
+    );
+    this.addEventListener('mousemove', this._onMousemove as EventListener);
+    this.addEventListener('mouseleave', this._onMouseleave);
+  }
 
-    this._wirePanEvents();
-    this._wireSettingsEvents();
-    this._wireHints();
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.removeEventListener(
+      'doclang-panning-change',
+      this._onPanningChange as EventListener
+    );
+    this.removeEventListener('mousemove', this._onMousemove as EventListener);
+    this.removeEventListener('mouseleave', this._onMouseleave);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — header + settings panel (Lit); body (imperative via ref)
+  // ---------------------------------------------------------------------------
+
+  override render() {
+    const layoutEnabled = this._opts.showAllBboxes;
+    const readingOrderEnabled = layoutEnabled && this._opts.showReadingOrder;
+
+    return html`
+      <div class="pane-header">
+        <span class="pane-header-title">Original page</span>
+        <div class="pane-page-controls">
+          ${
+            this._visible
+              ? html`
+                  <div class="page-zoom-control">
+                    <label class="page-zoom-control-label">
+                      <span aria-hidden="true">Zoom</span>
+                      <input
+                        type="range"
+                        class="zoom-input"
+                        min="100"
+                        max="300"
+                        step="10"
+                        .value=${String(this._zoomPct)}
+                        aria-valuemin="100"
+                        aria-valuemax="300"
+                        aria-valuenow=${this._zoomPct}
+                        aria-label="Page zoom"
+                        @input=${this._onZoomInput}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      class="page-zoom-reset"
+                      title="Reset zoom"
+                      aria-label="Reset zoom"
+                      ?disabled=${this._zoomPct === PAGE_ZOOM_DEFAULT}
+                      @click=${() => {
+                        if (this._zoomPct !== PAGE_ZOOM_DEFAULT) this.resetZoom();
+                      }}
+                    >
+                      ${this._zoomPct}%
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    class="pane-settings-toggle"
+                    aria-expanded=${this._settingsOpen ? 'true' : 'false'}
+                    @click=${() => this.toggleSettings()}
+                  >
+                    Overlays
+                  </button>
+                `
+              : nothing
+          }
+        </div>
+      </div>
+      <div class="pane-page-layout">
+        <div
+          class="pane-body"
+          id="page-pane"
+          tabindex=${this._visible ? '0' : '-1'}
+          ${ref(this._bodyRef)}
+        ></div>
+        ${
+          this._settingsOpen
+            ? html`
+                <div class="viewer-settings-layer">
+                  <button
+                    type="button"
+                    class="viewer-settings-scrim"
+                    tabindex="-1"
+                    aria-label="Close overlays"
+                    @click=${() => this._setSettingsOpen(false)}
+                  ></button>
+                  <aside
+                    class="viewer-settings"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="page-settings-title"
+                  >
+                    <div class="viewer-settings-header">
+                      <h2 class="viewer-settings-title" id="page-settings-title">
+                        Overlays
+                      </h2>
+                      <button
+                        type="button"
+                        class="viewer-settings-close"
+                        aria-label="Close overlays"
+                        @click=${() => this._setSettingsOpen(false)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div class="viewer-settings-body">
+                      <label class="settings-option settings-option-primary">
+                        <input
+                          type="checkbox"
+                          class="cb-all-bboxes"
+                          .checked=${this._opts.showAllBboxes}
+                          @change=${(e: Event) =>
+                            this._onOptChange(
+                              'showAllBboxes',
+                              (e.target as HTMLInputElement).checked
+                            )}
+                        />
+                        <span>Layout</span>
+                      </label>
+                      <div class="settings-subgroup">
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-reading-order"
+                            .checked=${this._opts.showReadingOrder}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showReadingOrder',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Reading order</span>
+                        </label>
+                        <div class="settings-subgroup settings-reading-order-group">
+                          <label
+                            class=${classMap({
+                              'settings-option': true,
+                              'settings-option-sub': true,
+                              'settings-option-nested': true,
+                              'settings-option-disabled': !readingOrderEnabled,
+                            })}
+                          >
+                            <input
+                              type="checkbox"
+                              class="cb-reading-order-arrows"
+                              .checked=${this._opts.readingOrderArrows}
+                              ?disabled=${!readingOrderEnabled}
+                              @change=${(e: Event) =>
+                                this._onOptChange(
+                                  'readingOrderArrows',
+                                  (e.target as HTMLInputElement).checked
+                                )}
+                            />
+                            <span>Arrows</span>
+                          </label>
+                          <label
+                            class=${classMap({
+                              'settings-option': true,
+                              'settings-option-sub': true,
+                              'settings-option-nested': true,
+                              'settings-option-disabled': !readingOrderEnabled,
+                            })}
+                          >
+                            <input
+                              type="checkbox"
+                              class="cb-reading-order-global"
+                              .checked=${this._opts.readingOrderGlobal}
+                              ?disabled=${!readingOrderEnabled}
+                              @change=${(e: Event) =>
+                                this._onOptChange(
+                                  'readingOrderGlobal',
+                                  (e.target as HTMLInputElement).checked
+                                )}
+                            />
+                            <span>Global numbering</span>
+                          </label>
+                        </div>
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-picture-contents"
+                            .checked=${this._opts.showPictureContents}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showPictureContents',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Picture contents</span>
+                        </label>
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-table-contents"
+                            .checked=${this._opts.showTableContents}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showTableContents',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Table contents</span>
+                        </label>
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-fragment-links"
+                            .checked=${this._opts.showFragmentLinks}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showFragmentLinks',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Fragments</span>
+                        </label>
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-xref-links"
+                            .checked=${this._opts.showXrefLinks}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showXrefLinks',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Cross-references</span>
+                        </label>
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-caption-links"
+                            .checked=${this._opts.showCaptionLinks}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showCaptionLinks',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Captions</span>
+                        </label>
+                        <label
+                          class=${classMap({
+                            'settings-option': true,
+                            'settings-option-sub': true,
+                            'settings-option-disabled': !layoutEnabled,
+                          })}
+                        >
+                          <input
+                            type="checkbox"
+                            class="cb-layout-badges"
+                            .checked=${this._opts.showLayoutBadges}
+                            ?disabled=${!layoutEnabled}
+                            @change=${(e: Event) =>
+                              this._onOptChange(
+                                'showLayoutBadges',
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span>Badges</span>
+                        </label>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              `
+            : nothing
+        }
+      </div>
+    `;
+  }
+
+  // Wire pan events on the body element once it enters the DOM
+  override firstUpdated(): void {
+    const body = this._bodyRef.value;
+    if (body) this._wirePanEvents(body);
   }
 
   // ---------------------------------------------------------------------------
@@ -138,6 +434,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
   get suppressClick(): boolean {
     return this._suppressClick;
   }
+
   setSuppressClick(v: boolean): void {
     this._suppressClick = v;
   }
@@ -152,11 +449,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   setVisible(visible: boolean): void {
+    this._visible = visible;
     this.hidden = !visible;
-    this._settingsToggle.hidden = this.hidden;
-    this._zoomLabel.hidden = this.hidden;
-    // also update tabIndex on the body
-    this._body.tabIndex = visible ? 0 : -1;
+    this.requestUpdate();
   }
 
   /**
@@ -164,16 +459,18 @@ export class DoclangPageViewPane extends DoclangPageElement {
    * Also ensures the ResizeObserver is attached (idempotent).
    */
   refreshLayout(): void {
+    const body = this._bodyRef.value;
+    if (!body) return;
     if (!this._resizeObserver) {
       this._resizeObserver = new ResizeObserver(() => this.refreshLayout());
-      this._resizeObserver.observe(this._body);
+      this._resizeObserver.observe(body);
     }
     cancelAnimationFrame(this._layoutFrame);
     this._layoutFrame = requestAnimationFrame(() => {
       this._layoutFrame = 0;
-      const img = this._body.querySelector('.page-view img') as HTMLImageElement | null;
+      const img = body.querySelector('.page-view img') as HTMLImageElement | null;
       if (img?.naturalWidth) {
-        applyPageImageSize(img, this._body, this._overlayCtx());
+        applyPageImageSize(img, body, this._overlayCtx());
         this._updatePanCursor();
         this._syncOverlayBadgesForImg(img);
         this.dispatchEvent(
@@ -190,14 +487,14 @@ export class DoclangPageViewPane extends DoclangPageElement {
   activateZoom(pct: number): void {
     this._zoomPct = pct;
     this._layoutCache = null;
-    this._syncZoomUI();
+    this.requestUpdate();
     this._resetScroll();
   }
 
   resetZoom(): void {
     this._zoomPct = PAGE_ZOOM_DEFAULT;
     this._layoutCache = null;
-    this._syncZoomUI();
+    this.requestUpdate();
     this._resetScroll();
     this.dispatchEvent(
       new CustomEvent('doclang-zoom-change', {
@@ -225,19 +522,19 @@ export class DoclangPageViewPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   protected override _applySelection(): void {
-    for (const el of this._body.querySelectorAll(
-      '.bbox.selected, .overlay-badge.selected'
-    )) {
+    const body = this._bodyRef.value;
+    if (!body) return;
+    for (const el of body.querySelectorAll('.bbox.selected, .overlay-badge.selected')) {
       el.classList.remove('selected');
     }
     if (this._selectedId && this._docState?.hasPageView) {
-      for (const el of this._body.querySelectorAll(
+      for (const el of body.querySelectorAll(
         `[data-element-id="${this._selectedId}"]`
       )) {
         el.classList.add('selected');
       }
     }
-    const img = this._body.querySelector('.page-view img') as HTMLImageElement | null;
+    const img = body.querySelector('.page-view img') as HTMLImageElement | null;
     if (img) this._syncOverlayBadgesForImg(img);
     this._applyBboxVisibility();
   }
@@ -247,8 +544,14 @@ export class DoclangPageViewPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   protected override _renderDocument(): void {
+    const body = this._bodyRef.value;
+    if (!body) {
+      this.requestUpdate();
+      this.updateComplete.then(() => this._renderDocument());
+      return;
+    }
     const state = this._docState;
-    this._body.innerHTML = '';
+    body.innerHTML = '';
     this._layoutCache = null;
     this._selectedId = null;
     this._peerIds = new Set();
@@ -257,7 +560,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
 
     const imageUrl = state.pageImages.get(this._currentPage);
     if (!imageUrl) {
-      this._body.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
+      body.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
       return;
     }
 
@@ -272,7 +575,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
     const onImageReady = (): void => {
       if (img.dataset.layoutGeneration === String(pageNum)) return;
       img.dataset.layoutGeneration = String(pageNum);
-      applyPageImageSize(img, this._body, this._overlayCtx());
+      applyPageImageSize(img, body, this._overlayCtx());
 
       const segment = state.segments[pageNum - 1] ?? [];
       const elementIds = assignElementIds(segment);
@@ -367,7 +670,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
     img.addEventListener('load', onImageReady, { once: true });
     wrap.appendChild(img);
     port.appendChild(wrap);
-    this._body.appendChild(port);
+    body.appendChild(port);
     img.src = imageUrl;
     if (img.complete) onImageReady();
 
@@ -375,7 +678,8 @@ export class DoclangPageViewPane extends DoclangPageElement {
   }
 
   protected override _clearDocument(): void {
-    this._body.innerHTML = '';
+    const body = this._bodyRef.value;
+    if (body) body.innerHTML = '';
     this._layoutCache = null;
   }
 
@@ -384,9 +688,10 @@ export class DoclangPageViewPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   private _overlayCtx(): OverlayCtx {
+    const body = this._bodyRef.value!;
     return {
       zoomPct: this._zoomPct,
-      pane: this._body,
+      pane: body,
       layoutCache: this._layoutCache,
       setLayoutCache: c => {
         this._layoutCache = c;
@@ -429,7 +734,8 @@ export class DoclangPageViewPane extends DoclangPageElement {
   }
 
   private _applyBboxVisibility(): void {
-    if (!this._docState?.hasPageView) return;
+    const body = this._bodyRef.value;
+    if (!body || !this._docState?.hasPageView) return;
     const {
       showAllBboxes,
       showLayoutBadges,
@@ -442,7 +748,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
     const selectedId = this._selectedId;
     const peerIds = this._peerIds;
 
-    for (const el of this._body.querySelectorAll('.bbox')) {
+    for (const el of body.querySelectorAll('.bbox')) {
       el.classList.remove('related');
       const elementId = el.getAttribute('data-element-id') ?? '';
       const clickVisible = elementId === selectedId || peerIds.has(elementId);
@@ -465,7 +771,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       }
     }
 
-    for (const el of this._body.querySelectorAll('.element-badge')) {
+    for (const el of body.querySelectorAll('.element-badge')) {
       const elementId = el.getAttribute('data-element-id') ?? '';
       const clickVisible = elementId === selectedId || peerIds.has(elementId);
       if (!showAllBboxes || !showLayoutBadges) {
@@ -477,20 +783,20 @@ export class DoclangPageViewPane extends DoclangPageElement {
       else el.classList.remove('bbox-hidden');
     }
 
-    for (const el of this._body.querySelectorAll('.caption-link')) {
+    for (const el of body.querySelectorAll('.caption-link')) {
       el.classList.toggle('bbox-hidden', !showAllBboxes || !showCaptionLinks);
     }
-    for (const el of this._body.querySelectorAll('.xref-link')) {
+    for (const el of body.querySelectorAll('.xref-link')) {
       el.classList.toggle('bbox-hidden', !showAllBboxes || !showXrefLinks);
     }
-    for (const el of this._body.querySelectorAll('.fragment-link')) {
+    for (const el of body.querySelectorAll('.fragment-link')) {
       const clickVisible = Boolean(selectedId && this._isFragmentLinkRelevant(el));
       el.classList.toggle(
         'bbox-hidden',
         !(clickVisible || (showAllBboxes && showFragmentLinks))
       );
     }
-    for (const el of this._body.querySelectorAll('.fragment-nav')) {
+    for (const el of body.querySelectorAll('.fragment-nav')) {
       const elementId = el.getAttribute('data-element-id') ?? '';
       const clickVisible = elementId === selectedId || peerIds.has(elementId);
       el.classList.toggle(
@@ -498,7 +804,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
         !(clickVisible || (showAllBboxes && showFragmentLinks))
       );
     }
-    for (const el of this._body.querySelectorAll('.reading-order-badge')) {
+    for (const el of body.querySelectorAll('.reading-order-badge')) {
       const elementId = el.getAttribute('data-element-id') ?? '';
       const clickVisible = elementId === selectedId || peerIds.has(elementId);
       if (!showAllBboxes || !showReadingOrder) {
@@ -516,7 +822,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       }
       el.classList.remove('bbox-hidden');
     }
-    for (const el of this._body.querySelectorAll('.reading-order-step')) {
+    for (const el of body.querySelectorAll('.reading-order-step')) {
       el.classList.toggle(
         'bbox-hidden',
         !showAllBboxes || !showReadingOrder || !readingOrderArrows
@@ -536,9 +842,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   private _scrollPane(): HTMLElement | null {
-    return (
-      (this._body.querySelector('.page-view-port') as HTMLElement | null) ?? this._body
-    );
+    const body = this._bodyRef.value;
+    if (!body) return null;
+    return (body.querySelector('.page-view-port') as HTMLElement | null) ?? body;
   }
 
   private _isScrollable(): boolean {
@@ -556,39 +862,27 @@ export class DoclangPageViewPane extends DoclangPageElement {
   }
 
   private _updatePanCursor(): void {
-    this._body.classList.toggle('can-pan', this._isScrollable() && !this._panDrag);
+    const body = this._bodyRef.value;
+    if (body) body.classList.toggle('can-pan', this._isScrollable() && !this._panDrag);
   }
 
   private _setSettingsOpen(open: boolean): void {
     this._settingsOpen = open;
-    this._settingsLayer.hidden = !open;
-    this._settingsToggle.setAttribute('aria-expanded', String(open));
+    this.requestUpdate();
   }
 
-  private _syncZoomUI(): void {
-    this._zoomInput.value = String(this._zoomPct);
-    this._zoomInput.setAttribute('aria-valuenow', String(this._zoomPct));
-    this._zoomReset.textContent = `${this._zoomPct}%`;
-    this._zoomReset.disabled = this._zoomPct === PAGE_ZOOM_DEFAULT;
-  }
-
-  private _syncSubtoggles(): void {
-    const layoutEnabled = this._opts.showAllBboxes;
-    const readingOrderEnabled = layoutEnabled && this._opts.showReadingOrder;
-    for (const label of this._layoutSubtoggles.querySelectorAll<HTMLLabelElement>(
-      'label.settings-option-sub:not(.settings-reading-order-group label)'
-    )) {
-      label.classList.toggle('settings-option-disabled', !layoutEnabled);
-      const input = label.querySelector('input') as HTMLInputElement | null;
-      if (input) input.disabled = !layoutEnabled;
+  private _onOptChange(key: keyof OverlaySettings, value: boolean): void {
+    (this._opts as unknown as Record<string, boolean>)[key] = value;
+    // Re-render page if global numbering changed (affects step labels)
+    if (key === 'readingOrderGlobal' && this._docState) {
+      this._renderDocument();
     }
-    for (const label of this._readingOrderSubtoggles.querySelectorAll<HTMLLabelElement>(
-      'label.settings-option-sub'
-    )) {
-      label.classList.toggle('settings-option-disabled', !readingOrderEnabled);
-      const input = label.querySelector('input') as HTMLInputElement | null;
-      if (input) input.disabled = !readingOrderEnabled;
-    }
+    const body = this._bodyRef.value;
+    const img = body?.querySelector('.page-view img') as HTMLImageElement | null;
+    if (img) this._syncOverlayBadgesForImg(img);
+    this._applyBboxVisibility();
+    this._emitOverlayChange();
+    this.requestUpdate();
   }
 
   private _emitOverlayChange(): void {
@@ -601,12 +895,28 @@ export class DoclangPageViewPane extends DoclangPageElement {
     );
   }
 
+  private _onZoomInput = (e: Event): void => {
+    this._zoomPct = Math.max(
+      PAGE_ZOOM_DEFAULT,
+      Number((e.target as HTMLInputElement).value)
+    );
+    this._layoutCache = null;
+    this.requestUpdate();
+    this.dispatchEvent(
+      new CustomEvent('doclang-zoom-change', {
+        bubbles: true,
+        composed: true,
+        detail: { pct: this._zoomPct },
+      })
+    );
+  };
+
   // ---------------------------------------------------------------------------
-  // Event wiring
+  // Event wiring — pan (imperative, wired to the body element)
   // ---------------------------------------------------------------------------
 
-  private _wirePanEvents(): void {
-    this._body.addEventListener('pointerdown', (e: PointerEvent) => {
+  private _wirePanEvents(body: HTMLElement): void {
+    body.addEventListener('pointerdown', (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (!(e.target instanceof Element) || !e.target.closest('.page-view')) return;
       if (!this._isScrollable()) return;
@@ -622,15 +932,15 @@ export class DoclangPageViewPane extends DoclangPageElement {
       };
     });
 
-    this._body.addEventListener('pointermove', (e: PointerEvent) => {
+    body.addEventListener('pointermove', (e: PointerEvent) => {
       if (!this._panDrag || e.pointerId !== this._panDrag.pointerId) return;
       const dx = e.clientX - this._panDrag.startX;
       const dy = e.clientY - this._panDrag.startY;
       if (!this._panDrag.moved && Math.hypot(dx, dy) >= PAGE_PAN_DRAG_THRESHOLD) {
         this._panDrag.moved = true;
-        this._body.classList.add('is-panning');
-        this._body.classList.remove('can-pan');
-        this._body.setPointerCapture(e.pointerId);
+        body.classList.add('is-panning');
+        body.classList.remove('can-pan');
+        body.setPointerCapture(e.pointerId);
         this.dispatchEvent(
           new CustomEvent('doclang-panning-change', {
             bubbles: true,
@@ -653,7 +963,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       const wasPanning = this._panDrag.moved;
       if (wasPanning) this._suppressClick = true;
       this._panDrag = null;
-      this._body.classList.remove('is-panning');
+      body.classList.remove('is-panning');
       if (wasPanning)
         this.dispatchEvent(
           new CustomEvent('doclang-panning-change', {
@@ -662,22 +972,20 @@ export class DoclangPageViewPane extends DoclangPageElement {
             detail: { panning: false },
           })
         );
-      if (this._body.hasPointerCapture(e.pointerId))
-        this._body.releasePointerCapture(e.pointerId);
+      if (body.hasPointerCapture(e.pointerId)) body.releasePointerCapture(e.pointerId);
       this._updatePanCursor();
     };
 
-    this._body.addEventListener('pointerup', (e: PointerEvent) => endPan(e));
-    this._body.addEventListener('pointercancel', (e: PointerEvent) => endPan(e));
+    body.addEventListener('pointerup', (e: PointerEvent) => endPan(e));
+    body.addEventListener('pointercancel', (e: PointerEvent) => endPan(e));
 
     // Keyboard page navigation
-    this._body.tabIndex = 0;
-    this._body.setAttribute('role', 'region');
-    this._body.setAttribute('aria-label', 'Original page');
-    this._body.addEventListener('pointerdown', () => {
-      if (this._docState?.hasPageView) this._body.focus({ preventScroll: true });
+    body.setAttribute('role', 'region');
+    body.setAttribute('aria-label', 'Original page');
+    body.addEventListener('pointerdown', () => {
+      if (this._docState?.hasPageView) body.focus({ preventScroll: true });
     });
-    this._body.addEventListener('keydown', (e: KeyboardEvent) => {
+    body.addEventListener('keydown', (e: KeyboardEvent) => {
       if (!this._docState?.hasPageView) return;
       let dir = 0;
       switch (e.key) {
@@ -705,102 +1013,49 @@ export class DoclangPageViewPane extends DoclangPageElement {
     });
   }
 
-  private _wireSettingsEvents(): void {
-    this._settingsToggle.addEventListener('click', () => this.toggleSettings());
-    this._settingsClose.addEventListener('click', () => this._setSettingsOpen(false));
-    this._settingsScrim.addEventListener('click', () => this._setSettingsOpen(false));
+  // ---------------------------------------------------------------------------
+  // Hints
+  // ---------------------------------------------------------------------------
 
-    this._zoomInput.addEventListener('input', () => {
-      this._zoomPct = Math.max(PAGE_ZOOM_DEFAULT, Number(this._zoomInput.value));
-      this._layoutCache = null;
-      this._syncZoomUI();
-      this.dispatchEvent(
-        new CustomEvent('doclang-zoom-change', {
-          bubbles: true,
-          composed: true,
-          detail: { pct: this._zoomPct },
-        })
-      );
-    });
+  private _onPanningChange = (e: CustomEvent<{ panning: boolean }>): void => {
+    if (e.detail.panning) this._hideHint();
+  };
 
-    this._zoomReset.addEventListener('click', () => {
-      if (this._zoomPct !== PAGE_ZOOM_DEFAULT) this.resetZoom();
-    });
-
-    for (const [el, key] of [
-      [this._showAllBboxes, 'showAllBboxes'],
-      [this._showLayoutBadges, 'showLayoutBadges'],
-      [this._showReadingOrder, 'showReadingOrder'],
-      [this._readingOrderArrows, 'readingOrderArrows'],
-      [this._readingOrderGlobal, 'readingOrderGlobal'],
-      [this._showPictureContents, 'showPictureContents'],
-      [this._showTableContents, 'showTableContents'],
-      [this._showFragmentLinks, 'showFragmentLinks'],
-      [this._showXrefLinks, 'showXrefLinks'],
-      [this._showCaptionLinks, 'showCaptionLinks'],
-    ] as [HTMLInputElement, keyof OverlaySettings][]) {
-      el.addEventListener('change', () => {
-        (this._opts as unknown as Record<string, boolean>)[key] = el.checked;
-        this._syncSubtoggles();
-        // Re-render page if global numbering changed (affects step labels)
-        if (key === 'readingOrderGlobal' && this._docState) {
-          this._renderDocument();
-        }
-        const img = this._body.querySelector(
-          '.page-view img'
-        ) as HTMLImageElement | null;
-        if (img) this._syncOverlayBadgesForImg(img);
-        this._applyBboxVisibility();
-        this._emitOverlayChange();
-      });
+  private _onMousemove = (e: MouseEvent): void => {
+    if (this._panDrag?.moved) {
+      this._hideHint();
+      return;
     }
-  }
+    const navBtn = (e.target as Element).closest(
+      '.fragment-nav-btn:not(.fragment-nav-btn-disabled)'
+    );
+    if (navBtn) {
+      const hint =
+        navBtn.getAttribute('data-nav') === 'prev'
+          ? FRAGMENT_NAV_HINT_PREV
+          : FRAGMENT_NAV_HINT_NEXT;
+      this._showHint({ text: hint, clientX: e.clientX, clientY: e.clientY });
+      return;
+    }
+    const badge = (e.target as Element).closest('.element-badge[data-element-id]');
+    if (!badge || !this._docState?.idToElement) {
+      this._hideHint();
+      return;
+    }
+    const elementId = badge.getAttribute('data-element-id');
+    const xmlEl = elementId ? this._docState.idToElement.get(elementId) : null;
+    if (!xmlEl) {
+      this._hideHint();
+      return;
+    }
+    this._showHint({
+      html: this._elementHeadTooltipHtml(xmlEl, this._docState.defaultResolution),
+      clientX: e.clientX,
+      clientY: e.clientY,
+    });
+  };
 
-  private _wireHints(): void {
-    this.addEventListener('doclang-panning-change', (e: Event) => {
-      if ((e as CustomEvent<{ panning: boolean }>).detail.panning) {
-        this._hideHint();
-      }
-    });
-    this.addEventListener('mousemove', e => {
-      if (this._panDrag?.moved) {
-        this._hideHint();
-        return;
-      }
-      const navBtn = (e.target as Element).closest(
-        '.fragment-nav-btn:not(.fragment-nav-btn-disabled)'
-      );
-      if (navBtn) {
-        const hint =
-          navBtn.getAttribute('data-nav') === 'prev'
-            ? FRAGMENT_NAV_HINT_PREV
-            : FRAGMENT_NAV_HINT_NEXT;
-        this._showHint({
-          text: hint,
-          clientX: (e as MouseEvent).clientX,
-          clientY: (e as MouseEvent).clientY,
-        });
-        return;
-      }
-      const badge = (e.target as Element).closest('.element-badge[data-element-id]');
-      if (!badge || !this._docState?.idToElement) {
-        this._hideHint();
-        return;
-      }
-      const elementId = badge.getAttribute('data-element-id');
-      const xmlEl = elementId ? this._docState.idToElement.get(elementId) : null;
-      if (!xmlEl) {
-        this._hideHint();
-        return;
-      }
-      this._showHint({
-        html: this._elementHeadTooltipHtml(xmlEl, this._docState.defaultResolution),
-        clientX: (e as MouseEvent).clientX,
-        clientY: (e as MouseEvent).clientY,
-      });
-    });
-    this.addEventListener('mouseleave', () => this._hideHint());
-  }
+  private _onMouseleave = (): void => this._hideHint();
 
   private _showHint(detail: {
     html?: string;
@@ -944,5 +1199,3 @@ export class DoclangPageViewPane extends DoclangPageElement {
     return rows;
   }
 }
-
-customElements.define('doclang-page-view-pane', DoclangPageViewPane);

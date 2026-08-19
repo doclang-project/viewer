@@ -1,8 +1,12 @@
 /** <doclang-markup-pane> — DocLang XML markup view */
 
+import { html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { unsafeCSS } from 'lit';
+import { ref, createRef } from 'lit/directives/ref.js';
+import type { Ref } from 'lit/directives/ref.js';
 import { DoclangPageElement } from '../base/page-element';
 import styles from './markup-pane.css?inline';
-import template from './markup-pane.html?raw';
 import {
   assignElementIds,
   invertElementIds,
@@ -11,14 +15,30 @@ import {
 } from '../../doclang/document';
 import { buildMarkupView, VIRTUAL_TEXT_TAG_HINT } from './markup';
 
+@customElement('doclang-markup-pane')
 export class DoclangMarkupPane extends DoclangPageElement {
-  private _body: HTMLElement;
+  static override styles = unsafeCSS(styles);
 
-  constructor() {
-    super(styles, template);
+  private _bodyRef: Ref<HTMLElement> = createRef();
+
+  override connectedCallback(): void {
+    super.connectedCallback();
     this.classList.add('pane', 'pane-markup');
-    this._body = this.q('.pane-body');
-    this._wireHints();
+    this.addEventListener('mousemove', this._onMousemove);
+    this.addEventListener('mouseleave', this._onMouseleave);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.removeEventListener('mousemove', this._onMousemove);
+    this.removeEventListener('mouseleave', this._onMouseleave);
+  }
+
+  override render() {
+    return html`
+      <div class="pane-header">DocLang</div>
+      <div class="pane-body" id="markup-pane" ${ref(this._bodyRef)}></div>
+    `;
   }
 
   setVisible(visible: boolean): void {
@@ -26,14 +46,16 @@ export class DoclangMarkupPane extends DoclangPageElement {
   }
 
   protected override _applySelection(): void {
-    for (const el of this._body.querySelectorAll('.markup-el.selected')) {
+    const body = this._bodyRef.value;
+    if (!body) return;
+    for (const el of body.querySelectorAll('.markup-el.selected')) {
       el.classList.remove('selected');
     }
     if (!this._selectedId) return;
     const target =
-      this._body.querySelector(
+      body.querySelector(
         `.markup-el-virtual-text[data-element-id="${this._selectedId}"]`
-      ) ?? this._body.querySelector(`[data-element-id="${this._selectedId}"]`);
+      ) ?? body.querySelector(`[data-element-id="${this._selectedId}"]`);
     if (target) {
       target.classList.add('selected');
       target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -41,8 +63,15 @@ export class DoclangMarkupPane extends DoclangPageElement {
   }
 
   protected override _renderDocument(): void {
+    const body = this._bodyRef.value;
+    if (!body) {
+      // Body not yet in DOM — re-render after Lit updates
+      this.requestUpdate();
+      this.updateComplete.then(() => this._renderDocument());
+      return;
+    }
     const state = this._docState;
-    this._body.innerHTML = '';
+    body.innerHTML = '';
     if (!state) return;
 
     const segment = state.segments[this._currentPage - 1] ?? [];
@@ -51,7 +80,7 @@ export class DoclangMarkupPane extends DoclangPageElement {
     state.idToElement = invertElementIds(elementIds);
 
     if (segmentHasMarkup(segment)) {
-      this._body.appendChild(
+      body.appendChild(
         buildMarkupView(segment, elementIds, id =>
           this.dispatchEvent(
             new CustomEvent('doclang-element-select', {
@@ -63,34 +92,34 @@ export class DoclangMarkupPane extends DoclangPageElement {
         )
       );
     } else {
-      this._body.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+      body.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
     }
   }
 
   protected override _clearDocument(): void {
-    this._body.innerHTML = '';
+    const body = this._bodyRef.value;
+    if (body) body.innerHTML = '';
   }
 
-  private _wireHints(): void {
-    this.addEventListener('mousemove', e => {
-      if (!(e.target as Element).closest('.markup-ghost-tag-part')) {
-        this._hideHint();
-        return;
-      }
-      this.dispatchEvent(
-        new CustomEvent('doclang-hint', {
-          bubbles: true,
-          composed: true,
-          detail: {
-            text: VIRTUAL_TEXT_TAG_HINT,
-            clientX: (e as MouseEvent).clientX,
-            clientY: (e as MouseEvent).clientY,
-          },
-        })
-      );
-    });
-    this.addEventListener('mouseleave', () => this._hideHint());
-  }
+  private _onMousemove = (e: MouseEvent): void => {
+    if (!(e.target as Element).closest('.markup-ghost-tag-part')) {
+      this._hideHint();
+      return;
+    }
+    this.dispatchEvent(
+      new CustomEvent('doclang-hint', {
+        bubbles: true,
+        composed: true,
+        detail: {
+          text: VIRTUAL_TEXT_TAG_HINT,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        },
+      })
+    );
+  };
+
+  private _onMouseleave = (): void => this._hideHint();
 
   private _hideHint(): void {
     this.dispatchEvent(
@@ -98,5 +127,3 @@ export class DoclangMarkupPane extends DoclangPageElement {
     );
   }
 }
-
-customElements.define('doclang-markup-pane', DoclangMarkupPane);

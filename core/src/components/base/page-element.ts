@@ -21,14 +21,14 @@
  * `page="3"` in HTML or `component.page = 3` in JS both trigger a re-render.
  */
 
-import { DoclangHTMLElement } from './element';
+import { LitElement } from 'lit';
 import { buildDocumentState } from '../../doclang/document';
 import { elementThreadId } from '../../doclang/dom';
 import type { DocumentState } from '../../doclang/types';
 
-export abstract class DoclangPageElement extends DoclangHTMLElement {
-  static get observedAttributes(): string[] {
-    return ['src', 'page', 'selected'];
+export abstract class DoclangPageElement extends LitElement {
+  static override get observedAttributes(): string[] {
+    return [...super.observedAttributes, 'src', 'page', 'selected'];
   }
 
   protected _docState: DocumentState | null = null;
@@ -97,7 +97,8 @@ export abstract class DoclangPageElement extends DoclangHTMLElement {
   // Lifecycle — src / page attributes and inline script
   // ---------------------------------------------------------------------------
 
-  connectedCallback(): void {
+  override connectedCallback(): void {
+    super.connectedCallback();
     // Pick up inline <script type="application/doclang+xml"> if present and
     // no document has been set programmatically and no src attribute exists.
     if (!this._docState && !this.hasAttribute('src')) {
@@ -111,7 +112,8 @@ export abstract class DoclangPageElement extends DoclangHTMLElement {
     }
   }
 
-  attributeChangedCallback(name: string, _old: string, next: string): void {
+  override attributeChangedCallback(name: string, _old: string, next: string): void {
+    super.attributeChangedCallback(name, _old, next);
     if (name === 'src' && next) {
       this._loadFromUrl(next);
     }
