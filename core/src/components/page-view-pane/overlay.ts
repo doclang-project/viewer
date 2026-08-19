@@ -1,17 +1,3 @@
-import {
-  OVERLAY_BADGE_FONT_SIZE,
-  OVERLAY_BADGE_PAD_X,
-  OVERLAY_BADGE_PAD_Y,
-  OVERLAY_BADGE_RADIUS_SCREEN_PX,
-  OVERLAY_REF_IMAGE_WIDTH,
-  OVERLAY_REF_IMAGE_HEIGHT,
-  PAGE_VIEW_BORDER_PX,
-  PAGE_ZOOM_DEFAULT,
-  FRAGMENT_LINK_LABEL_CROSS_PAGE,
-  FRAGMENT_LINK_LABEL_SAME_PAGE,
-  FRAGMENT_NAV_HINT_PREV,
-  FRAGMENT_NAV_HINT_NEXT,
-} from '../../constants';
 import { layerClassForValue } from '../../doclang/dom';
 import type {
   BoundingBox,
@@ -24,6 +10,20 @@ import type {
   OverlayLinkOptions,
   PageLayoutCache,
 } from '../../doclang/types';
+
+const OVERLAY_BADGE_FONT_SIZE = 11 * 1.5 * 0.8;
+const OVERLAY_BADGE_PAD_X = 3;
+const OVERLAY_BADGE_PAD_Y = 2;
+const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
+/** Demo page size; overlay lengths are calibrated to match pre-fix sizing on these images. */
+const OVERLAY_REF_IMAGE_WIDTH = 1224;
+const OVERLAY_REF_IMAGE_HEIGHT = 1584;
+export const PAGE_VIEW_BORDER_PX = 2;
+export const PAGE_ZOOM_DEFAULT = 100;
+export const FRAGMENT_NAV_HINT_PREV = 'Previous fragment';
+export const FRAGMENT_NAV_HINT_NEXT = 'Next fragment';
+const FRAGMENT_LINK_LABEL_CROSS_PAGE = 'cross-page content';
+const FRAGMENT_LINK_LABEL_SAME_PAGE = 'fragmented content';
 
 // ---------------------------------------------------------------------------
 // Overlay box CSS class helpers

@@ -1,11 +1,7 @@
 import {
-  LONG_EMBEDDED_URI_PREVIEW_LENGTH,
-  VIRTUAL_TEXT_TAG_HINT,
   HEAD_TAGS,
   CELL_SPAN_TAGS,
   OTSL_CONTAINER_TAGS,
-} from '../../constants';
-import {
   isTextLikeNode,
   isWhitespaceOnlyText,
   markupAttributes,
@@ -18,6 +14,10 @@ import {
   isCellToken,
   isSemanticElement,
 } from '../../doclang/dom';
+
+const LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
+export const VIRTUAL_TEXT_TAG_HINT =
+  'DocLang virtual <text>; wrapping tags not included in source';
 
 // ---------------------------------------------------------------------------
 // Truncatable embedded URI helpers

@@ -1,9 +1,9 @@
 /** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
 
-import { DoclangHTMLElement } from '../base/base';
+import { DoclangHTMLElement } from '../base/element';
 import styles from './toolbar.css?inline';
 import template from './toolbar.html?raw';
-import { OPEN_FILE_HINT } from '../../constants';
+const OPEN_FILE_HINT = `Open a DocLang file (.dclx, .dclg)`;
 
 export class DoclangToolbar extends DoclangHTMLElement {
   private _toolbarOptionsBtn: HTMLButtonElement;

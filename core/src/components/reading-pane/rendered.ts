@@ -1,15 +1,6 @@
 import {
-  RENDER_BLOCK_TAGS,
-  RENDER_FORMAT_TAGS,
-  FORMAT_HTML_TAG,
   HEAD_TAGS,
   CELL_SPAN_TAGS,
-  SAFE_DATA_IMAGE_RE,
-  MAX_DATA_IMAGE_URI_LENGTH,
-  INVALID_PICTURE_SRC,
-  PICTURE_UNAVAILABLE_ALT,
-} from '../../constants';
-import {
   isTextLikeNode,
   isWhitespaceOnlyText,
   localName,
@@ -27,6 +18,49 @@ import {
   isSemanticElement,
 } from '../../doclang/dom';
 import type { RenderCtx, OtslCell, ParsedOtslCell } from '../../doclang/types';
+
+const RENDER_BLOCK_TAGS = new Set([
+  'text',
+  'heading',
+  'field_heading',
+  'footnote',
+  'page_header',
+  'page_footer',
+  'list',
+  'code',
+  'formula',
+  'picture',
+  'group',
+  'field_region',
+  'field_item',
+  'table',
+  'index',
+  'tabular',
+]);
+const RENDER_FORMAT_TAGS = new Set([
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'superscript',
+  'subscript',
+  'handwriting',
+  'rtl',
+  'content',
+]);
+const FORMAT_HTML_TAG: Record<string, string> = {
+  bold: 'strong',
+  italic: 'em',
+  underline: 'u',
+  strikethrough: 's',
+  superscript: 'sup',
+  subscript: 'sub',
+};
+const PICTURE_UNAVAILABLE_ALT = 'Picture asset not available';
+const INVALID_PICTURE_SRC = 'data:image/png;base64,NOT_A_VALID_IMAGE';
+/** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
+const MAX_DATA_IMAGE_URI_LENGTH = 2 * 1024 * 1024; // 2 MiB
 
 // ---------------------------------------------------------------------------
 // Helpers

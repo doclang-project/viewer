@@ -1,6 +1,6 @@
 /** <doclang-page-nav> — page navigation (prev/next buttons + page indicator) */
 
-import { DoclangHTMLElement } from '../base/base';
+import { DoclangHTMLElement } from '../base/element';
 import styles from './page-nav.css?inline';
 import template from './page-nav.html?raw';
 

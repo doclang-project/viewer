@@ -1,13 +1,63 @@
-import {
-  DOCLANG_NS,
-  HEAD_TAGS,
-  CELL_TOKENS,
-  CELL_CONTENT_TAGS,
-  CELL_SPAN_TAGS,
-  OTSL_CONTAINER_TAGS,
-  SEMANTIC_TAGS,
-} from '../constants';
 import type { ParsedElementHead } from './types';
+
+export const DOCLANG_NS = 'https://www.doclang.ai/ns/v0';
+export const HEAD_TAGS = new Set([
+  'label',
+  'thread',
+  'xref',
+  'href',
+  'layer',
+  'location',
+  'caption',
+  'description',
+  'summary',
+  'custom',
+]);
+export const SEMANTIC_TAGS = new Set([
+  'text',
+  'heading',
+  'footnote',
+  'page_header',
+  'page_footer',
+  'field_region',
+  'list',
+  'table',
+  'index',
+  'formula',
+  'code',
+  'picture',
+  'marker',
+  'group',
+  'field_heading',
+  'field_item',
+  'key',
+  'value',
+  'hint',
+  'caption',
+  'page_break',
+]);
+export const CELL_TOKENS = new Set([
+  'fcel',
+  'ecel',
+  'ched',
+  'rhed',
+  'corn',
+  'srow',
+  'lcel',
+  'ucel',
+  'xcel',
+  'nl',
+]);
+export const CELL_CONTENT_TAGS = new Set([
+  'fcel',
+  'ecel',
+  'ched',
+  'rhed',
+  'corn',
+  'srow',
+]);
+export const CELL_SPAN_TAGS = new Set(['lcel', 'ucel', 'xcel']);
+export const OTSL_CONTAINER_TAGS = new Set(['table', 'index', 'tabular']);
 
 export function isTextLikeNode(node: Node): boolean {
   return node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE;

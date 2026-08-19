@@ -1,12 +1,11 @@
 /** <doclang-reading-pane> — reading/rendered view with layers settings panel */
 
-import { DoclangPageElement } from '../base/document-base';
+import { DoclangPageElement } from '../base/page-element';
 import styles from './reading-pane.css?inline';
 import template from './reading-pane.html?raw';
-import { segmentHasMarkup, assignElementIds } from '../../doclang/document';
+import { segmentHasMarkup, assignElementIds, NO_MARKUP } from '../../doclang/document';
 import { buildRenderedView, applyReadingLayerClasses } from './rendered';
 import { elementThreadId } from '../../doclang/dom';
-import { NO_MARKUP } from '../../constants';
 
 export class DoclangReadingPane extends DoclangPageElement {
   private _body: HTMLElement;

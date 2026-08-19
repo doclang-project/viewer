@@ -1,15 +1,15 @@
 /** <doclang-markup-pane> — DocLang XML markup view */
 
-import { DoclangPageElement } from '../base/document-base';
+import { DoclangPageElement } from '../base/page-element';
 import styles from './markup-pane.css?inline';
 import template from './markup-pane.html?raw';
 import {
   assignElementIds,
   invertElementIds,
   segmentHasMarkup,
+  NO_MARKUP,
 } from '../../doclang/document';
-import { buildMarkupView } from './markup';
-import { NO_MARKUP, VIRTUAL_TEXT_TAG_HINT } from '../../constants';
+import { buildMarkupView, VIRTUAL_TEXT_TAG_HINT } from './markup';
 
 export class DoclangMarkupPane extends DoclangPageElement {
   private _body: HTMLElement;

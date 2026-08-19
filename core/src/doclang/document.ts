@@ -1,12 +1,8 @@
 import {
-  HEAD_TAGS,
-  OTSL_CONTAINER_TAGS,
-  CELL_SPAN_TAGS,
-  RENDER_FORMAT_TAGS,
-  PAGE_IMAGE_RE,
   DOCLANG_NS,
-} from '../constants';
-import {
+  HEAD_TAGS,
+  CELL_SPAN_TAGS,
+  OTSL_CONTAINER_TAGS,
   childElements,
   localName,
   headLocations,
@@ -40,6 +36,20 @@ import type {
 } from './types';
 import { extractArchiveFromZipBuffer } from './zip';
 import { isPictureContentElement, isTableContentElement } from './dom';
+
+export const PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
+export const NO_MARKUP = '(No markup to be shown.)';
+const RENDER_FORMAT_TAGS = new Set([
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'superscript',
+  'subscript',
+  'handwriting',
+  'rtl',
+  'content',
+]);
 
 // ---------------------------------------------------------------------------
 // Document XML parsing helpers

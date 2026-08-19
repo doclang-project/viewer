@@ -19,7 +19,7 @@
 		return target;
 	};
 	//#endregion
-	//#region src/components/base/base.ts
+	//#region src/components/base/element.ts
 	/** Base class for all doclang web components. */
 	var DoclangHTMLElement = class extends HTMLElement {
 		shadow;
@@ -191,153 +191,11 @@
 	var toolbar_default$1 = ":host {\n  display: contents;\n}\n.toolbar {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-wrap: wrap;\n  grid-column: 3;\n  justify-self: end;\n}\n.header-divider {\n  flex-shrink: 0;\n  align-self: center;\n  width: 1px;\n  height: 1.125rem;\n  background: var(--border);\n}\n.toolbar-options-wrap {\n  position: relative;\n}\n/* Menu/control triggers */\n.toolbar-options-btn {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.375rem;\n  padding: 0.35rem 0.45rem 0.35rem 0.55rem;\n  font-size: 0.8125rem;\n  line-height: 1.2;\n  font: inherit;\n}\n.toolbar-options-btn::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.32rem;\n  height: 0.32rem;\n  margin-left: 0.3rem;\n  margin-top: -0.14em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.toolbar-options-btn:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.toolbar-options-btn[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.toolbar-options-btn:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.toolbar-options-panel {\n  position: absolute;\n  top: calc(100% + 0.35rem);\n  right: 0;\n  z-index: 30;\n  min-width: 11rem;\n  padding: 0.5rem 0;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--panel);\n  box-shadow: 0 0.5rem 1.25rem color-mix(in srgb, var(--text) 12%, transparent);\n}\n.toolbar-options-panel[hidden] {\n  display: none;\n}\n.toolbar-options-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.75rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  font-family: var(--font-ui);\n}\n.toolbar-options-item:hover {\n  background: color-mix(in srgb, var(--accent) 6%, var(--panel));\n}\n.toolbar-options-item input {\n  margin: 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.toolbar-options-item-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.toolbar-options-item-disabled input {\n  cursor: not-allowed;\n}\n.toolbar-options-divider {\n  margin: 0.35rem 0;\n  border-top: 1px solid var(--border);\n}\n.toolbar-options-reset {\n  display: block;\n  width: 100%;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0.35rem 0.75rem;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: var(--text);\n  font: inherit;\n  font-size: 0.875rem;\n  text-align: left;\n  cursor: pointer;\n}\n.toolbar-options-reset:hover:not(:disabled) {\n  background: color-mix(in srgb, var(--accent) 6%, var(--panel));\n  color: var(--accent);\n}\n.toolbar-options-reset:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.toolbar-file-group {\n  display: inline-flex;\n  align-items: center;\n}\nbutton,\nlabel.file-btn {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--panel);\n  color: var(--text);\n  border-radius: 0.375rem;\n  padding: 0.4rem 0.75rem;\n  font: inherit;\n  font-size: 0.875rem;\n  cursor: pointer;\n}\nbutton:hover,\nlabel.file-btn:hover {\n  border-color: var(--accent);\n}\nbutton:disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\nlabel.file-btn input {\n  display: none;\n}\n.header-site-link {\n  color: var(--muted);\n  font-size: 0.875rem;\n  text-decoration: none;\n  white-space: nowrap;\n}\n.header-site-link:hover {\n  color: var(--accent);\n  text-decoration: underline;\n}\n.header-site-link:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  border-radius: 0.125rem;\n}\n";
 	//#endregion
 	//#region src/components/toolbar/toolbar.html?raw
-	var toolbar_default = "<div class=\"toolbar\">\n  <div class=\"toolbar-options-wrap\">\n    <button\n      type=\"button\"\n      class=\"toolbar-options-btn\"\n      aria-expanded=\"false\"\n      aria-haspopup=\"true\"\n    >\n      Views\n    </button>\n    <div class=\"toolbar-options-panel\" role=\"menu\" hidden>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-file-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Files</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-page-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Original page</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-markup-pane\" role=\"menuitemcheckbox\" checked />\n        <span>DocLang</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input\n          type=\"checkbox\"\n          class=\"cb-reading-pane\"\n          role=\"menuitemcheckbox\"\n          checked\n        />\n        <span>Reading view</span>\n      </label>\n      <div class=\"toolbar-options-divider\" role=\"separator\"></div>\n      <button type=\"button\" class=\"toolbar-options-reset\" role=\"menuitem\">\n        Reset views\n      </button>\n    </div>\n  </div>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <span class=\"toolbar-file-group\">\n    <label class=\"file-btn\">\n      Open file\n      <input\n        type=\"file\"\n        class=\"input-archive\"\n        multiple\n        accept=\".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml\"\n      />\n    </label>\n  </span>\n  <button type=\"button\" class=\"btn-demo\">Load demo</button>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <a href=\"https://doclang.ai/\" class=\"header-site-link\">doclang.ai</a>\n</div>\n", SUPPORTED_FILE_EXTENSIONS, OPEN_FILE_HINT, VIRTUAL_TEXT_TAG_HINT, FRAGMENT_LINK_LABEL_CROSS_PAGE, FRAGMENT_LINK_LABEL_SAME_PAGE, FRAGMENT_NAV_HINT_PREV, FRAGMENT_NAV_HINT_NEXT, PAGE_IMAGE_RE, NO_MARKUP, NO_IMAGE, FILE_THUMB_PLACEHOLDER_SVG, PICTURE_UNAVAILABLE_ALT, INVALID_PICTURE_SRC, SAFE_DATA_IMAGE_RE, HEAD_TAGS, SEMANTIC_TAGS, CELL_TOKENS, CELL_CONTENT_TAGS, CELL_SPAN_TAGS, OTSL_CONTAINER_TAGS, RENDER_BLOCK_TAGS, RENDER_FORMAT_TAGS, FORMAT_HTML_TAG, OVERLAY_BADGE_FONT_SIZE, OVERLAY_REF_IMAGE_WIDTH, OVERLAY_REF_IMAGE_HEIGHT, LAYOUT_STORAGE_KEY, PANE_MIN_RATIO, PANE_KEYS, DEFAULT_PANE_RATIOS, DEFAULT_USER_PANE_VISIBLE, LAYOUT_STACK_BREAKPOINT_PX;
-	var init_constants = __esmMin((() => {
-		SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
-		OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
-		VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
-		FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
-		FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
-		FRAGMENT_NAV_HINT_PREV = "Previous fragment";
-		FRAGMENT_NAV_HINT_NEXT = "Next fragment";
-		PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
-		NO_MARKUP = "(No markup to be shown.)";
-		NO_IMAGE = "(No page image available.)";
-		FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
-		PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
-		INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
-		SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
-		HEAD_TAGS = /* @__PURE__ */ new Set([
-			"label",
-			"thread",
-			"xref",
-			"href",
-			"layer",
-			"location",
-			"caption",
-			"description",
-			"summary",
-			"custom"
-		]);
-		SEMANTIC_TAGS = /* @__PURE__ */ new Set([
-			"text",
-			"heading",
-			"footnote",
-			"page_header",
-			"page_footer",
-			"field_region",
-			"list",
-			"table",
-			"index",
-			"formula",
-			"code",
-			"picture",
-			"marker",
-			"group",
-			"field_heading",
-			"field_item",
-			"key",
-			"value",
-			"hint",
-			"caption",
-			"page_break"
-		]);
-		CELL_TOKENS = /* @__PURE__ */ new Set([
-			"fcel",
-			"ecel",
-			"ched",
-			"rhed",
-			"corn",
-			"srow",
-			"lcel",
-			"ucel",
-			"xcel",
-			"nl"
-		]);
-		CELL_CONTENT_TAGS = /* @__PURE__ */ new Set([
-			"fcel",
-			"ecel",
-			"ched",
-			"rhed",
-			"corn",
-			"srow"
-		]);
-		CELL_SPAN_TAGS = /* @__PURE__ */ new Set([
-			"lcel",
-			"ucel",
-			"xcel"
-		]);
-		OTSL_CONTAINER_TAGS = /* @__PURE__ */ new Set([
-			"table",
-			"index",
-			"tabular"
-		]);
-		RENDER_BLOCK_TAGS = /* @__PURE__ */ new Set([
-			"text",
-			"heading",
-			"field_heading",
-			"footnote",
-			"page_header",
-			"page_footer",
-			"list",
-			"code",
-			"formula",
-			"picture",
-			"group",
-			"field_region",
-			"field_item",
-			"table",
-			"index",
-			"tabular"
-		]);
-		RENDER_FORMAT_TAGS = /* @__PURE__ */ new Set([
-			"bold",
-			"italic",
-			"underline",
-			"strikethrough",
-			"superscript",
-			"subscript",
-			"handwriting",
-			"rtl",
-			"content"
-		]);
-		FORMAT_HTML_TAG = {
-			bold: "strong",
-			italic: "em",
-			underline: "u",
-			strikethrough: "s",
-			superscript: "sup",
-			subscript: "sub"
-		};
-		OVERLAY_BADGE_FONT_SIZE = 16.5 * .8;
-		OVERLAY_REF_IMAGE_WIDTH = 1224;
-		OVERLAY_REF_IMAGE_HEIGHT = 1584;
-		LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
-		PANE_MIN_RATIO = .12;
-		PANE_KEYS = [
-			"file",
-			"page",
-			"markup",
-			"reading"
-		];
-		DEFAULT_PANE_RATIOS = [
-			1,
-			1,
-			1,
-			1
-		];
-		DEFAULT_USER_PANE_VISIBLE = {
-			file: false,
-			page: true,
-			markup: true,
-			reading: true
-		};
-		LAYOUT_STACK_BREAKPOINT_PX = 1200;
-	}));
+	var toolbar_default = "<div class=\"toolbar\">\n  <div class=\"toolbar-options-wrap\">\n    <button\n      type=\"button\"\n      class=\"toolbar-options-btn\"\n      aria-expanded=\"false\"\n      aria-haspopup=\"true\"\n    >\n      Views\n    </button>\n    <div class=\"toolbar-options-panel\" role=\"menu\" hidden>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-file-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Files</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-page-pane\" role=\"menuitemcheckbox\" checked />\n        <span>Original page</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input type=\"checkbox\" class=\"cb-markup-pane\" role=\"menuitemcheckbox\" checked />\n        <span>DocLang</span>\n      </label>\n      <label class=\"toolbar-options-item\">\n        <input\n          type=\"checkbox\"\n          class=\"cb-reading-pane\"\n          role=\"menuitemcheckbox\"\n          checked\n        />\n        <span>Reading view</span>\n      </label>\n      <div class=\"toolbar-options-divider\" role=\"separator\"></div>\n      <button type=\"button\" class=\"toolbar-options-reset\" role=\"menuitem\">\n        Reset views\n      </button>\n    </div>\n  </div>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <span class=\"toolbar-file-group\">\n    <label class=\"file-btn\">\n      Open file\n      <input\n        type=\"file\"\n        class=\"input-archive\"\n        multiple\n        accept=\".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml\"\n      />\n    </label>\n  </span>\n  <button type=\"button\" class=\"btn-demo\">Load demo</button>\n  <span class=\"header-divider\" aria-hidden=\"true\"></span>\n  <a href=\"https://doclang.ai/\" class=\"header-site-link\">doclang.ai</a>\n</div>\n";
 	//#endregion
 	//#region src/components/toolbar/toolbar.ts
 	/** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
-	init_constants();
+	var OPEN_FILE_HINT = `Open a DocLang file (.dclx, .dclg)`;
 	var DoclangToolbar = class extends DoclangHTMLElement {
 		_toolbarOptionsBtn;
 		_toolbarOptionsPanel;
@@ -488,7 +346,7 @@
 	//#endregion
 	//#region src/components/file-pane/file-pane.ts
 	/** <doclang-file-pane> — file list sidebar */
-	init_constants();
+	var FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 	var DoclangFilePane = class extends DoclangHTMLElement {
 		_closeAllBtn;
 		_body;
@@ -889,9 +747,73 @@
 		}
 		return false;
 	}
-	var ELEMENT_LAYERS;
+	var HEAD_TAGS, SEMANTIC_TAGS, CELL_TOKENS, CELL_CONTENT_TAGS, CELL_SPAN_TAGS, OTSL_CONTAINER_TAGS, ELEMENT_LAYERS;
 	var init_dom = __esmMin((() => {
-		init_constants();
+		HEAD_TAGS = /* @__PURE__ */ new Set([
+			"label",
+			"thread",
+			"xref",
+			"href",
+			"layer",
+			"location",
+			"caption",
+			"description",
+			"summary",
+			"custom"
+		]);
+		SEMANTIC_TAGS = /* @__PURE__ */ new Set([
+			"text",
+			"heading",
+			"footnote",
+			"page_header",
+			"page_footer",
+			"field_region",
+			"list",
+			"table",
+			"index",
+			"formula",
+			"code",
+			"picture",
+			"marker",
+			"group",
+			"field_heading",
+			"field_item",
+			"key",
+			"value",
+			"hint",
+			"caption",
+			"page_break"
+		]);
+		CELL_TOKENS = /* @__PURE__ */ new Set([
+			"fcel",
+			"ecel",
+			"ched",
+			"rhed",
+			"corn",
+			"srow",
+			"lcel",
+			"ucel",
+			"xcel",
+			"nl"
+		]);
+		CELL_CONTENT_TAGS = /* @__PURE__ */ new Set([
+			"fcel",
+			"ecel",
+			"ched",
+			"rhed",
+			"corn",
+			"srow"
+		]);
+		CELL_SPAN_TAGS = /* @__PURE__ */ new Set([
+			"lcel",
+			"ucel",
+			"xcel"
+		]);
+		OTSL_CONTAINER_TAGS = /* @__PURE__ */ new Set([
+			"table",
+			"index",
+			"tabular"
+		]);
 		ELEMENT_LAYERS = /* @__PURE__ */ new Set([
 			"body",
 			"background",
@@ -907,7 +829,7 @@
 		const eocdOffset = findEndOfCentralDirectory(bytes);
 		const entryCount = view.getUint16(eocdOffset + 10, true);
 		const centralDirOffset = view.getUint32(eocdOffset + 16, true);
-		if (entryCount > 5e3) throw new Error("ZIP archive has too many entries");
+		if (entryCount > ZIP_MAX_ENTRIES) throw new Error("ZIP archive has too many entries");
 		if (centralDirOffset >= bytes.length) throw new Error("Invalid ZIP central directory offset");
 		const entries = [];
 		let offset = centralDirOffset;
@@ -928,9 +850,9 @@
 			if (offset > bytes.length) throw new Error("Invalid ZIP central directory");
 			if (!name || name.endsWith("/") || isIgnoredArchiveEntry(name)) continue;
 			if (shouldExtract && !shouldExtract(name)) continue;
-			if (compressedSize > 134217728 || uncompressedSize > 134217728) throw new Error(`ZIP entry exceeds size limit: ${name}`);
-			if (compressedSize > 0 && uncompressedSize > 0 && uncompressedSize / compressedSize > 100) throw new Error(`ZIP entry compression ratio exceeds limit: ${name}`);
-			if (totalUncompressed + uncompressedSize > 536870912) throw new Error("ZIP archive exceeds total uncompressed size limit");
+			if (compressedSize > ZIP_MAX_ENTRY_COMPRESSED_BYTES || uncompressedSize > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) throw new Error(`ZIP entry exceeds size limit: ${name}`);
+			if (compressedSize > 0 && uncompressedSize > 0 && uncompressedSize / compressedSize > ZIP_MAX_COMPRESSION_RATIO) throw new Error(`ZIP entry compression ratio exceeds limit: ${name}`);
+			if (totalUncompressed + uncompressedSize > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) throw new Error("ZIP archive exceeds total uncompressed size limit");
 			if (localHeaderOffset + 30 > bytes.length || view.getUint32(localHeaderOffset, true) !== 67324752) throw new Error(`Invalid ZIP local header: ${name}`);
 			const localNameLength = view.getUint16(localHeaderOffset + 26, true);
 			const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
@@ -938,7 +860,7 @@
 			if (dataOffset + compressedSize > bytes.length) throw new Error(`ZIP entry data out of bounds: ${name}`);
 			const data = await decompressZipEntry(bytes.subarray(dataOffset, dataOffset + compressedSize), compression, uncompressedSize);
 			totalUncompressed += data.length;
-			if (totalUncompressed > 536870912) throw new Error("ZIP archive exceeds total uncompressed size limit");
+			if (totalUncompressed > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) throw new Error("ZIP archive exceeds total uncompressed size limit");
 			entries.push({
 				name,
 				data
@@ -961,7 +883,7 @@
 	}
 	async function decompressZipEntry(data, method, uncompressedSize) {
 		if (method === 0) {
-			if (data.length > 134217728) throw new Error("ZIP entry exceeds size limit");
+			if (data.length > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) throw new Error("ZIP entry exceeds size limit");
 			return data;
 		}
 		if (method === 8) {
@@ -973,8 +895,8 @@
 					const { done, value } = await reader.read();
 					if (done) break;
 					total += value.byteLength;
-					if (total > 134217728) throw new Error("ZIP entry exceeds size limit");
-					if (data.length > 0 && total / data.length > 100) throw new Error("ZIP entry compression ratio exceeds limit");
+					if (total > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) throw new Error("ZIP entry exceeds size limit");
+					if (data.length > 0 && total / data.length > ZIP_MAX_COMPRESSION_RATIO) throw new Error("ZIP entry compression ratio exceeds limit");
 					chunks.push(value);
 				}
 			} catch (err) {
@@ -1033,12 +955,19 @@
 			default: return "application/octet-stream";
 		}
 	}
+	var ZIP_MAX_ENTRIES, ZIP_MAX_ENTRY_COMPRESSED_BYTES, ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES, ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES, ZIP_MAX_COMPRESSION_RATIO;
 	var init_zip = __esmMin((() => {
-		init_constants();
+		ZIP_MAX_ENTRIES = 5e3;
+		ZIP_MAX_ENTRY_COMPRESSED_BYTES = 134217728;
+		ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES = 134217728;
+		ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 536870912;
+		ZIP_MAX_COMPRESSION_RATIO = 100;
 	}));
 	//#endregion
 	//#region src/doclang/document.ts
 	var document_exports = /* @__PURE__ */ __exportAll({
+		NO_MARKUP: () => NO_MARKUP,
+		PAGE_IMAGE_RE: () => PAGE_IMAGE_RE,
 		assignElementIds: () => assignElementIds,
 		buildDocumentState: () => buildDocumentState,
 		buildElementPageMap: () => buildElementPageMap,
@@ -1145,7 +1074,7 @@
 		if (tag === "caption") return true;
 		if (HEAD_TAGS.has(tag) || tag === "location" || tag === "h_thread" || tag === "page_break") return false;
 		if (tag === "nl" || CELL_SPAN_TAGS.has(tag)) return false;
-		if (RENDER_FORMAT_TAGS.has(tag) || tag === "src" || tag === "checkbox") return false;
+		if (RENDER_FORMAT_TAGS$1.has(tag) || tag === "src" || tag === "checkbox") return false;
 		return true;
 	}
 	function computeReadingOrder(docRoot) {
@@ -1537,13 +1466,26 @@
 		parts.push(`${pad}</${tag}>`);
 		return parts.join("\n");
 	}
+	var PAGE_IMAGE_RE, NO_MARKUP, RENDER_FORMAT_TAGS$1;
 	var init_document = __esmMin((() => {
-		init_constants();
 		init_dom();
 		init_zip();
+		PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
+		NO_MARKUP = "(No markup to be shown.)";
+		RENDER_FORMAT_TAGS$1 = /* @__PURE__ */ new Set([
+			"bold",
+			"italic",
+			"underline",
+			"strikethrough",
+			"superscript",
+			"subscript",
+			"handwriting",
+			"rtl",
+			"content"
+		]);
 	}));
 	//#endregion
-	//#region src/components/base/document-base.ts
+	//#region src/components/base/page-element.ts
 	/**
 	* Base class for doclang web components that render document content.
 	*
@@ -1673,10 +1615,11 @@
 	var markup_pane_default = "<div class=\"pane-header\">DocLang</div>\n<div class=\"pane-body\" id=\"markup-pane\"></div>\n";
 	//#endregion
 	//#region src/components/markup-pane/markup.ts
-	init_constants();
 	init_dom();
+	var LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
+	var VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
 	function isTruncatableEmbeddedImageUri(value) {
-		if (!value || value.length <= 30) return false;
+		if (!value || value.length <= LONG_EMBEDDED_URI_PREVIEW_LENGTH) return false;
 		return /^(data:image\/|blob:)/i.test(value);
 	}
 	function formatCompactByteSize(bytes) {
@@ -1712,7 +1655,7 @@
 		wrapper.dataset.fullValue = value;
 		const text = document.createElement("span");
 		text.className = "xml-attr-value-text";
-		text.textContent = value.slice(0, 30);
+		text.textContent = value.slice(0, LONG_EMBEDDED_URI_PREVIEW_LENGTH);
 		const toggle = document.createElement("button");
 		toggle.type = "button";
 		toggle.className = "xml-attr-value-chip";
@@ -2105,7 +2048,6 @@
 	//#region src/components/markup-pane/markup-pane.ts
 	/** <doclang-markup-pane> — DocLang XML markup view */
 	init_document();
-	init_constants();
 	var DoclangMarkupPane = class extends DoclangPageElement {
 		_body;
 		constructor() {
@@ -2181,8 +2123,18 @@
 	var page_view_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Original page</span>\n  <div class=\"pane-page-controls\">\n    <div class=\"page-zoom-control\" hidden>\n      <label class=\"page-zoom-control-label\">\n        <span aria-hidden=\"true\">Zoom</span>\n        <input\n          type=\"range\"\n          class=\"zoom-input\"\n          min=\"100\"\n          max=\"300\"\n          step=\"10\"\n          value=\"100\"\n          aria-valuemin=\"100\"\n          aria-valuemax=\"300\"\n          aria-valuenow=\"100\"\n          aria-label=\"Page zoom\"\n        />\n      </label>\n      <button\n        type=\"button\"\n        class=\"page-zoom-reset\"\n        title=\"Reset zoom\"\n        aria-label=\"Reset zoom\"\n        disabled\n      >\n        100%\n      </button>\n    </div>\n    <button type=\"button\" class=\"pane-settings-toggle\" aria-expanded=\"false\" hidden>\n      Overlays\n    </button>\n  </div>\n</div>\n<div class=\"pane-page-layout\">\n  <div class=\"pane-body\" id=\"page-pane\" tabindex=\"0\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close overlays\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"page-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"page-settings-title\">Overlays</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close overlays\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <label class=\"settings-option settings-option-primary\">\n          <input type=\"checkbox\" class=\"cb-all-bboxes\" checked />\n          <span>Layout</span>\n        </label>\n        <div class=\"settings-subgroup\">\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-reading-order\" />\n            <span>Reading order</span>\n          </label>\n          <div class=\"settings-subgroup settings-reading-order-group\">\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-arrows\" checked />\n              <span>Arrows</span>\n            </label>\n            <label class=\"settings-option settings-option-sub settings-option-nested\">\n              <input type=\"checkbox\" class=\"cb-reading-order-global\" />\n              <span>Global numbering</span>\n            </label>\n          </div>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-picture-contents\" />\n            <span>Picture contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-table-contents\" />\n            <span>Table contents</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-fragment-links\" />\n            <span>Fragments</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-xref-links\" />\n            <span>Cross-references</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-caption-links\" />\n            <span>Captions</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-layout-badges\" checked />\n            <span>Badges</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
 	//#endregion
 	//#region src/components/page-view-pane/overlay.ts
-	init_constants();
 	init_dom();
+	var OVERLAY_BADGE_FONT_SIZE = 16.5 * .8;
+	var OVERLAY_BADGE_PAD_X = 3;
+	var OVERLAY_BADGE_PAD_Y = 2;
+	var OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
+	/** Demo page size; overlay lengths are calibrated to match pre-fix sizing on these images. */
+	var OVERLAY_REF_IMAGE_WIDTH = 1224;
+	var OVERLAY_REF_IMAGE_HEIGHT = 1584;
+	var FRAGMENT_NAV_HINT_PREV = "Previous fragment";
+	var FRAGMENT_NAV_HINT_NEXT = "Next fragment";
+	var FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
+	var FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
 	function elementKindKey(kind) {
 		if (kind.startsWith("field_") || kind === "key" || kind === "value" || kind === "hint") return "field";
 		if (kind === "tabular") return "table";
@@ -2363,8 +2315,8 @@
 		return defs;
 	}
 	function overlayBadgeLayout(svg, text, fontSizeUser, ctx) {
-		const padXUser = overlayUserLength(3, ctx);
-		const padYUser = overlayUserLength(2, ctx);
+		const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X, ctx);
+		const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y, ctx);
 		const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
 		probe.setAttribute("class", "overlay-badge-label");
 		probe.setAttribute("font-size", String(fontSizeUser));
@@ -2382,7 +2334,7 @@
 			height = bbox.height + padYUser * 2;
 		} catch {
 			width = overlayUserLength(String(text).length * OVERLAY_BADGE_FONT_SIZE * .55 + 6, ctx);
-			height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + 4, ctx);
+			height = overlayUserLength(18.520000000000003, ctx);
 		}
 		probe.remove();
 		return {
@@ -2393,7 +2345,7 @@
 	function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }, ctx) {
 		const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
 		const { width, height } = overlayBadgeLayout(svg, text, fontSize, ctx);
-		const radius = overlayUserLength(3, ctx);
+		const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX, ctx);
 		const badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
 		badge.setAttribute("class", `overlay-badge ${extraClass}`);
 		badge.setAttribute("data-element-id", elementId);
@@ -2720,9 +2672,10 @@
 	//#endregion
 	//#region src/components/page-view-pane/page-view-pane.ts
 	/** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
-	init_constants();
 	init_document();
 	init_dom();
+	var PAGE_PAN_DRAG_THRESHOLD = 5;
+	var NO_IMAGE = "(No page image available.)";
 	var DoclangPageViewPane = class extends DoclangPageElement {
 		_body;
 		_settingsToggle;
@@ -3108,7 +3061,7 @@
 				if (!this._panDrag || e.pointerId !== this._panDrag.pointerId) return;
 				const dx = e.clientX - this._panDrag.startX;
 				const dy = e.clientY - this._panDrag.startY;
-				if (!this._panDrag.moved && Math.hypot(dx, dy) >= 5) {
+				if (!this._panDrag.moved && Math.hypot(dx, dy) >= PAGE_PAN_DRAG_THRESHOLD) {
 					this._panDrag.moved = true;
 					this._body.classList.add("is-panning");
 					this._body.classList.remove("can-pan");
@@ -3381,8 +3334,49 @@
 	var reading_pane_default = "<div class=\"pane-header\">\n  <span class=\"pane-header-title\">Reading view</span>\n  <button\n    type=\"button\"\n    class=\"pane-settings-toggle\"\n    aria-expanded=\"false\"\n    aria-controls=\"reading-settings\"\n    hidden\n  >\n    Layers\n  </button>\n</div>\n<div class=\"pane-reading-layout\">\n  <div class=\"pane-body\" id=\"rendered-pane\"></div>\n  <div class=\"viewer-settings-layer\" hidden>\n    <button\n      type=\"button\"\n      class=\"viewer-settings-scrim\"\n      tabindex=\"-1\"\n      aria-label=\"Close layers\"\n    ></button>\n    <aside\n      class=\"viewer-settings\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"reading-settings-title\"\n    >\n      <div class=\"viewer-settings-header\">\n        <h2 class=\"viewer-settings-title\" id=\"reading-settings-title\">Layers</h2>\n        <button type=\"button\" class=\"viewer-settings-close\" aria-label=\"Close layers\">\n          ×\n        </button>\n      </div>\n      <div class=\"viewer-settings-body\">\n        <div\n          class=\"settings-subgroup\"\n          role=\"group\"\n          aria-labelledby=\"reading-settings-title\"\n        >\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-furniture\" checked />\n            <span>Furniture</span>\n          </label>\n          <label class=\"settings-option settings-option-sub\">\n            <input type=\"checkbox\" class=\"cb-background\" checked />\n            <span>Background</span>\n          </label>\n        </div>\n      </div>\n    </aside>\n  </div>\n</div>\n";
 	//#endregion
 	//#region src/components/reading-pane/rendered.ts
-	init_constants();
 	init_dom();
+	var RENDER_BLOCK_TAGS = /* @__PURE__ */ new Set([
+		"text",
+		"heading",
+		"field_heading",
+		"footnote",
+		"page_header",
+		"page_footer",
+		"list",
+		"code",
+		"formula",
+		"picture",
+		"group",
+		"field_region",
+		"field_item",
+		"table",
+		"index",
+		"tabular"
+	]);
+	var RENDER_FORMAT_TAGS = /* @__PURE__ */ new Set([
+		"bold",
+		"italic",
+		"underline",
+		"strikethrough",
+		"superscript",
+		"subscript",
+		"handwriting",
+		"rtl",
+		"content"
+	]);
+	var FORMAT_HTML_TAG = {
+		bold: "strong",
+		italic: "em",
+		underline: "u",
+		strikethrough: "s",
+		superscript: "sup",
+		subscript: "sub"
+	};
+	var PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
+	var INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
+	/** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
+	var SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
+	var MAX_DATA_IMAGE_URI_LENGTH = 2097152;
 	var _assetUrls;
 	function applyElementLayerAttr(sourceEl, domEl) {
 		domEl.setAttribute("data-doclang-layer", elementLayer(sourceEl));
@@ -3391,7 +3385,7 @@
 		if (!uri) return null;
 		const trimmed = uri.trim();
 		if (!trimmed) return null;
-		if (SAFE_DATA_IMAGE_RE.test(trimmed)) return trimmed.length <= 2097152 ? trimmed : null;
+		if (SAFE_DATA_IMAGE_RE.test(trimmed)) return trimmed.length <= MAX_DATA_IMAGE_URI_LENGTH ? trimmed : null;
 		if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith("//")) return null;
 		return _assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
 	}
@@ -4110,7 +4104,6 @@
 	/** <doclang-reading-pane> — reading/rendered view with layers settings panel */
 	init_document();
 	init_dom();
-	init_constants();
 	var DoclangReadingPane = class extends DoclangPageElement {
 		_body;
 		_settingsToggle;
@@ -4284,10 +4277,34 @@
 	customElements.define("doclang-empty-state", DoclangEmptyState);
 	//#endregion
 	//#region src/main.ts
-	init_constants();
 	init_dom();
 	init_document();
 	init_zip();
+	var SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
+	var PAGE_WHEEL_COOLDOWN_MS = 200;
+	var PAGE_WHEEL_PIXEL_THRESHOLD = 4;
+	var PAGE_WHEEL_GESTURE_MS = 100;
+	var LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
+	var PANE_MIN_RATIO = .12;
+	var PANE_KEYS = [
+		"file",
+		"page",
+		"markup",
+		"reading"
+	];
+	var DEFAULT_PANE_RATIOS = [
+		1,
+		1,
+		1,
+		1
+	];
+	var DEFAULT_USER_PANE_VISIBLE = {
+		file: false,
+		page: true,
+		markup: true,
+		reading: true
+	};
+	var LAYOUT_STACK_BREAKPOINT_PX = 1200;
 	var state = null;
 	var fileCatalog = [];
 	var activeFileIndex = -1;
@@ -5213,9 +5230,9 @@
 			if (e.deltaMode === 2) return Math.sign(e.deltaY);
 			const now = performance.now();
 			if (now > pixelGestureUntil) pixelAccum = 0;
-			pixelGestureUntil = now + 100;
+			pixelGestureUntil = now + PAGE_WHEEL_GESTURE_MS;
 			pixelAccum += e.deltaY;
-			if (Math.abs(pixelAccum) >= 4) {
+			if (Math.abs(pixelAccum) >= PAGE_WHEEL_PIXEL_THRESHOLD) {
 				const dir = pixelAccum > 0 ? 1 : -1;
 				pixelAccum = 0;
 				return dir;
@@ -5225,7 +5242,7 @@
 		function tryFlipPage(dir) {
 			if (!dir || !state) return false;
 			const now = performance.now();
-			if (now - lastFlipAt < 200) return false;
+			if (now - lastFlipAt < PAGE_WHEEL_COOLDOWN_MS) return false;
 			const before = state.currentPage;
 			goToPage(state.currentPage + dir);
 			if (state.currentPage !== before) {

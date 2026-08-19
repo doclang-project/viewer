@@ -1,6 +1,6 @@
 /** <doclang-cursor-hint> — floating tooltip that follows the pointer */
 
-import { DoclangHTMLElement } from '../base/base';
+import { DoclangHTMLElement } from '../base/element';
 import styles from './cursor-hint.css?inline';
 import template from './cursor-hint.html?raw';
 

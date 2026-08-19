@@ -1,5 +1,3 @@
-import type { PaneKey } from '../constants';
-
 export interface BoundingBox {
   kind: string;
   tag: string;
@@ -114,6 +112,8 @@ export interface PagePanDrag {
   scrollTop: number;
   moved: boolean;
 }
+
+export type PaneKey = 'file' | 'page' | 'markup' | 'reading';
 
 export interface PaneDragState {
   physicalSplitterIndex: number;

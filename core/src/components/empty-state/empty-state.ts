@@ -1,6 +1,6 @@
 /** <doclang-empty-state> — loading/prompt empty state */
 
-import { DoclangHTMLElement } from '../base/base';
+import { DoclangHTMLElement } from '../base/element';
 import styles from './empty-state.css?inline';
 import template from './empty-state.html?raw';
 

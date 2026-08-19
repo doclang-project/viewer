@@ -16,30 +16,16 @@ import type { DoclangPageViewPane } from './components/page-view-pane/page-view-
 import type { DoclangReadingPane } from './components/reading-pane/reading-pane';
 import type { DoclangEmptyState } from './components/empty-state/empty-state';
 
-import {
-  SUPPORTED_FILE_EXTENSIONS,
-  PAGE_IMAGE_RE,
-  PAGE_ZOOM_DEFAULT,
-  PAGE_WHEEL_COOLDOWN_MS,
-  PAGE_WHEEL_PIXEL_THRESHOLD,
-  PAGE_WHEEL_GESTURE_MS,
-  LAYOUT_STORAGE_KEY,
-  PANE_MIN_RATIO,
-  PANE_KEYS,
-  DEFAULT_PANE_RATIOS,
-  DEFAULT_USER_PANE_VISIBLE,
-  LAYOUT_STACK_BREAKPOINT_PX,
-  CELL_SPAN_TAGS,
-  OTSL_CONTAINER_TAGS,
-} from './constants';
-import type { PaneKey } from './constants';
 import type {
   DocumentState,
   FileCatalogEntry,
   PaneDragState,
   UserPaneVisible,
+  PaneKey,
 } from './doclang/types';
 import {
+  CELL_SPAN_TAGS,
+  OTSL_CONTAINER_TAGS,
   localName,
   isSemanticElement,
   isVirtualTextHost,
@@ -51,12 +37,30 @@ import {
   isCellToken,
 } from './doclang/dom';
 import {
+  PAGE_IMAGE_RE,
   buildDocumentState,
   extractArchiveFromFiles,
   extractArchiveFromZipBuffer,
   revokeDocumentState,
 } from './doclang/document';
+import { PAGE_ZOOM_DEFAULT } from './components/page-view-pane/overlay';
 import { unzip } from './doclang/zip';
+
+const SUPPORTED_FILE_EXTENSIONS = ['.dclx', '.dclg'];
+const PAGE_WHEEL_COOLDOWN_MS = 200;
+const PAGE_WHEEL_PIXEL_THRESHOLD = 4;
+const PAGE_WHEEL_GESTURE_MS = 100;
+const LAYOUT_STORAGE_KEY = 'doclang-viewer-pane-layout';
+const PANE_MIN_RATIO = 0.12;
+const PANE_KEYS = ['file', 'page', 'markup', 'reading'] as const;
+const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
+const DEFAULT_USER_PANE_VISIBLE = {
+  file: false,
+  page: true,
+  markup: true,
+  reading: true,
+};
+const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 
 // ---------------------------------------------------------------------------
 // Global mutable state

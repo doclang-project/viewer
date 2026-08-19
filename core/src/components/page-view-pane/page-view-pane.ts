@@ -1,19 +1,15 @@
 /** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
 
-import { DoclangPageElement } from '../base/document-base';
+import { DoclangPageElement } from '../base/page-element';
 import styles from './page-view-pane.css?inline';
 import template from './page-view-pane.html?raw';
-import {
-  PAGE_ZOOM_DEFAULT,
-  PAGE_PAN_DRAG_THRESHOLD,
-  NO_IMAGE,
-  FRAGMENT_NAV_HINT_PREV,
-  FRAGMENT_NAV_HINT_NEXT,
-} from '../../constants';
 import {
   applyPageImageSize,
   buildOverlay,
   syncOverlayBadges,
+  PAGE_ZOOM_DEFAULT,
+  FRAGMENT_NAV_HINT_PREV,
+  FRAGMENT_NAV_HINT_NEXT,
   type OverlayCtx,
 } from './overlay';
 import {
@@ -36,6 +32,9 @@ import {
   locationResolution,
 } from '../../doclang/dom';
 import type { HeadInfo, PageLayoutCache, PagePanDrag } from '../../doclang/types';
+
+const PAGE_PAN_DRAG_THRESHOLD = 5;
+const NO_IMAGE = '(No page image available.)';
 
 export interface OverlaySettings {
   showAllBboxes: boolean;

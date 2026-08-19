@@ -21,7 +21,7 @@
  * `page="3"` in HTML or `component.page = 3` in JS both trigger a re-render.
  */
 
-import { DoclangHTMLElement } from './base';
+import { DoclangHTMLElement } from './element';
 import { buildDocumentState } from '../../doclang/document';
 import { elementThreadId } from '../../doclang/dom';
 import type { DocumentState } from '../../doclang/types';
