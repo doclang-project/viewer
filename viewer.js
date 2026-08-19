@@ -28,8 +28,8 @@
 	var t$4 = globalThis;
 	var e$7 = t$4.ShadowRoot && (void 0 === t$4.ShadyCSS || t$4.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 	var s$4 = Symbol();
-	var o$6 = /* @__PURE__ */ new WeakMap();
-	var n$5 = class {
+	var o$7 = /* @__PURE__ */ new WeakMap();
+	var n$6 = class {
 		constructor(t, e, o) {
 			if (this._$cssResult$ = !0, o !== s$4) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
 			this.cssText = t, this.t = e;
@@ -39,7 +39,7 @@
 			const s = this.t;
 			if (e$7 && void 0 === t) {
 				const e = void 0 !== s && 1 === s.length;
-				e && (t = o$6.get(s)), void 0 === t && ((this.o = t = new CSSStyleSheet()).replaceSync(this.cssText), e && o$6.set(s, t));
+				e && (t = o$7.get(s)), void 0 === t && ((this.o = t = new CSSStyleSheet()).replaceSync(this.cssText), e && o$7.set(s, t));
 			}
 			return t;
 		}
@@ -47,7 +47,7 @@
 			return this.cssText;
 		}
 	};
-	var r$4 = (t) => new n$5("string" == typeof t ? t : t + "", void 0, s$4);
+	var r$6 = (t) => new n$6("string" == typeof t ? t : t + "", void 0, s$4);
 	var S$1 = (s, o) => {
 		if (e$7) s.adoptedStyleSheets = o.map((t) => t instanceof CSSStyleSheet ? t : t.styleSheet);
 		else for (const e of o) {
@@ -58,7 +58,7 @@
 	var c$5 = e$7 ? (t) => t : (t) => t instanceof CSSStyleSheet ? ((t) => {
 		let e = "";
 		for (const s of t.cssRules) e += s.cssText;
-		return r$4(e);
+		return r$6(e);
 	})(t) : t;
 	//#endregion
 	//#region node_modules/@lit/reactive-element/reactive-element.js
@@ -66,7 +66,7 @@
 	* @license
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/ var { is: i$4, defineProperty: e$6, getOwnPropertyDescriptor: h$4, getOwnPropertyNames: r$3, getOwnPropertySymbols: o$5, getPrototypeOf: n$4 } = Object, a$1 = globalThis, c$4 = a$1.trustedTypes, l$2 = c$4 ? c$4.emptyScript : "", p$2 = a$1.reactiveElementPolyfillSupport, d$2 = (t, s) => t, u$3 = {
+	*/ var { is: i$4, defineProperty: e$6, getOwnPropertyDescriptor: h$4, getOwnPropertyNames: r$5, getOwnPropertySymbols: o$6, getPrototypeOf: n$5 } = Object, a$1 = globalThis, c$4 = a$1.trustedTypes, l$2 = c$4 ? c$4.emptyScript : "", p$2 = a$1.reactiveElementPolyfillSupport, d$2 = (t, s) => t, u$3 = {
 		toAttribute(t, s) {
 			switch (s) {
 				case Boolean:
@@ -141,13 +141,13 @@
 		}
 		static _$Ei() {
 			if (this.hasOwnProperty(d$2("elementProperties"))) return;
-			const t = n$4(this);
+			const t = n$5(this);
 			t.finalize(), void 0 !== t.l && (this.l = [...t.l]), this.elementProperties = new Map(t.elementProperties);
 		}
 		static finalize() {
 			if (this.hasOwnProperty(d$2("finalized"))) return;
 			if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(d$2("properties"))) {
-				const t = this.properties, s = [...r$3(t), ...o$5(t)];
+				const t = this.properties, s = [...r$5(t), ...o$6(t)];
 				for (const i of s) this.createProperty(i, t[i]);
 			}
 			const t = this[Symbol.metadata];
@@ -302,9 +302,9 @@
 	var s$3 = t$3.trustedTypes;
 	var e$5 = s$3 ? s$3.createPolicy("lit-html", { createHTML: (t) => t }) : void 0;
 	var h$3 = "$lit$";
-	var o$4 = `lit$${Math.random().toFixed(9).slice(2)}$`;
-	var n$3 = "?" + o$4;
-	var r$2 = `<${n$3}>`;
+	var o$5 = `lit$${Math.random().toFixed(9).slice(2)}$`;
+	var n$4 = "?" + o$5;
+	var r$4 = `<${n$4}>`;
 	var l$1 = document;
 	var c$3 = () => l$1.createComment("");
 	var a = (t) => null === t || "object" != typeof t && "function" != typeof t;
@@ -340,7 +340,7 @@
 			let a, u, d = -1, f = 0;
 			for (; f < s.length && (c.lastIndex = f, u = c.exec(s), null !== u);) f = c.lastIndex, c === v$1 ? "!--" === u[1] ? c = _ : void 0 !== u[1] ? c = m$1 : void 0 !== u[2] ? (y.test(u[2]) && (n = RegExp("</" + u[2], "g")), c = p$1) : void 0 !== u[3] && (c = p$1) : c === p$1 ? ">" === u[0] ? (c = n ?? v$1, d = -1) : void 0 === u[1] ? d = -2 : (d = c.lastIndex - u[2].length, a = u[1], c = void 0 === u[3] ? p$1 : "\"" === u[3] ? $ : g) : c === $ || c === g ? c = p$1 : c === _ || c === m$1 ? c = v$1 : (c = p$1, n = void 0);
 			const x = c === p$1 && t[i + 1].startsWith("/>") ? " " : "";
-			l += c === v$1 ? s + r$2 : d >= 0 ? (e.push(a), s.slice(0, d) + h$3 + s.slice(d) + o$4 + x) : s + o$4 + (-2 === d ? i : x);
+			l += c === v$1 ? s + r$4 : d >= 0 ? (e.push(a), s.slice(0, d) + h$3 + s.slice(d) + o$5 + x) : s + o$5 + (-2 === d ? i : x);
 		}
 		return [V(t, l + (t[s] || "<?>") + (2 === i ? "</svg>" : 3 === i ? "</math>" : "")), e];
 	};
@@ -357,7 +357,7 @@
 			for (; null !== (r = P.nextNode()) && d.length < u;) {
 				if (1 === r.nodeType) {
 					if (r.hasAttributes()) for (const t of r.getAttributeNames()) if (t.endsWith(h$3)) {
-						const i = v[a++], s = r.getAttribute(t).split(o$4), e = /([.?@])?(.*)/.exec(i);
+						const i = v[a++], s = r.getAttribute(t).split(o$5), e = /([.?@])?(.*)/.exec(i);
 						d.push({
 							type: 1,
 							index: l,
@@ -365,12 +365,12 @@
 							strings: s,
 							ctor: "." === e[1] ? I : "?" === e[1] ? L : "@" === e[1] ? z : H
 						}), r.removeAttribute(t);
-					} else t.startsWith(o$4) && (d.push({
+					} else t.startsWith(o$5) && (d.push({
 						type: 6,
 						index: l
 					}), r.removeAttribute(t));
 					if (y.test(r.tagName)) {
-						const t = r.textContent.split(o$4), i = t.length - 1;
+						const t = r.textContent.split(o$5), i = t.length - 1;
 						if (i > 0) {
 							r.textContent = s$3 ? s$3.emptyScript : "";
 							for (let s = 0; s < i; s++) r.append(t[s], c$3()), P.nextNode(), d.push({
@@ -380,16 +380,16 @@
 							r.append(t[i], c$3());
 						}
 					}
-				} else if (8 === r.nodeType) if (r.data === n$3) d.push({
+				} else if (8 === r.nodeType) if (r.data === n$4) d.push({
 					type: 2,
 					index: l
 				});
 				else {
 					let t = -1;
-					for (; -1 !== (t = r.data.indexOf(o$4, t + 1));) d.push({
+					for (; -1 !== (t = r.data.indexOf(o$5, t + 1));) d.push({
 						type: 7,
 						index: l
-					}), t += o$4.length - 1;
+					}), t += o$5.length - 1;
 				}
 				l++;
 			}
@@ -559,8 +559,8 @@
 	};
 	var j$1 = {
 		M: h$3,
-		P: o$4,
-		A: n$3,
+		P: o$5,
+		A: n$4,
 		C: 1,
 		L: N,
 		R,
@@ -614,8 +614,8 @@
 		}
 	};
 	i$2._$litElement$ = !0, i$2["finalized"] = !0, s$2.litElementHydrateSupport?.({ LitElement: i$2 });
-	var o$3 = s$2.litElementPolyfillSupport;
-	o$3?.({ LitElement: i$2 });
+	var o$4 = s$2.litElementPolyfillSupport;
+	o$4?.({ LitElement: i$2 });
 	(s$2.litElementVersions ??= []).push("4.2.2");
 	//#endregion
 	//#region node_modules/@lit/reactive-element/decorators/custom-element.js
@@ -635,14 +635,56 @@
 	* @license
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/
+	*/ var o$3 = {
+		attribute: !0,
+		type: String,
+		converter: u$3,
+		reflect: !1,
+		hasChanged: f$3
+	};
+	var r$3 = (t = o$3, e, r) => {
+		const { kind: n, metadata: i } = r;
+		let s = globalThis.litPropertyMetadata.get(i);
+		if (void 0 === s && globalThis.litPropertyMetadata.set(i, s = /* @__PURE__ */ new Map()), "setter" === n && ((t = Object.create(t)).wrapped = !0), s.set(r.name, t), "accessor" === n) {
+			const { name: o } = r;
+			return {
+				set(r) {
+					const n = e.get.call(this);
+					e.set.call(this, r), this.requestUpdate(o, n, t, !0, r);
+				},
+				init(e) {
+					return void 0 !== e && this.C(o, void 0, t, e), e;
+				}
+			};
+		}
+		if ("setter" === n) {
+			const { name: o } = r;
+			return function(r) {
+				const n = this[o];
+				e.call(this, r), this.requestUpdate(o, n, t, !0, r);
+			};
+		}
+		throw Error("Unsupported decorator location: " + n);
+	};
+	function n$3(t) {
+		return (e, o) => "object" == typeof o ? r$3(t, e, o) : ((t, e, o) => {
+			const r = e.hasOwnProperty(o);
+			return e.constructor.createProperty(o, t), r ? Object.getOwnPropertyDescriptor(e, o) : void 0;
+		})(t, e, o);
+	}
 	//#endregion
 	//#region node_modules/@lit/reactive-element/decorators/state.js
 	/**
 	* @license
 	* Copyright 2017 Google LLC
 	* SPDX-License-Identifier: BSD-3-Clause
-	*/
+	*/ function r$2(r) {
+		return n$3({
+			...r,
+			state: !0,
+			attribute: !1
+		});
+	}
 	//#endregion
 	//#region node_modules/lit-html/directive.js
 	/**
@@ -748,7 +790,7 @@
 	var OFFSET = 10;
 	var MARGIN = 8;
 	var DoclangCursorHint = class DoclangCursorHint extends i$2 {
-		static styles = r$4(cursor_hint_default);
+		static styles = r$6(cursor_hint_default);
 		_content = null;
 		_isHtml = false;
 		_detail = false;
@@ -960,7 +1002,7 @@
 	//#region src/components/page-nav/page-nav.ts
 	/** <doclang-page-nav> — page navigation (prev/next buttons + page indicator) */
 	var DoclangPageNav = class DoclangPageNav extends i$2 {
-		static styles = r$4(page_nav_default);
+		static styles = r$6(page_nav_default);
 		_currentPage = 1;
 		_pageCount = 1;
 		_visible = false;
@@ -1103,7 +1145,7 @@
 	/** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
 	var OPEN_FILE_HINT = `Open a DocLang file (.dclx, .dclg)`;
 	var DoclangToolbar = class DoclangToolbar extends i$2 {
-		static styles = r$4(toolbar_default);
+		static styles = r$6(toolbar_default);
 		_panelOpen = false;
 		_demoLoading = false;
 		_panes = {
@@ -1386,7 +1428,7 @@
 	/** <doclang-file-pane> — file list sidebar */
 	var FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 	var DoclangFilePane = class DoclangFilePane extends i$2 {
-		static styles = r$4(file_pane_default);
+		static styles = r$6(file_pane_default);
 		_entries = [];
 		connectedCallback() {
 			super.connectedCallback();
@@ -2580,6 +2622,7 @@
 			return this._selectedId;
 		}
 		set selected(id) {
+			if (id === this._selectedId) return;
 			this._selectedId = id;
 			this._peerIds = id ? this._computePeerIds(id) : /* @__PURE__ */ new Set();
 			if (id) this.setAttribute("selected", id);
@@ -2658,10 +2701,12 @@
 	//#region src/components/markup-pane/markup-pane.css?inline
 	var markup_pane_default = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-body {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 0;\n  background: var(--markup-bg);\n  color: var(--markup-fg);\n}\n.pane-body .placeholder {\n  margin: 1rem;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\npre.markup {\n  margin: 0;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.markup {\n  margin: 0;\n  padding: 0.75rem 1rem 1rem;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.55;\n  tab-size: 2;\n  --markup-indent: 2ch;\n  --markup-gutter-width: 1rem;\n}\n.markup-ghost-tag-part {\n  opacity: 0.35;\n  cursor: help;\n}\n.head-tooltip {\n  border-collapse: collapse;\n  width: 100%;\n  font-size: 0.6875rem;\n  line-height: 1.4;\n}\n.head-tooltip th {\n  padding: 0.1rem 0.55rem 0.1rem 0;\n  color: var(--muted);\n  font-weight: 600;\n  text-align: left;\n  vertical-align: top;\n  white-space: nowrap;\n}\n.head-tooltip td {\n  padding: 0.1rem 0;\n  vertical-align: top;\n  word-break: break-word;\n}\n.head-tooltip .head-default {\n  color: var(--muted);\n  font-style: italic;\n  white-space: nowrap;\n}\n.markup-el {\n  cursor: pointer;\n  border-radius: 0.2rem;\n}\n.markup-el:hover {\n  background: var(--markup-hover);\n}\n.markup-el.selected {\n  background: var(--markup-selected);\n  box-shadow: inset 0 0 0 1px var(--accent);\n}\n.markup-line {\n  white-space: pre-wrap;\n  word-break: break-word;\n  cursor: pointer;\n  padding: 0 0.25rem;\n  border-radius: 0.15rem;\n}\n.markup-line-content {\n  display: flex;\n  align-items: baseline;\n  min-width: 0;\n  padding-left: calc(var(--markup-depth, 0) * var(--markup-indent));\n}\n.markup-gutter {\n  flex: 0 0 var(--markup-gutter-width);\n  width: var(--markup-gutter-width);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.markup-line-body {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n.markup-fold-toggle {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: var(--markup-gutter-width);\n  height: 1rem;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 0.15rem;\n  background: transparent;\n  color: var(--muted);\n  cursor: pointer;\n  flex-shrink: 0;\n}\n.markup-fold-toggle::before {\n  content: '';\n  display: block;\n  width: 0;\n  height: 0;\n  border-top: 4px solid transparent;\n  border-bottom: 4px solid transparent;\n  border-left: 5px solid currentColor;\n  transform: rotate(90deg);\n  transition: transform 0.12s ease;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-toggle::before {\n  transform: rotate(0deg);\n}\n.markup-fold-toggle:hover {\n  background: var(--markup-hover);\n  color: var(--markup-fg);\n}\n.markup-fold-suffix {\n  display: none;\n}\n.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-suffix {\n  display: inline;\n}\n.markup-el-foldable.markup-collapsed > .markup-fold-body {\n  display: none;\n}\n.xml-tag {\n  color: var(--xml-tag);\n}\n.xml-bracket {\n  color: var(--xml-bracket);\n}\n.xml-attr-name {\n  color: var(--xml-attr-name);\n}\n.xml-attr-value {\n  color: var(--xml-attr-value);\n}\n.xml-attr-value-truncatable {\n  display: inline;\n}\n.xml-attr-value-chip {\n  appearance: none;\n  display: inline-flex;\n  align-items: center;\n  gap: 0.3em;\n  margin: 0 0 0 0.35em;\n  padding: 0.08em 0.45em 0.08em 0.5em;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  background: var(--placeholder-bg);\n  color: var(--muted);\n  font-family: var(--font-ui, system-ui, sans-serif);\n  font-size: 0.72em;\n  font-weight: 600;\n  line-height: 1.35;\n  cursor: pointer;\n  vertical-align: baseline;\n  white-space: nowrap;\n}\n.xml-attr-value-chip::after {\n  content: '';\n  width: 0;\n  height: 0;\n  border-top: 0.28em solid currentColor;\n  border-left: 0.22em solid transparent;\n  border-right: 0.22em solid transparent;\n  opacity: 0.75;\n  transition: transform 0.12s ease;\n}\n.xml-attr-value-chip[aria-expanded='true']::after {\n  transform: rotate(180deg);\n}\n.xml-attr-value-chip:hover,\n.xml-attr-value-chip[aria-expanded='true'] {\n  border-color: var(--accent);\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));\n}\n.markup-embedded-uri-panel {\n  cursor: text;\n}\n.markup-embedded-uri-panel:hover {\n  background: transparent;\n}\n.markup-embedded-uri-panel-body {\n  margin: 0.1rem 0 0.25rem;\n  padding: 0.45rem 0.6rem;\n  max-height: 8rem;\n  overflow: auto;\n  color: var(--xml-attr-value);\n  word-break: break-all;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  user-select: text;\n}\n.xml-text {\n  color: var(--xml-text);\n}\n.xml-cdata {\n  color: var(--xml-cdata);\n}\n.xml-cdata-delimiter {\n  color: var(--xml-cdata-delimiter);\n}\n";
 	//#endregion
-	//#region src/components/markup-pane/markup.ts
+	//#region src/components/markup-pane/markup-pane.ts
+	/** <doclang-markup-pane> — DocLang XML markup view */
+	init_document();
 	init_dom();
-	var LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
 	var VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
+	var LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
 	function isTruncatableEmbeddedImageUri(value) {
 		if (!value || value.length <= LONG_EMBEDDED_URI_PREVIEW_LENGTH) return false;
 		return /^(data:image\/|blob:)/i.test(value);
@@ -2845,6 +2890,30 @@
 		const { line, content } = createMarkupLineRow(depth);
 		appendMarkupTextContent(content, text);
 		parent.appendChild(line);
+	}
+	function sliceHasMarkupContent$1(nodes) {
+		for (let i = 0; i < nodes.length; i += 1) {
+			const node = nodes[i];
+			if (!node) continue;
+			if (isTextLikeNode(node) && !isWhitespaceOnlyText(node)) return true;
+			if (node.nodeType === Node.ELEMENT_NODE) return true;
+		}
+		return false;
+	}
+	function isVirtualTextSkippableNode$1(node) {
+		if (isWhitespaceOnlyText(node)) return true;
+		if (node.nodeType !== Node.ELEMENT_NODE) return false;
+		const tag = localName(node);
+		return tag === "location" || HEAD_TAGS.has(tag);
+	}
+	function shouldWrapVirtualText$1(contentNodes) {
+		if (!sliceHasMarkupContent$1(contentNodes)) return false;
+		for (const node of contentNodes) {
+			if (isVirtualTextSkippableNode$1(node)) continue;
+			if (isTextLikeNode(node)) return true;
+			if (node.nodeType === Node.ELEMENT_NODE && !isSemanticElement(node)) return true;
+		}
+		return false;
 	}
 	function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
 		for (let i = 0; i < nodes.length; i += 1) {
@@ -3035,35 +3104,89 @@
 		block.appendChild(foldBody);
 		return block;
 	}
-	function sliceHasMarkupContent$1(nodes) {
-		for (let i = 0; i < nodes.length; i += 1) {
-			const node = nodes[i];
-			if (!node) continue;
-			if (isTextLikeNode(node) && !isWhitespaceOnlyText(node)) return true;
-			if (node.nodeType === Node.ELEMENT_NODE) return true;
+	var DoclangMarkupPane = class DoclangMarkupPane extends DoclangPageElement {
+		static styles = r$6(markup_pane_default);
+		_hasMarkup = null;
+		_pendingContent = null;
+		connectedCallback() {
+			super.connectedCallback();
+			this.classList.add("pane", "pane-markup");
+			this.addEventListener("mousemove", this._onMousemove);
+			this.addEventListener("mouseleave", this._onMouseleave);
 		}
-		return false;
-	}
-	function isVirtualTextSkippableNode$1(node) {
-		if (isWhitespaceOnlyText(node)) return true;
-		if (node.nodeType !== Node.ELEMENT_NODE) return false;
-		const tag = localName(node);
-		return tag === "location" || HEAD_TAGS.has(tag);
-	}
-	function shouldWrapVirtualText$1(contentNodes) {
-		if (!sliceHasMarkupContent$1(contentNodes)) return false;
-		for (const node of contentNodes) {
-			if (isVirtualTextSkippableNode$1(node)) continue;
-			if (isTextLikeNode(node)) return true;
-			if (node.nodeType === Node.ELEMENT_NODE && !isSemanticElement(node)) return true;
+		disconnectedCallback() {
+			super.disconnectedCallback();
+			this.removeEventListener("mousemove", this._onMousemove);
+			this.removeEventListener("mouseleave", this._onMouseleave);
 		}
-		return false;
-	}
-	function buildMarkupView(segment, elementIds, onSelectElement) {
-		const root = document.createElement("div");
-		root.className = "markup";
-		for (const el of segment) if (el.nodeType === Node.ELEMENT_NODE) root.appendChild(buildMarkupElement(el, 0, elementIds));
-		root.addEventListener("click", (e) => {
+		render() {
+			return b`
+      <div class="pane-header">DocLang</div>
+      <div class="pane-body" id="markup-pane" @click=${this._onBodyClick}>
+        ${this._hasMarkup === false ? b`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true ? b`<div ${n(this._onContentRef)}></div>` : A}
+      </div>
+    `;
+		}
+		_onContentRef = (el) => {
+			if (el && this._pendingContent) el.replaceChildren(this._pendingContent);
+		};
+		updated() {
+			if (!this._pendingContent) return;
+			const wrapper = this.shadowRoot?.querySelector(".pane-body > div");
+			if (wrapper && !wrapper.contains(this._pendingContent)) wrapper.replaceChildren(this._pendingContent);
+		}
+		/** The scrollable content body inside the shadow root. */
+		get scrollPane() {
+			return this.shadowRoot?.querySelector(".pane-body") ?? null;
+		}
+		setVisible(visible) {
+			this.hidden = !visible;
+		}
+		_applySelection() {
+			if (!this.shadowRoot) return;
+			for (const el of this.shadowRoot.querySelectorAll(".markup-el.selected")) el.classList.remove("selected");
+			if (!this._selectedId) return;
+			const target = this.shadowRoot.querySelector(`.markup-el-virtual-text[data-element-id="${this._selectedId}"]`) ?? this.shadowRoot.querySelector(`[data-element-id="${this._selectedId}"]`);
+			if (target) {
+				target.classList.add("selected");
+				target.scrollIntoView({
+					block: "nearest",
+					behavior: "smooth"
+				});
+			}
+		}
+		_renderDocument() {
+			const state = this._docState;
+			if (!state) {
+				this._pendingContent = null;
+				this._hasMarkup = null;
+				return;
+			}
+			const segment = state.segments[this._currentPage - 1] ?? [];
+			const elementIds = assignElementIds(segment);
+			state.elementIds = elementIds;
+			state.idToElement = invertElementIds(elementIds);
+			if (segmentHasMarkup(segment)) {
+				this._pendingContent = this._buildMarkupView(segment, elementIds);
+				this._hasMarkup = true;
+			} else {
+				this._pendingContent = null;
+				this._hasMarkup = false;
+			}
+			this.requestUpdate();
+		}
+		_clearDocument() {
+			this._pendingContent = null;
+			this._hasMarkup = null;
+			this.requestUpdate();
+		}
+		_buildMarkupView(segment, elementIds) {
+			const root = document.createElement("div");
+			root.className = "markup";
+			for (const el of segment) if (el.nodeType === Node.ELEMENT_NODE) root.appendChild(buildMarkupElement(el, 0, elementIds));
+			return root;
+		}
+		_onBodyClick = (e) => {
 			const target = e.target;
 			const attrToggle = target.closest(".xml-attr-value-chip");
 			if (attrToggle) {
@@ -3084,76 +3207,12 @@
 			}
 			const ghostText = target.closest(".markup-el-virtual-text");
 			const elementId = ghostText?.hasAttribute("data-element-id") ? ghostText.getAttribute("data-element-id") : target.closest(".markup-el[data-element-id]")?.getAttribute("data-element-id") ?? null;
-			if (elementId) onSelectElement(elementId);
-		});
-		return root;
-	}
-	//#endregion
-	//#region src/components/markup-pane/markup-pane.ts
-	/** <doclang-markup-pane> — DocLang XML markup view */
-	init_document();
-	var DoclangMarkupPane = class DoclangMarkupPane extends DoclangPageElement {
-		static styles = r$4(markup_pane_default);
-		_bodyRef = e();
-		connectedCallback() {
-			super.connectedCallback();
-			this.classList.add("pane", "pane-markup");
-			this.addEventListener("mousemove", this._onMousemove);
-			this.addEventListener("mouseleave", this._onMouseleave);
-		}
-		disconnectedCallback() {
-			super.disconnectedCallback();
-			this.removeEventListener("mousemove", this._onMousemove);
-			this.removeEventListener("mouseleave", this._onMouseleave);
-		}
-		render() {
-			return b`
-      <div class="pane-header">DocLang</div>
-      <div class="pane-body" id="markup-pane" ${n(this._bodyRef)}></div>
-    `;
-		}
-		setVisible(visible) {
-			this.hidden = !visible;
-		}
-		_applySelection() {
-			const body = this._bodyRef.value;
-			if (!body) return;
-			for (const el of body.querySelectorAll(".markup-el.selected")) el.classList.remove("selected");
-			if (!this._selectedId) return;
-			const target = body.querySelector(`.markup-el-virtual-text[data-element-id="${this._selectedId}"]`) ?? body.querySelector(`[data-element-id="${this._selectedId}"]`);
-			if (target) {
-				target.classList.add("selected");
-				target.scrollIntoView({
-					block: "nearest",
-					behavior: "smooth"
-				});
-			}
-		}
-		_renderDocument() {
-			const body = this._bodyRef.value;
-			if (!body) {
-				this.requestUpdate();
-				this.updateComplete.then(() => this._renderDocument());
-				return;
-			}
-			const state = this._docState;
-			body.innerHTML = "";
-			if (!state) return;
-			const segment = state.segments[this._currentPage - 1] ?? [];
-			const elementIds = assignElementIds(segment);
-			state.elementIds = elementIds;
-			state.idToElement = invertElementIds(elementIds);
-			if (segmentHasMarkup(segment)) body.appendChild(buildMarkupView(segment, elementIds, (id) => this.dispatchEvent(new CustomEvent("doclang-element-select", {
+			if (elementId) this.dispatchEvent(new CustomEvent("doclang-element-select", {
 				bubbles: true,
 				composed: true,
-				detail: { id }
-			}))));
-			else body.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-		}
-		_clearDocument() {
-			const body = this._bodyRef.value;
-			if (body) body.innerHTML = "";
-		}
+				detail: { id: elementId }
+			}));
+		};
 		_onMousemove = (e) => {
 			if (!e.target.closest(".markup-ghost-tag-part")) {
 				this._hideHint();
@@ -3177,10 +3236,11 @@
 			}));
 		}
 	};
+	__decorate([r$2()], DoclangMarkupPane.prototype, "_hasMarkup", void 0);
 	DoclangMarkupPane = __decorate([t$2("doclang-markup-pane")], DoclangMarkupPane);
 	//#endregion
 	//#region src/components/page-view-pane/page-view-pane.css?inline
-	var page_view_pane_default = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-page-controls {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n.page-zoom-control {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  user-select: none;\n}\n.page-zoom-control-label {\n  font-size: 0.625rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  cursor: pointer;\n}\n.page-zoom-control input[type='range'] {\n  width: 5.5rem;\n  height: 1rem;\n  margin: 0;\n  cursor: pointer;\n}\n.page-zoom-reset {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--bg);\n  color: var(--muted);\n  border-radius: 0.375rem;\n  padding: 0 0.45rem;\n  height: 1.25rem;\n  font: inherit;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n  line-height: 1;\n  cursor: pointer;\n  min-width: 2.75rem;\n}\n.page-zoom-reset:not(:disabled):hover {\n  border-color: var(--accent);\n  color: var(--text);\n}\n.page-zoom-reset:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-page-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  padding: 0.75rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-option-primary + .settings-subgroup {\n  margin-top: 0.65rem;\n}\n.settings-option-primary {\n  font-weight: 600;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-reading-order-group {\n  gap: 0.35rem;\n  padding-left: 1.6rem;\n}\n.settings-option-nested {\n  padding-left: 0;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.settings-option-disabled input {\n  cursor: not-allowed;\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.page-view-port {\n  display: flex;\n  overflow: auto;\n  flex: 1 1 auto;\n  width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  scrollbar-gutter: stable;\n}\n.pane-body.can-pan {\n  cursor: grab;\n}\n.pane-body.is-panning {\n  cursor: grabbing;\n  user-select: none;\n}\n.pane-body:focus {\n  outline: none;\n}\n.pane-body:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\n.page-view {\n  position: relative;\n  display: block;\n  width: fit-content;\n  flex-shrink: 0;\n  margin: auto;\n  line-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.page-view img {\n  display: block;\n  width: auto;\n  height: auto;\n  max-width: none;\n  max-height: none;\n  border: none;\n  border-radius: 0;\n}\n.page-view img:not([data-layout-ready]) {\n  opacity: 0;\n}\n.page-view svg.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  pointer-events: auto;\n  overflow: hidden;\n}\n.overlay rect.bbox.bbox-hidden,\n.overlay .overlay-badge.bbox-hidden {\n  display: none;\n}\n.overlay rect.bbox {\n  stroke-width: 2;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n}\n.overlay rect.bbox.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n  stroke-width: 3.5;\n  filter: drop-shadow(\n    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)\n  );\n}\n.overlay rect.bbox.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture,\n.overlay rect.bbox.layer-background {\n  fill: url(#layer-hatch) !important;\n  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);\n}\n.overlay .layer-hatch-stripe {\n  fill: var(--muted);\n  fill-opacity: 0.06;\n}\n.overlay rect.bbox.layer-furniture.selected,\n.overlay rect.bbox.layer-background.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 22%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture.related:not(.selected),\n.overlay rect.bbox.layer-background.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 18%,\n    transparent\n  ) !important;\n}\n.overlay .bbox-text {\n  fill: color-mix(in srgb, var(--kind-text) 14%, transparent);\n  stroke: var(--kind-text);\n}\n.overlay .bbox-heading {\n  fill: color-mix(in srgb, var(--kind-heading) 14%, transparent);\n  stroke: var(--kind-heading);\n}\n.overlay .bbox-list,\n.overlay .bbox-ldiv {\n  fill: color-mix(in srgb, var(--kind-list) 14%, transparent);\n  stroke: var(--kind-list);\n}\n.overlay .bbox-table {\n  fill: color-mix(in srgb, var(--kind-table) 14%, transparent);\n  stroke: var(--kind-table);\n}\n.overlay .bbox-index {\n  fill: color-mix(in srgb, var(--kind-index) 14%, transparent);\n  stroke: var(--kind-index);\n}\n.overlay .bbox-formula {\n  fill: color-mix(in srgb, var(--kind-formula) 14%, transparent);\n  stroke: var(--kind-formula);\n}\n.overlay .bbox-code {\n  fill: color-mix(in srgb, var(--kind-code) 16%, transparent);\n  stroke: var(--kind-code);\n}\n.overlay .bbox-picture {\n  fill: color-mix(in srgb, var(--kind-picture) 14%, transparent);\n  stroke: var(--kind-picture);\n}\n.overlay .bbox-group {\n  fill: color-mix(in srgb, var(--kind-group) 14%, transparent);\n  stroke: var(--kind-group);\n}\n.overlay .bbox-footnote {\n  fill: color-mix(in srgb, var(--kind-footnote) 14%, transparent);\n  stroke: var(--kind-footnote);\n}\n.overlay .bbox-page_header,\n.overlay .bbox-page_footer {\n  fill: color-mix(in srgb, var(--kind-page_header) 14%, transparent);\n  stroke: var(--kind-page_header);\n}\n.overlay .bbox-caption {\n  fill: color-mix(in srgb, var(--kind-caption) 14%, transparent);\n  stroke: var(--kind-caption);\n}\n.overlay line.caption-link {\n  color: var(--kind-caption);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.caption-link.bbox-hidden {\n  display: none;\n}\n.overlay line.xref-link {\n  color: var(--kind-footnote);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.xref-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link {\n  pointer-events: none;\n}\n.overlay .fragment-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link-path {\n  color: var(--overlay-fragment);\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-link-path-dashed {\n  stroke-dasharray: 6 4;\n}\n.overlay .fragment-nav {\n  pointer-events: none;\n}\n.overlay .fragment-nav.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-nav-btn {\n  pointer-events: auto;\n  cursor: pointer;\n}\n.overlay .fragment-nav-btn-disabled {\n  pointer-events: none;\n  cursor: default;\n  opacity: 0.35;\n}\n.overlay .fragment-nav-btn-bg {\n  fill: var(--panel);\n  stroke: var(--overlay-fragment);\n  stroke-width: 1;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-nav-btn-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg {\n  fill: color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel));\n}\n.overlay .fragment-link-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 600;\n  font-style: italic;\n  text-anchor: middle;\n  dominant-baseline: middle;\n  paint-order: stroke fill;\n  stroke: var(--panel);\n  stroke-width: 3px;\n}\n.overlay .reading-order-step {\n  color: var(--overlay-reading-order);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-dasharray: 5 4;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay .reading-order-step.bbox-hidden,\n.overlay .reading-order-badge.bbox-hidden {\n  display: none;\n}\n.overlay .overlay-badge {\n  pointer-events: none;\n}\n.overlay .overlay-badge-bg {\n  fill-opacity: 1;\n  stroke: none;\n}\n.reading-order-badge .overlay-badge-bg {\n  fill: var(--overlay-reading-order);\n}\n.overlay .element-badge {\n  opacity: 0.8;\n  pointer-events: auto;\n  cursor: help;\n}\n.overlay .element-badge .overlay-badge-bg {\n  fill: var(--kind-stroke, var(--accent));\n}\n.overlay .overlay-badge-label {\n  fill: #ffffff;\n  fill-opacity: 1;\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .bbox-field {\n  fill: color-mix(in srgb, var(--kind-field) 14%, transparent);\n  stroke: var(--kind-field);\n}\n.overlay .bbox-default {\n  fill: color-mix(in srgb, var(--kind-default) 12%, transparent);\n  stroke: var(--kind-default);\n}\n@media (prefers-color-scheme: dark) {\n  .overlay .bbox-text {\n    fill: color-mix(in srgb, var(--kind-text) 20%, transparent);\n  }\n  .overlay .bbox-heading {\n    fill: color-mix(in srgb, var(--kind-heading) 20%, transparent);\n  }\n  .overlay .bbox-list,\n  .overlay .bbox-ldiv {\n    fill: color-mix(in srgb, var(--kind-list) 20%, transparent);\n  }\n  .overlay .bbox-table {\n    fill: color-mix(in srgb, var(--kind-table) 18%, transparent);\n  }\n  .overlay .bbox-index {\n    fill: color-mix(in srgb, var(--kind-index) 18%, transparent);\n  }\n  .overlay .bbox-formula {\n    fill: color-mix(in srgb, var(--kind-formula) 18%, transparent);\n  }\n  .overlay .bbox-code {\n    fill: color-mix(in srgb, var(--kind-code) 20%, transparent);\n  }\n  .overlay .bbox-picture {\n    fill: color-mix(in srgb, var(--kind-picture) 20%, transparent);\n  }\n  .overlay .bbox-group {\n    fill: color-mix(in srgb, var(--kind-group) 20%, transparent);\n  }\n  .overlay .bbox-footnote {\n    fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent);\n  }\n  .overlay .bbox-page_header,\n  .overlay .bbox-page_footer {\n    fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent);\n  }\n  .overlay .bbox-caption {\n    fill: color-mix(in srgb, var(--kind-caption) 18%, transparent);\n  }\n  .overlay .bbox-field {\n    fill: color-mix(in srgb, var(--kind-field) 18%, transparent);\n  }\n  .overlay .bbox-default {\n    fill: color-mix(in srgb, var(--kind-default) 18%, transparent);\n  }\n}\n";
+	var page_view_pane_default = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-page-controls {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n.page-zoom-control {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  user-select: none;\n}\n.page-zoom-control-label {\n  font-size: 0.625rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  cursor: pointer;\n}\n.page-zoom-control input[type='range'] {\n  width: 5.5rem;\n  height: 1rem;\n  margin: 0;\n  cursor: pointer;\n}\n.page-zoom-reset {\n  appearance: none;\n  border: 1px solid var(--border);\n  background: var(--bg);\n  color: var(--muted);\n  border-radius: 0.375rem;\n  padding: 0 0.45rem;\n  height: 1.25rem;\n  font: inherit;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n  line-height: 1;\n  cursor: pointer;\n  min-width: 2.75rem;\n}\n.page-zoom-reset:not(:disabled):hover {\n  border-color: var(--accent);\n  color: var(--text);\n}\n.page-zoom-reset:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-page-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  padding: 0.75rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-option-primary + .settings-subgroup {\n  margin-top: 0.65rem;\n}\n.settings-option-primary {\n  font-weight: 600;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-reading-order-group {\n  gap: 0.35rem;\n  padding-left: 1.6rem;\n}\n.settings-option-nested {\n  padding-left: 0;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option-disabled {\n  opacity: 0.45;\n  cursor: not-allowed;\n}\n.settings-option-disabled input {\n  cursor: not-allowed;\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.page-view-port {\n  display: flex;\n  overflow: auto;\n  flex: 1 1 auto;\n  width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  scrollbar-gutter: stable;\n}\n.pane-body.can-pan {\n  cursor: grab;\n}\n.pane-body.is-panning {\n  cursor: grabbing;\n  user-select: none;\n}\n.pane-body:focus {\n  outline: none;\n}\n.pane-body:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: -2px;\n}\n.placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 12rem;\n  color: var(--muted);\n  font-style: italic;\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.5rem;\n  padding: 2rem;\n  text-align: center;\n}\n.page-view {\n  position: relative;\n  display: block;\n  width: fit-content;\n  flex-shrink: 0;\n  margin: auto;\n  line-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n  overflow: hidden;\n}\n.page-view img {\n  display: block;\n  width: auto;\n  height: auto;\n  max-width: none;\n  max-height: none;\n  border: none;\n  border-radius: 0;\n}\n.page-view img:not([data-layout-ready]) {\n  opacity: 0;\n}\n.page-view svg.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  pointer-events: auto;\n  overflow: hidden;\n}\n.overlay rect.bbox.bbox-hidden,\n.overlay .overlay-badge.bbox-hidden {\n  display: none;\n}\n.overlay rect.bbox {\n  stroke-width: 2;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n}\n.overlay rect.bbox.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n  stroke-width: 3.5;\n  filter: drop-shadow(\n    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)\n  );\n}\n.overlay rect.bbox.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 30%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture,\n.overlay rect.bbox.layer-background {\n  fill: url(#layer-hatch) !important;\n  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);\n}\n.overlay .layer-hatch-stripe {\n  fill: var(--muted);\n  fill-opacity: 0.06;\n}\n.overlay rect.bbox.layer-furniture.selected,\n.overlay rect.bbox.layer-background.selected {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 22%,\n    transparent\n  ) !important;\n}\n.overlay rect.bbox.layer-furniture.related:not(.selected),\n.overlay rect.bbox.layer-background.related:not(.selected) {\n  fill: color-mix(\n    in srgb,\n    var(--kind-stroke, var(--accent)) 18%,\n    transparent\n  ) !important;\n}\n.overlay .bbox-text {\n  fill: color-mix(in srgb, var(--kind-text) 14%, transparent);\n  stroke: var(--kind-text);\n}\n.overlay .bbox-heading {\n  fill: color-mix(in srgb, var(--kind-heading) 14%, transparent);\n  stroke: var(--kind-heading);\n}\n.overlay .bbox-list,\n.overlay .bbox-ldiv {\n  fill: color-mix(in srgb, var(--kind-list) 14%, transparent);\n  stroke: var(--kind-list);\n}\n.overlay .bbox-table {\n  fill: color-mix(in srgb, var(--kind-table) 14%, transparent);\n  stroke: var(--kind-table);\n}\n.overlay .bbox-index {\n  fill: color-mix(in srgb, var(--kind-index) 14%, transparent);\n  stroke: var(--kind-index);\n}\n.overlay .bbox-formula {\n  fill: color-mix(in srgb, var(--kind-formula) 14%, transparent);\n  stroke: var(--kind-formula);\n}\n.overlay .bbox-code {\n  fill: color-mix(in srgb, var(--kind-code) 16%, transparent);\n  stroke: var(--kind-code);\n}\n.overlay .bbox-picture {\n  fill: color-mix(in srgb, var(--kind-picture) 14%, transparent);\n  stroke: var(--kind-picture);\n}\n.overlay .bbox-group {\n  fill: color-mix(in srgb, var(--kind-group) 14%, transparent);\n  stroke: var(--kind-group);\n}\n.overlay .bbox-footnote {\n  fill: color-mix(in srgb, var(--kind-footnote) 14%, transparent);\n  stroke: var(--kind-footnote);\n}\n.overlay .bbox-page_header,\n.overlay .bbox-page_footer {\n  fill: color-mix(in srgb, var(--kind-page_header) 14%, transparent);\n  stroke: var(--kind-page_header);\n}\n.overlay .bbox-caption {\n  fill: color-mix(in srgb, var(--kind-caption) 14%, transparent);\n  stroke: var(--kind-caption);\n}\n.overlay line.caption-link {\n  color: var(--kind-caption);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.caption-link.bbox-hidden {\n  display: none;\n}\n.overlay line.xref-link {\n  color: var(--kind-footnote);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay line.xref-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link {\n  pointer-events: none;\n}\n.overlay .fragment-link.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-link-path {\n  color: var(--overlay-fragment);\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-link-path-dashed {\n  stroke-dasharray: 6 4;\n}\n.overlay .fragment-nav {\n  pointer-events: none;\n}\n.overlay .fragment-nav.bbox-hidden {\n  display: none;\n}\n.overlay .fragment-nav-btn {\n  pointer-events: auto;\n  cursor: pointer;\n}\n.overlay .fragment-nav-btn-disabled {\n  pointer-events: none;\n  cursor: default;\n  opacity: 0.35;\n}\n.overlay .fragment-nav-btn-bg {\n  fill: var(--panel);\n  stroke: var(--overlay-fragment);\n  stroke-width: 1;\n  vector-effect: non-scaling-stroke;\n}\n.overlay .fragment-nav-btn-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg {\n  fill: color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel));\n}\n.overlay .fragment-link-label {\n  fill: var(--overlay-fragment);\n  font-family: var(--font-ui);\n  font-weight: 600;\n  font-style: italic;\n  text-anchor: middle;\n  dominant-baseline: middle;\n  paint-order: stroke fill;\n  stroke: var(--panel);\n  stroke-width: 3px;\n}\n.overlay .reading-order-step {\n  color: var(--overlay-reading-order);\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-dasharray: 5 4;\n  vector-effect: non-scaling-stroke;\n  pointer-events: none;\n  fill: none;\n}\n.overlay .reading-order-step.bbox-hidden,\n.overlay .reading-order-badge.bbox-hidden {\n  display: none;\n}\n.overlay .overlay-badge {\n  pointer-events: none;\n}\n.overlay .overlay-badge-bg {\n  fill-opacity: 1;\n  stroke: none;\n}\n.reading-order-badge .overlay-badge-bg {\n  fill: var(--overlay-reading-order);\n}\n.overlay .element-badge {\n  opacity: 0.8;\n  pointer-events: auto;\n  cursor: help;\n}\n.overlay .element-badge .overlay-badge-bg {\n  fill: var(--accent);\n}\n.overlay .element-badge.kind-text .overlay-badge-bg { fill: var(--kind-text); }\n.overlay .element-badge.kind-heading .overlay-badge-bg { fill: var(--kind-heading); }\n.overlay .element-badge.kind-list .overlay-badge-bg { fill: var(--kind-list); }\n.overlay .element-badge.kind-table .overlay-badge-bg { fill: var(--kind-table); }\n.overlay .element-badge.kind-index .overlay-badge-bg { fill: var(--kind-index); }\n.overlay .element-badge.kind-formula .overlay-badge-bg { fill: var(--kind-formula); }\n.overlay .element-badge.kind-code .overlay-badge-bg { fill: var(--kind-code); }\n.overlay .element-badge.kind-picture .overlay-badge-bg { fill: var(--kind-picture); }\n.overlay .element-badge.kind-group .overlay-badge-bg { fill: var(--kind-group); }\n.overlay .element-badge.kind-footnote .overlay-badge-bg { fill: var(--kind-footnote); }\n.overlay .element-badge.kind-page_header .overlay-badge-bg { fill: var(--kind-page_header); }\n.overlay .element-badge.kind-caption .overlay-badge-bg { fill: var(--kind-caption); }\n.overlay .element-badge.kind-field .overlay-badge-bg { fill: var(--kind-field); }\n.overlay .overlay-badge-label {\n  fill: #ffffff;\n  fill-opacity: 1;\n  font-family: var(--font-ui);\n  font-weight: 700;\n  text-anchor: middle;\n  dominant-baseline: central;\n  pointer-events: none;\n}\n.overlay .bbox-field {\n  fill: color-mix(in srgb, var(--kind-field) 14%, transparent);\n  stroke: var(--kind-field);\n}\n.overlay .bbox-default {\n  fill: color-mix(in srgb, var(--kind-default) 12%, transparent);\n  stroke: var(--kind-default);\n}\n@media (prefers-color-scheme: dark) {\n  .overlay .bbox-text {\n    fill: color-mix(in srgb, var(--kind-text) 20%, transparent);\n  }\n  .overlay .bbox-heading {\n    fill: color-mix(in srgb, var(--kind-heading) 20%, transparent);\n  }\n  .overlay .bbox-list,\n  .overlay .bbox-ldiv {\n    fill: color-mix(in srgb, var(--kind-list) 20%, transparent);\n  }\n  .overlay .bbox-table {\n    fill: color-mix(in srgb, var(--kind-table) 18%, transparent);\n  }\n  .overlay .bbox-index {\n    fill: color-mix(in srgb, var(--kind-index) 18%, transparent);\n  }\n  .overlay .bbox-formula {\n    fill: color-mix(in srgb, var(--kind-formula) 18%, transparent);\n  }\n  .overlay .bbox-code {\n    fill: color-mix(in srgb, var(--kind-code) 20%, transparent);\n  }\n  .overlay .bbox-picture {\n    fill: color-mix(in srgb, var(--kind-picture) 20%, transparent);\n  }\n  .overlay .bbox-group {\n    fill: color-mix(in srgb, var(--kind-group) 20%, transparent);\n  }\n  .overlay .bbox-footnote {\n    fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent);\n  }\n  .overlay .bbox-page_header,\n  .overlay .bbox-page_footer {\n    fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent);\n  }\n  .overlay .bbox-caption {\n    fill: color-mix(in srgb, var(--kind-caption) 18%, transparent);\n  }\n  .overlay .bbox-field {\n    fill: color-mix(in srgb, var(--kind-field) 18%, transparent);\n  }\n  .overlay .bbox-default {\n    fill: color-mix(in srgb, var(--kind-default) 18%, transparent);\n  }\n}\n";
 	//#endregion
 	//#region src/components/page-view-pane/overlay.ts
 	init_dom();
@@ -3737,7 +3797,7 @@
 	var PAGE_PAN_DRAG_THRESHOLD = 5;
 	var NO_IMAGE = "(No page image available.)";
 	var DoclangPageViewPane = class DoclangPageViewPane extends DoclangPageElement {
-		static styles = r$4(page_view_pane_default);
+		static styles = r$6(page_view_pane_default);
 		_bodyRef = e();
 		_settingsOpen = false;
 		_visible = false;
@@ -4586,9 +4646,11 @@
 	DoclangPageViewPane = __decorate([t$2("doclang-page-view-pane")], DoclangPageViewPane);
 	//#endregion
 	//#region src/components/reading-pane/reading-pane.css?inline
-	var reading_pane_default = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-reading-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: auto;\n  padding: 1rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.rendered-doc {\n  max-width: 42rem;\n  margin: 0 auto;\n  line-height: 1.6;\n}\n.rendered-el-virtual-text > p,\n.rendered-el-virtual-text > div {\n  margin: 0;\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text {\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text > p,\n.rendered-doc li > .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-el-virtual-text > div > .rendered-el {\n  display: block;\n  margin: 0.25rem 0;\n}\n.rendered-el {\n  cursor: pointer;\n  border-radius: 0.25rem;\n}\n.rendered-el:hover {\n  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);\n}\n.rendered-el.selected {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  background: color-mix(in srgb, var(--accent) 8%, transparent);\n}\n.rendered-doc p {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc h1,\n.rendered-doc h2,\n.rendered-doc h3,\n.rendered-doc h4,\n.rendered-doc h5,\n.rendered-doc h6 {\n  margin: 1.25rem 0 0.5rem;\n  line-height: 1.25;\n}\n.rendered-doc h1:first-child,\n.rendered-doc h2:first-child,\n.rendered-doc h3:first-child {\n  margin-top: 0;\n}\n.rendered-doc ul,\n.rendered-doc ol {\n  margin: 0 0 0.75rem;\n  padding-left: 1.5rem;\n}\n.rendered-doc li {\n  margin: 0.25rem 0;\n}\n.rendered-doc li > .rendered-el > p:first-child,\n.rendered-doc li > .rendered-el > h1:first-child,\n.rendered-doc li > .rendered-el > h2:first-child,\n.rendered-doc li > .rendered-el > h3:first-child,\n.rendered-doc li > .rendered-el > h4:first-child,\n.rendered-doc li > .rendered-el > h5:first-child,\n.rendered-doc li > .rendered-el > h6:first-child {\n  margin-top: 0;\n}\n.rendered-marker {\n  margin-right: 0.35rem;\n}\n.rendered-handwriting {\n  font-family: 'Segoe Print', 'Bradley Hand', cursive;\n}\n.rendered-doc pre {\n  margin: 0 0 0.75rem;\n  padding: 0.75rem 1rem;\n  overflow-x: auto;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-doc code {\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc pre code {\n  font-size: inherit;\n  background: none;\n  border: none;\n  padding: 0;\n}\n.rendered-code-label {\n  display: block;\n  margin-bottom: 0.25rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n}\n.rendered-formula {\n  display: block;\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-family: var(--font-mono);\n  font-size: 0.875rem;\n  background: var(--placeholder-bg);\n  border-left: 3px solid var(--border);\n  overflow-x: auto;\n}\n.rendered-formula-inline {\n  display: inline;\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc figure {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc figure img {\n  max-width: 100%;\n  height: auto;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n}\n.rendered-doc figure img.rendered-picture-unavailable {\n  display: inline-block;\n  min-width: 3rem;\n  min-height: 2.5rem;\n  object-fit: contain;\n  vertical-align: middle;\n}\n.rendered-doc figcaption {\n  margin-top: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-picture-contents {\n  margin-top: 0.5rem;\n  font-size: 0.875rem;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--placeholder-bg);\n}\n.rendered-picture-contents summary {\n  padding: 0.4rem 0.65rem;\n  cursor: pointer;\n  font-weight: 600;\n  color: var(--muted);\n  user-select: none;\n}\n.rendered-picture-contents summary:hover {\n  color: var(--text);\n}\n.rendered-picture-contents-body {\n  padding: 0.5rem 0.75rem 0.75rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-picture-contents-body .rendered-el > p {\n  margin-bottom: 0.35rem;\n  font-size: 0.8125rem;\n}\n.rendered-table {\n  width: 100%;\n  margin: 0 0 0.75rem;\n  border-collapse: collapse;\n  font-size: 0.875rem;\n}\n.rendered-table caption {\n  caption-side: top;\n  margin-bottom: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n  text-align: left;\n}\n.rendered-table th,\n.rendered-table td {\n  border: 1px solid var(--border);\n  padding: 0.35rem 0.5rem;\n  vertical-align: top;\n  text-align: left;\n}\n.rendered-table th {\n  background: color-mix(in srgb, var(--border) 35%, var(--panel));\n  font-weight: 600;\n}\n.rendered-table .rendered-table-cell-text {\n  display: inline;\n}\n.rendered-table .rendered-el {\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  margin: 0;\n}\n.rendered-table .rendered-table {\n  margin: 0.25rem 0 0;\n}\n.rendered-page-header,\n.rendered-page-footer {\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-page-header {\n  margin-bottom: 1rem;\n  padding-bottom: 0.5rem;\n  border-bottom: 1px solid var(--border);\n}\n.rendered-page-footer {\n  margin-top: 1rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-doc:not(.show-reading-furniture)\n  .rendered-el[data-doclang-layer='furniture'] {\n  display: none;\n}\n.rendered-doc:not(.show-reading-background)\n  .rendered-el[data-doclang-layer='background'] {\n  display: none;\n}\n.rendered-el[data-doclang-layer='furniture'],\n.rendered-el[data-doclang-layer='background'] {\n  position: relative;\n}\n.rendered-el[data-doclang-layer='furniture']::before,\n.rendered-el[data-doclang-layer='background']::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  border-radius: inherit;\n  pointer-events: none;\n  background: repeating-linear-gradient(\n    -45deg,\n    transparent 0 10px,\n    color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px\n  );\n}\n.rendered-el.rendered-footnote > aside {\n  font-size: 0.875rem;\n  color: var(--muted);\n  border-left: 2px solid var(--border);\n  padding-left: 0.75rem;\n  margin: 0 0 0.75rem;\n}\n.rendered-unsupported {\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.8125rem;\n  font-style: italic;\n  color: var(--muted);\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-field-region {\n  margin: 0 0 1rem;\n  padding: 0.75rem 1rem;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: color-mix(in srgb, var(--kind-field) 6%, transparent);\n}\n.rendered-field-region > .rendered-field-heading:first-child,\n.rendered-field-region\n  > .rendered-el.rendered-field_heading\n  > .rendered-field-heading:first-child {\n  margin-top: 0;\n}\n.rendered-field-item {\n  margin: 0.5rem 0;\n}\n.rendered-field-item > .rendered-el.rendered-field-key,\n.rendered-field-key {\n  font-weight: 600;\n}\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {\n  margin-top: 0.15rem;\n}\n.rendered-field-value-fillable .rendered-field-fillable-slot {\n  display: inline-block;\n  min-width: 6rem;\n  min-height: 1.25em;\n  border-bottom: 1px solid color-mix(in srgb, var(--text) 55%, transparent);\n  vertical-align: bottom;\n}\n.rendered-field-hint {\n  font-size: 0.85em;\n  color: var(--muted);\n  font-style: italic;\n}\n.rendered-field-heading {\n  color: var(--text);\n}\n.rendered-checkbox {\n  margin: 0 0.25rem 0 0;\n  vertical-align: middle;\n  accent-color: var(--kind-field);\n}\n.rendered-checkbox-wrap {\n  display: inline;\n}\n";
+	var reading_pane_default = ":host {\n  display: flex;\n  flex-direction: column;\n  border-right: 1px solid var(--border);\n  min-height: 0;\n  min-width: 0;\n}\n:host([hidden]) {\n  display: none !important;\n}\n:host(.pane-layout-last) {\n  border-right: none;\n}\n.pane-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  box-sizing: border-box;\n  height: 2.125rem;\n  padding: 0 0.75rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n  border-bottom: 1px solid var(--border);\n  background: var(--panel);\n}\n.pane-header-title {\n  min-width: 0;\n}\n.pane-settings-toggle {\n  appearance: none;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-weight: 500;\n  cursor: pointer;\n  white-space: nowrap;\n  flex-shrink: 0;\n  display: inline-flex;\n  align-items: center;\n  transition:\n    color 0.12s ease,\n    background 0.12s ease,\n    border-color 0.12s ease;\n  border-radius: 0.25rem;\n  padding: 0 0.28rem 0 0.4rem;\n  height: 1.25rem;\n  font-size: 0.625rem;\n  font-weight: 600;\n  line-height: 1;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  font: inherit;\n}\n.pane-settings-toggle::after {\n  content: '';\n  flex-shrink: 0;\n  width: 0.26rem;\n  height: 0.26rem;\n  margin-left: 0.22rem;\n  margin-top: -0.1em;\n  border-right: 1.5px solid currentColor;\n  border-bottom: 1.5px solid currentColor;\n  transform: rotate(45deg);\n  opacity: 0.65;\n}\n.pane-settings-toggle:hover {\n  color: var(--text);\n  background: color-mix(in srgb, var(--text) 5%, transparent);\n}\n.pane-settings-toggle[aria-expanded='true'] {\n  color: var(--accent);\n  background: color-mix(in srgb, var(--accent) 10%, var(--panel));\n  border-color: color-mix(in srgb, var(--accent) 22%, transparent);\n}\n.pane-settings-toggle:focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}\n.pane-reading-layout {\n  position: relative;\n  flex: 1;\n  min-height: 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n}\n.pane-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  min-height: 0;\n  overflow: auto;\n  padding: 1rem;\n}\n.viewer-settings-layer {\n  position: absolute;\n  inset: 0;\n  z-index: 5;\n}\n.viewer-settings-layer[hidden] {\n  display: none;\n}\n.viewer-settings-scrim {\n  position: absolute;\n  inset: 0;\n  z-index: 0;\n  appearance: none;\n  border: none;\n  margin: 0;\n  padding: 0;\n  background: color-mix(in srgb, var(--bg) 28%, transparent);\n  cursor: default;\n}\n.viewer-settings {\n  position: absolute;\n  top: 0.5rem;\n  right: 0.5rem;\n  z-index: 1;\n  width: 13rem;\n  max-height: calc(100% - 1rem);\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: var(--panel);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);\n  overflow: hidden;\n}\n.viewer-settings-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.viewer-settings-title {\n  margin: 0;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: var(--muted);\n}\n.viewer-settings-close {\n  appearance: none;\n  border: none;\n  background: transparent;\n  color: var(--muted);\n  width: 1.5rem;\n  height: 1.5rem;\n  border-radius: 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n  cursor: pointer;\n}\n.viewer-settings-close:hover {\n  color: var(--text);\n  background: var(--bg);\n}\n.viewer-settings-body {\n  padding: 0.75rem;\n  overflow: auto;\n}\n.settings-option {\n  display: flex;\n  align-items: flex-start;\n  gap: 0.5rem;\n  font-size: 0.875rem;\n  cursor: pointer;\n  user-select: none;\n}\n.settings-subgroup {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding-left: 0.85rem;\n}\n.settings-option-sub {\n  font-size: 0.8125rem;\n  color: var(--muted);\n}\n.settings-option input {\n  margin: 0.15rem 0 0;\n  flex-shrink: 0;\n  cursor: pointer;\n}\n.rendered-doc {\n  max-width: 42rem;\n  margin: 0 auto;\n  line-height: 1.6;\n}\n.rendered-el-virtual-text > p,\n.rendered-el-virtual-text > div {\n  margin: 0;\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text {\n  display: inline;\n}\n.rendered-doc li > .rendered-el-virtual-text > p,\n.rendered-doc li > .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text {\n  display: inline;\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  display: inline;\n  margin: 0;\n}\n.rendered-el-virtual-text > div > .rendered-el {\n  display: block;\n  margin: 0.25rem 0;\n}\n.rendered-el {\n  cursor: pointer;\n  border-radius: 0.25rem;\n}\n.rendered-el:hover {\n  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);\n}\n.rendered-el.selected {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n  background: color-mix(in srgb, var(--accent) 8%, transparent);\n}\n.rendered-doc p {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc h1,\n.rendered-doc h2,\n.rendered-doc h3,\n.rendered-doc h4,\n.rendered-doc h5,\n.rendered-doc h6 {\n  margin: 1.25rem 0 0.5rem;\n  line-height: 1.25;\n}\n.rendered-doc h1:first-child,\n.rendered-doc h2:first-child,\n.rendered-doc h3:first-child {\n  margin-top: 0;\n}\n.rendered-doc ul,\n.rendered-doc ol {\n  margin: 0 0 0.75rem;\n  padding-left: 1.5rem;\n}\n.rendered-doc li {\n  margin: 0.25rem 0;\n}\n.rendered-doc li > .rendered-el > p:first-child,\n.rendered-doc li > .rendered-el > h1:first-child,\n.rendered-doc li > .rendered-el > h2:first-child,\n.rendered-doc li > .rendered-el > h3:first-child,\n.rendered-doc li > .rendered-el > h4:first-child,\n.rendered-doc li > .rendered-el > h5:first-child,\n.rendered-doc li > .rendered-el > h6:first-child {\n  margin-top: 0;\n}\n.rendered-marker {\n  margin-right: 0.35rem;\n}\n.rendered-handwriting {\n  font-family: 'Segoe Print', 'Bradley Hand', cursive;\n}\n.rendered-doc pre {\n  margin: 0 0 0.75rem;\n  padding: 0.75rem 1rem;\n  overflow-x: auto;\n  font-family: var(--font-mono);\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  background: var(--placeholder-bg);\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-doc code {\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc pre code {\n  font-size: inherit;\n  background: none;\n  border: none;\n  padding: 0;\n}\n.rendered-code-label {\n  display: block;\n  margin-bottom: 0.25rem;\n  font-size: 0.75rem;\n  font-weight: 600;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n}\n.rendered-formula {\n  display: block;\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-family: var(--font-mono);\n  font-size: 0.875rem;\n  background: var(--placeholder-bg);\n  border-left: 3px solid var(--border);\n  overflow-x: auto;\n}\n.rendered-formula-inline {\n  display: inline;\n  font-family: var(--font-mono);\n  font-size: 0.875em;\n}\n.rendered-doc figure {\n  margin: 0 0 0.75rem;\n}\n.rendered-doc figure img {\n  max-width: 100%;\n  height: auto;\n  border: 1px solid var(--border);\n  border-radius: 0.25rem;\n}\n.rendered-doc figure img.rendered-picture-unavailable {\n  display: inline-block;\n  min-width: 3rem;\n  min-height: 2.5rem;\n  object-fit: contain;\n  vertical-align: middle;\n}\n.rendered-doc figcaption {\n  margin-top: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-picture-contents {\n  margin-top: 0.5rem;\n  font-size: 0.875rem;\n  border: 1px solid var(--border);\n  border-radius: 0.375rem;\n  background: var(--placeholder-bg);\n}\n.rendered-picture-contents summary {\n  padding: 0.4rem 0.65rem;\n  cursor: pointer;\n  font-weight: 600;\n  color: var(--muted);\n  user-select: none;\n}\n.rendered-picture-contents summary:hover {\n  color: var(--text);\n}\n.rendered-picture-contents-body {\n  padding: 0.5rem 0.75rem 0.75rem;\n  border-top: 1px solid var(--border);\n}\n.rendered-picture-contents-body .rendered-el > p {\n  margin-bottom: 0.35rem;\n  font-size: 0.8125rem;\n}\n.rendered-table {\n  width: 100%;\n  margin: 0 0 0.75rem;\n  border-collapse: collapse;\n  font-size: 0.875rem;\n}\n.rendered-table caption {\n  caption-side: top;\n  margin-bottom: 0.35rem;\n  font-size: 0.875rem;\n  color: var(--muted);\n  text-align: left;\n}\n.rendered-table th,\n.rendered-table td {\n  border: 1px solid var(--border);\n  padding: 0.35rem 0.5rem;\n  vertical-align: top;\n  text-align: left;\n}\n.rendered-table th {\n  background: color-mix(in srgb, var(--border) 35%, var(--panel));\n  font-weight: 600;\n}\n.rendered-table .rendered-table-cell-text {\n  display: inline;\n}\n.rendered-table .rendered-el {\n  margin: 0;\n}\n.rendered-table .rendered-el-virtual-text > p,\n.rendered-table .rendered-el-virtual-text > div {\n  margin: 0;\n}\n.rendered-table .rendered-table {\n  margin: 0.25rem 0 0;\n}\n.rendered-page-header,\n.rendered-page-footer {\n  font-size: 0.875rem;\n  color: var(--muted);\n}\n.rendered-page-header {\n  margin-bottom: 1rem;\n  padding-bottom: 0.5rem;\n  border-bottom: 1px solid var(--border);\n}\n.rendered-page-footer {\n  margin-top: 1rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid var(--border);\n}\n.pane-body:not(.show-reading-furniture)\n  .rendered-el[data-doclang-layer='furniture'] {\n  display: none;\n}\n.pane-body:not(.show-reading-background)\n  .rendered-el[data-doclang-layer='background'] {\n  display: none;\n}\n.rendered-el[data-doclang-layer='furniture'],\n.rendered-el[data-doclang-layer='background'] {\n  position: relative;\n}\n.rendered-el[data-doclang-layer='furniture']::before,\n.rendered-el[data-doclang-layer='background']::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  border-radius: inherit;\n  pointer-events: none;\n  background: repeating-linear-gradient(\n    -45deg,\n    transparent 0 10px,\n    color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px\n  );\n}\n.rendered-el.rendered-footnote > aside {\n  font-size: 0.875rem;\n  color: var(--muted);\n  border-left: 2px solid var(--border);\n  padding-left: 0.75rem;\n  margin: 0 0 0.75rem;\n}\n.rendered-unsupported {\n  margin: 0 0 0.75rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.8125rem;\n  font-style: italic;\n  color: var(--muted);\n  background: var(--placeholder-bg);\n  border: 1px dashed var(--border);\n  border-radius: 0.375rem;\n}\n.rendered-field-region {\n  margin: 0 0 1rem;\n  padding: 0.75rem 1rem;\n  border: 1px solid var(--border);\n  border-radius: 0.5rem;\n  background: color-mix(in srgb, var(--kind-field) 6%, transparent);\n}\n.rendered-field-region > .rendered-field-heading:first-child,\n.rendered-field-region\n  > .rendered-el.rendered-field_heading\n  > .rendered-field-heading:first-child {\n  margin-top: 0;\n}\n.rendered-field-item {\n  margin: 0.5rem 0;\n}\n.rendered-field-item > .rendered-el.rendered-field-key,\n.rendered-field-key {\n  font-weight: 600;\n}\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,\n.rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {\n  margin-top: 0.15rem;\n}\n.rendered-field-value-fillable .rendered-field-fillable-slot {\n  display: inline-block;\n  min-width: 6rem;\n  min-height: 1.25em;\n  border-bottom: 1px solid color-mix(in srgb, var(--text) 55%, transparent);\n  vertical-align: bottom;\n}\n.rendered-field-hint {\n  font-size: 0.85em;\n  color: var(--muted);\n  font-style: italic;\n}\n.rendered-field-heading {\n  color: var(--text);\n}\n.rendered-checkbox {\n  margin: 0 0.25rem 0 0;\n  vertical-align: middle;\n  accent-color: var(--kind-field);\n}\n.rendered-checkbox-wrap {\n  display: inline;\n}\n";
 	//#endregion
-	//#region src/components/reading-pane/rendered.ts
+	//#region src/components/reading-pane/reading-pane.ts
+	/** <doclang-reading-pane> — reading/rendered view with layers settings panel */
+	init_document();
 	init_dom();
 	var RENDER_BLOCK_TAGS = /* @__PURE__ */ new Set([
 		"text",
@@ -4632,27 +4694,26 @@
 	/** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
 	var SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
 	var MAX_DATA_IMAGE_URI_LENGTH = 2097152;
-	var _assetUrls;
 	function applyElementLayerAttr(sourceEl, domEl) {
 		domEl.setAttribute("data-doclang-layer", elementLayer(sourceEl));
 	}
-	function resolveArchiveUri(uri) {
+	function resolveArchiveUri(uri, assetUrls) {
 		if (!uri) return null;
 		const trimmed = uri.trim();
 		if (!trimmed) return null;
 		if (SAFE_DATA_IMAGE_RE.test(trimmed)) return trimmed.length <= MAX_DATA_IMAGE_URI_LENGTH ? trimmed : null;
 		if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith("//")) return null;
-		return _assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
+		return assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
 	}
 	function markPictureUnavailable(img) {
 		img.classList.add("rendered-picture-unavailable");
 		img.alt = "\xA0";
 		img.setAttribute("aria-label", PICTURE_UNAVAILABLE_ALT);
 	}
-	function appendPictureFigureImage(figure, uri, captionEl, elementIds) {
+	function appendPictureFigureImage(figure, uri, captionEl, elementIds, assetUrls) {
 		const img = document.createElement("img");
 		figure.appendChild(img);
-		const resolved = uri ? resolveArchiveUri(uri) : null;
+		const resolved = uri ? resolveArchiveUri(uri, assetUrls) : null;
 		if (resolved) {
 			img.alt = "";
 			img.src = resolved;
@@ -4661,17 +4722,17 @@
 			markPictureUnavailable(img);
 			img.src = INVALID_PICTURE_SRC;
 		}
-		if (captionEl) figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
+		if (captionEl) figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption", assetUrls));
 	}
 	function readCaptionElement(el) {
 		return childElements(el).find((c) => localName(c) === "caption") ?? null;
 	}
-	function renderEmbeddedCaption(captionEl, elementIds, tagName) {
+	function renderEmbeddedCaption(captionEl, elementIds, tagName, assetUrls) {
 		const node = document.createElement(tagName);
 		node.classList.add("rendered-el", "rendered-caption");
 		const elementId = elementIds.get(captionEl);
 		if (elementId) node.setAttribute("data-element-id", elementId);
-		appendRenderedBody(node, captionEl, elementIds, { inline: true });
+		appendRenderedBody(node, captionEl, elementIds, { inline: true }, assetUrls);
 		return node;
 	}
 	function wrapRendered(el, node, elementId, extraClass) {
@@ -4683,32 +4744,32 @@
 		wrap.appendChild(node);
 		return wrap;
 	}
-	function appendRenderedBody(parent, el, elementIds, ctx) {
+	function appendRenderedBody(parent, el, elementIds, ctx, assetUrls) {
 		const nodes = [...el.childNodes];
 		let i = skipElementHeadNodes(nodes, 0);
 		while (i < nodes.length) {
-			appendRenderedNode(parent, nodes[i], elementIds, ctx);
+			appendRenderedNode(parent, nodes[i], elementIds, ctx, assetUrls);
 			i += 1;
 		}
 	}
-	function appendRenderedBodyBlocks(parent, el, elementIds) {
+	function appendRenderedBodyBlocks(parent, el, elementIds, assetUrls) {
 		const nodes = [...el.childNodes];
 		let i = skipElementHeadNodes(nodes, 0);
 		while (i < nodes.length) {
 			const node = nodes[i];
 			if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-				const rendered = renderBlockElement(node, elementIds, { inline: false });
+				const rendered = renderBlockElement(node, elementIds, { inline: false }, assetUrls);
 				if (rendered) parent.appendChild(rendered);
-			} else appendRenderedNode(parent, node, elementIds, { inline: false });
+			} else appendRenderedNode(parent, node, elementIds, { inline: false }, assetUrls);
 			i += 1;
 		}
 	}
-	function renderMarkerElement(el, elementIds, ctx) {
+	function renderMarkerElement(el, elementIds, ctx, assetUrls) {
 		const marker = document.createElement("span");
 		marker.className = "rendered-marker rendered-el";
 		const elementId = elementIds.get(el);
 		if (elementId) marker.setAttribute("data-element-id", elementId);
-		appendRenderedBody(marker, el, elementIds, ctx);
+		appendRenderedBody(marker, el, elementIds, ctx, assetUrls);
 		return marker;
 	}
 	function renderCheckboxElement(el, elementIds) {
@@ -4725,7 +4786,7 @@
 		wrap.appendChild(cb);
 		return wrap;
 	}
-	function renderFieldKeyElement(el, elementIds, ctx) {
+	function renderFieldKeyElement(el, elementIds, ctx, assetUrls) {
 		const node = document.createElement("span");
 		node.className = "rendered-field-key rendered-el";
 		const elementId = elementIds.get(el);
@@ -4734,10 +4795,10 @@
 		appendRenderedBody(node, el, elementIds, {
 			...ctx,
 			inline: true
-		});
+		}, assetUrls);
 		return node;
 	}
-	function renderFieldValueElement(el, elementIds, ctx) {
+	function renderFieldValueElement(el, elementIds, ctx, assetUrls) {
 		const valueClass = el.getAttribute("class") ?? "read_only";
 		const node = document.createElement("span");
 		node.className = `rendered-field-value rendered-field-value-${valueClass} rendered-el`;
@@ -4747,7 +4808,7 @@
 		appendRenderedBody(node, el, elementIds, {
 			...ctx,
 			inline: true
-		});
+		}, assetUrls);
 		if (valueClass === "fillable" && !node.textContent?.trim() && !node.querySelector(".rendered-checkbox-wrap, img, .rendered-marker")) {
 			const slot = document.createElement("span");
 			slot.className = "rendered-field-fillable-slot";
@@ -4756,7 +4817,7 @@
 		}
 		return node;
 	}
-	function renderFieldHintElement(el, elementIds, ctx) {
+	function renderFieldHintElement(el, elementIds, ctx, assetUrls) {
 		const node = document.createElement("span");
 		node.className = "rendered-field-hint rendered-el";
 		const elementId = elementIds.get(el);
@@ -4765,10 +4826,10 @@
 		appendRenderedBody(node, el, elementIds, {
 			...ctx,
 			inline: true
-		});
+		}, assetUrls);
 		return node;
 	}
-	function renderFormatElement(el, elementIds, ctx) {
+	function renderFormatElement(el, elementIds, ctx, assetUrls) {
 		const tag = localName(el);
 		if (tag === "content") {
 			const span = document.createElement("span");
@@ -4783,13 +4844,13 @@
 			node = document.createElement("bdi");
 			node.setAttribute("dir", "rtl");
 		} else node = document.createElement(FORMAT_HTML_TAG[tag] ?? "span");
-		appendRenderedBody(node, el, elementIds, ctx);
+		appendRenderedBody(node, el, elementIds, ctx, assetUrls);
 		return node;
 	}
-	function renderCode(el, elementIds, ctx) {
+	function renderCode(el, elementIds, ctx, assetUrls) {
 		const labelValue = childElements(el).find((c) => localName(c) === "label")?.getAttribute("value");
 		const code = document.createElement("code");
-		appendRenderedBody(code, el, elementIds, { inline: ctx.inline });
+		appendRenderedBody(code, el, elementIds, { inline: ctx.inline }, assetUrls);
 		if (ctx.inline) {
 			code.classList.add("rendered-el");
 			const id = elementIds.get(el);
@@ -4806,10 +4867,10 @@
 		pre.appendChild(code);
 		return wrapRendered(el, pre, elementIds.get(el));
 	}
-	function renderFormula(el, elementIds, ctx) {
+	function renderFormula(el, elementIds, ctx, assetUrls) {
 		const span = document.createElement("span");
 		span.className = ctx.inline ? "rendered-formula-inline" : "rendered-formula";
-		appendRenderedBody(span, el, elementIds, { inline: true });
+		appendRenderedBody(span, el, elementIds, { inline: true }, assetUrls);
 		if (ctx.inline) {
 			span.classList.add("rendered-el");
 			const id = elementIds.get(el);
@@ -4818,10 +4879,10 @@
 		}
 		return wrapRendered(el, span, elementIds.get(el));
 	}
-	function renderPicture(el, elementIds) {
+	function renderPicture(el, elementIds, assetUrls) {
 		const figure = document.createElement("figure");
 		const captionEl = readCaptionElement(el);
-		appendPictureFigureImage(figure, (childElements(el).find((c) => localName(c) === "src") ?? null)?.getAttribute("uri")?.trim() || null, captionEl, elementIds);
+		appendPictureFigureImage(figure, (childElements(el).find((c) => localName(c) === "src") ?? null)?.getAttribute("uri")?.trim() || null, captionEl, elementIds, assetUrls);
 		const nodes = [...el.childNodes];
 		let i = skipElementHeadNodes(nodes, 0);
 		while (i < nodes.length) {
@@ -4836,7 +4897,7 @@
 				continue;
 			}
 			if (tag === "tabular") {
-				const rendered = renderOtslContainer(node, elementIds);
+				const rendered = renderOtslContainer(node, elementIds, assetUrls);
 				if (rendered) figure.appendChild(rendered);
 				i += 1;
 				continue;
@@ -4845,7 +4906,7 @@
 		}
 		const bodyInner = document.createElement("div");
 		bodyInner.className = "rendered-picture-contents-body";
-		appendPictureBodyContent(bodyInner, nodes, i, elementIds);
+		appendPictureBodyContent(bodyInner, nodes, i, elementIds, assetUrls);
 		if (bodyInner.textContent?.trim()) {
 			const details = document.createElement("details");
 			details.className = "rendered-picture-contents";
@@ -4857,24 +4918,24 @@
 		}
 		return wrapRendered(el, figure, elementIds.get(el));
 	}
-	function appendPictureBodyContent(container, nodes, startIdx, elementIds) {
+	function appendPictureBodyContent(container, nodes, startIdx, elementIds, assetUrls) {
 		let i = startIdx;
 		while (i < nodes.length) {
 			const node = nodes[i];
 			if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-				const rendered = renderBlockElement(node, elementIds, { inline: false });
+				const rendered = renderBlockElement(node, elementIds, { inline: false }, assetUrls);
 				if (rendered) container.appendChild(rendered);
-			} else appendRenderedNode(container, node, elementIds, { inline: false });
+			} else appendRenderedNode(container, node, elementIds, { inline: false }, assetUrls);
 			i += 1;
 		}
 	}
-	function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
+	function renderVirtualTextBlock(hostEl, contentNodes, elementIds, assetUrls) {
 		const hasBlock = contentNodes.some((n) => n.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(n)));
 		const inner = document.createElement(hasBlock ? "div" : "p");
 		for (const node of contentNodes) if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-			const rendered = renderBlockElement(node, elementIds, { inline: false });
+			const rendered = renderBlockElement(node, elementIds, { inline: false }, assetUrls);
 			if (rendered) inner.appendChild(rendered);
-		} else appendRenderedNode(inner, node, elementIds, { inline: true });
+		} else appendRenderedNode(inner, node, elementIds, { inline: true }, assetUrls);
 		const wrap = document.createElement("div");
 		wrap.className = "rendered-el rendered-text rendered-el-virtual-text";
 		const elementId = elementIds.get(hostEl);
@@ -4907,21 +4968,21 @@
 		}
 		return false;
 	}
-	function appendRenderedSliceContent(container, hostEl, contentNodes, elementIds) {
+	function appendRenderedSliceContent(container, hostEl, contentNodes, elementIds, assetUrls) {
 		if (!sliceHasMarkupContent(contentNodes)) return;
 		if (shouldWrapVirtualText(contentNodes)) {
-			container.appendChild(renderVirtualTextBlock(hostEl, contentNodes, elementIds));
+			container.appendChild(renderVirtualTextBlock(hostEl, contentNodes, elementIds, assetUrls));
 			return;
 		}
 		for (const node of contentNodes) {
 			if (isVirtualTextSkippableNode(node)) continue;
 			if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-				const rendered = renderBlockElement(node, elementIds, { inline: false });
+				const rendered = renderBlockElement(node, elementIds, { inline: false }, assetUrls);
 				if (rendered) container.appendChild(rendered);
-			} else appendRenderedNode(container, node, elementIds, { inline: true });
+			} else appendRenderedNode(container, node, elementIds, { inline: true }, assetUrls);
 		}
 	}
-	function appendListItemsFromElement(list, el, elementIds) {
+	function appendListItemsFromElement(list, el, elementIds, assetUrls) {
 		const nodes = [...el.childNodes];
 		let i = skipContainerLevelHead(nodes, 0);
 		while (i < nodes.length) {
@@ -4935,7 +4996,7 @@
 			const li = document.createElement("li");
 			for (const child of childElements(ldiv)) {
 				const childTag = localName(child);
-				if (childTag === "marker") li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
+				if (childTag === "marker") li.appendChild(renderMarkerElement(child, elementIds, { inline: true }, assetUrls));
 				else if (childTag === "checkbox") li.appendChild(renderCheckboxElement(child, elementIds));
 			}
 			const contentStart = i;
@@ -4946,14 +5007,14 @@
 				if (contentNode.nodeType === Node.ELEMENT_NODE && localName(contentNode) === "ldiv") break;
 				i += 1;
 			}
-			appendRenderedSliceContent(li, ldiv, nodes.slice(contentStart, i), elementIds);
+			appendRenderedSliceContent(li, ldiv, nodes.slice(contentStart, i), elementIds, assetUrls);
 			list.appendChild(li);
 		}
 	}
-	function renderList(el, elementIds) {
+	function renderList(el, elementIds, assetUrls) {
 		const listClass = el.getAttribute("class") ?? "unordered";
 		const list = document.createElement(listClass === "ordered" ? "ol" : "ul");
-		appendListItemsFromElement(list, el, elementIds);
+		appendListItemsFromElement(list, el, elementIds, assetUrls);
 		return wrapRendered(el, list, elementIds.get(el));
 	}
 	function isHeaderCellKind(kind) {
@@ -5102,11 +5163,11 @@
 		}
 		return grid;
 	}
-	function renderOtslContainer(el, elementIds) {
+	function renderOtslContainer(el, elementIds, assetUrls) {
 		const table = document.createElement("table");
 		table.className = "rendered-table";
 		const captionEl = readCaptionElement(el);
-		if (captionEl) table.appendChild(renderEmbeddedCaption(captionEl, elementIds, "caption"));
+		if (captionEl) table.appendChild(renderEmbeddedCaption(captionEl, elementIds, "caption", assetUrls));
 		const grid = buildOtslGrid(parseOtslRows(el));
 		const tbody = document.createElement("tbody");
 		for (const row of grid) {
@@ -5117,7 +5178,7 @@
 				const td = document.createElement(cellTag);
 				if (cell.colspan > 1) td.colSpan = cell.colspan;
 				if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
-				appendRenderedSliceContent(td, cell.token, cell.contentNodes, elementIds);
+				appendRenderedSliceContent(td, cell.token, cell.contentNodes, elementIds, assetUrls);
 				tr.appendChild(td);
 			}
 			if (tr.childNodes.length) tbody.appendChild(tr);
@@ -5131,74 +5192,74 @@
 		stub.textContent = `<${localName(el)}> — not yet rendered`;
 		return wrapRendered(el, stub, elementIds.get(el));
 	}
-	function renderBlockElement(el, elementIds, ctx) {
+	function renderBlockElement(el, elementIds, ctx, assetUrls) {
 		const tag = localName(el);
 		const elementId = elementIds.get(el);
 		switch (tag) {
 			case "text": {
 				const p = document.createElement("p");
-				appendRenderedBody(p, el, elementIds, { inline: true });
+				appendRenderedBody(p, el, elementIds, { inline: true }, assetUrls);
 				return wrapRendered(el, p, elementId);
 			}
 			case "heading": {
 				const h = document.createElement(`h${headingLevel(el)}`);
-				appendRenderedBody(h, el, elementIds, { inline: true });
+				appendRenderedBody(h, el, elementIds, { inline: true }, assetUrls);
 				return wrapRendered(el, h, elementId);
 			}
 			case "field_heading": {
 				const h = document.createElement(`h${headingLevel(el)}`);
 				h.className = "rendered-field-heading";
-				appendRenderedBody(h, el, elementIds, { inline: true });
+				appendRenderedBody(h, el, elementIds, { inline: true }, assetUrls);
 				return wrapRendered(el, h, elementId);
 			}
 			case "footnote": {
 				const aside = document.createElement("aside");
-				appendRenderedBody(aside, el, elementIds, { inline: false });
+				appendRenderedBody(aside, el, elementIds, { inline: false }, assetUrls);
 				return wrapRendered(el, aside, elementId);
 			}
 			case "page_header": {
 				const header = document.createElement("header");
 				header.className = "rendered-page-header";
-				appendRenderedBody(header, el, elementIds, { inline: true });
+				appendRenderedBody(header, el, elementIds, { inline: true }, assetUrls);
 				return wrapRendered(el, header, elementId);
 			}
 			case "page_footer": {
 				const footer = document.createElement("footer");
 				footer.className = "rendered-page-footer";
-				appendRenderedBody(footer, el, elementIds, { inline: true });
+				appendRenderedBody(footer, el, elementIds, { inline: true }, assetUrls);
 				return wrapRendered(el, footer, elementId);
 			}
-			case "list": return renderList(el, elementIds);
+			case "list": return renderList(el, elementIds, assetUrls);
 			case "table":
 			case "index":
-			case "tabular": return renderOtslContainer(el, elementIds);
-			case "code": return renderCode(el, elementIds, ctx);
-			case "formula": return renderFormula(el, elementIds, ctx);
-			case "picture": return renderPicture(el, elementIds);
+			case "tabular": return renderOtslContainer(el, elementIds, assetUrls);
+			case "code": return renderCode(el, elementIds, ctx, assetUrls);
+			case "formula": return renderFormula(el, elementIds, ctx, assetUrls);
+			case "picture": return renderPicture(el, elementIds, assetUrls);
 			case "group": {
 				const figure = document.createElement("figure");
 				figure.className = "rendered-group";
-				appendRenderedBodyBlocks(figure, el, elementIds);
+				appendRenderedBodyBlocks(figure, el, elementIds, assetUrls);
 				const cap = readCaptionElement(el);
-				if (cap) figure.appendChild(renderEmbeddedCaption(cap, elementIds, "figcaption"));
+				if (cap) figure.appendChild(renderEmbeddedCaption(cap, elementIds, "figcaption", assetUrls));
 				return wrapRendered(el, figure, elementId);
 			}
 			case "field_region": {
 				const div = document.createElement("div");
 				div.className = "rendered-field-region";
-				appendRenderedBodyBlocks(div, el, elementIds);
+				appendRenderedBodyBlocks(div, el, elementIds, assetUrls);
 				return wrapRendered(el, div, elementId);
 			}
 			case "field_item": {
 				const div = document.createElement("div");
 				div.className = "rendered-field-item";
-				appendRenderedBodyBlocks(div, el, elementIds);
+				appendRenderedBodyBlocks(div, el, elementIds, assetUrls);
 				return wrapRendered(el, div, elementId);
 			}
 			default: return renderUnsupported(el, elementIds);
 		}
 	}
-	function appendRenderedNode(parent, node, elementIds, ctx) {
+	function appendRenderedNode(parent, node, elementIds, ctx, assetUrls) {
 		if (isTextLikeNode(node)) {
 			let text = node.textContent;
 			if (!text || !text.trim()) return;
@@ -5215,21 +5276,21 @@
 		const tag = localName(el);
 		if (HEAD_TAGS.has(tag)) return;
 		if (RENDER_FORMAT_TAGS.has(tag)) {
-			parent.appendChild(renderFormatElement(el, elementIds, ctx));
+			parent.appendChild(renderFormatElement(el, elementIds, ctx, assetUrls));
 			return;
 		}
 		if (tag === "code" || tag === "formula") {
-			const rendered = renderBlockElement(el, elementIds, { inline: true });
+			const rendered = renderBlockElement(el, elementIds, { inline: true }, assetUrls);
 			if (rendered) parent.appendChild(rendered);
 			return;
 		}
 		if (RENDER_BLOCK_TAGS.has(tag)) {
-			const rendered = renderBlockElement(el, elementIds, ctx);
+			const rendered = renderBlockElement(el, elementIds, ctx, assetUrls);
 			if (rendered) parent.appendChild(rendered);
 			return;
 		}
 		if (tag === "marker") {
-			parent.appendChild(renderMarkerElement(el, elementIds, ctx));
+			parent.appendChild(renderMarkerElement(el, elementIds, ctx, assetUrls));
 			return;
 		}
 		if (tag === "checkbox") {
@@ -5237,20 +5298,20 @@
 			return;
 		}
 		if (tag === "key") {
-			parent.appendChild(renderFieldKeyElement(el, elementIds, ctx));
+			parent.appendChild(renderFieldKeyElement(el, elementIds, ctx, assetUrls));
 			return;
 		}
 		if (tag === "value") {
-			parent.appendChild(renderFieldValueElement(el, elementIds, ctx));
+			parent.appendChild(renderFieldValueElement(el, elementIds, ctx, assetUrls));
 			return;
 		}
 		if (tag === "hint") {
-			parent.appendChild(renderFieldHintElement(el, elementIds, ctx));
+			parent.appendChild(renderFieldHintElement(el, elementIds, ctx, assetUrls));
 			return;
 		}
 		if (tag === "ldiv") return;
 		if (isCellToken(tag) || tag === "src" || tag === "tabular") return;
-		appendRenderedBody(parent, el, elementIds, ctx);
+		appendRenderedBody(parent, el, elementIds, ctx, assetUrls);
 	}
 	function findLastTextNode(node) {
 		if (isTextLikeNode(node)) return node;
@@ -5274,16 +5335,16 @@
 		}
 		lastText.textContent = value;
 	}
-	function appendMergedTextFragments(parent, fragments, elementIds) {
+	function appendMergedTextFragments(parent, fragments, elementIds, assetUrls) {
 		for (let i = 0; i < fragments.length; i += 1) {
 			if (i > 0) trimParentTrailingForFragmentJoin(parent);
 			appendRenderedBody(parent, fragments[i], elementIds, {
 				inline: true,
 				trimLeading: i > 0
-			});
+			}, assetUrls);
 		}
 	}
-	function renderMergedIntraPageFragments(fragments, elementIds) {
+	function renderMergedIntraPageFragments(fragments, elementIds, assetUrls) {
 		const first = fragments[0];
 		const tag = localName(first);
 		const firstId = elementIds.get(first);
@@ -5291,15 +5352,15 @@
 		let node;
 		if (tag === "text") {
 			node = document.createElement("p");
-			appendMergedTextFragments(node, fragments, elementIds);
+			appendMergedTextFragments(node, fragments, elementIds, assetUrls);
 		} else if (tag === "list") {
 			const listClass = first.getAttribute("class") ?? "unordered";
 			node = document.createElement(listClass === "ordered" ? "ol" : "ul");
-			for (const el of fragments) appendListItemsFromElement(node, el, elementIds);
+			for (const el of fragments) appendListItemsFromElement(node, el, elementIds, assetUrls);
 		} else {
 			node = document.createElement("div");
 			node.className = "rendered-fragment-merged-body";
-			for (const el of fragments) appendRenderedBodyBlocks(node, el, elementIds);
+			for (const el of fragments) appendRenderedBodyBlocks(node, el, elementIds, assetUrls);
 		}
 		const wrap = wrapRendered(first, node, firstId, "rendered-fragment-merged");
 		if (threadId) wrap.setAttribute("data-thread-id", threadId);
@@ -5318,158 +5379,113 @@
 		for (const [tid, members] of byThread) if (members.length < 2) byThread.delete(tid);
 		return byThread;
 	}
-	function applyReadingLayerClasses(root, showFurniture, showBackground) {
-		root.classList.toggle("show-reading-furniture", showFurniture);
-		root.classList.toggle("show-reading-background", showBackground);
-	}
-	function buildRenderedView(segment, elementIds, showFurniture, showBackground, onSelectElement, assetUrls) {
-		_assetUrls = assetUrls;
-		try {
-			const intraPageThreads = collectIntraPageThreads(segment);
-			const skipElements = /* @__PURE__ */ new Set();
-			const mergeGroups = /* @__PURE__ */ new Map();
-			for (const [, members] of intraPageThreads) {
-				mergeGroups.set(members[0], members);
-				for (let i = 1; i < members.length; i += 1) skipElements.add(members[i]);
-			}
-			const root = document.createElement("article");
-			root.className = "rendered-doc";
-			for (const el of segment) {
-				if (el.nodeType !== Node.ELEMENT_NODE) continue;
-				if (localName(el) === "page_break") continue;
-				if (skipElements.has(el)) continue;
-				const mergeGroup = mergeGroups.get(el);
-				const rendered = mergeGroup ? renderMergedIntraPageFragments(mergeGroup, elementIds) : renderBlockElement(el, elementIds, { inline: false });
-				if (rendered) root.appendChild(rendered);
-			}
-			root.addEventListener("click", (e) => {
-				const target = e.target;
-				const ghostText = target.closest(".rendered-el-virtual-text");
-				const elementId = ghostText?.hasAttribute("data-element-id") ? ghostText.getAttribute("data-element-id") : target.closest(".rendered-el[data-element-id]")?.getAttribute("data-element-id") ?? null;
-				if (elementId) onSelectElement(elementId);
-			});
-			applyReadingLayerClasses(root, showFurniture, showBackground);
-			return root;
-		} finally {
-			_assetUrls = void 0;
-		}
-	}
-	//#endregion
-	//#region src/components/reading-pane/reading-pane.ts
-	/** <doclang-reading-pane> — reading/rendered view with layers settings panel */
-	init_document();
-	init_dom();
 	var DoclangReadingPane = class DoclangReadingPane extends DoclangPageElement {
-		static styles = r$4(reading_pane_default);
-		_bodyRef = e();
-		_showFurnitureState = true;
-		_showBackgroundState = true;
+		static styles = r$6(reading_pane_default);
+		_showFurniture = true;
+		_showBackground = true;
 		_settingsOpen = false;
 		_visible = false;
+		_hasMarkup = null;
+		_pendingContent = null;
 		connectedCallback() {
 			super.connectedCallback();
 			this.classList.add("pane", "pane-reading");
 		}
 		render() {
+			const bodyClasses = {
+				"pane-body": true,
+				"show-reading-furniture": this._showFurniture,
+				"show-reading-background": this._showBackground
+			};
 			return b`
       <div class="pane-header">
         <span class="pane-header-title">Reading view</span>
         ${this._visible ? b`<button
-                type="button"
-                class="pane-settings-toggle"
-                aria-expanded=${this._settingsOpen ? "true" : "false"}
-                aria-controls="reading-settings"
-                @click=${() => this.dispatchEvent(new CustomEvent("doclang-reading-settings-toggle", {
-				bubbles: true,
-				composed: true
-			}))}
-              >
-                Layers
-              </button>` : A}
+              type="button"
+              class="pane-settings-toggle"
+              aria-expanded=${this._settingsOpen ? "true" : "false"}
+              aria-controls="reading-settings"
+              @click=${this._onSettingsToggle}
+            >
+              Layers
+            </button>` : A}
       </div>
       <div class="pane-reading-layout">
-        <div class="pane-body" id="rendered-pane" ${n(this._bodyRef)}></div>
-        ${this._settingsOpen ? b`
-                <div class="viewer-settings-layer">
-                  <button
-                    type="button"
-                    class="viewer-settings-scrim"
-                    tabindex="-1"
-                    aria-label="Close layers"
-                    @click=${() => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
-				bubbles: true,
-				composed: true
-			}))}
-                  ></button>
-                  <aside
-                    class="viewer-settings"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="reading-settings-title"
-                  >
-                    <div class="viewer-settings-header">
-                      <h2 class="viewer-settings-title" id="reading-settings-title">
-                        Layers
-                      </h2>
-                      <button
-                        type="button"
-                        class="viewer-settings-close"
-                        aria-label="Close layers"
-                        @click=${() => this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
-				bubbles: true,
-				composed: true
-			}))}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div class="viewer-settings-body">
-                      <div
-                        class="settings-subgroup"
-                        role="group"
-                        aria-labelledby="reading-settings-title"
-                      >
-                        <label class="settings-option settings-option-sub">
-                          <input
-                            type="checkbox"
-                            class="cb-furniture"
-                            .checked=${this._showFurnitureState}
-                            @change=${(e) => {
-				this._showFurnitureState = e.target.checked;
-				this._applyLayerClasses();
-				this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
-					bubbles: true,
-					composed: true,
-					detail: { checked: this._showFurnitureState }
-				}));
-			}}
-                          />
-                          <span>Furniture</span>
-                        </label>
-                        <label class="settings-option settings-option-sub">
-                          <input
-                            type="checkbox"
-                            class="cb-background"
-                            .checked=${this._showBackgroundState}
-                            @change=${(e) => {
-				this._showBackgroundState = e.target.checked;
-				this._applyLayerClasses();
-				this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
-					bubbles: true,
-					composed: true,
-					detail: { checked: this._showBackgroundState }
-				}));
-			}}
-                          />
-                          <span>Background</span>
-                        </label>
-                      </div>
-                    </div>
-                  </aside>
-                </div>
-              ` : A}
+        <div id="rendered-pane" class=${e$2(bodyClasses)} @click=${this._onBodyClick}>
+          ${this._hasMarkup === false ? b`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true ? b`<div ${n(this._onContentRef)}></div>` : A}
+        </div>
+        ${this._settingsOpen ? this._renderSettings() : A}
       </div>
     `;
+		}
+		_onContentRef = (el) => {
+			if (el && this._pendingContent) el.replaceChildren(this._pendingContent);
+		};
+		updated() {
+			if (!this._pendingContent) return;
+			const wrapper = this.shadowRoot?.querySelector(".pane-body > div");
+			if (wrapper && !wrapper.contains(this._pendingContent)) wrapper.replaceChildren(this._pendingContent);
+		}
+		_renderSettings() {
+			return b`
+      <div class="viewer-settings-layer">
+        <button
+          type="button"
+          class="viewer-settings-scrim"
+          tabindex="-1"
+          aria-label="Close layers"
+          @click=${this._onSettingsClose}
+        ></button>
+        <aside
+          class="viewer-settings"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reading-settings-title"
+        >
+          <div class="viewer-settings-header">
+            <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
+            <button
+              type="button"
+              class="viewer-settings-close"
+              aria-label="Close layers"
+              @click=${this._onSettingsClose}
+            >
+              ×
+            </button>
+          </div>
+          <div class="viewer-settings-body">
+            <div
+              class="settings-subgroup"
+              role="group"
+              aria-labelledby="reading-settings-title"
+            >
+              <label class="settings-option settings-option-sub">
+                <input
+                  type="checkbox"
+                  class="cb-furniture"
+                  .checked=${this._showFurniture}
+                  @change=${this._onFurnitureChange}
+                />
+                <span>Furniture</span>
+              </label>
+              <label class="settings-option settings-option-sub">
+                <input
+                  type="checkbox"
+                  class="cb-background"
+                  .checked=${this._showBackground}
+                  @change=${this._onBackgroundChange}
+                />
+                <span>Background</span>
+              </label>
+            </div>
+          </div>
+        </aside>
+      </div>
+    `;
+		}
+		/** The scrollable content body inside the shadow root. */
+		get scrollPane() {
+			return this.shadowRoot?.querySelector(".pane-body") ?? null;
 		}
 		setVisible(visible) {
 			this._visible = visible;
@@ -5481,9 +5497,8 @@
 			this.requestUpdate();
 		}
 		_applySelection() {
-			const body = this._bodyRef.value;
-			if (!body) return;
-			for (const el of body.querySelectorAll(".rendered-el.selected")) el.classList.remove("selected");
+			if (!this.shadowRoot) return;
+			for (const el of this.shadowRoot.querySelectorAll(".rendered-el.selected")) el.classList.remove("selected");
 			if (!this._selectedId) return;
 			const renderedEl = this._findRenderedElement(this._selectedId, this._peerIds);
 			if (!renderedEl) return;
@@ -5495,38 +5510,98 @@
 			});
 		}
 		_renderDocument() {
-			const body = this._bodyRef.value;
-			if (!body) {
-				this.requestUpdate();
-				this.updateComplete.then(() => this._renderDocument());
+			const state = this._docState;
+			if (!state) {
+				this._pendingContent = null;
+				this._hasMarkup = null;
 				return;
 			}
-			const state = this._docState;
-			body.innerHTML = "";
-			if (!state) return;
 			const segment = state.segments[this._currentPage - 1] ?? [];
 			const elementIds = state.elementIds.size ? state.elementIds : assignElementIds(segment);
 			state.elementIds = elementIds;
-			if (segmentHasMarkup(segment)) body.appendChild(buildRenderedView(segment, elementIds, this._showFurnitureState, this._showBackgroundState, (id) => this.dispatchEvent(new CustomEvent("doclang-element-select", {
-				bubbles: true,
-				composed: true,
-				detail: { id }
-			})), this._docState?.assetUrls));
-			else body.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+			if (segmentHasMarkup(segment)) {
+				this._pendingContent = this._buildRenderedArticle(segment, elementIds);
+				this._hasMarkup = true;
+			} else {
+				this._pendingContent = null;
+				this._hasMarkup = false;
+			}
+			this.requestUpdate();
 		}
 		_clearDocument() {
-			const body = this._bodyRef.value;
-			if (body) body.innerHTML = "";
+			this._pendingContent = null;
+			this._hasMarkup = null;
+			this.requestUpdate();
+		}
+		_onSettingsToggle = () => {
+			this.dispatchEvent(new CustomEvent("doclang-reading-settings-toggle", {
+				bubbles: true,
+				composed: true
+			}));
+		};
+		_onSettingsClose = () => {
+			this.dispatchEvent(new CustomEvent("doclang-reading-settings-close", {
+				bubbles: true,
+				composed: true
+			}));
+		};
+		_onFurnitureChange = (e) => {
+			this._showFurniture = e.target.checked;
+			this.requestUpdate();
+			this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
+				bubbles: true,
+				composed: true,
+				detail: { checked: this._showFurniture }
+			}));
+		};
+		_onBackgroundChange = (e) => {
+			this._showBackground = e.target.checked;
+			this.requestUpdate();
+			this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
+				bubbles: true,
+				composed: true,
+				detail: { checked: this._showBackground }
+			}));
+		};
+		_onBodyClick = (e) => {
+			const target = e.target;
+			const ghostText = target.closest(".rendered-el-virtual-text");
+			const elementId = ghostText?.hasAttribute("data-element-id") ? ghostText.getAttribute("data-element-id") : target.closest(".rendered-el[data-element-id]")?.getAttribute("data-element-id") ?? null;
+			if (elementId) this.dispatchEvent(new CustomEvent("doclang-element-select", {
+				bubbles: true,
+				composed: true,
+				detail: { id: elementId }
+			}));
+		};
+		_buildRenderedArticle(segment, elementIds) {
+			const assetUrls = this._docState?.assetUrls;
+			const intraPageThreads = collectIntraPageThreads(segment);
+			const skipElements = /* @__PURE__ */ new Set();
+			const mergeGroups = /* @__PURE__ */ new Map();
+			for (const [, members] of intraPageThreads) {
+				mergeGroups.set(members[0], members);
+				for (let i = 1; i < members.length; i += 1) skipElements.add(members[i]);
+			}
+			const article = document.createElement("article");
+			article.className = "rendered-doc";
+			for (const el of segment) {
+				if (el.nodeType !== Node.ELEMENT_NODE) continue;
+				if (localName(el) === "page_break") continue;
+				if (skipElements.has(el)) continue;
+				const mergeGroup = mergeGroups.get(el);
+				const rendered = mergeGroup ? renderMergedIntraPageFragments(mergeGroup, elementIds, assetUrls) : renderBlockElement(el, elementIds, { inline: false }, assetUrls);
+				if (rendered) article.appendChild(rendered);
+			}
+			return article;
 		}
 		_findRenderedElement(elementId, peerIds) {
-			const body = this._bodyRef.value;
-			if (!body) return null;
-			const direct = body.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ?? body.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
+			if (!this.shadowRoot) return null;
+			const direct = this.shadowRoot.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ?? this.shadowRoot.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
 			if (direct) return direct;
 			const xmlEl = this._docState?.idToElement?.get(elementId);
 			const threadId = xmlEl ? elementThreadId(xmlEl) : null;
 			if (!threadId) return null;
-			const merged = body.querySelector(`.rendered-fragment-merged[data-thread-id="${threadId}"]`);
+			const merged = this.shadowRoot.querySelector(`.rendered-fragment-merged[data-thread-id="${threadId}"]`);
 			if (!merged) return null;
 			const primaryId = merged.getAttribute("data-element-id");
 			if (!primaryId || primaryId === elementId) return merged;
@@ -5540,18 +5615,16 @@
 		_revealLayer(renderedEl) {
 			const layer = renderedEl.getAttribute("data-doclang-layer");
 			if (!layer || layer === "body") return;
-			if (layer === "furniture" && !this._showFurnitureState) {
-				this._showFurnitureState = true;
-				this._applyLayerClasses();
+			if (layer === "furniture" && !this._showFurniture) {
+				this._showFurniture = true;
 				this.requestUpdate();
 				this.dispatchEvent(new CustomEvent("doclang-show-reading-furniture", {
 					bubbles: true,
 					composed: true,
 					detail: { checked: true }
 				}));
-			} else if (layer === "background" && !this._showBackgroundState) {
-				this._showBackgroundState = true;
-				this._applyLayerClasses();
+			} else if (layer === "background" && !this._showBackground) {
+				this._showBackground = true;
 				this.requestUpdate();
 				this.dispatchEvent(new CustomEvent("doclang-show-reading-background", {
 					bubbles: true,
@@ -5560,11 +5633,12 @@
 				}));
 			}
 		}
-		_applyLayerClasses() {
-			const root = this._bodyRef.value?.querySelector(".rendered-doc");
-			if (root) applyReadingLayerClasses(root, this._showFurnitureState, this._showBackgroundState);
-		}
 	};
+	__decorate([r$2()], DoclangReadingPane.prototype, "_showFurniture", void 0);
+	__decorate([r$2()], DoclangReadingPane.prototype, "_showBackground", void 0);
+	__decorate([r$2()], DoclangReadingPane.prototype, "_settingsOpen", void 0);
+	__decorate([r$2()], DoclangReadingPane.prototype, "_visible", void 0);
+	__decorate([r$2()], DoclangReadingPane.prototype, "_hasMarkup", void 0);
 	DoclangReadingPane = __decorate([t$2("doclang-reading-pane")], DoclangReadingPane);
 	//#endregion
 	//#region src/components/empty-state/empty-state.css?inline
@@ -5573,7 +5647,7 @@
 	//#region src/components/empty-state/empty-state.ts
 	/** <doclang-empty-state> — loading/prompt empty state */
 	var DoclangEmptyState = class DoclangEmptyState extends i$2 {
-		static styles = r$4(empty_state_default);
+		static styles = r$6(empty_state_default);
 		_extensions = [];
 		_demoLoading = false;
 		render() {
@@ -6637,7 +6711,11 @@
 		}, { passive: false });
 		for (const pane of [doclangMarkupPane, doclangReadingPane]) {
 			if (!pane) continue;
-			pane.addEventListener("wheel", (e) => onScrollPaneWheel(e, pane), { passive: false });
+			pane.addEventListener("wheel", (e) => {
+				const scrollPane = pane.scrollPane ?? null;
+				if (!scrollPane) return;
+				onScrollPaneWheel(e, scrollPane);
+			}, { passive: false });
 		}
 	}
 	function initFileTypeHints() {

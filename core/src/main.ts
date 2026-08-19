@@ -1352,12 +1352,16 @@ function initPageWheelNav(): void {
     { passive: false }
   );
 
-  // Markup and reading panes: wheel on component host elements
+  // Markup and reading panes: wheel navigates via their inner scrollable body
   for (const pane of [doclangMarkupPane, doclangReadingPane]) {
     if (!pane) continue;
     pane.addEventListener(
       'wheel',
-      e => onScrollPaneWheel(e as WheelEvent, pane as HTMLElement),
+      e => {
+        const scrollPane = pane.scrollPane ?? null;
+        if (!scrollPane) return;
+        onScrollPaneWheel(e as WheelEvent, scrollPane);
+      },
       { passive: false }
     );
   }

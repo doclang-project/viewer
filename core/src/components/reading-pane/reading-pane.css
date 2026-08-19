@@ -414,11 +414,11 @@
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);
 }
-.rendered-doc:not(.show-reading-furniture)
+.pane-body:not(.show-reading-furniture)
   .rendered-el[data-doclang-layer='furniture'] {
   display: none;
 }
-.rendered-doc:not(.show-reading-background)
+.pane-body:not(.show-reading-background)
   .rendered-el[data-doclang-layer='background'] {
   display: none;
 }

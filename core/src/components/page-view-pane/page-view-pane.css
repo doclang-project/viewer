@@ -542,8 +542,21 @@
   cursor: help;
 }
 .overlay .element-badge .overlay-badge-bg {
-  fill: var(--kind-stroke, var(--accent));
+  fill: var(--accent);
 }
+.overlay .element-badge.kind-text .overlay-badge-bg { fill: var(--kind-text); }
+.overlay .element-badge.kind-heading .overlay-badge-bg { fill: var(--kind-heading); }
+.overlay .element-badge.kind-list .overlay-badge-bg { fill: var(--kind-list); }
+.overlay .element-badge.kind-table .overlay-badge-bg { fill: var(--kind-table); }
+.overlay .element-badge.kind-index .overlay-badge-bg { fill: var(--kind-index); }
+.overlay .element-badge.kind-formula .overlay-badge-bg { fill: var(--kind-formula); }
+.overlay .element-badge.kind-code .overlay-badge-bg { fill: var(--kind-code); }
+.overlay .element-badge.kind-picture .overlay-badge-bg { fill: var(--kind-picture); }
+.overlay .element-badge.kind-group .overlay-badge-bg { fill: var(--kind-group); }
+.overlay .element-badge.kind-footnote .overlay-badge-bg { fill: var(--kind-footnote); }
+.overlay .element-badge.kind-page_header .overlay-badge-bg { fill: var(--kind-page_header); }
+.overlay .element-badge.kind-caption .overlay-badge-bg { fill: var(--kind-caption); }
+.overlay .element-badge.kind-field .overlay-badge-bg { fill: var(--kind-field); }
 .overlay .overlay-badge-label {
   fill: #ffffff;
   fill-opacity: 1;

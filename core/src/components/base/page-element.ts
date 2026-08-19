@@ -63,9 +63,10 @@ export abstract class DoclangPageElement extends LitElement {
   }
 
   set selected(id: string | null) {
+    if (id === this._selectedId) return;
     this._selectedId = id;
     this._peerIds = id ? this._computePeerIds(id) : new Set();
-    // Reflect to attribute.
+    // Reflect to attribute so HTML stays in sync, without re-entering the setter.
     if (id) {
       this.setAttribute('selected', id);
     } else {
