@@ -7,13 +7,7 @@
   --muted: var(--doclang-muted, #71717a);
   --accent: var(--doclang-accent, #2563eb);
   --placeholder-bg: var(--doclang-placeholder-bg, #fafafa);
-  --font-ui: var(
-    --doclang-font-ui,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif
-  );
+  --font-ui: var(--doclang-font-ui, system-ui, -apple-system, 'Segoe UI', sans-serif);
   --font-mono: var(
     --doclang-font-mono,
     ui-monospace,
@@ -54,10 +48,7 @@
     --markup-bg: var(--doclang-markup-bg, #1e1e1e);
     --markup-fg: var(--doclang-markup-fg, #d4d4d4);
     --markup-hover: var(--doclang-markup-hover, rgba(96, 165, 250, 0.1));
-    --markup-selected: var(
-      --doclang-markup-selected,
-      rgba(96, 165, 250, 0.18)
-    );
+    --markup-selected: var(--doclang-markup-selected, rgba(96, 165, 250, 0.18));
     --kind-text: var(--doclang-kind-text, #60a5fa);
     --kind-heading: var(--doclang-kind-heading, #a78bfa);
     --kind-list: var(--doclang-kind-list, #fb923c);

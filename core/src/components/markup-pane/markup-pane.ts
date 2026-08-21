@@ -1,9 +1,8 @@
 /** <doclang-markup-pane> — DocLang XML markup view */
 
-import { html, nothing } from 'lit';
+import { html, nothing, render, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
-import { ref } from 'lit/directives/ref.js';
 import { DoclangPageElement } from '../base/page-element';
 import styles from './markup-pane.css?inline';
 import {
@@ -39,7 +38,7 @@ const VIRTUAL_TEXT_TAG_HINT =
 const LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
 
 // ---------------------------------------------------------------------------
-// Truncatable embedded URI helpers
+// Truncatable embedded URI helpers (Pure Utilities)
 // ---------------------------------------------------------------------------
 
 function isTruncatableEmbeddedImageUri(value: string): boolean {
@@ -72,255 +71,8 @@ function formatEmbeddedUriSizeLabel(value: string): string {
   return `${shortMime} · ${formatCompactByteSize(bytes)}`;
 }
 
-function createEmbeddedUriContinuationPanel(value: string, depth: number): HTMLElement {
-  const { line, content } = createMarkupLineRow(depth);
-  line.className = 'markup-line markup-embedded-uri-panel';
-  const body = document.createElement('div');
-  body.className = 'markup-embedded-uri-panel-body';
-  body.textContent = value;
-  body.addEventListener('click', e => e.stopPropagation());
-  content.appendChild(body);
-  return line;
-}
-
-function createTruncatableMarkupAttrValue(value: string): HTMLElement {
-  const wrapper = document.createElement('span');
-  wrapper.className = 'xml-attr-value xml-attr-value-truncatable';
-  (wrapper as HTMLElement & { dataset: DOMStringMap }).dataset.fullValue = value;
-
-  const text = document.createElement('span');
-  text.className = 'xml-attr-value-text';
-  text.textContent = value.slice(0, LONG_EMBEDDED_URI_PREVIEW_LENGTH);
-
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'xml-attr-value-chip';
-  const sizeLabel = formatEmbeddedUriSizeLabel(value);
-  toggle.dataset.collapsedLabel = sizeLabel;
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-label', `Show full value (${sizeLabel})`);
-
-  const label = document.createElement('span');
-  label.className = 'xml-attr-value-chip-label';
-  label.textContent = sizeLabel;
-  toggle.appendChild(label);
-
-  wrapper.append(text, toggle);
-  return wrapper;
-}
-
-function toggleTruncatableMarkupAttrValue(toggle: Element): void {
-  const wrapper = toggle.closest('.xml-attr-value-truncatable') as HTMLElement | null;
-  if (!wrapper) return;
-
-  const markupLine = wrapper.closest('.markup-line') as HTMLElement | null;
-  const fullValue =
-    (wrapper as HTMLElement & { dataset: DOMStringMap }).dataset.fullValue ?? '';
-  const label = toggle.querySelector('.xml-attr-value-chip-label');
-  const collapsedLabel =
-    (toggle as HTMLElement & { dataset: DOMStringMap }).dataset.collapsedLabel ??
-    label?.textContent ??
-    '';
-  const expanded = toggle.getAttribute('aria-expanded') === 'true';
-
-  if (expanded) {
-    toggle.setAttribute('aria-expanded', 'false');
-    toggle.setAttribute('aria-label', `Show full value (${collapsedLabel})`);
-    if (label) label.textContent = collapsedLabel;
-    if (
-      markupLine?.nextElementSibling?.classList.contains('markup-embedded-uri-panel')
-    ) {
-      markupLine.nextElementSibling.remove();
-    }
-    return;
-  }
-
-  toggle.setAttribute('aria-expanded', 'true');
-  toggle.setAttribute('aria-label', 'Hide full value');
-  if (label) label.textContent = 'hide';
-  if (
-    !markupLine ||
-    markupLine.nextElementSibling?.classList.contains('markup-embedded-uri-panel')
-  ) {
-    return;
-  }
-  const depth = Number(
-    markupLine.style.getPropertyValue('--doclang-markup-depth') || 0
-  );
-  markupLine.insertAdjacentElement(
-    'afterend',
-    createEmbeddedUriContinuationPanel(fullValue, depth)
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Low-level markup DOM builders
-// ---------------------------------------------------------------------------
-
-function xmlSpan(className: string, text: string, { ghost = false } = {}): HTMLElement {
-  const span = document.createElement('span');
-  span.className = ghost ? `${className} markup-ghost-tag-part` : className;
-  span.textContent = text;
-  return span;
-}
-
-function createMarkupLine(): HTMLDivElement {
-  const line = document.createElement('div');
-  line.className = 'markup-line';
-  return line;
-}
-
-function createMarkupFoldToggle(): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'markup-fold-toggle';
-  btn.setAttribute('aria-expanded', 'true');
-  btn.setAttribute('aria-label', 'Collapse');
-  return btn;
-}
-
-function createMarkupLineRow(
-  depth: number,
-  { foldToggle = false } = {}
-): { line: HTMLDivElement; content: HTMLElement } {
-  const line = createMarkupLine();
-  line.style.setProperty('--markup-depth', String(depth));
-
-  const row = document.createElement('span');
-  row.className = 'markup-line-content';
-
-  const gutter = document.createElement('span');
-  gutter.className = 'markup-gutter';
-  gutter.setAttribute('aria-hidden', 'true');
-  if (foldToggle) gutter.appendChild(createMarkupFoldToggle());
-  row.appendChild(gutter);
-
-  const body = document.createElement('span');
-  body.className = 'markup-line-body';
-  row.appendChild(body);
-
-  line.appendChild(row);
-  return { line, content: body };
-}
-
-function appendMarkupAttrValue(line: HTMLElement, value: string): void {
-  if (isTruncatableEmbeddedImageUri(value)) {
-    line.appendChild(createTruncatableMarkupAttrValue(value));
-  } else {
-    line.appendChild(xmlSpan('xml-attr-value', value));
-  }
-}
-
-function appendMarkupAttributes(
-  line: HTMLElement,
-  attributes: { name: string; value: string }[]
-): void {
-  for (const { name, value } of attributes) {
-    line.appendChild(document.createTextNode(' '));
-    line.appendChild(xmlSpan('xml-attr-name', name));
-    line.appendChild(xmlSpan('xml-bracket', '="'));
-    appendMarkupAttrValue(line, value);
-    line.appendChild(xmlSpan('xml-bracket', '"'));
-  }
-}
-
-function appendMarkupTextContent(line: HTMLElement, text: string): void {
-  const cdataMatch = /^<!\[CDATA\[([\s\S]*)\]\]>$/.exec(text);
-  if (cdataMatch) {
-    line.appendChild(xmlSpan('xml-cdata-delimiter', '<![CDATA['));
-    line.appendChild(xmlSpan('xml-cdata', cdataMatch[1] ?? ''));
-    line.appendChild(xmlSpan('xml-cdata-delimiter', ']]>'));
-    return;
-  }
-  line.appendChild(xmlSpan('xml-text', text));
-}
-
-function appendOpenTagContent(
-  line: HTMLElement,
-  tag: string,
-  attributes: { name: string; value: string }[],
-  ghost = false
-): void {
-  line.appendChild(xmlSpan('xml-bracket', '<', { ghost }));
-  line.appendChild(xmlSpan('xml-tag', tag, { ghost }));
-  appendMarkupAttributes(line, attributes);
-  line.appendChild(xmlSpan('xml-bracket', '>', { ghost }));
-}
-
-function appendMarkupFoldableOpen(
-  parent: HTMLElement,
-  depth: number,
-  tag: string,
-  attributes: { name: string; value: string }[],
-  tagHint?: string
-): void {
-  const ghost = Boolean(tagHint);
-  const { line, content } = createMarkupLineRow(depth, { foldToggle: true });
-  line.classList.add('markup-line-open');
-  appendOpenTagContent(content, tag, attributes, ghost);
-
-  const suffix = document.createElement('span');
-  suffix.className = 'markup-fold-suffix';
-  suffix.appendChild(xmlSpan('xml-bracket', '...', { ghost }));
-  suffix.appendChild(xmlSpan('xml-bracket', '</', { ghost }));
-  suffix.appendChild(xmlSpan('xml-tag', tag, { ghost }));
-  suffix.appendChild(xmlSpan('xml-bracket', '>', { ghost }));
-  content.appendChild(suffix);
-  parent.appendChild(line);
-}
-
-function appendMarkupCloseTag(
-  parent: HTMLElement,
-  depth: number,
-  tag: string,
-  tagHint?: string
-): void {
-  const ghost = Boolean(tagHint);
-  const { line, content } = createMarkupLineRow(depth);
-  content.appendChild(xmlSpan('xml-bracket', '</', { ghost }));
-  content.appendChild(xmlSpan('xml-tag', tag, { ghost }));
-  content.appendChild(xmlSpan('xml-bracket', '>', { ghost }));
-  parent.appendChild(line);
-}
-
-function appendMarkupSelfClosingTag(
-  parent: HTMLElement,
-  depth: number,
-  tag: string,
-  attributes: { name: string; value: string }[]
-): void {
-  const { line, content } = createMarkupLineRow(depth);
-  content.appendChild(xmlSpan('xml-bracket', '<'));
-  content.appendChild(xmlSpan('xml-tag', tag));
-  appendMarkupAttributes(content, attributes);
-  content.appendChild(xmlSpan('xml-bracket', '/>'));
-  parent.appendChild(line);
-}
-
-function appendMarkupInlineElement(
-  parent: HTMLElement,
-  depth: number,
-  tag: string,
-  attributes: { name: string; value: string }[],
-  text: string
-): void {
-  const { line, content } = createMarkupLineRow(depth);
-  appendOpenTagContent(content, tag, attributes);
-  appendMarkupTextContent(content, text);
-  content.appendChild(xmlSpan('xml-bracket', '</'));
-  content.appendChild(xmlSpan('xml-tag', tag));
-  content.appendChild(xmlSpan('xml-bracket', '>'));
-  parent.appendChild(line);
-}
-
-function appendMarkupTextLine(parent: HTMLElement, depth: number, text: string): void {
-  const { line, content } = createMarkupLineRow(depth);
-  appendMarkupTextContent(content, text);
-  parent.appendChild(line);
-}
-
-// ---------------------------------------------------------------------------
-// Slice / virtual-text helpers
+// Slice / virtual-text helpers (Pure Utilities)
 // ---------------------------------------------------------------------------
 
 function sliceHasMarkupContent(nodes: ArrayLike<ChildNode>): boolean {
@@ -352,282 +104,6 @@ function shouldWrapVirtualText(contentNodes: ChildNode[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Element-level markup builders
-// ---------------------------------------------------------------------------
-
-function appendMarkupNodesFromSlice(
-  parent: HTMLElement,
-  depth: number,
-  nodes: ArrayLike<ChildNode>,
-  elementIds: Map<Element, string>
-): void {
-  for (let i = 0; i < nodes.length; i += 1) {
-    const child = nodes[i];
-    if (!child) continue;
-    if (isTextLikeNode(child)) {
-      const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(parent, depth, text);
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      parent.appendChild(buildMarkupElement(child as Element, depth, elementIds));
-    }
-  }
-}
-
-function appendMarkupVirtualText(
-  parent: HTMLElement,
-  depth: number,
-  hostEl: Element,
-  contentNodes: ChildNode[],
-  elementIds: Map<Element, string>
-): void {
-  if (!shouldWrapVirtualText(contentNodes)) {
-    appendMarkupNodesFromSlice(parent, depth, contentNodes, elementIds);
-    return;
-  }
-
-  const block = document.createElement('div');
-  block.className = 'markup-el markup-el-virtual-text';
-  const elementId = elementIds.get(hostEl);
-  if (elementId) block.setAttribute('data-element-id', elementId);
-
-  appendMarkupFoldableOpen(block, depth, 'text', [], VIRTUAL_TEXT_TAG_HINT);
-  block.classList.add('markup-el-foldable');
-
-  const foldBody = document.createElement('div');
-  foldBody.className = 'markup-fold-body';
-  const children = document.createElement('div');
-  children.className = 'markup-children';
-  appendMarkupNodesFromSlice(children, depth + 1, contentNodes, elementIds);
-  foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, 'text', VIRTUAL_TEXT_TAG_HINT);
-  block.appendChild(foldBody);
-  parent.appendChild(block);
-}
-
-function buildMarkupFoldableElement(
-  el: Element,
-  depth: number,
-  elementIds: Map<Element, string>,
-  buildBody: (children: HTMLElement, childDepth: number) => void
-): HTMLElement {
-  const tag = localName(el);
-  const block = document.createElement('div');
-  block.className = 'markup-el';
-  const elementId = elementIds.get(el);
-  if (elementId) block.setAttribute('data-element-id', elementId);
-
-  const attributes = markupAttributes(el);
-  appendMarkupFoldableOpen(block, depth, tag, attributes);
-  block.classList.add('markup-el-foldable');
-
-  const foldBody = document.createElement('div');
-  foldBody.className = 'markup-fold-body';
-  const children = document.createElement('div');
-  children.className = 'markup-children';
-  buildBody(children, depth + 1);
-  foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, tag);
-  block.appendChild(foldBody);
-  return block;
-}
-
-function buildMarkupList(
-  el: Element,
-  depth: number,
-  elementIds: Map<Element, string>
-): HTMLElement {
-  return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
-    const nodes = [...el.childNodes];
-    let i = 0;
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (!node) {
-        i += 1;
-        continue;
-      }
-      if (node.nodeType === Node.ELEMENT_NODE && localName(node as Element) === 'ldiv')
-        break;
-      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
-        i += 1;
-        continue;
-      }
-      if (isTextLikeNode(node)) break;
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = localName(node as Element);
-        if (HEAD_TAGS.has(tag) || tag === 'location') {
-          children.appendChild(
-            buildMarkupElement(node as Element, childDepth, elementIds)
-          );
-          i += 1;
-          continue;
-        }
-      }
-      break;
-    }
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (!node) {
-        i += 1;
-        continue;
-      }
-      if (
-        node.nodeType !== Node.ELEMENT_NODE ||
-        localName(node as Element) !== 'ldiv'
-      ) {
-        appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
-        i += 1;
-        continue;
-      }
-      const ldiv = node as Element;
-      children.appendChild(buildMarkupElement(ldiv, childDepth, elementIds));
-      i += 1;
-      const end = skipUntilListItemBoundary(nodes, i);
-      appendMarkupVirtualText(
-        children,
-        childDepth,
-        ldiv,
-        nodes.slice(i, end),
-        elementIds
-      );
-      i = end;
-    }
-  });
-}
-
-function buildMarkupOtslContainer(
-  el: Element,
-  depth: number,
-  elementIds: Map<Element, string>
-): HTMLElement {
-  return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
-    const nodes = [...el.childNodes];
-    let i = 0;
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (!node) {
-        i += 1;
-        continue;
-      }
-      if (
-        node.nodeType === Node.ELEMENT_NODE &&
-        isCellToken(localName(node as Element))
-      )
-        break;
-      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
-        i += 1;
-        continue;
-      }
-      if (isTextLikeNode(node)) break;
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = localName(node as Element);
-        if (HEAD_TAGS.has(tag) || tag === 'location' || tag === 'h_thread') {
-          children.appendChild(
-            buildMarkupElement(node as Element, childDepth, elementIds)
-          );
-          i += 1;
-          continue;
-        }
-      }
-      break;
-    }
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (!node) {
-        i += 1;
-        continue;
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) {
-        appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
-        i += 1;
-        continue;
-      }
-      const tag = localName(node as Element);
-      if (tag === 'nl') {
-        appendMarkupSelfClosingTag(children, childDepth, 'nl', []);
-        i += 1;
-        continue;
-      }
-      if (!isCellToken(tag)) {
-        appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
-        i += 1;
-        continue;
-      }
-      const cell = node as Element;
-      children.appendChild(buildMarkupElement(cell, childDepth, elementIds));
-      i += 1;
-      if (CELL_SPAN_TAGS.has(tag)) continue;
-      const end = skipUntilCellBoundary(nodes, i);
-      appendMarkupVirtualText(
-        children,
-        childDepth,
-        cell,
-        nodes.slice(i, end),
-        elementIds
-      );
-      i = end;
-    }
-  });
-}
-
-function buildMarkupElement(
-  el: Element,
-  depth: number,
-  elementIds: Map<Element, string>
-): HTMLElement {
-  const tag = localName(el);
-  if (tag === 'list') return buildMarkupList(el, depth, elementIds);
-  if (OTSL_CONTAINER_TAGS.has(tag))
-    return buildMarkupOtslContainer(el, depth, elementIds);
-
-  const block = document.createElement('div');
-  block.className = 'markup-el';
-  const elementId = elementIds.get(el);
-  if (elementId) block.setAttribute('data-element-id', elementId);
-
-  const attributes = markupAttributes(el);
-
-  if (!el.childNodes.length) {
-    appendMarkupSelfClosingTag(block, depth, tag, attributes);
-    return block;
-  }
-
-  const meaningfulText = [...el.childNodes].filter(
-    n => isTextLikeNode(n) && !isWhitespaceOnlyText(n)
-  );
-  const textOnly =
-    meaningfulText.length > 0 &&
-    meaningfulText.every(isTextLikeNode) &&
-    !childElements(el).length;
-  if (textOnly) {
-    const text = serializeMarkupTextNodes(el.childNodes);
-    if (text) {
-      appendMarkupInlineElement(block, depth, tag, attributes, text);
-      return block;
-    }
-  }
-
-  appendMarkupFoldableOpen(block, depth, tag, attributes);
-  block.classList.add('markup-el-foldable');
-
-  const foldBody = document.createElement('div');
-  foldBody.className = 'markup-fold-body';
-  const children = document.createElement('div');
-  children.className = 'markup-children';
-  for (const child of el.childNodes) {
-    if (isTextLikeNode(child)) {
-      const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(children, depth + 1, text);
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      children.appendChild(buildMarkupElement(child as Element, depth + 1, elementIds));
-    }
-  }
-  foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, tag);
-  block.appendChild(foldBody);
-  return block;
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -637,7 +113,7 @@ export class DoclangMarkupPane extends DoclangPageElement {
 
   // null = no document loaded yet; false = document loaded but no markup; true = has markup
   @state() private _hasMarkup: boolean | null = null;
-  private _pendingContent: HTMLElement | null = null;
+  @state() private _markupTemplate: TemplateResult | TemplateResult[] | null = null;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -652,35 +128,9 @@ export class DoclangMarkupPane extends DoclangPageElement {
     this.removeEventListener('mouseleave', this._onMouseleave);
   }
 
+  /* prettier-ignore */
   override render() {
-    return html`
-      <div class="pane-header">DocLang</div>
-      <div class="pane-body" id="markup-pane" @click=${this._onBodyClick}>
-        ${
-          this._hasMarkup === false
-            ? html`<div class="placeholder">${NO_MARKUP}</div>`
-            : this._hasMarkup === true
-              ? html`<div ${ref(this._onContentRef)}></div>`
-              : nothing
-        }
-      </div>
-    `;
-  }
-
-  private _onContentRef = (el: Element | undefined): void => {
-    if (el && this._pendingContent) {
-      (el as HTMLElement).replaceChildren(this._pendingContent);
-    }
-  };
-
-  override updated(): void {
-    if (!this._pendingContent) return;
-    const wrapper = this.shadowRoot?.querySelector(
-      '.pane-body > div'
-    ) as HTMLElement | null;
-    if (wrapper && !wrapper.contains(this._pendingContent)) {
-      wrapper.replaceChildren(this._pendingContent);
-    }
+    return html`<div class="pane-header">DocLang</div><div class="pane-body" id="markup-pane" @click=${this._onBodyClick}>${this._hasMarkup === false ? html`<div class="placeholder">${NO_MARKUP}</div>` : this._hasMarkup === true && this._markupTemplate ? html`<div class="markup">${this._markupTemplate}</div>` : nothing}</div>`;
   }
 
   /** The scrollable content body inside the shadow root. */
@@ -707,7 +157,7 @@ export class DoclangMarkupPane extends DoclangPageElement {
   protected override _renderDocument(): void {
     const state = this._docState;
     if (!state) {
-      this._pendingContent = null;
+      this._markupTemplate = null;
       this._hasMarkup = null;
       return;
     }
@@ -718,17 +168,17 @@ export class DoclangMarkupPane extends DoclangPageElement {
     state.idToElement = invertElementIds(elementIds);
 
     if (segmentHasMarkup(segment)) {
-      this._pendingContent = this._buildMarkupView(segment, elementIds);
+      this._markupTemplate = this._buildMarkupView(segment, elementIds);
       this._hasMarkup = true;
     } else {
-      this._pendingContent = null;
+      this._markupTemplate = null;
       this._hasMarkup = false;
     }
     this.requestUpdate();
   }
 
   protected override _clearDocument(): void {
-    this._pendingContent = null;
+    this._markupTemplate = null;
     this._hasMarkup = null;
     this.requestUpdate();
   }
@@ -736,15 +186,14 @@ export class DoclangMarkupPane extends DoclangPageElement {
   private _buildMarkupView(
     segment: Element[],
     elementIds: Map<Element, string>
-  ): HTMLElement {
-    const root = document.createElement('div');
-    root.className = 'markup';
+  ): TemplateResult[] {
+    const templates: TemplateResult[] = [];
     for (const el of segment) {
       if (el.nodeType === Node.ELEMENT_NODE) {
-        root.appendChild(buildMarkupElement(el, 0, elementIds));
+        templates.push(this._renderMarkupElement(el, 0, elementIds));
       }
     }
-    return root;
+    return templates;
   }
 
   private _onBodyClick = (e: MouseEvent): void => {
@@ -752,18 +201,7 @@ export class DoclangMarkupPane extends DoclangPageElement {
     const attrToggle = target.closest('.xml-attr-value-chip');
     if (attrToggle) {
       e.stopPropagation();
-      toggleTruncatableMarkupAttrValue(attrToggle);
-      return;
-    }
-    const toggle = target.closest('.markup-fold-toggle');
-    if (toggle) {
-      e.stopPropagation();
-      const block = toggle.closest('.markup-el-foldable');
-      if (block) {
-        const collapsed = block.classList.toggle('markup-collapsed');
-        toggle.setAttribute('aria-expanded', String(!collapsed));
-        toggle.setAttribute('aria-label', collapsed ? 'Expand' : 'Collapse');
-      }
+      this._toggleTruncatableMarkupAttrValue(attrToggle);
       return;
     }
     const ghostText = target.closest('.markup-el-virtual-text');
@@ -780,6 +218,14 @@ export class DoclangMarkupPane extends DoclangPageElement {
           detail: { id: elementId },
         })
       );
+    }
+  };
+
+  private _onSummaryClick = (e: MouseEvent): void => {
+    const target = e.target as Element;
+    // Only toggle the details open/close state if clicking the fold toggle arrow area
+    if (!target.closest('.markup-fold-toggle') && !target.closest('.markup-gutter')) {
+      e.preventDefault();
     }
   };
 
@@ -807,5 +253,409 @@ export class DoclangMarkupPane extends DoclangPageElement {
     this.dispatchEvent(
       new CustomEvent('doclang-hint-hide', { bubbles: true, composed: true })
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Component-private markup Lit template builders
+  // ---------------------------------------------------------------------------
+
+  /* prettier-ignore */
+  private _createEmbeddedUriContinuationPanel(value: string, depth: number): HTMLElement {
+    const container = document.createElement('div');
+    render(
+      html`<div class="markup-line markup-embedded-uri-panel" style="--markup-depth: ${depth}"><span class="markup-line-content"><span class="markup-gutter" aria-hidden="true"></span><span class="markup-line-body"><div class="markup-embedded-uri-panel-body" @click=${(e: Event) => e.stopPropagation()}>${value}</div></span></span></div>`,
+      container
+    );
+    return container.firstElementChild as HTMLElement;
+  }
+
+  /* prettier-ignore */
+  private _renderTruncatableMarkupAttrValue(value: string): TemplateResult {
+    const sizeLabel = formatEmbeddedUriSizeLabel(value);
+    return html`<span class="xml-attr-value xml-attr-value-truncatable" data-full-value=${value}><span class="xml-attr-value-text">${value.slice(0, LONG_EMBEDDED_URI_PREVIEW_LENGTH)}</span><button type="button" class="xml-attr-value-chip" data-collapsed-label=${sizeLabel} aria-expanded="false" aria-label="Show full value (${sizeLabel})"><span class="xml-attr-value-chip-label">${sizeLabel}</span></button></span>`;
+  }
+
+  private _toggleTruncatableMarkupAttrValue(toggle: Element): void {
+    const wrapper = toggle.closest('.xml-attr-value-truncatable') as HTMLElement | null;
+    if (!wrapper) return;
+
+    const markupLine = wrapper.closest('.markup-line') as HTMLElement | null;
+    const fullValue =
+      (wrapper as HTMLElement & { dataset: DOMStringMap }).dataset.fullValue ?? '';
+    const label = toggle.querySelector('.xml-attr-value-chip-label');
+    const collapsedLabel =
+      (toggle as HTMLElement & { dataset: DOMStringMap }).dataset.collapsedLabel ??
+      label?.textContent ??
+      '';
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+
+    if (expanded) {
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', `Show full value (${collapsedLabel})`);
+      if (label) label.textContent = collapsedLabel;
+      if (
+        markupLine?.nextElementSibling?.classList.contains('markup-embedded-uri-panel')
+      ) {
+        markupLine.nextElementSibling.remove();
+      }
+      return;
+    }
+
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-label', 'Hide full value');
+    if (label) label.textContent = 'hide';
+    if (
+      !markupLine ||
+      markupLine.nextElementSibling?.classList.contains('markup-embedded-uri-panel')
+    ) {
+      return;
+    }
+    const depth = Number(markupLine.style.getPropertyValue('--markup-depth') || 0);
+    markupLine.insertAdjacentElement(
+      'afterend',
+      this._createEmbeddedUriContinuationPanel(fullValue, depth)
+    );
+  }
+
+  /* prettier-ignore */
+  private _renderXmlSpan(className: string, text: string, { ghost = false } = {}): TemplateResult {
+    return html`<span class=${ghost ? `${className} markup-ghost-tag-part` : className}>${text}</span>`;
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupLineRow(
+    depth: number,
+    content: unknown,
+    { foldToggle = false } = {}
+  ): TemplateResult {
+    return html`<div class="markup-line" style="--markup-depth: ${depth}"><span class="markup-line-content"><span class="markup-gutter" aria-hidden="true">${foldToggle ? html`<span class="markup-fold-toggle"></span>` : nothing}</span><span class="markup-line-body">${content}</span></span></div>`;
+  }
+
+  private _renderMarkupAttrValue(value: string): TemplateResult {
+    if (isTruncatableEmbeddedImageUri(value)) {
+      return this._renderTruncatableMarkupAttrValue(value);
+    }
+    return this._renderXmlSpan('xml-attr-value', value);
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupAttributes(
+    attributes: { name: string; value: string }[]
+  ): TemplateResult[] {
+    return attributes.map(
+      ({ name, value }) => html` ${this._renderXmlSpan('xml-attr-name', name)}${this._renderXmlSpan('xml-bracket', '="')}${this._renderMarkupAttrValue(value)}${this._renderXmlSpan('xml-bracket', '"')}`
+    );
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupTextContent(text: string): TemplateResult {
+    const cdataMatch = /^<!\[CDATA\[([\s\S]*)\]\]>$/.exec(text);
+    if (cdataMatch) {
+      return html`${this._renderXmlSpan('xml-cdata-delimiter', '<![CDATA[')}${this._renderXmlSpan('xml-cdata', cdataMatch[1] ?? '')}${this._renderXmlSpan('xml-cdata-delimiter', ']]>')}`;
+    }
+    return this._renderXmlSpan('xml-text', text);
+  }
+
+  /* prettier-ignore */
+  private _renderOpenTagContent(
+    tag: string,
+    attributes: { name: string; value: string }[],
+    ghost = false
+  ): TemplateResult {
+    return html`${this._renderXmlSpan('xml-bracket', '<', { ghost })}${this._renderXmlSpan('xml-tag', tag, { ghost })}${this._renderMarkupAttributes(attributes)}${this._renderXmlSpan('xml-bracket', '>', { ghost })}`;
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupFoldableOpen(
+    depth: number,
+    tag: string,
+    attributes: { name: string; value: string }[],
+    tagHint?: string
+  ): TemplateResult {
+    const ghost = Boolean(tagHint);
+    const content = html`${this._renderOpenTagContent(tag, attributes, ghost)}<span class="markup-fold-suffix">${this._renderXmlSpan('xml-bracket', '...', { ghost })}${this._renderXmlSpan('xml-bracket', '</', { ghost })}${this._renderXmlSpan('xml-tag', tag, { ghost })}${this._renderXmlSpan('xml-bracket', '>', { ghost })}</span>`;
+    return html`<summary class="markup-line markup-line-open" style="--markup-depth: ${depth}" @click=${this._onSummaryClick}><span class="markup-line-content"><span class="markup-gutter" aria-hidden="true"><span class="markup-fold-toggle"></span></span><span class="markup-line-body">${content}</span></span></summary>`;
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupCloseTag(
+    depth: number,
+    tag: string,
+    tagHint?: string
+  ): TemplateResult {
+    const ghost = Boolean(tagHint);
+    const content = html`${this._renderXmlSpan('xml-bracket', '</', { ghost })}${this._renderXmlSpan('xml-tag', tag, { ghost })}${this._renderXmlSpan('xml-bracket', '>', { ghost })}`;
+    return this._renderMarkupLineRow(depth, content);
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupSelfClosingTag(
+    depth: number,
+    tag: string,
+    attributes: { name: string; value: string }[]
+  ): TemplateResult {
+    const content = html`${this._renderXmlSpan('xml-bracket', '<')}${this._renderXmlSpan('xml-tag', tag)}${this._renderMarkupAttributes(attributes)}${this._renderXmlSpan('xml-bracket', '/>')}`;
+    return this._renderMarkupLineRow(depth, content);
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupInlineElement(
+    depth: number,
+    tag: string,
+    attributes: { name: string; value: string }[],
+    text: string
+  ): TemplateResult {
+    const content = html`${this._renderOpenTagContent(tag, attributes)}${this._renderMarkupTextContent(text)}${this._renderXmlSpan('xml-bracket', '</')}${this._renderXmlSpan('xml-tag', tag)}${this._renderXmlSpan('xml-bracket', '>')}`;
+    return this._renderMarkupLineRow(depth, content);
+  }
+
+  private _renderMarkupTextLine(depth: number, text: string): TemplateResult {
+    return this._renderMarkupLineRow(depth, this._renderMarkupTextContent(text));
+  }
+
+  private _renderMarkupNodesFromSlice(
+    depth: number,
+    nodes: ArrayLike<ChildNode>,
+    elementIds: Map<Element, string>
+  ): TemplateResult[] {
+    const templates: TemplateResult[] = [];
+    for (let i = 0; i < nodes.length; i += 1) {
+      const child = nodes[i];
+      if (!child) continue;
+      if (isTextLikeNode(child)) {
+        const text = formatMarkupTextNode(child);
+        if (text) {
+          templates.push(this._renderMarkupTextLine(depth, text));
+        }
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        templates.push(this._renderMarkupElement(child as Element, depth, elementIds));
+      }
+    }
+    return templates;
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupVirtualText(
+    depth: number,
+    hostEl: Element,
+    contentNodes: ChildNode[],
+    elementIds: Map<Element, string>
+  ): TemplateResult | TemplateResult[] | unknown {
+    if (!shouldWrapVirtualText(contentNodes)) {
+      return this._renderMarkupNodesFromSlice(depth, contentNodes, elementIds);
+    }
+
+    const elementId = elementIds.get(hostEl);
+
+    return html`<details class="markup-el markup-el-foldable markup-el-virtual-text" ?open=${true} data-element-id=${elementId ?? nothing}>${this._renderMarkupFoldableOpen(depth, 'text', [], VIRTUAL_TEXT_TAG_HINT)}<div class="markup-fold-body"><div class="markup-children">${this._renderMarkupNodesFromSlice(depth + 1, contentNodes, elementIds)}</div>${this._renderMarkupCloseTag(depth, 'text', VIRTUAL_TEXT_TAG_HINT)}</div></details>`;
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupFoldableElement(
+    el: Element,
+    depth: number,
+    elementIds: Map<Element, string>,
+    renderBody: (childDepth: number) => TemplateResult | TemplateResult[] | unknown
+  ): TemplateResult {
+    const tag = localName(el);
+    const elementId = elementIds.get(el);
+
+    return html`<details class="markup-el markup-el-foldable" ?open=${true} data-element-id=${elementId ?? nothing}>${this._renderMarkupFoldableOpen(depth, tag, markupAttributes(el))}<div class="markup-fold-body"><div class="markup-children">${renderBody(depth + 1)}</div>${this._renderMarkupCloseTag(depth, tag)}</div></details>`;
+  }
+
+  private _renderMarkupList(
+    el: Element,
+    depth: number,
+    elementIds: Map<Element, string>
+  ): TemplateResult {
+    return this._renderMarkupFoldableElement(el, depth, elementIds, childDepth => {
+      const templates: unknown[] = [];
+      const nodes = [...el.childNodes];
+      let i = 0;
+      while (i < nodes.length) {
+        const node = nodes[i];
+        if (!node) {
+          i += 1;
+          continue;
+        }
+        if (
+          node.nodeType === Node.ELEMENT_NODE &&
+          localName(node as Element) === 'ldiv'
+        )
+          break;
+        if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
+          i += 1;
+          continue;
+        }
+        if (isTextLikeNode(node)) break;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const tag = localName(node as Element);
+          if (HEAD_TAGS.has(tag) || tag === 'location') {
+            templates.push(
+              this._renderMarkupElement(node as Element, childDepth, elementIds)
+            );
+            i += 1;
+            continue;
+          }
+        }
+        break;
+      }
+      while (i < nodes.length) {
+        const node = nodes[i];
+        if (!node) {
+          i += 1;
+          continue;
+        }
+        if (
+          node.nodeType !== Node.ELEMENT_NODE ||
+          localName(node as Element) !== 'ldiv'
+        ) {
+          templates.push(
+            ...this._renderMarkupNodesFromSlice(childDepth, [node], elementIds)
+          );
+          i += 1;
+          continue;
+        }
+        const ldiv = node as Element;
+        templates.push(this._renderMarkupElement(ldiv, childDepth, elementIds));
+        i += 1;
+        const end = skipUntilListItemBoundary(nodes, i);
+        templates.push(
+          this._renderMarkupVirtualText(
+            childDepth,
+            ldiv,
+            nodes.slice(i, end),
+            elementIds
+          )
+        );
+        i = end;
+      }
+      return templates;
+    });
+  }
+
+  private _renderMarkupOtslContainer(
+    el: Element,
+    depth: number,
+    elementIds: Map<Element, string>
+  ): TemplateResult {
+    return this._renderMarkupFoldableElement(el, depth, elementIds, childDepth => {
+      const templates: unknown[] = [];
+      const nodes = [...el.childNodes];
+      let i = 0;
+      while (i < nodes.length) {
+        const node = nodes[i];
+        if (!node) {
+          i += 1;
+          continue;
+        }
+        if (
+          node.nodeType === Node.ELEMENT_NODE &&
+          isCellToken(localName(node as Element))
+        )
+          break;
+        if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
+          i += 1;
+          continue;
+        }
+        if (isTextLikeNode(node)) break;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const tag = localName(node as Element);
+          if (HEAD_TAGS.has(tag) || tag === 'location' || tag === 'h_thread') {
+            templates.push(
+              this._renderMarkupElement(node as Element, childDepth, elementIds)
+            );
+            i += 1;
+            continue;
+          }
+        }
+        break;
+      }
+      while (i < nodes.length) {
+        const node = nodes[i];
+        if (!node) {
+          i += 1;
+          continue;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+          templates.push(
+            ...this._renderMarkupNodesFromSlice(childDepth, [node], elementIds)
+          );
+          i += 1;
+          continue;
+        }
+        const tag = localName(node as Element);
+        if (tag === 'nl') {
+          templates.push(this._renderMarkupSelfClosingTag(childDepth, 'nl', []));
+          i += 1;
+          continue;
+        }
+        if (!isCellToken(tag)) {
+          templates.push(
+            ...this._renderMarkupNodesFromSlice(childDepth, [node], elementIds)
+          );
+          i += 1;
+          continue;
+        }
+        const cell = node as Element;
+        templates.push(this._renderMarkupElement(cell, childDepth, elementIds));
+        i += 1;
+        if (CELL_SPAN_TAGS.has(tag)) continue;
+        const end = skipUntilCellBoundary(nodes, i);
+        templates.push(
+          this._renderMarkupVirtualText(
+            childDepth,
+            cell,
+            nodes.slice(i, end),
+            elementIds
+          )
+        );
+        i = end;
+      }
+      return templates;
+    });
+  }
+
+  /* prettier-ignore */
+  private _renderMarkupElement(
+    el: Element,
+    depth: number,
+    elementIds: Map<Element, string>
+  ): TemplateResult {
+    const tag = localName(el);
+    if (tag === 'list') return this._renderMarkupList(el, depth, elementIds);
+    if (OTSL_CONTAINER_TAGS.has(tag))
+      return this._renderMarkupOtslContainer(el, depth, elementIds);
+
+    const elementId = elementIds.get(el);
+    const attributes = markupAttributes(el);
+
+    if (!el.childNodes.length) {
+      return html`<div class="markup-el" data-element-id=${elementId ?? nothing}>${this._renderMarkupSelfClosingTag(depth, tag, attributes)}</div>`;
+    }
+
+    const meaningfulText = [...el.childNodes].filter(
+      n => isTextLikeNode(n) && !isWhitespaceOnlyText(n)
+    );
+    const textOnly =
+      meaningfulText.length > 0 &&
+      meaningfulText.every(isTextLikeNode) &&
+      !childElements(el).length;
+    if (textOnly) {
+      const text = serializeMarkupTextNodes(el.childNodes);
+      if (text) {
+        return html`<div class="markup-el" data-element-id=${elementId ?? nothing}>${this._renderMarkupInlineElement(depth, tag, attributes, text)}</div>`;
+      }
+    }
+
+    return html`<details class="markup-el markup-el-foldable" ?open=${true} data-element-id=${elementId ?? nothing}>${this._renderMarkupFoldableOpen(depth, tag, attributes)}<div class="markup-fold-body"><div class="markup-children">${[...el.childNodes].map(child => {
+      if (isTextLikeNode(child)) {
+        const text = formatMarkupTextNode(child);
+        return text ? this._renderMarkupTextLine(depth + 1, text) : nothing;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        return this._renderMarkupElement(child as Element, depth + 1, elementIds);
+      }
+      return nothing;
+    })}</div>${this._renderMarkupCloseTag(depth, tag)}</div></details>`;
   }
 }

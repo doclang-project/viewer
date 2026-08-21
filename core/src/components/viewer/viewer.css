@@ -19,11 +19,7 @@
 
 :host(.drag-over) doclang-empty-state {
   border-color: var(--accent);
-  background: color-mix(
-    in srgb,
-    var(--accent) 8%,
-    var(--placeholder-bg)
-  );
+  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
 }
 
 /* -----------------------------------------------------------------------

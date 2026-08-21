@@ -142,6 +142,16 @@ pre.markup {
   flex: 1 1 auto;
   min-width: 0;
 }
+summary::-webkit-details-marker {
+  display: none;
+}
+summary {
+  list-style: none;
+  display: block;
+}
+summary:focus {
+  outline: none;
+}
 .markup-fold-toggle {
   appearance: none;
   display: inline-flex;
@@ -169,7 +179,7 @@ pre.markup {
   transform: rotate(90deg);
   transition: transform 0.12s ease;
 }
-.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-toggle::before {
+details:not([open]) > summary .markup-fold-toggle::before {
   transform: rotate(0deg);
 }
 .markup-fold-toggle:hover {
@@ -179,10 +189,10 @@ pre.markup {
 .markup-fold-suffix {
   display: none;
 }
-.markup-el-foldable.markup-collapsed > .markup-line-open .markup-fold-suffix {
+details:not([open]) > summary .markup-fold-suffix {
   display: inline;
 }
-.markup-el-foldable.markup-collapsed > .markup-fold-body {
+details:not([open]) > .markup-fold-body {
   display: none;
 }
 .xml-tag {
@@ -236,11 +246,7 @@ pre.markup {
 .xml-attr-value-chip[aria-expanded='true'] {
   border-color: var(--accent);
   color: var(--accent);
-  background: color-mix(
-    in srgb,
-    var(--accent) 8%,
-    var(--placeholder-bg)
-  );
+  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
 }
 .markup-embedded-uri-panel {
   cursor: text;

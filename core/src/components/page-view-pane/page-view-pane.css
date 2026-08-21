@@ -405,12 +405,7 @@
   ) !important;
   stroke-width: 3.5;
   filter: drop-shadow(
-    0 0 3px
-      color-mix(
-        in srgb,
-        var(--kind-stroke, var(--accent)) 60%,
-        transparent
-      )
+    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)
   );
 }
 .overlay rect.bbox.related:not(.selected) {
@@ -423,11 +418,7 @@
 .overlay rect.bbox.layer-furniture,
 .overlay rect.bbox.layer-background {
   fill: url(#layer-hatch) !important;
-  stroke: color-mix(
-    in srgb,
-    var(--kind-stroke, var(--muted)) 50%,
-    transparent
-  );
+  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);
 }
 .overlay .layer-hatch-stripe {
   fill: var(--muted);

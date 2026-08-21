@@ -10,10 +10,7 @@
   background: var(--panel);
 
   --file-thumb-size: var(--doclang-file-thumb-size, 3.75rem);
-  --file-thumb-close-overflow: var(
-    --doclang-file-thumb-close-overflow,
-    0.25rem
-  );
+  --file-thumb-close-overflow: var(--doclang-file-thumb-close-overflow, 0.25rem);
   --file-item-pad-x: var(--doclang-file-item-pad-x, 0.35rem);
   --file-pane-pad-x: var(--doclang-file-pane-pad-x, 0.5rem);
   --file-pane-fit-width: var(
