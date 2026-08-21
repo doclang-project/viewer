@@ -29,9 +29,6 @@ import type { DoclangEmptyState } from '../empty-state/empty-state';
 import type {
   DocumentState,
   FileCatalogEntry,
-  PaneDragState,
-  UserPaneVisible,
-  PaneKey,
 } from '../../doclang/types';
 import {
   CELL_SPAN_TAGS,
@@ -55,6 +52,31 @@ import {
 } from '../../doclang/document';
 import { PAGE_ZOOM_DEFAULT } from '../page-view-pane/overlay';
 import { unzip } from '../../doclang/zip';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type PaneKey = 'file' | 'page' | 'markup' | 'reading';
+
+interface PaneDragState {
+  physicalSplitterIndex: number;
+  leftKey: PaneKey;
+  rightKey: PaneKey;
+  startX: number;
+  leftStart: number;
+  rightStart: number;
+  pointerId: number;
+  leftStartPx?: number;
+  rightStartPx?: number;
+}
+
+interface UserPaneVisible {
+  file: boolean;
+  page: boolean;
+  markup: boolean;
+  reading: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Constants

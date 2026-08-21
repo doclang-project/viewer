@@ -1,4 +1,3 @@
-import type { ParsedElementHead } from './types';
 
 export const DOCLANG_NS = 'https://www.doclang.ai/ns/v0';
 export const HEAD_TAGS = new Set([
@@ -83,6 +82,11 @@ export function localName(el: Element): string {
 
 export function headLocations(el: Element): Element[] {
   return parseElementHeadAt([...el.childNodes], 0)?.locs ?? [];
+}
+
+interface ParsedElementHead {
+  locs: Element[];
+  nextIndex: number;
 }
 
 export function parseElementHeadAt(

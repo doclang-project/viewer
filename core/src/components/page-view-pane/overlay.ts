@@ -2,14 +2,34 @@ import { layerClassForValue } from '../../doclang/dom';
 import type {
   BoundingBox,
   Resolution,
-  PixelRect,
   CaptionLink,
   XrefLink,
   FragmentLink,
   FragmentNavItem,
-  OverlayLinkOptions,
-  PageLayoutCache,
 } from '../../doclang/types';
+
+export interface PixelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  area: number;
+}
+
+export interface OverlayLinkOptions {
+  markerId: string;
+  linkClass: string;
+  fromIdAttr: string;
+  toIdAttr: string;
+}
+
+export interface PageLayoutCache {
+  paneW: number;
+  paneH: number;
+  imgW: number;
+  imgH: number;
+  fitScale: number;
+}
 
 const OVERLAY_BADGE_FONT_SIZE = 11 * 1.5 * 0.8;
 const OVERLAY_BADGE_PAD_X = 3;

@@ -16,6 +16,7 @@ import {
   FRAGMENT_NAV_HINT_PREV,
   FRAGMENT_NAV_HINT_NEXT,
   type OverlayCtx,
+  type PageLayoutCache,
 } from './overlay';
 import {
   assignElementIds,
@@ -36,7 +37,21 @@ import {
   firstHeadChild,
   locationResolution,
 } from '../../doclang/dom';
-import type { HeadInfo, PageLayoutCache, PagePanDrag } from '../../doclang/types';
+
+interface PagePanDrag {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  scrollLeft: number;
+  scrollTop: number;
+  moved: boolean;
+}
+
+interface HeadInfo {
+  key: string;
+  value: string;
+  isDefault: boolean;
+}
 
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const NO_IMAGE = '(No page image available.)';

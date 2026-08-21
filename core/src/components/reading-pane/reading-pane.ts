@@ -27,7 +27,30 @@ import {
   normalizeArchivePath,
   isSemanticElement,
 } from '../../doclang/dom';
-import type { RenderCtx, OtslCell, ParsedOtslCell } from '../../doclang/types';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface RenderCtx {
+  inline: boolean;
+  trimLeading?: boolean;
+}
+
+interface OtslCell {
+  kind: string;
+  token: Element;
+  contentNodes: Node[];
+  colspan: number;
+  rowspan: number;
+  covered?: boolean;
+}
+
+interface ParsedOtslCell {
+  kind: string;
+  token: Element;
+  contentNodes: Node[];
+}
 
 // ---------------------------------------------------------------------------
 // Constants
