@@ -3,17 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>DocLang Viewer</title>
+
   <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="assets/doclang_v3_sail.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
-  <link rel="stylesheet" href="viewer.css">
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+    }
+  </style>
 </head>
 <body>
-  <doclang-viewer class="demo-loading"></doclang-viewer>
+  <doclang-viewer example="assets/2501.17887.dclx"></doclang-viewer>
 
-  <script src="demo-data.js"></script>
   <script src="viewer.js"></script>
 </body>
 </html>

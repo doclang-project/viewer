@@ -1,0 +1,78 @@
+:host {
+  color-scheme: light dark;
+  --bg: var(--doclang-bg, #f4f4f5);
+  --panel: var(--doclang-panel, #ffffff);
+  --border: var(--doclang-border, #d4d4d8);
+  --text: var(--doclang-text, #18181b);
+  --muted: var(--doclang-muted, #71717a);
+  --accent: var(--doclang-accent, #2563eb);
+  --placeholder-bg: var(--doclang-placeholder-bg, #fafafa);
+  --font-ui: var(
+    --doclang-font-ui,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif
+  );
+  --font-mono: var(
+    --doclang-font-mono,
+    ui-monospace,
+    'Cascadia Code',
+    'Source Code Pro',
+    monospace
+  );
+  --markup-bg: var(--doclang-markup-bg, #ffffff);
+  --markup-fg: var(--doclang-markup-fg, #24292e);
+  --markup-hover: var(--doclang-markup-hover, rgba(37, 99, 235, 0.08));
+  --markup-selected: var(--doclang-markup-selected, rgba(37, 99, 235, 0.14));
+  --kind-text: var(--doclang-kind-text, #2563eb);
+  --kind-heading: var(--doclang-kind-heading, #7c3aed);
+  --kind-list: var(--doclang-kind-list, #ea580c);
+  --kind-ldiv: var(--doclang-kind-ldiv, #ea580c);
+  --kind-table: var(--doclang-kind-table, #16a34a);
+  --kind-index: var(--doclang-kind-index, #0d9488);
+  --kind-formula: var(--doclang-kind-formula, #0891b2);
+  --kind-code: var(--doclang-kind-code, #475569);
+  --kind-picture: var(--doclang-kind-picture, #db2777);
+  --kind-group: var(--doclang-kind-group, #4f46e5);
+  --kind-footnote: var(--doclang-kind-footnote, #a16207);
+  --kind-page_header: var(--doclang-kind-page_header, #71717a);
+  --kind-page_footer: var(--doclang-kind-page_footer, #71717a);
+  --kind-caption: var(--doclang-kind-caption, #71717a);
+  --kind-field: var(--doclang-kind-field, #d97706);
+  --kind-default: var(--doclang-kind-default, #dc2626);
+}
+
+@media (prefers-color-scheme: dark) {
+  :host {
+    --bg: var(--doclang-bg, #09090b);
+    --panel: var(--doclang-panel, #18181b);
+    --border: var(--doclang-border, #3f3f46);
+    --text: var(--doclang-text, #fafafa);
+    --muted: var(--doclang-muted, #a1a1aa);
+    --placeholder-bg: var(--doclang-placeholder-bg, #27272a);
+    --markup-bg: var(--doclang-markup-bg, #1e1e1e);
+    --markup-fg: var(--doclang-markup-fg, #d4d4d4);
+    --markup-hover: var(--doclang-markup-hover, rgba(96, 165, 250, 0.1));
+    --markup-selected: var(
+      --doclang-markup-selected,
+      rgba(96, 165, 250, 0.18)
+    );
+    --kind-text: var(--doclang-kind-text, #60a5fa);
+    --kind-heading: var(--doclang-kind-heading, #a78bfa);
+    --kind-list: var(--doclang-kind-list, #fb923c);
+    --kind-ldiv: var(--doclang-kind-ldiv, #fb923c);
+    --kind-table: var(--doclang-kind-table, #4ade80);
+    --kind-index: var(--doclang-kind-index, #2dd4bf);
+    --kind-formula: var(--doclang-kind-formula, #22d3ee);
+    --kind-code: var(--doclang-kind-code, #94a3b8);
+    --kind-picture: var(--doclang-kind-picture, #f472b6);
+    --kind-group: var(--doclang-kind-group, #818cf8);
+    --kind-footnote: var(--doclang-kind-footnote, #facc15);
+    --kind-page_header: var(--doclang-kind-page_header, #a1a1aa);
+    --kind-page_footer: var(--doclang-kind-page_footer, #a1a1aa);
+    --kind-caption: var(--doclang-kind-caption, #a1a1aa);
+    --kind-field: var(--doclang-kind-field, #fbbf24);
+    --kind-default: var(--doclang-kind-default, #f87171);
+  }
+}

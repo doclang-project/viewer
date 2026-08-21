@@ -431,14 +431,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
     return this._opts;
   }
 
-  get suppressClick(): boolean {
-    return this._suppressClick;
-  }
-
-  setSuppressClick(v: boolean): void {
-    this._suppressClick = v;
-  }
-
   /** The scrollable viewport pane (page-view-port div, or body if absent). */
   get scrollPane(): HTMLElement | null {
     return this._scrollPane();
@@ -1026,7 +1018,8 @@ export class DoclangPageViewPane extends DoclangPageElement {
       this._hideHint();
       return;
     }
-    const navBtn = (e.target as Element).closest(
+    const innerTarget = (e.composedPath()[0] ?? e.target) as Element;
+    const navBtn = innerTarget.closest(
       '.fragment-nav-btn:not(.fragment-nav-btn-disabled)'
     );
     if (navBtn) {
@@ -1037,7 +1030,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       this._showHint({ text: hint, clientX: e.clientX, clientY: e.clientY });
       return;
     }
-    const badge = (e.target as Element).closest('.element-badge[data-element-id]');
+    const badge = innerTarget.closest('.element-badge[data-element-id]');
     if (!badge || !this._docState?.idToElement) {
       this._hideHint();
       return;

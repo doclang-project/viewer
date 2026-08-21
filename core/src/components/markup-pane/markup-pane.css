@@ -1,9 +1,20 @@
+@import '../theme.css';
+
 :host {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
   min-height: 0;
   min-width: 0;
+  background: var(--panel);
+
+  --xml-tag: var(--doclang-xml-tag, #116329);
+  --xml-bracket: var(--doclang-xml-bracket, #24292e);
+  --xml-attr-name: var(--doclang-xml-attr-name, #0550ae);
+  --xml-attr-value: var(--doclang-xml-attr-value, #0a3069);
+  --xml-text: var(--doclang-xml-text, #24292e);
+  --xml-cdata: var(--doclang-xml-cdata, #6a737d);
+  --xml-cdata-delimiter: var(--doclang-xml-cdata-delimiter, #6a737d);
 }
 :host([hidden]) {
   display: none !important;
@@ -225,7 +236,11 @@ pre.markup {
 .xml-attr-value-chip[aria-expanded='true'] {
   border-color: var(--accent);
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
+  background: color-mix(
+    in srgb,
+    var(--accent) 8%,
+    var(--placeholder-bg)
+  );
 }
 .markup-embedded-uri-panel {
   cursor: text;
@@ -253,4 +268,16 @@ pre.markup {
 }
 .xml-cdata-delimiter {
   color: var(--xml-cdata-delimiter);
+}
+
+@media (prefers-color-scheme: dark) {
+  :host {
+    --xml-tag: var(--doclang-xml-tag, #4ec9b0);
+    --xml-bracket: var(--doclang-xml-bracket, #808080);
+    --xml-attr-name: var(--doclang-xml-attr-name, #9cdcfe);
+    --xml-attr-value: var(--doclang-xml-attr-value, #ce9178);
+    --xml-text: var(--doclang-xml-text, #d4d4d4);
+    --xml-cdata: var(--doclang-xml-cdata, #b5cea8);
+    --xml-cdata-delimiter: var(--doclang-xml-cdata-delimiter, #808080);
+  }
 }

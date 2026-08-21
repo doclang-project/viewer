@@ -10,7 +10,7 @@ import '../reading-pane/reading-pane';
 import '../empty-state/empty-state';
 
 import { LitElement, html, nothing } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 import { ref, createRef } from 'lit/directives/ref.js';
@@ -84,6 +84,8 @@ const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 export class DoclangViewer extends LitElement {
   static override styles = unsafeCSS(styles);
 
+  @property({ type: String }) example: string | null = null;
+
   // ---------------------------------------------------------------------------
   // Reactive state (drives re-render + class toggles on host)
   // ---------------------------------------------------------------------------
@@ -102,7 +104,6 @@ export class DoclangViewer extends LitElement {
   @state() private _paneGridCols: Map<PaneKey, number> = new Map();
   @state() private _paneGridRows: Map<PaneKey, number> = new Map();
   @state() private _splitterCols: (number | null)[] = [null, null, null];
-  @state() private _lastPaneKey: PaneKey | null = null;
   @state() private _readingSettingsOpen = false;
   @state() private _toolbarOptionsOpen = false;
   @state() private _userPaneVisible: UserPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
@@ -150,6 +151,11 @@ export class DoclangViewer extends LitElement {
     this._initDragDrop();
     this._initPageWheelNav();
     this.addEventListener('keydown', this._onGlobalKeydown);
+
+    if (this.example) {
+      this._demoLoading = true;
+      this._loadDemo();
+    }
   }
 
   override disconnectedCallback(): void {
@@ -173,12 +179,6 @@ export class DoclangViewer extends LitElement {
   // ---------------------------------------------------------------------------
 
   override render() {
-    const hostClasses = {
-      loaded: this._loaded,
-      'markup-only': this._markupOnly,
-      'drag-over': this._dragOver,
-      'pane-drag-active': this._paneDragActive,
-    };
     // Apply host classes declaratively via a wrapper div trick:
     // (LitElement doesn't support classMap on :host directly, so we toggle
     // classes on the host element imperatively in updated())
@@ -204,9 +204,11 @@ export class DoclangViewer extends LitElement {
         </div>
 
         <div class="header-center">
-          ${this._docLabel
-            ? html`<span class="doc-label">${this._docLabel}</span>`
-            : nothing}
+          ${
+            this._docLabel
+              ? html`<span class="doc-label">${this._docLabel}</span>`
+              : nothing
+          }
         </div>
 
         <div class="toolbar-wrap">
@@ -234,6 +236,8 @@ export class DoclangViewer extends LitElement {
       >
         <doclang-file-pane
           ${ref(this._filePaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible('file')}
           style=${this._paneGridStyle('file')}
           @doclang-file-select=${(e: Event) => this._switchToFile((e as CustomEvent<{ index: number }>).detail.index)}
           @doclang-file-close=${(e: Event) => this._closeCatalogFile((e as CustomEvent<{ index: number }>).detail.index)}
@@ -254,6 +258,8 @@ export class DoclangViewer extends LitElement {
 
         <doclang-page-view-pane
           ${ref(this._pageViewPaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible('page')}
           style=${this._paneGridStyle('page')}
           @doclang-element-select=${this._onElementSelect}
           @doclang-navigate-thread=${this._onNavigateThread}
@@ -280,6 +286,8 @@ export class DoclangViewer extends LitElement {
 
         <doclang-markup-pane
           ${ref(this._markupPaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible('markup')}
           style=${this._paneGridStyle('markup')}
           @doclang-element-select=${this._onElementSelect}
           @doclang-hint=${this._onHint}
@@ -300,6 +308,8 @@ export class DoclangViewer extends LitElement {
 
         <doclang-reading-pane
           ${ref(this._readingPaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible('reading')}
           style=${this._paneGridStyle('reading')}
           @doclang-element-select=${this._onElementSelect}
           @doclang-reading-settings-toggle=${() => this._setReadingSettingsOpen(!this._readingSettingsOpen)}
@@ -359,7 +369,8 @@ export class DoclangViewer extends LitElement {
 
   private _filePaneFitWidthPx(): number {
     const probe = document.createElement('div');
-    probe.style.cssText = 'position:absolute;visibility:hidden;width:var(--file-pane-fit-width);';
+    probe.style.cssText =
+      'position:absolute;visibility:hidden;width:var(--doclang-file-pane-fit-width);';
     (this.shadowRoot ?? document.documentElement).appendChild(probe);
     const px = probe.getBoundingClientRect().width;
     probe.remove();
@@ -392,8 +403,10 @@ export class DoclangViewer extends LitElement {
   }
 
   private _paneKeysAdjacent(leftKey: PaneKey, rightKey: PaneKey): boolean {
-    return PANE_KEYS.indexOf(leftKey) >= 0 &&
-      PANE_KEYS.indexOf(rightKey) === PANE_KEYS.indexOf(leftKey) + 1;
+    return (
+      PANE_KEYS.indexOf(leftKey) >= 0 &&
+      PANE_KEYS.indexOf(rightKey) === PANE_KEYS.indexOf(leftKey) + 1
+    );
   }
 
   private _onlyHiddenPanesBetween(leftKey: PaneKey, rightKey: PaneKey): boolean {
@@ -448,12 +461,9 @@ export class DoclangViewer extends LitElement {
       this._paneGridRows = gridRows;
       this._splitterCols = splitterCols;
       this._mainGridStyle = {};
-      this._lastPaneKey = null;
       this.requestUpdate();
       return;
     }
-
-    this._lastPaneKey = keys[keys.length - 1] ?? null;
 
     if (stacked) {
       let row = 1;
@@ -550,7 +560,9 @@ export class DoclangViewer extends LitElement {
       if (typeof data?.filePaneWidthPx === 'number' && data.filePaneWidthPx > 0) {
         this._filePaneWidthPx = data.filePaneWidthPx;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   private _saveLayoutPrefs(): void {
@@ -563,7 +575,9 @@ export class DoclangViewer extends LitElement {
           filePaneWidthPx: this._filePaneWidthPx,
         })
       );
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   private _resetPaneLayout(): void {
@@ -593,7 +607,9 @@ export class DoclangViewer extends LitElement {
   };
 
   private _initLayoutStackListener(): void {
-    this._layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
+    this._layoutStackQuery = window.matchMedia(
+      `(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`
+    );
     this._layoutStackQuery.addEventListener('change', this._onLayoutStackChange);
     this._onLayoutStackChange();
   }
@@ -684,7 +700,9 @@ export class DoclangViewer extends LitElement {
     const keys = this._visiblePaneKeys();
     const frWeights = this._contentPaneFrWeights(keys);
     const contentKeys = keys.filter((k): k is Exclude<PaneKey, 'file'> => k !== 'file');
-    const leftContentIdx = contentKeys.indexOf(drag.leftKey as Exclude<PaneKey, 'file'>);
+    const leftContentIdx = contentKeys.indexOf(
+      drag.leftKey as Exclude<PaneKey, 'file'>
+    );
     if (leftContentIdx < 0 || leftContentIdx + 1 >= frWeights.length) return;
     const pairFrTotal = frWeights[leftContentIdx]! + frWeights[leftContentIdx + 1]!;
     if (!(pairFrTotal > 0)) return;
@@ -709,7 +727,8 @@ export class DoclangViewer extends LitElement {
     const splitterRef = this._splitterRefs[drag.physicalSplitterIndex];
     const splitter = splitterRef?.value;
     splitter?.classList.remove('is-dragging');
-    if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+    if (splitter?.hasPointerCapture(e.pointerId))
+      splitter.releasePointerCapture(e.pointerId);
     this._paneDrag = null;
     this._paneDragActive = false;
     this._normalizePaneRatios();
@@ -778,28 +797,50 @@ export class DoclangViewer extends LitElement {
     let i = skipContainerLevelHead(nodes, 0);
     while (i < nodes.length) {
       const node = nodes[i]!;
-      if (node.nodeType !== Node.ELEMENT_NODE || localName(node as Element) !== 'ldiv') { i++; continue; }
+      if (
+        node.nodeType !== Node.ELEMENT_NODE ||
+        localName(node as Element) !== 'ldiv'
+      ) {
+        i++;
+        continue;
+      }
       const ldiv = node as Element;
       i++;
       const end = skipUntilListItemBoundary(nodes, i);
-      if (target === ldiv || nodes.slice(i, end).some(n => xmlContains(target, n))) return ldiv;
+      if (target === ldiv || nodes.slice(i, end).some(n => xmlContains(target, n)))
+        return ldiv;
       i = end;
     }
     return null;
   }
 
-  private _findTableVirtualTextHost(container: Element, target: Element): Element | null {
+  private _findTableVirtualTextHost(
+    container: Element,
+    target: Element
+  ): Element | null {
     const nodes = [...container.childNodes] as ChildNode[];
     let i = skipContainerLevelHead(nodes, 0);
     while (i < nodes.length) {
       const node = nodes[i]!;
-      if (node.nodeType !== Node.ELEMENT_NODE) { i++; continue; }
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        i++;
+        continue;
+      }
       const tag = localName(node as Element);
-      if (tag === 'nl' || isVirtualTextHost(node as Element) || CELL_SPAN_TAGS.has(tag) || !isCellToken(tag)) { i++; continue; }
+      if (
+        tag === 'nl' ||
+        isVirtualTextHost(node as Element) ||
+        CELL_SPAN_TAGS.has(tag) ||
+        !isCellToken(tag)
+      ) {
+        i++;
+        continue;
+      }
       const cell = node as Element;
       i++;
       const end = skipUntilCellBoundary(nodes, i);
-      if (target === cell || nodes.slice(i, end).some(n => xmlContains(target, n))) return cell;
+      if (target === cell || nodes.slice(i, end).some(n => xmlContains(target, n)))
+        return cell;
       i = end;
     }
     return null;
@@ -811,8 +852,14 @@ export class DoclangViewer extends LitElement {
       const parent: Element | null = node.parentElement;
       if (!parent) return null;
       const tag = localName(parent);
-      if (tag === 'list') { const h = this._findListVirtualTextHost(parent, xmlEl); if (h) return h; }
-      if (OTSL_CONTAINER_TAGS.has(tag)) { const h = this._findTableVirtualTextHost(parent, xmlEl); if (h) return h; }
+      if (tag === 'list') {
+        const h = this._findListVirtualTextHost(parent, xmlEl);
+        if (h) return h;
+      }
+      if (OTSL_CONTAINER_TAGS.has(tag)) {
+        const h = this._findTableVirtualTextHost(parent, xmlEl);
+        if (h) return h;
+      }
       node = parent;
     }
     return null;
@@ -972,7 +1019,9 @@ export class DoclangViewer extends LitElement {
   }
 
   private _createPageImageObjectUrl(data: Uint8Array, ext: string): string {
-    return URL.createObjectURL(new Blob([data as BlobPart], { type: this._pageImageMimeFromExt(ext) }));
+    return URL.createObjectURL(
+      new Blob([data as BlobPart], { type: this._pageImageMimeFromExt(ext) })
+    );
   }
 
   private _createFirstPageImageUrlFromFiles(files: File[]): string | null {
@@ -985,12 +1034,17 @@ export class DoclangViewer extends LitElement {
       const m = PAGE_IMAGE_RE.exec(f.name);
       if (!m) continue;
       const pageNum = Number(m[1]);
-      if (pageNum < bestPage) { bestPage = pageNum; bestFile = f; }
+      if (pageNum < bestPage) {
+        bestPage = pageNum;
+        bestFile = f;
+      }
     }
     return bestFile ? URL.createObjectURL(bestFile) : null;
   }
 
-  private async _createFirstPageImageUrlFromZip(source: File | ArrayBuffer): Promise<string | null> {
+  private async _createFirstPageImageUrlFromZip(
+    source: File | ArrayBuffer
+  ): Promise<string | null> {
     const buffer = source instanceof File ? await source.arrayBuffer() : source;
     const entries = await unzip(buffer, {
       shouldExtract: name => /^pages\/\d+\.(png|jpe?g|webp)$/i.test(name),
@@ -1001,19 +1055,35 @@ export class DoclangViewer extends LitElement {
       const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
       if (!m) continue;
       const pageNum = Number(m[1]);
-      if (pageNum < bestPage) { bestPage = pageNum; bestEntry = e; }
+      if (pageNum < bestPage) {
+        bestPage = pageNum;
+        bestEntry = e;
+      }
     }
     if (!bestEntry) return null;
-    return this._createPageImageObjectUrl(bestEntry.data, bestEntry.name.split('.').pop() ?? 'png');
+    return this._createPageImageObjectUrl(
+      bestEntry.data,
+      bestEntry.name.split('.').pop() ?? 'png'
+    );
   }
 
-  private async _resolveCatalogEntryThumbnail(entry: FileCatalogEntry): Promise<string | null> {
+  private async _resolveCatalogEntryThumbnail(
+    entry: FileCatalogEntry
+  ): Promise<string | null> {
     if (entry.thumbnailUrl) return entry.thumbnailUrl;
     if (entry.kind === 'markup') return null;
     try {
-      if (entry.kind === 'folder') entry.thumbnailUrl = this._createFirstPageImageUrlFromFiles(entry.source as File[]);
-      else if (entry.kind === 'archive') entry.thumbnailUrl = await this._createFirstPageImageUrlFromZip(entry.source as File | ArrayBuffer);
-    } catch { entry.thumbnailUrl = null; }
+      if (entry.kind === 'folder')
+        entry.thumbnailUrl = this._createFirstPageImageUrlFromFiles(
+          entry.source as File[]
+        );
+      else if (entry.kind === 'archive')
+        entry.thumbnailUrl = await this._createFirstPageImageUrlFromZip(
+          entry.source as File | ArrayBuffer
+        );
+    } catch {
+      entry.thumbnailUrl = null;
+    }
     return entry.thumbnailUrl;
   }
 
@@ -1028,7 +1098,8 @@ export class DoclangViewer extends LitElement {
   }
 
   private _revokeCatalogEntry(entry: FileCatalogEntry | null): void {
-    if (entry?.thumbnailUrl?.startsWith('blob:')) URL.revokeObjectURL(entry.thumbnailUrl);
+    if (entry?.thumbnailUrl?.startsWith('blob:'))
+      URL.revokeObjectURL(entry.thumbnailUrl);
     if (entry) entry.thumbnailUrl = null;
   }
 
@@ -1053,24 +1124,37 @@ export class DoclangViewer extends LitElement {
     return /\.(?:dclg(?:\.xml)?|xml)$/i.test(file.name);
   }
 
-  private async _parseCatalogEntry(entry: FileCatalogEntry): Promise<DocumentState | null> {
+  private async _parseCatalogEntry(
+    entry: FileCatalogEntry
+  ): Promise<DocumentState | null> {
     try {
       if (entry.kind === 'markup') {
-        const text = entry.source instanceof File
-          ? await (entry.source as File).text()
-          : new TextDecoder().decode(entry.source as ArrayBuffer);
-        return buildDocumentState(text, new Map(), entry.label, new Map(), { markupOnly: true });
+        const text =
+          entry.source instanceof File
+            ? await (entry.source as File).text()
+            : new TextDecoder().decode(entry.source as ArrayBuffer);
+        return buildDocumentState(text, new Map(), entry.label, new Map(), {
+          markupOnly: true,
+        });
       }
       if (entry.kind === 'archive') {
-        const buffer = entry.source instanceof File
-          ? await (entry.source as File).arrayBuffer()
-          : (entry.source as ArrayBuffer);
-        const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
-        return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+        const buffer =
+          entry.source instanceof File
+            ? await (entry.source as File).arrayBuffer()
+            : (entry.source as ArrayBuffer);
+        const { markupXml, pageImages, assetUrls } =
+          await extractArchiveFromZipBuffer(buffer);
+        return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, {
+          markupOnly: false,
+        });
       }
       if (entry.kind === 'folder') {
-        const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source as File[]);
-        return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+        const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(
+          entry.source as File[]
+        );
+        return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, {
+          markupOnly: false,
+        });
       }
     } catch (err) {
       alert(`Failed to read ${entry.label}: ${(err as Error).message}`);
@@ -1089,7 +1173,10 @@ export class DoclangViewer extends LitElement {
   private _releaseActiveDocument(): void {
     if (this._activeFileIndex >= 0) {
       const entry = this._fileCatalog[this._activeFileIndex];
-      if (entry?.snapshot) { revokeDocumentState(entry.snapshot); entry.snapshot = null; }
+      if (entry?.snapshot) {
+        revokeDocumentState(entry.snapshot);
+        entry.snapshot = null;
+      }
     }
     if (this._docState) revokeDocumentState(this._docState);
     this._docState = null;
@@ -1113,7 +1200,8 @@ export class DoclangViewer extends LitElement {
       this._revokeCatalogEntry(entry);
       this._fileCatalog.splice(index, 1);
       this._activeFileIndex = -1;
-      if (this._fileCatalog.length) await this._switchToFile(Math.min(index, this._fileCatalog.length - 1));
+      if (this._fileCatalog.length)
+        await this._switchToFile(Math.min(index, this._fileCatalog.length - 1));
       else this._resetViewer();
       return;
     }
@@ -1143,11 +1231,20 @@ export class DoclangViewer extends LitElement {
     if (index < 0 || index >= this._fileCatalog.length) return;
     const wasActive = index === this._activeFileIndex;
     const entry = this._fileCatalog[index]!;
-    if (wasActive) { this._releaseActiveDocument(); this._activeFileIndex = -1; }
+    if (wasActive) {
+      this._releaseActiveDocument();
+      this._activeFileIndex = -1;
+    }
     this._revokeCatalogEntry(entry);
     this._fileCatalog.splice(index, 1);
-    if (!this._fileCatalog.length) { this._resetViewer(); return; }
-    if (wasActive) { await this._switchToFile(Math.min(index, this._fileCatalog.length - 1)); return; }
+    if (!this._fileCatalog.length) {
+      this._resetViewer();
+      return;
+    }
+    if (wasActive) {
+      await this._switchToFile(Math.min(index, this._fileCatalog.length - 1));
+      return;
+    }
     if (index < this._activeFileIndex) this._activeFileIndex -= 1;
     this._updateFileView();
   }
@@ -1169,8 +1266,14 @@ export class DoclangViewer extends LitElement {
     this._applyPaneLayout();
   }
 
-  private async _addFilesToCatalog(files: File[], { replace = false } = {}): Promise<void> {
-    if (replace) { this._clearFileCatalog(); this._filePaneUserToggled = false; }
+  private async _addFilesToCatalog(
+    files: File[],
+    { replace = false } = {}
+  ): Promise<void> {
+    if (replace) {
+      this._clearFileCatalog();
+      this._filePaneUserToggled = false;
+    }
     const startIndex = this._fileCatalog.length;
     for (const file of files) {
       const entry = this._createFileCatalogEntry(file);
@@ -1186,7 +1289,8 @@ export class DoclangViewer extends LitElement {
       alert('Archive must contain document.xml at its root.');
       return;
     }
-    const rootName = (files[0]!.webkitRelativePath || files[0]!.name).split('/')[0] || 'archive';
+    const rootName =
+      (files[0]!.webkitRelativePath || files[0]!.name).split('/')[0] || 'archive';
     const entry: FileCatalogEntry = {
       id: crypto.randomUUID(),
       label: rootName,
@@ -1203,9 +1307,14 @@ export class DoclangViewer extends LitElement {
   }
 
   private async _addArchiveBufferToCatalog(
-    buffer: ArrayBuffer, label: string, { replace = false } = {}
+    buffer: ArrayBuffer,
+    label: string,
+    { replace = false } = {}
   ): Promise<void> {
-    if (replace) { this._clearFileCatalog(); this._filePaneUserToggled = false; }
+    if (replace) {
+      this._clearFileCatalog();
+      this._filePaneUserToggled = false;
+    }
     const entry: FileCatalogEntry = {
       id: crypto.randomUUID(),
       label,
@@ -1237,14 +1346,18 @@ export class DoclangViewer extends LitElement {
     this._demoLoadInProgress = true;
     this._setDemoLoading(true);
     try {
-      const demoUrl = (globalThis as unknown as Record<string, string>)['DEMO_ARCHIVE_URL'];
-      if (!demoUrl) throw new Error('DEMO_ARCHIVE_URL not defined');
+      const demoUrl = this.example;
+      if (!demoUrl) throw new Error('example URL not defined');
       const res = await fetch(demoUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const label = demoUrl.split('/').pop() || 'demo.dclx';
-      await this._addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
+      await this._addArchiveBufferToCatalog(await res.arrayBuffer(), label, {
+        replace: true,
+      });
     } catch (err) {
-      alert(`Failed to load demo: ${(err as Error).message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`);
+      alert(
+        `Failed to load demo: ${(err as Error).message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`
+      );
     } finally {
       this._demoLoadInProgress = false;
       this._setDemoLoading(false);
@@ -1288,8 +1401,13 @@ export class DoclangViewer extends LitElement {
 
   private async _loadFromDrop(dataTransfer: DataTransfer): Promise<void> {
     const files = [...dataTransfer.files];
-    if (files.some(f => f.name === 'document.xml')) { await this._appendFolderArchive(files); return; }
-    const supported = files.filter(f => this._isArchiveFile(f) || this._isMarkupFile(f));
+    if (files.some(f => f.name === 'document.xml')) {
+      await this._appendFolderArchive(files);
+      return;
+    }
+    const supported = files.filter(
+      f => this._isArchiveFile(f) || this._isMarkupFile(f)
+    );
     if (supported.length) await this._addFilesToCatalog(supported, { replace: false });
   }
 
@@ -1319,7 +1437,10 @@ export class DoclangViewer extends LitElement {
     if (now - this._wheelLastFlipAt < PAGE_WHEEL_COOLDOWN_MS) return false;
     const before = s.currentPage;
     this._goToPage(s.currentPage + dir);
-    if (s.currentPage !== before) { this._wheelLastFlipAt = now; return true; }
+    if (s.currentPage !== before) {
+      this._wheelLastFlipAt = now;
+      return true;
+    }
     return false;
   }
 
@@ -1333,7 +1454,9 @@ export class DoclangViewer extends LitElement {
     if (!(dir < 0 && atTop) && !(dir > 0 && atBottom)) return;
     e.preventDefault();
     if (!this._tryFlipPage(dir)) return;
-    requestAnimationFrame(() => { pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight; });
+    requestAnimationFrame(() => {
+      pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight;
+    });
   }
 
   private _initPageWheelNav(): void {
@@ -1345,27 +1468,40 @@ export class DoclangViewer extends LitElement {
     this.updateComplete.then(() => {
       const pageViewPane = this._pageViewPaneRef.value;
       if (pageViewPane) {
-        pageViewPane.addEventListener('wheel', (e: Event) => {
-          const s = this._docState;
-          if (!s?.hasPageView) return;
-          const scrollPane = pageViewPane.scrollPane ?? null;
-          if (!scrollPane) return;
-          const scrollable = scrollPane.scrollHeight > scrollPane.clientHeight || scrollPane.scrollWidth > scrollPane.clientWidth;
-          if (scrollable) { this._onScrollPaneWheel(e as WheelEvent, scrollPane); return; }
-          e.preventDefault();
-          const dir = this._wheelDir(e as WheelEvent);
-          if (dir) this._tryFlipPage(dir);
-        }, { passive: false });
+        pageViewPane.addEventListener(
+          'wheel',
+          (e: Event) => {
+            const s = this._docState;
+            if (!s?.hasPageView) return;
+            const scrollPane = pageViewPane.scrollPane ?? null;
+            if (!scrollPane) return;
+            const scrollable =
+              scrollPane.scrollHeight > scrollPane.clientHeight ||
+              scrollPane.scrollWidth > scrollPane.clientWidth;
+            if (scrollable) {
+              this._onScrollPaneWheel(e as WheelEvent, scrollPane);
+              return;
+            }
+            e.preventDefault();
+            const dir = this._wheelDir(e as WheelEvent);
+            if (dir) this._tryFlipPage(dir);
+          },
+          { passive: false }
+        );
       }
 
       for (const ref of [this._markupPaneRef, this._readingPaneRef]) {
         const pane = ref.value;
         if (!pane) continue;
-        pane.addEventListener('wheel', (e: Event) => {
-          const scrollPane = pane.scrollPane ?? null;
-          if (!scrollPane) return;
-          this._onScrollPaneWheel(e as WheelEvent, scrollPane);
-        }, { passive: false });
+        pane.addEventListener(
+          'wheel',
+          (e: Event) => {
+            const scrollPane = pane.scrollPane ?? null;
+            if (!scrollPane) return;
+            this._onScrollPaneWheel(e as WheelEvent, scrollPane);
+          },
+          { passive: false }
+        );
       }
     });
   }
@@ -1384,19 +1520,27 @@ export class DoclangViewer extends LitElement {
   };
 
   private _onOpenFiles = (e: Event): void => {
-    const files = (e as CustomEvent<{ files: File[] }>).detail.files
-      .filter(f => this._isArchiveFile(f) || this._isMarkupFile(f));
+    const files = (e as CustomEvent<{ files: File[] }>).detail.files.filter(
+      f => this._isArchiveFile(f) || this._isMarkupFile(f)
+    );
     if (!files.length) return;
     this._addFilesToCatalog(files, { replace: true });
   };
 
   private _onTogglePane = (e: Event): void => {
-    const { pane, checked } = (e as CustomEvent<{ pane: PaneKey; checked: boolean }>).detail;
-    if (!this._docState) { this._syncToolbarPaneCheckboxes(); return; }
+    const { pane, checked } = (e as CustomEvent<{ pane: PaneKey; checked: boolean }>)
+      .detail;
+    if (!this._docState) {
+      this._syncToolbarPaneCheckboxes();
+      return;
+    }
     const nextKeys = [...PANE_KEYS].filter(k =>
       k === pane ? checked : this._userPaneVisible[k] && this._isPaneAvailable(k)
     );
-    if (!nextKeys.length) { this._syncToolbarPaneCheckboxes(); return; }
+    if (!nextKeys.length) {
+      this._syncToolbarPaneCheckboxes();
+      return;
+    }
     this._setUserPaneVisible(pane, checked);
   };
 
@@ -1407,9 +1551,10 @@ export class DoclangViewer extends LitElement {
   private _onFilePaneCloseAll = (): void => {
     const count = this._fileCatalog.length;
     if (!count) return;
-    const msg = count === 1
-      ? `Remove "${this._fileCatalog[0]!.label}" from the viewer?`
-      : `Remove all ${count} open files from the viewer?`;
+    const msg =
+      count === 1
+        ? `Remove "${this._fileCatalog[0]!.label}" from the viewer?`
+        : `Remove all ${count} open files from the viewer?`;
     if (confirm(msg)) this._resetViewer();
   };
 
@@ -1420,7 +1565,9 @@ export class DoclangViewer extends LitElement {
   };
 
   private _onNavigateThread = (e: Event): void => {
-    const { elementId, direction } = (e as CustomEvent<{ elementId: string; direction: string }>).detail;
+    const { elementId, direction } = (
+      e as CustomEvent<{ elementId: string; direction: string }>
+    ).detail;
     this._navigateThreadFragment(elementId, direction);
   };
 
@@ -1456,15 +1603,30 @@ export class DoclangViewer extends LitElement {
   private _onHint = (e: Event): void => {
     // Re-dispatch to the cursor-hint which is also inside this shadow root.
     // cursor-hint listens on its own host; we pass via a direct method call.
-    const hint = this.shadowRoot?.querySelector('doclang-cursor-hint') as (HTMLElement & { show(t: string, x: number, y: number): void; showHtml(h: string, x: number, y: number): void }) | null;
+    const hint = this.shadowRoot?.querySelector('doclang-cursor-hint') as
+      | (HTMLElement & {
+          show(t: string, x: number, y: number): void;
+          showHtml(h: string, x: number, y: number): void;
+        })
+      | null;
     if (!hint) return;
-    const detail = (e as CustomEvent<{ html?: string; text?: string; clientX: number; clientY: number }>).detail;
-    if (detail.html !== undefined) hint.showHtml(detail.html, detail.clientX, detail.clientY);
-    else if (detail.text !== undefined) hint.show(detail.text, detail.clientX, detail.clientY);
+    const detail = (
+      e as CustomEvent<{
+        html?: string;
+        text?: string;
+        clientX: number;
+        clientY: number;
+      }>
+    ).detail;
+    if (detail.html !== undefined)
+      hint.showHtml(detail.html, detail.clientX, detail.clientY);
+    else if (detail.text !== undefined)
+      hint.show(detail.text, detail.clientX, detail.clientY);
   };
 
   private _onHintHide = (): void => {
-    const hint = this.shadowRoot?.querySelector('doclang-cursor-hint') as (HTMLElement & { hide(): void }) | null;
+    const hint = this.shadowRoot?.querySelector('doclang-cursor-hint') as
+      (HTMLElement & { hide(): void }) | null;
     hint?.hide();
   };
 
@@ -1483,21 +1645,6 @@ export class DoclangViewer extends LitElement {
     }
     if (this._readingSettingsOpen) this._setReadingSettingsOpen(false);
   };
-
-  // ---------------------------------------------------------------------------
-  // Public API (called from main.ts bootstrap)
-  // ---------------------------------------------------------------------------
-
-  /** Trigger demo load on startup — called by main.ts when DEMO_ARCHIVE_URL is defined. */
-  loadDemoOnBoot(): void {
-    this._loadDemo();
-  }
-
-  /** Called by main.ts when body has demo-loading class set from HTML. */
-  setInitialDemoLoading(): void {
-    this._demoLoading = true;
-    this.requestUpdate();
-  }
 }
 
 declare global {

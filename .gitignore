@@ -2,6 +2,7 @@
 
 # Core
 core/node_modules
+viewer.js.map
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

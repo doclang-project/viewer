@@ -128,7 +128,9 @@ function appendPictureFigureImage(
   }
 
   if (captionEl) {
-    figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, 'figcaption', assetUrls));
+    figure.appendChild(
+      renderEmbeddedCaption(captionEl, elementIds, 'figcaption', assetUrls)
+    );
   }
 }
 
@@ -194,7 +196,12 @@ function appendRenderedBodyBlocks(
       node.nodeType === Node.ELEMENT_NODE &&
       RENDER_BLOCK_TAGS.has(localName(node as Element))
     ) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false }, assetUrls);
+      const rendered = renderBlockElement(
+        node as Element,
+        elementIds,
+        { inline: false },
+        assetUrls
+      );
       if (rendered) parent.appendChild(rendered);
     } else {
       appendRenderedNode(parent, node, elementIds, { inline: false }, assetUrls);
@@ -384,9 +391,15 @@ function renderPicture(
   let i = skipElementHeadNodes(nodes, 0);
   while (i < nodes.length) {
     const node = nodes[i]!;
-    if (node.nodeType !== Node.ELEMENT_NODE) { i += 1; continue; }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      i += 1;
+      continue;
+    }
     const tag = localName(node as Element);
-    if (tag === 'src') { i += 1; continue; }
+    if (tag === 'src') {
+      i += 1;
+      continue;
+    }
     if (tag === 'tabular') {
       const rendered = renderOtslContainer(node as Element, elementIds, assetUrls);
       if (rendered) figure.appendChild(rendered);
@@ -426,7 +439,12 @@ function appendPictureBodyContent(
       node.nodeType === Node.ELEMENT_NODE &&
       RENDER_BLOCK_TAGS.has(localName(node as Element))
     ) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false }, assetUrls);
+      const rendered = renderBlockElement(
+        node as Element,
+        elementIds,
+        { inline: false },
+        assetUrls
+      );
       if (rendered) container.appendChild(rendered);
     } else {
       appendRenderedNode(container, node, elementIds, { inline: false }, assetUrls);
@@ -451,7 +469,12 @@ function renderVirtualTextBlock(
       node.nodeType === Node.ELEMENT_NODE &&
       RENDER_BLOCK_TAGS.has(localName(node as Element))
     ) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false }, assetUrls);
+      const rendered = renderBlockElement(
+        node as Element,
+        elementIds,
+        { inline: false },
+        assetUrls
+      );
       if (rendered) inner.appendChild(rendered);
     } else {
       appendRenderedNode(inner, node, elementIds, { inline: true }, assetUrls);
@@ -514,7 +537,12 @@ function appendRenderedSliceContent(
       node.nodeType === Node.ELEMENT_NODE &&
       RENDER_BLOCK_TAGS.has(localName(node as Element))
     ) {
-      const rendered = renderBlockElement(node as Element, elementIds, { inline: false }, assetUrls);
+      const rendered = renderBlockElement(
+        node as Element,
+        elementIds,
+        { inline: false },
+        assetUrls
+      );
       if (rendered) container.appendChild(rendered);
     } else {
       appendRenderedNode(container, node, elementIds, { inline: true }, assetUrls);
@@ -545,7 +573,9 @@ function appendListItemsFromElement(
     for (const child of childElements(ldiv)) {
       const childTag = localName(child);
       if (childTag === 'marker') {
-        li.appendChild(renderMarkerElement(child, elementIds, { inline: true }, assetUrls));
+        li.appendChild(
+          renderMarkerElement(child, elementIds, { inline: true }, assetUrls)
+        );
       } else if (childTag === 'checkbox') {
         li.appendChild(renderCheckboxElement(child, elementIds));
       }
@@ -595,7 +625,10 @@ function parseOtslRows(container: Element): ParsedOtslCell[][] {
 
   while (i < nodes.length) {
     const node = nodes[i]!;
-    if (node.nodeType !== Node.ELEMENT_NODE) { i += 1; continue; }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      i += 1;
+      continue;
+    }
     const tag = localName(node as Element);
     if (tag === 'nl') {
       rows.push(currentRow);
@@ -603,7 +636,10 @@ function parseOtslRows(container: Element): ParsedOtslCell[][] {
       i += 1;
       continue;
     }
-    if (!isCellToken(tag)) { i += 1; continue; }
+    if (!isCellToken(tag)) {
+      i += 1;
+      continue;
+    }
 
     if (CELL_SPAN_TAGS.has(tag)) {
       currentRow.push({ kind: tag, token: node as Element, contentNodes: [] });
@@ -750,7 +786,9 @@ function renderOtslContainer(
 
   const captionEl = readCaptionElement(el);
   if (captionEl) {
-    table.appendChild(renderEmbeddedCaption(captionEl, elementIds, 'caption', assetUrls));
+    table.appendChild(
+      renderEmbeddedCaption(captionEl, elementIds, 'caption', assetUrls)
+    );
   }
 
   const grid = buildOtslGrid(parseOtslRows(el));
@@ -847,7 +885,10 @@ function renderBlockElement(
       figure.className = 'rendered-group';
       appendRenderedBodyBlocks(figure, el, elementIds, assetUrls);
       const cap = readCaptionElement(el);
-      if (cap) figure.appendChild(renderEmbeddedCaption(cap, elementIds, 'figcaption', assetUrls));
+      if (cap)
+        figure.appendChild(
+          renderEmbeddedCaption(cap, elementIds, 'figcaption', assetUrls)
+        );
       return wrapRendered(el, figure, elementId);
     }
     case 'field_region': {
@@ -975,10 +1016,16 @@ function appendMergedTextFragments(
 ): void {
   for (let i = 0; i < fragments.length; i += 1) {
     if (i > 0) trimParentTrailingForFragmentJoin(parent);
-    appendRenderedBody(parent, fragments[i]!, elementIds, {
-      inline: true,
-      trimLeading: i > 0,
-    }, assetUrls);
+    appendRenderedBody(
+      parent,
+      fragments[i]!,
+      elementIds,
+      {
+        inline: true,
+        trimLeading: i > 0,
+      },
+      assetUrls
+    );
   }
 }
 
@@ -1062,25 +1109,33 @@ export class DoclangReadingPane extends DoclangPageElement {
     return html`
       <div class="pane-header">
         <span class="pane-header-title">Reading view</span>
-        ${this._visible
-          ? html`<button
-              type="button"
-              class="pane-settings-toggle"
-              aria-expanded=${this._settingsOpen ? 'true' : 'false'}
-              aria-controls="reading-settings"
-              @click=${this._onSettingsToggle}
-            >
-              Layers
-            </button>`
-          : nothing}
+        ${
+          this._visible
+            ? html`<button
+                type="button"
+                class="pane-settings-toggle"
+                aria-expanded=${this._settingsOpen ? 'true' : 'false'}
+                aria-controls="reading-settings"
+                @click=${this._onSettingsToggle}
+              >
+                Layers
+              </button>`
+            : nothing
+        }
       </div>
       <div class="pane-reading-layout">
-        <div id="rendered-pane" class=${classMap(bodyClasses)} @click=${this._onBodyClick}>
-          ${this._hasMarkup === false
-            ? html`<div class="placeholder">${NO_MARKUP}</div>`
-            : this._hasMarkup === true
-              ? html`<div ${ref(this._onContentRef)}></div>`
-              : nothing}
+        <div
+          id="rendered-pane"
+          class=${classMap(bodyClasses)}
+          @click=${this._onBodyClick}
+        >
+          ${
+            this._hasMarkup === false
+              ? html`<div class="placeholder">${NO_MARKUP}</div>`
+              : this._hasMarkup === true
+                ? html`<div ${ref(this._onContentRef)}></div>`
+                : nothing
+          }
         </div>
         ${this._settingsOpen ? this._renderSettings() : nothing}
       </div>
@@ -1095,7 +1150,9 @@ export class DoclangReadingPane extends DoclangPageElement {
 
   override updated(): void {
     if (!this._pendingContent) return;
-    const wrapper = this.shadowRoot?.querySelector('.pane-body > div') as HTMLElement | null;
+    const wrapper = this.shadowRoot?.querySelector(
+      '.pane-body > div'
+    ) as HTMLElement | null;
     if (wrapper && !wrapper.contains(this._pendingContent)) {
       wrapper.replaceChildren(this._pendingContent);
     }
@@ -1229,13 +1286,19 @@ export class DoclangReadingPane extends DoclangPageElement {
 
   private _onSettingsToggle = (): void => {
     this.dispatchEvent(
-      new CustomEvent('doclang-reading-settings-toggle', { bubbles: true, composed: true })
+      new CustomEvent('doclang-reading-settings-toggle', {
+        bubbles: true,
+        composed: true,
+      })
     );
   };
 
   private _onSettingsClose = (): void => {
     this.dispatchEvent(
-      new CustomEvent('doclang-reading-settings-close', { bubbles: true, composed: true })
+      new CustomEvent('doclang-reading-settings-close', {
+        bubbles: true,
+        composed: true,
+      })
     );
   };
 

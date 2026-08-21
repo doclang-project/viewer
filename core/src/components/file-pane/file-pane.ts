@@ -53,14 +53,6 @@ export class DoclangFilePane extends LitElement {
     `;
   }
 
-  setVisible(visible: boolean): void {
-    this.hidden = !visible;
-  }
-
-  setLastPane(isLast: boolean): void {
-    this.classList.toggle('pane-layout-last', isLast);
-  }
-
   renderFiles(entries: FileEntry[]): void {
     this._entries = entries;
     this.requestUpdate();

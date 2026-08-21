@@ -1,9 +1,15 @@
+@import '../theme.css';
+
 :host {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
   min-height: 0;
   min-width: 0;
+  background: var(--panel);
+
+  --overlay-reading-order: var(--doclang-overlay-reading-order, #71717a);
+  --overlay-fragment: var(--doclang-overlay-fragment, #9333ea);
 }
 :host([hidden]) {
   display: none !important;
@@ -339,6 +345,58 @@
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
+/* Map element kind classes to --doclang-kind-stroke so bbox highlight rules
+   can reference it. These must live in the shadow DOM stylesheet to
+   take effect on elements inside this shadow root. */
+.kind-text {
+  --doclang-kind-stroke: var(--kind-text);
+}
+.kind-heading {
+  --doclang-kind-stroke: var(--kind-heading);
+}
+.kind-list {
+  --doclang-kind-stroke: var(--kind-list);
+}
+.kind-ldiv {
+  --doclang-kind-stroke: var(--kind-ldiv);
+}
+.kind-table {
+  --doclang-kind-stroke: var(--kind-table);
+}
+.kind-index {
+  --doclang-kind-stroke: var(--kind-index);
+}
+.kind-formula {
+  --doclang-kind-stroke: var(--kind-formula);
+}
+.kind-code {
+  --doclang-kind-stroke: var(--kind-code);
+}
+.kind-picture {
+  --doclang-kind-stroke: var(--kind-picture);
+}
+.kind-group {
+  --doclang-kind-stroke: var(--kind-group);
+}
+.kind-footnote {
+  --doclang-kind-stroke: var(--kind-footnote);
+}
+.kind-page_header {
+  --doclang-kind-stroke: var(--kind-page_header);
+}
+.kind-page_footer {
+  --doclang-kind-stroke: var(--kind-page_footer);
+}
+.kind-caption {
+  --doclang-kind-stroke: var(--kind-caption);
+}
+.kind-field {
+  --doclang-kind-stroke: var(--kind-field);
+}
+.kind-default {
+  --doclang-kind-stroke: var(--kind-default);
+}
+
 .overlay rect.bbox.selected {
   fill: color-mix(
     in srgb,
@@ -347,7 +405,12 @@
   ) !important;
   stroke-width: 3.5;
   filter: drop-shadow(
-    0 0 3px color-mix(in srgb, var(--kind-stroke, var(--accent)) 60%, transparent)
+    0 0 3px
+      color-mix(
+        in srgb,
+        var(--kind-stroke, var(--accent)) 60%,
+        transparent
+      )
   );
 }
 .overlay rect.bbox.related:not(.selected) {
@@ -360,7 +423,11 @@
 .overlay rect.bbox.layer-furniture,
 .overlay rect.bbox.layer-background {
   fill: url(#layer-hatch) !important;
-  stroke: color-mix(in srgb, var(--kind-stroke, var(--muted)) 50%, transparent);
+  stroke: color-mix(
+    in srgb,
+    var(--kind-stroke, var(--muted)) 50%,
+    transparent
+  );
 }
 .overlay .layer-hatch-stripe {
   fill: var(--muted);
@@ -544,19 +611,45 @@
 .overlay .element-badge .overlay-badge-bg {
   fill: var(--accent);
 }
-.overlay .element-badge.kind-text .overlay-badge-bg { fill: var(--kind-text); }
-.overlay .element-badge.kind-heading .overlay-badge-bg { fill: var(--kind-heading); }
-.overlay .element-badge.kind-list .overlay-badge-bg { fill: var(--kind-list); }
-.overlay .element-badge.kind-table .overlay-badge-bg { fill: var(--kind-table); }
-.overlay .element-badge.kind-index .overlay-badge-bg { fill: var(--kind-index); }
-.overlay .element-badge.kind-formula .overlay-badge-bg { fill: var(--kind-formula); }
-.overlay .element-badge.kind-code .overlay-badge-bg { fill: var(--kind-code); }
-.overlay .element-badge.kind-picture .overlay-badge-bg { fill: var(--kind-picture); }
-.overlay .element-badge.kind-group .overlay-badge-bg { fill: var(--kind-group); }
-.overlay .element-badge.kind-footnote .overlay-badge-bg { fill: var(--kind-footnote); }
-.overlay .element-badge.kind-page_header .overlay-badge-bg { fill: var(--kind-page_header); }
-.overlay .element-badge.kind-caption .overlay-badge-bg { fill: var(--kind-caption); }
-.overlay .element-badge.kind-field .overlay-badge-bg { fill: var(--kind-field); }
+.overlay .element-badge.kind-text .overlay-badge-bg {
+  fill: var(--kind-text);
+}
+.overlay .element-badge.kind-heading .overlay-badge-bg {
+  fill: var(--kind-heading);
+}
+.overlay .element-badge.kind-list .overlay-badge-bg {
+  fill: var(--kind-list);
+}
+.overlay .element-badge.kind-table .overlay-badge-bg {
+  fill: var(--kind-table);
+}
+.overlay .element-badge.kind-index .overlay-badge-bg {
+  fill: var(--kind-index);
+}
+.overlay .element-badge.kind-formula .overlay-badge-bg {
+  fill: var(--kind-formula);
+}
+.overlay .element-badge.kind-code .overlay-badge-bg {
+  fill: var(--kind-code);
+}
+.overlay .element-badge.kind-picture .overlay-badge-bg {
+  fill: var(--kind-picture);
+}
+.overlay .element-badge.kind-group .overlay-badge-bg {
+  fill: var(--kind-group);
+}
+.overlay .element-badge.kind-footnote .overlay-badge-bg {
+  fill: var(--kind-footnote);
+}
+.overlay .element-badge.kind-page_header .overlay-badge-bg {
+  fill: var(--kind-page_header);
+}
+.overlay .element-badge.kind-caption .overlay-badge-bg {
+  fill: var(--kind-caption);
+}
+.overlay .element-badge.kind-field .overlay-badge-bg {
+  fill: var(--kind-field);
+}
 .overlay .overlay-badge-label {
   fill: #ffffff;
   fill-opacity: 1;
@@ -575,6 +668,10 @@
   stroke: var(--kind-default);
 }
 @media (prefers-color-scheme: dark) {
+  :host {
+    --overlay-reading-order: var(--doclang-overlay-reading-order, #a1a1aa);
+    --overlay-fragment: var(--doclang-overlay-fragment, #c084fc);
+  }
   .overlay .bbox-text {
     fill: color-mix(in srgb, var(--kind-text) 20%, transparent);
   }

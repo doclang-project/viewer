@@ -87,7 +87,7 @@ export class DoclangPageNav extends LitElement {
             inputmode="numeric"
             class="page-number-input"
             .value=${String(this._currentPage)}
-            style="--page-num-digits:${digits}"
+            style="--doclang-page-num-digits:${digits}"
             aria-label="Page number"
             @keydown=${this._onInputKeydown}
             @blur=${this._onInputBlur}
@@ -107,13 +107,6 @@ export class DoclangPageNav extends LitElement {
   setIndicator(pageNum: number, pageCount: number): void {
     this._currentPage = pageNum;
     this._pageCount = pageCount;
-    this.requestUpdate();
-  }
-
-  reset(): void {
-    this._currentPage = 1;
-    this._pageCount = 1;
-    this._visible = false;
     this.requestUpdate();
   }
 

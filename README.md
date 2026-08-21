@@ -24,11 +24,10 @@ Open [http://localhost:8080/](http://localhost:8080/) and click **Load demo**.
 | **Open file** | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file. |
 | **Drag and drop** | Drop any supported file onto the page. |
 
-Supported types: `.dclx`, `.dclg`, `.xml`. The demo URL is configured in [`demo-data.js`](demo-data.js).
+Supported types: `.dclx`, `.dclg`, `.xml`. The demo/example URL is configured via the `example` attribute on the `<doclang-viewer>` element in [`index.html`](index.html).
 
 ## Files
 
-- `demo-data.js` — demo archive URL
-- `index.html` — shell UI
+- `index.html` — shell UI and custom element integration
 - `viewer.js` — parsing, page alignment, bbox overlay
 - `viewer.css` — layout and theme

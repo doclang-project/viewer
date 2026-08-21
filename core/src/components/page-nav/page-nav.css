@@ -1,3 +1,5 @@
+@import '../theme.css';
+
 :host {
   display: contents;
 }
@@ -74,7 +76,7 @@ nav[hidden] {
   margin: 0;
   height: 1.875rem;
   box-sizing: border-box;
-  width: calc(var(--page-num-digits, 1) * 1ch + 0.75rem);
+  width: calc(var(--doclang-page-num-digits, 1) * 1ch + 0.75rem);
   line-height: 1;
   cursor: text;
 }

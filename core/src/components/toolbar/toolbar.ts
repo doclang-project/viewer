@@ -208,21 +208,25 @@ export class DoclangToolbar extends LitElement {
     this.requestUpdate();
   }
 
-  closeOptionsIfOpen(): void {
-    if (this._panelOpen) this.setOptionsOpen(false);
-  }
-
   override connectedCallback(): void {
     super.connectedCallback();
-    document.addEventListener('click', this._onDocClick);
+    // Use getRootNode() so the listener stays within the shadow DOM tree
+    // rather than escaping to document.
+    (this.getRootNode() as Document | ShadowRoot).addEventListener(
+      'click',
+      this._onDocClick
+    );
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
-    document.removeEventListener('click', this._onDocClick);
+    (this.getRootNode() as Document | ShadowRoot).removeEventListener(
+      'click',
+      this._onDocClick
+    );
   }
 
-  private _onDocClick = (e: MouseEvent): void => {
+  private _onDocClick = (e: Event): void => {
     if (!this._panelOpen) return;
     const path = e.composedPath();
     if (path.includes(this as unknown as EventTarget)) return;

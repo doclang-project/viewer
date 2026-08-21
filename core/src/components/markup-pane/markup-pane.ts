@@ -144,7 +144,9 @@ function toggleTruncatableMarkupAttrValue(toggle: Element): void {
   ) {
     return;
   }
-  const depth = Number(markupLine.style.getPropertyValue('--markup-depth') || 0);
+  const depth = Number(
+    markupLine.style.getPropertyValue('--doclang-markup-depth') || 0
+  );
   markupLine.insertAdjacentElement(
     'afterend',
     createEmbeddedUriContinuationPanel(fullValue, depth)
@@ -439,15 +441,23 @@ function buildMarkupList(
     let i = 0;
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
+      if (!node) {
+        i += 1;
+        continue;
+      }
       if (node.nodeType === Node.ELEMENT_NODE && localName(node as Element) === 'ldiv')
         break;
-      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) { i += 1; continue; }
+      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
+        i += 1;
+        continue;
+      }
       if (isTextLikeNode(node)) break;
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = localName(node as Element);
         if (HEAD_TAGS.has(tag) || tag === 'location') {
-          children.appendChild(buildMarkupElement(node as Element, childDepth, elementIds));
+          children.appendChild(
+            buildMarkupElement(node as Element, childDepth, elementIds)
+          );
           i += 1;
           continue;
         }
@@ -456,8 +466,14 @@ function buildMarkupList(
     }
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
-      if (node.nodeType !== Node.ELEMENT_NODE || localName(node as Element) !== 'ldiv') {
+      if (!node) {
+        i += 1;
+        continue;
+      }
+      if (
+        node.nodeType !== Node.ELEMENT_NODE ||
+        localName(node as Element) !== 'ldiv'
+      ) {
         appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
         i += 1;
         continue;
@@ -466,7 +482,13 @@ function buildMarkupList(
       children.appendChild(buildMarkupElement(ldiv, childDepth, elementIds));
       i += 1;
       const end = skipUntilListItemBoundary(nodes, i);
-      appendMarkupVirtualText(children, childDepth, ldiv, nodes.slice(i, end), elementIds);
+      appendMarkupVirtualText(
+        children,
+        childDepth,
+        ldiv,
+        nodes.slice(i, end),
+        elementIds
+      );
       i = end;
     }
   });
@@ -482,15 +504,26 @@ function buildMarkupOtslContainer(
     let i = 0;
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
-      if (node.nodeType === Node.ELEMENT_NODE && isCellToken(localName(node as Element)))
+      if (!node) {
+        i += 1;
+        continue;
+      }
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        isCellToken(localName(node as Element))
+      )
         break;
-      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) { i += 1; continue; }
+      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
+        i += 1;
+        continue;
+      }
       if (isTextLikeNode(node)) break;
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = localName(node as Element);
         if (HEAD_TAGS.has(tag) || tag === 'location' || tag === 'h_thread') {
-          children.appendChild(buildMarkupElement(node as Element, childDepth, elementIds));
+          children.appendChild(
+            buildMarkupElement(node as Element, childDepth, elementIds)
+          );
           i += 1;
           continue;
         }
@@ -499,7 +532,10 @@ function buildMarkupOtslContainer(
     }
     while (i < nodes.length) {
       const node = nodes[i];
-      if (!node) { i += 1; continue; }
+      if (!node) {
+        i += 1;
+        continue;
+      }
       if (node.nodeType !== Node.ELEMENT_NODE) {
         appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
         i += 1;
@@ -521,7 +557,13 @@ function buildMarkupOtslContainer(
       i += 1;
       if (CELL_SPAN_TAGS.has(tag)) continue;
       const end = skipUntilCellBoundary(nodes, i);
-      appendMarkupVirtualText(children, childDepth, cell, nodes.slice(i, end), elementIds);
+      appendMarkupVirtualText(
+        children,
+        childDepth,
+        cell,
+        nodes.slice(i, end),
+        elementIds
+      );
       i = end;
     }
   });
@@ -534,7 +576,8 @@ function buildMarkupElement(
 ): HTMLElement {
   const tag = localName(el);
   if (tag === 'list') return buildMarkupList(el, depth, elementIds);
-  if (OTSL_CONTAINER_TAGS.has(tag)) return buildMarkupOtslContainer(el, depth, elementIds);
+  if (OTSL_CONTAINER_TAGS.has(tag))
+    return buildMarkupOtslContainer(el, depth, elementIds);
 
   const block = document.createElement('div');
   block.className = 'markup-el';
@@ -613,11 +656,13 @@ export class DoclangMarkupPane extends DoclangPageElement {
     return html`
       <div class="pane-header">DocLang</div>
       <div class="pane-body" id="markup-pane" @click=${this._onBodyClick}>
-        ${this._hasMarkup === false
-          ? html`<div class="placeholder">${NO_MARKUP}</div>`
-          : this._hasMarkup === true
-            ? html`<div ${ref(this._onContentRef)}></div>`
-            : nothing}
+        ${
+          this._hasMarkup === false
+            ? html`<div class="placeholder">${NO_MARKUP}</div>`
+            : this._hasMarkup === true
+              ? html`<div ${ref(this._onContentRef)}></div>`
+              : nothing
+        }
       </div>
     `;
   }
@@ -630,7 +675,9 @@ export class DoclangMarkupPane extends DoclangPageElement {
 
   override updated(): void {
     if (!this._pendingContent) return;
-    const wrapper = this.shadowRoot?.querySelector('.pane-body > div') as HTMLElement | null;
+    const wrapper = this.shadowRoot?.querySelector(
+      '.pane-body > div'
+    ) as HTMLElement | null;
     if (wrapper && !wrapper.contains(this._pendingContent)) {
       wrapper.replaceChildren(this._pendingContent);
     }
@@ -639,10 +686,6 @@ export class DoclangMarkupPane extends DoclangPageElement {
   /** The scrollable content body inside the shadow root. */
   get scrollPane(): HTMLElement | null {
     return this.shadowRoot?.querySelector('.pane-body') ?? null;
-  }
-
-  setVisible(visible: boolean): void {
-    this.hidden = !visible;
   }
 
   protected override _applySelection(): void {
@@ -654,8 +697,7 @@ export class DoclangMarkupPane extends DoclangPageElement {
     const target =
       this.shadowRoot.querySelector(
         `.markup-el-virtual-text[data-element-id="${this._selectedId}"]`
-      ) ??
-      this.shadowRoot.querySelector(`[data-element-id="${this._selectedId}"]`);
+      ) ?? this.shadowRoot.querySelector(`[data-element-id="${this._selectedId}"]`);
     if (target) {
       target.classList.add('selected');
       target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });

@@ -11,7 +11,8 @@ export default defineConfig({
     },
     outDir: path.resolve(import.meta.dirname, '..'),
     emptyOutDir: false,
-    minify: false,
+    minify: true,
+    sourcemap: true,
     rollupOptions: {
       output: {
         // Unwrap the IIFE wrapper — the original viewer.js runs top-level code

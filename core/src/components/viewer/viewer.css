@@ -1,3 +1,5 @@
+@import '../theme.css';
+
 /* -----------------------------------------------------------------------
    DoclangViewer host — full-page shell
    ----------------------------------------------------------------------- */
@@ -17,7 +19,11 @@
 
 :host(.drag-over) doclang-empty-state {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
+  background: color-mix(
+    in srgb,
+    var(--accent) 8%,
+    var(--placeholder-bg)
+  );
 }
 
 /* -----------------------------------------------------------------------
@@ -75,7 +81,9 @@ header h1 {
   text-decoration: none;
 }
 
-.header-logo-link:hover { opacity: 0.8; }
+.header-logo-link:hover {
+  opacity: 0.8;
+}
 
 .header-logo {
   display: block;
@@ -147,10 +155,6 @@ header h1 {
   border-bottom: 1px solid var(--border);
 }
 
-:host(.loaded) .main.layout-stacked .pane-layout-last {
-  border-bottom: none;
-}
-
 :host(.loaded) .main:not(.layout-stacked) {
   grid-template-rows: minmax(0, 1fr);
 }
@@ -171,10 +175,6 @@ header h1 {
   display: none !important;
 }
 
-.pane-layout-last {
-  border-right: none;
-}
-
 /* -----------------------------------------------------------------------
    Pane splitters
    ----------------------------------------------------------------------- */
@@ -192,14 +192,16 @@ header h1 {
 }
 
 .pane-splitter::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 4px;
   width: 1px;
   background: var(--border);
-  transition: background 0.15s ease, width 0.15s ease;
+  transition:
+    background 0.15s ease,
+    width 0.15s ease;
 }
 
 .pane-splitter:hover::after,
@@ -239,9 +241,5 @@ header h1 {
   :host(.loaded) .main.layout-stacked .pane {
     border-right: none;
     border-bottom: 1px solid var(--border);
-  }
-
-  :host(.loaded) .main.layout-stacked .pane-layout-last {
-    border-bottom: none;
   }
 }
