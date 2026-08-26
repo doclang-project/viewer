@@ -708,10 +708,11 @@ function appendFragmentNavButton(
   btn.setAttribute('data-nav', direction);
   if (enabled) {
     btn.setAttribute('role', 'button');
-    btn.setAttribute(
-      'aria-label',
-      direction === 'prev' ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT
-    );
+    const hintText = direction === 'prev' ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT;
+    btn.setAttribute('aria-label', hintText);
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = hintText;
+    btn.appendChild(title);
   }
 
   const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');

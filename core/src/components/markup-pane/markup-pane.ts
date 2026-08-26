@@ -118,14 +118,6 @@ export class DoclangMarkupPane extends DoclangPageElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.classList.add('pane', 'pane-markup');
-    this.addEventListener('mousemove', this._onMousemove);
-    this.addEventListener('mouseleave', this._onMouseleave);
-  }
-
-  override disconnectedCallback(): void {
-    super.disconnectedCallback();
-    this.removeEventListener('mousemove', this._onMousemove);
-    this.removeEventListener('mouseleave', this._onMouseleave);
   }
 
   /* prettier-ignore */
@@ -229,32 +221,6 @@ export class DoclangMarkupPane extends DoclangPageElement {
     }
   };
 
-  private _onMousemove = (e: MouseEvent): void => {
-    if (!(e.target as Element).closest('.markup-ghost-tag-part')) {
-      this._hideHint();
-      return;
-    }
-    this.dispatchEvent(
-      new CustomEvent('doclang-hint', {
-        bubbles: true,
-        composed: true,
-        detail: {
-          text: VIRTUAL_TEXT_TAG_HINT,
-          clientX: e.clientX,
-          clientY: e.clientY,
-        },
-      })
-    );
-  };
-
-  private _onMouseleave = (): void => this._hideHint();
-
-  private _hideHint(): void {
-    this.dispatchEvent(
-      new CustomEvent('doclang-hint-hide', { bubbles: true, composed: true })
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Component-private markup Lit template builders
   // ---------------------------------------------------------------------------
@@ -319,7 +285,9 @@ export class DoclangMarkupPane extends DoclangPageElement {
 
   /* prettier-ignore */
   private _renderXmlSpan(className: string, text: string, { ghost = false } = {}): TemplateResult {
-    return html`<span class=${ghost ? `${className} markup-ghost-tag-part` : className}>${text}</span>`;
+    return ghost
+      ? html`<span class="${className} markup-ghost-tag-part" title=${VIRTUAL_TEXT_TAG_HINT}>${text}</span>`
+      : html`<span class=${className}>${text}</span>`;
   }
 
   /* prettier-ignore */

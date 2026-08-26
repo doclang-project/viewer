@@ -4,9 +4,12 @@ import { html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
-import { ref } from 'lit/directives/ref.js';
+import { ref, createRef } from 'lit/directives/ref.js';
+import type { Ref } from 'lit/directives/ref.js';
 import { DoclangPageElement } from '../base/page-element';
 import styles from './reading-pane.css?inline';
+import '../settings-panel/settings-panel';
+import type { DoclangSettingsPanel } from '../settings-panel/settings-panel';
 import { segmentHasMarkup, assignElementIds, NO_MARKUP } from '../../doclang/document';
 import {
   HEAD_TAGS,
@@ -1116,6 +1119,7 @@ export class DoclangReadingPane extends DoclangPageElement {
   // null = no document loaded yet; false = document loaded but no markup; true = has markup
   @state() private _hasMarkup: boolean | null = null;
   private _pendingContent: HTMLElement | null = null;
+  private _settingsPanelRef: Ref<DoclangSettingsPanel> = createRef();
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -1132,19 +1136,16 @@ export class DoclangReadingPane extends DoclangPageElement {
     return html`
       <div class="pane-header">
         <span class="pane-header-title">Reading view</span>
-        ${
-          this._visible
-            ? html`<button
-                type="button"
-                class="pane-settings-toggle"
-                aria-expanded=${this._settingsOpen ? 'true' : 'false'}
-                aria-controls="reading-settings"
-                @click=${this._onSettingsToggle}
-              >
-                Layers
-              </button>`
-            : nothing
-        }
+        ${this._visible
+          ? html`<button
+              type="button"
+              class="pane-settings-toggle"
+              aria-expanded=${this._settingsOpen ? 'true' : 'false'}
+              @click=${this._onSettingsToggle}
+            >
+              Layers
+            </button>`
+          : nothing}
       </div>
       <div class="pane-reading-layout">
         <div
@@ -1152,15 +1153,42 @@ export class DoclangReadingPane extends DoclangPageElement {
           class=${classMap(bodyClasses)}
           @click=${this._onBodyClick}
         >
-          ${
-            this._hasMarkup === false
-              ? html`<div class="placeholder">${NO_MARKUP}</div>`
-              : this._hasMarkup === true
-                ? html`<div ${ref(this._onContentRef)}></div>`
-                : nothing
-          }
+          ${this._hasMarkup === false
+            ? html`<div class="placeholder">${NO_MARKUP}</div>`
+            : this._hasMarkup === true
+              ? html`<div ${ref(this._onContentRef)}></div>`
+              : nothing}
         </div>
-        ${this._settingsOpen ? this._renderSettings() : nothing}
+        ${this._visible
+          ? html`
+              <doclang-settings-panel
+                ${ref(this._settingsPanelRef)}
+                label="Layers"
+                @doclang-settings-close=${this._onSettingsClose}
+              >
+                <div class="settings-subgroup">
+                  <label class="settings-option settings-option-sub">
+                    <input
+                      type="checkbox"
+                      class="cb-furniture"
+                      .checked=${this._showFurniture}
+                      @change=${this._onFurnitureChange}
+                    />
+                    <span>Furniture</span>
+                  </label>
+                  <label class="settings-option settings-option-sub">
+                    <input
+                      type="checkbox"
+                      class="cb-background"
+                      .checked=${this._showBackground}
+                      @change=${this._onBackgroundChange}
+                    />
+                    <span>Background</span>
+                  </label>
+                </div>
+              </doclang-settings-panel>
+            `
+          : nothing}
       </div>
     `;
   }
@@ -1181,64 +1209,6 @@ export class DoclangReadingPane extends DoclangPageElement {
     }
   }
 
-  private _renderSettings() {
-    return html`
-      <div class="viewer-settings-layer">
-        <button
-          type="button"
-          class="viewer-settings-scrim"
-          tabindex="-1"
-          aria-label="Close layers"
-          @click=${this._onSettingsClose}
-        ></button>
-        <aside
-          class="viewer-settings"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="reading-settings-title"
-        >
-          <div class="viewer-settings-header">
-            <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
-            <button
-              type="button"
-              class="viewer-settings-close"
-              aria-label="Close layers"
-              @click=${this._onSettingsClose}
-            >
-              ×
-            </button>
-          </div>
-          <div class="viewer-settings-body">
-            <div
-              class="settings-subgroup"
-              role="group"
-              aria-labelledby="reading-settings-title"
-            >
-              <label class="settings-option settings-option-sub">
-                <input
-                  type="checkbox"
-                  class="cb-furniture"
-                  .checked=${this._showFurniture}
-                  @change=${this._onFurnitureChange}
-                />
-                <span>Furniture</span>
-              </label>
-              <label class="settings-option settings-option-sub">
-                <input
-                  type="checkbox"
-                  class="cb-background"
-                  .checked=${this._showBackground}
-                  @change=${this._onBackgroundChange}
-                />
-                <span>Background</span>
-              </label>
-            </div>
-          </div>
-        </aside>
-      </div>
-    `;
-  }
-
   /** The scrollable content body inside the shadow root. */
   get scrollPane(): HTMLElement | null {
     return this.shadowRoot?.querySelector('.pane-body') ?? null;
@@ -1246,12 +1216,14 @@ export class DoclangReadingPane extends DoclangPageElement {
 
   setVisible(visible: boolean): void {
     this._visible = visible;
+    // `hidden` is not a @state property so we call requestUpdate explicitly.
     this.hidden = !visible;
     this.requestUpdate();
   }
 
   setSettingsOpen(open: boolean): void {
     this._settingsOpen = open;
+    this._settingsPanelRef.value?.setOpen(open);
     this.requestUpdate();
   }
 
@@ -1308,26 +1280,18 @@ export class DoclangReadingPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   private _onSettingsToggle = (): void => {
-    this.dispatchEvent(
-      new CustomEvent('doclang-reading-settings-toggle', {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    this._settingsOpen = !this._settingsOpen;
+    this._settingsPanelRef.value?.setOpen(this._settingsOpen);
+    this.requestUpdate();
   };
 
   private _onSettingsClose = (): void => {
-    this.dispatchEvent(
-      new CustomEvent('doclang-reading-settings-close', {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    this._settingsOpen = false;
+    this.requestUpdate();
   };
 
   private _onFurnitureChange = (e: Event): void => {
     this._showFurniture = (e.target as HTMLInputElement).checked;
-    this.requestUpdate();
     this.dispatchEvent(
       new CustomEvent('doclang-show-reading-furniture', {
         bubbles: true,
@@ -1339,7 +1303,6 @@ export class DoclangReadingPane extends DoclangPageElement {
 
   private _onBackgroundChange = (e: Event): void => {
     this._showBackground = (e.target as HTMLInputElement).checked;
-    this.requestUpdate();
     this.dispatchEvent(
       new CustomEvent('doclang-show-reading-background', {
         bubbles: true,
@@ -1441,7 +1404,6 @@ export class DoclangReadingPane extends DoclangPageElement {
     if (!layer || layer === 'body') return;
     if (layer === 'furniture' && !this._showFurniture) {
       this._showFurniture = true;
-      this.requestUpdate();
       this.dispatchEvent(
         new CustomEvent('doclang-show-reading-furniture', {
           bubbles: true,
@@ -1451,7 +1413,6 @@ export class DoclangReadingPane extends DoclangPageElement {
       );
     } else if (layer === 'background' && !this._showBackground) {
       this._showBackground = true;
-      this.requestUpdate();
       this.dispatchEvent(
         new CustomEvent('doclang-show-reading-background', {
           bubbles: true,

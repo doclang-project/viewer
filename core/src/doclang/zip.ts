@@ -1,3 +1,5 @@
+import { mimeFromAssetPath } from './dom';
+
 const ZIP_MAX_ENTRIES = 5000;
 const ZIP_MAX_ENTRY_COMPRESSED_BYTES = 128 * 1024 * 1024; // 128 MiB
 const ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024; // 128 MiB
@@ -8,6 +10,8 @@ export interface ZipEntry {
   name: string;
   data: Uint8Array;
 }
+
+const TEXT_DECODER = new TextDecoder();
 
 export async function unzip(
   buffer: ArrayBuffer,
@@ -52,7 +56,7 @@ export async function unzip(
     if (nameEnd > bytes.length) {
       throw new Error('Invalid ZIP entry name');
     }
-    const rawName = new TextDecoder().decode(bytes.subarray(offset + 46, nameEnd));
+    const rawName = TEXT_DECODER.decode(bytes.subarray(offset + 46, nameEnd));
     const name = normalizeZipEntryName(rawName);
 
     offset = nameEnd + extraLength + commentLength;
@@ -209,12 +213,9 @@ export async function extractArchiveFromZipBuffer(buffer: ArrayBuffer): Promise<
   for (const e of entries) {
     const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
     if (m) {
-      const ext = m[2]!.toLowerCase().replace('jpeg', 'jpg');
-      const mime =
-        ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       pageImages.set(
         Number(m[1]),
-        URL.createObjectURL(new Blob([e.data as BlobPart], { type: mime }))
+        URL.createObjectURL(new Blob([e.data as BlobPart], { type: mimeFromAssetPath(e.name) }))
       );
       continue;
     }
@@ -230,21 +231,3 @@ export async function extractArchiveFromZipBuffer(buffer: ArrayBuffer): Promise<
   return { markupXml, pageImages, assetUrls };
 }
 
-function mimeFromAssetPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'webp':
-      return 'image/webp';
-    case 'gif':
-      return 'image/gif';
-    case 'svg':
-      return 'image/svg+xml';
-    default:
-      return 'application/octet-stream';
-  }
-}

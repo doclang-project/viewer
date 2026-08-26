@@ -1,6 +1,5 @@
 /** <doclang-viewer> — top-level application shell */
 
-import '../cursor-hint/cursor-hint';
 import '../page-nav/page-nav';
 import '../toolbar/toolbar';
 import '../file-pane/file-pane';
@@ -126,8 +125,7 @@ export class DoclangViewer extends LitElement {
   @state() private _paneGridCols: Map<PaneKey, number> = new Map();
   @state() private _paneGridRows: Map<PaneKey, number> = new Map();
   @state() private _splitterCols: (number | null)[] = [null, null, null];
-  @state() private _readingSettingsOpen = false;
-  @state() private _toolbarOptionsOpen = false;
+  private _toolbarOptionsOpen = false;
   @state() private _userPaneVisible: UserPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 
   // ---------------------------------------------------------------------------
@@ -289,8 +287,6 @@ export class DoclangViewer extends LitElement {
           @doclang-page-key-nav=${this._onPageKeyNav}
           @doclang-zoom-change=${this._onZoomChange}
           @doclang-overlay-change=${this._onOverlayChange}
-          @doclang-hint=${this._onHint}
-          @doclang-hint-hide=${this._onHintHide}
           @doclang-panning-change=${this._onPanningChange}
         ></doclang-page-view-pane>
 
@@ -312,8 +308,6 @@ export class DoclangViewer extends LitElement {
           ?hidden=${!this._isPaneVisible('markup')}
           style=${this._paneGridStyle('markup')}
           @doclang-element-select=${this._onElementSelect}
-          @doclang-hint=${this._onHint}
-          @doclang-hint-hide=${this._onHintHide}
         ></doclang-markup-pane>
 
         <div
@@ -334,12 +328,9 @@ export class DoclangViewer extends LitElement {
           ?hidden=${!this._isPaneVisible('reading')}
           style=${this._paneGridStyle('reading')}
           @doclang-element-select=${this._onElementSelect}
-          @doclang-reading-settings-toggle=${() => this._setReadingSettingsOpen(!this._readingSettingsOpen)}
-          @doclang-reading-settings-close=${() => this._setReadingSettingsOpen(false)}
         ></doclang-reading-pane>
       </div>
 
-      <doclang-cursor-hint></doclang-cursor-hint>
     `;
   }
 
@@ -939,15 +930,9 @@ export class DoclangViewer extends LitElement {
   // Settings
   // ---------------------------------------------------------------------------
 
-  private _setReadingSettingsOpen(open: boolean): void {
-    this._readingSettingsOpen = open;
-    this._readingPaneRef.value?.setSettingsOpen(open);
-    this.requestUpdate();
-  }
-
   private _closeAllSettings(): void {
     this._pageViewPaneRef.value?.closeSettings();
-    this._setReadingSettingsOpen(false);
+    this._readingPaneRef.value?.setSettingsOpen(false);
   }
 
   private _syncToolbarPaneCheckboxes(): void {
@@ -1622,50 +1607,18 @@ export class DoclangViewer extends LitElement {
     }
   };
 
-  private _onHint = (e: Event): void => {
-    // Re-dispatch to the cursor-hint which is also inside this shadow root.
-    // cursor-hint listens on its own host; we pass via a direct method call.
-    const hint = this.shadowRoot?.querySelector('doclang-cursor-hint') as
-      | (HTMLElement & {
-          show(t: string, x: number, y: number): void;
-          showHtml(h: string, x: number, y: number): void;
-        })
-      | null;
-    if (!hint) return;
-    const detail = (
-      e as CustomEvent<{
-        html?: string;
-        text?: string;
-        clientX: number;
-        clientY: number;
-      }>
-    ).detail;
-    if (detail.html !== undefined)
-      hint.showHtml(detail.html, detail.clientX, detail.clientY);
-    else if (detail.text !== undefined)
-      hint.show(detail.text, detail.clientX, detail.clientY);
-  };
-
-  private _onHintHide = (): void => {
-    const hint = this.shadowRoot?.querySelector('doclang-cursor-hint') as
-      (HTMLElement & { hide(): void }) | null;
-    hint?.hide();
-  };
-
   private _onPanningChange = (): void => {
     // panning-change is handled inside page-view-pane; nothing to do at viewer level
   };
 
   private _onGlobalKeydown = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape') return;
+    this._pageViewPaneRef.value?.closeSettings();
+    this._readingPaneRef.value?.setSettingsOpen(false);
     if (this._toolbarOptionsOpen) {
       this._toolbarOptionsOpen = false;
       this._toolbarRef.value?.setOptionsOpen(false);
-      this.requestUpdate();
-    } else {
-      this._pageViewPaneRef.value?.closeSettings();
     }
-    if (this._readingSettingsOpen) this._setReadingSettingsOpen(false);
   };
 }
 

@@ -153,77 +153,6 @@
   flex-direction: column;
   padding: 0.75rem;
 }
-.viewer-settings-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-}
-.viewer-settings-layer[hidden] {
-  display: none;
-}
-.viewer-settings-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  appearance: none;
-  border: none;
-  margin: 0;
-  padding: 0;
-  background: color-mix(in srgb, var(--bg) 28%, transparent);
-  cursor: default;
-}
-.viewer-settings {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 1;
-  width: 13rem;
-  max-height: calc(100% - 1rem);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--panel);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
-  overflow: hidden;
-}
-.viewer-settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-.viewer-settings-title {
-  margin: 0;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.viewer-settings-close {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 0.25rem;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-.viewer-settings-close:hover {
-  color: var(--text);
-  background: var(--bg);
-}
-.viewer-settings-body {
-  padding: 0.75rem;
-  overflow: auto;
-}
 .settings-option {
   display: flex;
   align-items: flex-start;
@@ -708,3 +637,58 @@
     fill: color-mix(in srgb, var(--kind-default) 18%, transparent);
   }
 }
+
+/* -----------------------------------------------------------------------
+   Element-head hint popover
+   ----------------------------------------------------------------------- */
+
+.page-view-hint {
+  position: fixed;
+  inset: unset;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: 24rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  margin: 0;
+}
+
+.page-view-hint .head-tooltip {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.page-view-hint .head-tooltip th {
+  padding: 0.1rem 0.55rem 0.1rem 0;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.page-view-hint .head-tooltip td {
+  padding: 0.1rem 0;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.page-view-hint .head-tooltip .head-default {
+  color: var(--muted);
+  font-style: italic;
+  white-space: nowrap;
+}
+

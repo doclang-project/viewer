@@ -8,13 +8,13 @@ import type { Ref } from 'lit/directives/ref.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { DoclangPageElement } from '../base/page-element';
 import styles from './page-view-pane.css?inline';
+import '../settings-panel/settings-panel';
+import type { DoclangSettingsPanel } from '../settings-panel/settings-panel';
 import {
   applyPageImageSize,
   buildOverlay,
   syncOverlayBadges,
   PAGE_ZOOM_DEFAULT,
-  FRAGMENT_NAV_HINT_PREV,
-  FRAGMENT_NAV_HINT_NEXT,
   type OverlayCtx,
   type PageLayoutCache,
 } from './overlay';
@@ -75,6 +75,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
 
   // Imperative body ref — page image + SVG overlay live here
   private _bodyRef: Ref<HTMLElement> = createRef();
+  private _settingsPanelRef: Ref<DoclangSettingsPanel> = createRef();
 
   // --- overlay settings state ---
   private _settingsOpen = false;
@@ -188,243 +189,222 @@ export class DoclangPageViewPane extends DoclangPageElement {
           tabindex=${this._visible ? '0' : '-1'}
           ${ref(this._bodyRef)}
         ></div>
-        ${
-          this._settingsOpen
-            ? html`
-                <div class="viewer-settings-layer">
-                  <button
-                    type="button"
-                    class="viewer-settings-scrim"
-                    tabindex="-1"
-                    aria-label="Close overlays"
-                    @click=${() => this._setSettingsOpen(false)}
-                  ></button>
-                  <aside
-                    class="viewer-settings"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="page-settings-title"
+        ${this._visible
+          ? html`
+              <doclang-settings-panel
+                ${ref(this._settingsPanelRef)}
+                label="Overlays"
+                @doclang-settings-close=${() => this._applySettingsOpen(false)}
+              >
+                <label class="settings-option settings-option-primary">
+                  <input
+                    type="checkbox"
+                    class="cb-all-bboxes"
+                    .checked=${this._opts.showAllBboxes}
+                    @change=${(e: Event) =>
+                      this._onOptChange(
+                        'showAllBboxes',
+                        (e.target as HTMLInputElement).checked
+                      )}
+                  />
+                  <span>Layout</span>
+                </label>
+                <div class="settings-subgroup">
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
                   >
-                    <div class="viewer-settings-header">
-                      <h2 class="viewer-settings-title" id="page-settings-title">
-                        Overlays
-                      </h2>
-                      <button
-                        type="button"
-                        class="viewer-settings-close"
-                        aria-label="Close overlays"
-                        @click=${() => this._setSettingsOpen(false)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div class="viewer-settings-body">
-                      <label class="settings-option settings-option-primary">
-                        <input
-                          type="checkbox"
-                          class="cb-all-bboxes"
-                          .checked=${this._opts.showAllBboxes}
-                          @change=${(e: Event) =>
-                            this._onOptChange(
-                              'showAllBboxes',
-                              (e.target as HTMLInputElement).checked
-                            )}
-                        />
-                        <span>Layout</span>
-                      </label>
-                      <div class="settings-subgroup">
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-reading-order"
-                            .checked=${this._opts.showReadingOrder}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showReadingOrder',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Reading order</span>
-                        </label>
-                        <div class="settings-subgroup settings-reading-order-group">
-                          <label
-                            class=${classMap({
-                              'settings-option': true,
-                              'settings-option-sub': true,
-                              'settings-option-nested': true,
-                              'settings-option-disabled': !readingOrderEnabled,
-                            })}
-                          >
-                            <input
-                              type="checkbox"
-                              class="cb-reading-order-arrows"
-                              .checked=${this._opts.readingOrderArrows}
-                              ?disabled=${!readingOrderEnabled}
-                              @change=${(e: Event) =>
-                                this._onOptChange(
-                                  'readingOrderArrows',
-                                  (e.target as HTMLInputElement).checked
-                                )}
-                            />
-                            <span>Arrows</span>
-                          </label>
-                          <label
-                            class=${classMap({
-                              'settings-option': true,
-                              'settings-option-sub': true,
-                              'settings-option-nested': true,
-                              'settings-option-disabled': !readingOrderEnabled,
-                            })}
-                          >
-                            <input
-                              type="checkbox"
-                              class="cb-reading-order-global"
-                              .checked=${this._opts.readingOrderGlobal}
-                              ?disabled=${!readingOrderEnabled}
-                              @change=${(e: Event) =>
-                                this._onOptChange(
-                                  'readingOrderGlobal',
-                                  (e.target as HTMLInputElement).checked
-                                )}
-                            />
-                            <span>Global numbering</span>
-                          </label>
-                        </div>
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-picture-contents"
-                            .checked=${this._opts.showPictureContents}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showPictureContents',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Picture contents</span>
-                        </label>
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-table-contents"
-                            .checked=${this._opts.showTableContents}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showTableContents',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Table contents</span>
-                        </label>
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-fragment-links"
-                            .checked=${this._opts.showFragmentLinks}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showFragmentLinks',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Fragments</span>
-                        </label>
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-xref-links"
-                            .checked=${this._opts.showXrefLinks}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showXrefLinks',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Cross-references</span>
-                        </label>
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-caption-links"
-                            .checked=${this._opts.showCaptionLinks}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showCaptionLinks',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Captions</span>
-                        </label>
-                        <label
-                          class=${classMap({
-                            'settings-option': true,
-                            'settings-option-sub': true,
-                            'settings-option-disabled': !layoutEnabled,
-                          })}
-                        >
-                          <input
-                            type="checkbox"
-                            class="cb-layout-badges"
-                            .checked=${this._opts.showLayoutBadges}
-                            ?disabled=${!layoutEnabled}
-                            @change=${(e: Event) =>
-                              this._onOptChange(
-                                'showLayoutBadges',
-                                (e.target as HTMLInputElement).checked
-                              )}
-                          />
-                          <span>Badges</span>
-                        </label>
-                      </div>
-                    </div>
-                  </aside>
+                    <input
+                      type="checkbox"
+                      class="cb-reading-order"
+                      .checked=${this._opts.showReadingOrder}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showReadingOrder',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Reading order</span>
+                  </label>
+                  <div class="settings-subgroup settings-reading-order-group">
+                    <label
+                      class=${classMap({
+                        'settings-option': true,
+                        'settings-option-sub': true,
+                        'settings-option-nested': true,
+                        'settings-option-disabled': !readingOrderEnabled,
+                      })}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-reading-order-arrows"
+                        .checked=${this._opts.readingOrderArrows}
+                        ?disabled=${!readingOrderEnabled}
+                        @change=${(e: Event) =>
+                          this._onOptChange(
+                            'readingOrderArrows',
+                            (e.target as HTMLInputElement).checked
+                          )}
+                      />
+                      <span>Arrows</span>
+                    </label>
+                    <label
+                      class=${classMap({
+                        'settings-option': true,
+                        'settings-option-sub': true,
+                        'settings-option-nested': true,
+                        'settings-option-disabled': !readingOrderEnabled,
+                      })}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-reading-order-global"
+                        .checked=${this._opts.readingOrderGlobal}
+                        ?disabled=${!readingOrderEnabled}
+                        @change=${(e: Event) =>
+                          this._onOptChange(
+                            'readingOrderGlobal',
+                            (e.target as HTMLInputElement).checked
+                          )}
+                      />
+                      <span>Global numbering</span>
+                    </label>
+                  </div>
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-picture-contents"
+                      .checked=${this._opts.showPictureContents}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showPictureContents',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Picture contents</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-table-contents"
+                      .checked=${this._opts.showTableContents}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showTableContents',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Table contents</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-fragment-links"
+                      .checked=${this._opts.showFragmentLinks}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showFragmentLinks',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Fragments</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-xref-links"
+                      .checked=${this._opts.showXrefLinks}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showXrefLinks',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Cross-references</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-caption-links"
+                      .checked=${this._opts.showCaptionLinks}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showCaptionLinks',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Captions</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      'settings-option': true,
+                      'settings-option-sub': true,
+                      'settings-option-disabled': !layoutEnabled,
+                    })}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-layout-badges"
+                      .checked=${this._opts.showLayoutBadges}
+                      ?disabled=${!layoutEnabled}
+                      @change=${(e: Event) =>
+                        this._onOptChange(
+                          'showLayoutBadges',
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span>Badges</span>
+                  </label>
                 </div>
-              `
-            : nothing
-        }
+              </doclang-settings-panel>
+            `
+          : nothing}
       </div>
+      <div
+        id="page-view-hint"
+        popover="manual"
+        role="tooltip"
+        class="page-view-hint"
+      ></div>
     `;
   }
 
@@ -517,11 +497,17 @@ export class DoclangPageViewPane extends DoclangPageElement {
   // ---------------------------------------------------------------------------
 
   toggleSettings(): void {
-    this._setSettingsOpen(!this._settingsOpen);
+    this._applySettingsOpen(!this._settingsOpen);
   }
 
   closeSettings(): void {
-    if (this._settingsOpen) this._setSettingsOpen(false);
+    this._applySettingsOpen(false);
+  }
+
+  private _applySettingsOpen(open: boolean): void {
+    this._settingsOpen = open;
+    this._settingsPanelRef.value?.setOpen(open);
+    this.requestUpdate();
   }
 
   // ---------------------------------------------------------------------------
@@ -873,11 +859,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
     if (body) body.classList.toggle('can-pan', this._isScrollable() && !this._panDrag);
   }
 
-  private _setSettingsOpen(open: boolean): void {
-    this._settingsOpen = open;
-    this.requestUpdate();
-  }
-
   private _onOptChange(key: keyof OverlaySettings, value: boolean): void {
     (this._opts as unknown as Record<string, boolean>)[key] = value;
     // Re-render page if global numbering changed (affects step labels)
@@ -1034,17 +1015,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
       return;
     }
     const innerTarget = (e.composedPath()[0] ?? e.target) as Element;
-    const navBtn = innerTarget.closest(
-      '.fragment-nav-btn:not(.fragment-nav-btn-disabled)'
-    );
-    if (navBtn) {
-      const hint =
-        navBtn.getAttribute('data-nav') === 'prev'
-          ? FRAGMENT_NAV_HINT_PREV
-          : FRAGMENT_NAV_HINT_NEXT;
-      this._showHint({ text: hint, clientX: e.clientX, clientY: e.clientY });
-      return;
-    }
     const badge = innerTarget.closest('.element-badge[data-element-id]');
     if (!badge || !this._docState?.idToElement) {
       this._hideHint();
@@ -1056,30 +1026,26 @@ export class DoclangPageViewPane extends DoclangPageElement {
       this._hideHint();
       return;
     }
-    this._showHint({
-      html: this._elementHeadTooltipHtml(xmlEl, this._docState.defaultResolution),
-      clientX: e.clientX,
-      clientY: e.clientY,
-    });
+    this._showHint(
+      this._elementHeadTooltipHtml(xmlEl, this._docState.defaultResolution),
+      e
+    );
   };
 
   private _onMouseleave = (): void => this._hideHint();
 
-  private _showHint(detail: {
-    html?: string;
-    text?: string;
-    clientX: number;
-    clientY: number;
-  }): void {
-    this.dispatchEvent(
-      new CustomEvent('doclang-hint', { bubbles: true, composed: true, detail })
-    );
+  private _showHint(html: string, e: MouseEvent): void {
+    const el = this.shadowRoot?.querySelector<HTMLElement>('.page-view-hint') ?? null;
+    if (!el) return;
+    el.innerHTML = html;
+    el.style.top = `${e.clientY + 14}px`;
+    el.style.left = `${e.clientX + 14}px`;
+    if (!el.matches(':popover-open')) el.showPopover();
   }
 
   private _hideHint(): void {
-    this.dispatchEvent(
-      new CustomEvent('doclang-hint-hide', { bubbles: true, composed: true })
-    );
+    const el = this.shadowRoot?.querySelector<HTMLElement>('.page-view-hint') ?? null;
+    if (el?.matches(':popover-open')) el.hidePopover();
   }
 
   private _elementHeadTooltipHtml(

@@ -1,14 +1,14 @@
 /** <doclang-toolbar> — header toolbar (Views menu, file open, demo, site link) */
 
-import { LitElement, html, nothing } from 'lit';
+import { LitElement, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 import { ref, createRef } from 'lit/directives/ref.js';
 import type { Ref } from 'lit/directives/ref.js';
 import styles from './toolbar.css?inline';
-
-const OPEN_FILE_HINT = `Open a DocLang file (.dclx, .dclg)`;
+import '../dropdown/dropdown';
+import type { DoclangDropdown } from '../dropdown/dropdown';
 
 interface PaneToggles {
   file: boolean;
@@ -24,7 +24,6 @@ interface PaneToggles {
 export class DoclangToolbar extends LitElement {
   static override styles = unsafeCSS(styles);
 
-  private _panelOpen = false;
   private _demoLoading = false;
   private _panes: PaneToggles = {
     file: true,
@@ -36,133 +35,107 @@ export class DoclangToolbar extends LitElement {
     hasState: false,
   };
   private _inputArchiveRef: Ref<HTMLInputElement> = createRef();
+  private _dropdownRef: Ref<DoclangDropdown> = createRef();
 
   override render() {
     const { file, page, markup, reading, fileAvailable, pageAvailable, hasState } =
       this._panes;
     return html`
       <div class="toolbar">
-        <div class="toolbar-options-wrap">
+        <doclang-dropdown
+          ${ref(this._dropdownRef)}
+          label="Views"
+        >
+          <label
+            class=${classMap({
+              'toolbar-options-item': true,
+              'toolbar-options-item-disabled': !fileAvailable,
+            })}
+          >
+            <input
+              type="checkbox"
+              class="cb-file-pane"
+              role="menuitemcheckbox"
+              .checked=${fileAvailable && file}
+              ?disabled=${!fileAvailable}
+              @change=${(e: Event) =>
+                this._emitTogglePane('file', (e.target as HTMLInputElement).checked)}
+            />
+            <span>Files</span>
+          </label>
+          <label
+            class=${classMap({
+              'toolbar-options-item': true,
+              'toolbar-options-item-disabled': !pageAvailable,
+            })}
+          >
+            <input
+              type="checkbox"
+              class="cb-page-pane"
+              role="menuitemcheckbox"
+              .checked=${pageAvailable && page}
+              ?disabled=${!pageAvailable}
+              @change=${(e: Event) =>
+                this._emitTogglePane('page', (e.target as HTMLInputElement).checked)}
+            />
+            <span>Original page</span>
+          </label>
+          <label
+            class=${classMap({
+              'toolbar-options-item': true,
+              'toolbar-options-item-disabled': !hasState,
+            })}
+          >
+            <input
+              type="checkbox"
+              class="cb-markup-pane"
+              role="menuitemcheckbox"
+              .checked=${markup}
+              ?disabled=${!hasState}
+              @change=${(e: Event) =>
+                this._emitTogglePane('markup', (e.target as HTMLInputElement).checked)}
+            />
+            <span>DocLang</span>
+          </label>
+          <label
+            class=${classMap({
+              'toolbar-options-item': true,
+              'toolbar-options-item-disabled': !hasState,
+            })}
+          >
+            <input
+              type="checkbox"
+              class="cb-reading-pane"
+              role="menuitemcheckbox"
+              .checked=${reading}
+              ?disabled=${!hasState}
+              @change=${(e: Event) =>
+                this._emitTogglePane('reading', (e.target as HTMLInputElement).checked)}
+            />
+            <span>Reading view</span>
+          </label>
+          <div class="toolbar-options-divider" role="separator"></div>
           <button
             type="button"
-            class="toolbar-options-btn"
-            aria-expanded=${this._panelOpen ? 'true' : 'false'}
-            aria-haspopup="true"
-            @click=${this._onOptionsClick}
+            class="toolbar-options-reset"
+            role="menuitem"
+            ?disabled=${!hasState}
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('doclang-reset-pane-layout', {
+                  bubbles: true,
+                  composed: true,
+                })
+              )}
           >
-            Views
+            Reset views
           </button>
-          ${
-            this._panelOpen
-              ? html`
-                  <div class="toolbar-options-panel" role="menu">
-                    <label
-                      class=${classMap({
-                        'toolbar-options-item': true,
-                        'toolbar-options-item-disabled': !fileAvailable,
-                      })}
-                    >
-                      <input
-                        type="checkbox"
-                        class="cb-file-pane"
-                        role="menuitemcheckbox"
-                        .checked=${fileAvailable && file}
-                        ?disabled=${!fileAvailable}
-                        @change=${(e: Event) =>
-                          this._emitTogglePane(
-                            'file',
-                            (e.target as HTMLInputElement).checked
-                          )}
-                      />
-                      <span>Files</span>
-                    </label>
-                    <label
-                      class=${classMap({
-                        'toolbar-options-item': true,
-                        'toolbar-options-item-disabled': !pageAvailable,
-                      })}
-                    >
-                      <input
-                        type="checkbox"
-                        class="cb-page-pane"
-                        role="menuitemcheckbox"
-                        .checked=${pageAvailable && page}
-                        ?disabled=${!pageAvailable}
-                        @change=${(e: Event) =>
-                          this._emitTogglePane(
-                            'page',
-                            (e.target as HTMLInputElement).checked
-                          )}
-                      />
-                      <span>Original page</span>
-                    </label>
-                    <label
-                      class=${classMap({
-                        'toolbar-options-item': true,
-                        'toolbar-options-item-disabled': !hasState,
-                      })}
-                    >
-                      <input
-                        type="checkbox"
-                        class="cb-markup-pane"
-                        role="menuitemcheckbox"
-                        .checked=${markup}
-                        ?disabled=${!hasState}
-                        @change=${(e: Event) =>
-                          this._emitTogglePane(
-                            'markup',
-                            (e.target as HTMLInputElement).checked
-                          )}
-                      />
-                      <span>DocLang</span>
-                    </label>
-                    <label
-                      class=${classMap({
-                        'toolbar-options-item': true,
-                        'toolbar-options-item-disabled': !hasState,
-                      })}
-                    >
-                      <input
-                        type="checkbox"
-                        class="cb-reading-pane"
-                        role="menuitemcheckbox"
-                        .checked=${reading}
-                        ?disabled=${!hasState}
-                        @change=${(e: Event) =>
-                          this._emitTogglePane(
-                            'reading',
-                            (e.target as HTMLInputElement).checked
-                          )}
-                      />
-                      <span>Reading view</span>
-                    </label>
-                    <div class="toolbar-options-divider" role="separator"></div>
-                    <button
-                      type="button"
-                      class="toolbar-options-reset"
-                      role="menuitem"
-                      ?disabled=${!hasState}
-                      @click=${() =>
-                        this.dispatchEvent(
-                          new CustomEvent('doclang-reset-pane-layout', {
-                            bubbles: true,
-                            composed: true,
-                          })
-                        )}
-                    >
-                      Reset views
-                    </button>
-                  </div>
-                `
-              : nothing
-          }
-        </div>
+        </doclang-dropdown>
         <span class="header-divider" aria-hidden="true"></span>
         <span class="toolbar-file-group">
           <label
             class="file-btn"
-            @mousemove=${this._onFileBtnMousemove}
-            @mouseleave=${this._onFileBtnMouseleave}
+            title="Open a DocLang file (.dclx, .dclg)"
           >
             Open file
             <input
@@ -204,39 +177,8 @@ export class DoclangToolbar extends LitElement {
   }
 
   setOptionsOpen(open: boolean): void {
-    this._panelOpen = open;
-    this.requestUpdate();
+    this._dropdownRef.value?.setOpen(open);
   }
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    // Use getRootNode() so the listener stays within the shadow DOM tree
-    // rather than escaping to document.
-    (this.getRootNode() as Document | ShadowRoot).addEventListener(
-      'click',
-      this._onDocClick
-    );
-  }
-
-  override disconnectedCallback(): void {
-    super.disconnectedCallback();
-    (this.getRootNode() as Document | ShadowRoot).removeEventListener(
-      'click',
-      this._onDocClick
-    );
-  }
-
-  private _onDocClick = (e: Event): void => {
-    if (!this._panelOpen) return;
-    const path = e.composedPath();
-    if (path.includes(this as unknown as EventTarget)) return;
-    this.setOptionsOpen(false);
-  };
-
-  private _onOptionsClick = (e: Event): void => {
-    e.stopPropagation();
-    this.setOptionsOpen(!this._panelOpen);
-  };
 
   private _emitTogglePane(pane: string, checked: boolean): void {
     this.dispatchEvent(
@@ -258,21 +200,5 @@ export class DoclangToolbar extends LitElement {
       })
     );
     input.value = '';
-  };
-
-  private _onFileBtnMousemove = (e: MouseEvent): void => {
-    this.dispatchEvent(
-      new CustomEvent('doclang-hint', {
-        bubbles: true,
-        composed: true,
-        detail: { text: OPEN_FILE_HINT, clientX: e.clientX, clientY: e.clientY },
-      })
-    );
-  };
-
-  private _onFileBtnMouseleave = (): void => {
-    this.dispatchEvent(
-      new CustomEvent('doclang-hint-hide', { bubbles: true, composed: true })
-    );
   };
 }
