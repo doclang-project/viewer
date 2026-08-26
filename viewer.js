@@ -1,5446 +1,655 @@
-/* DocLang Archive Viewer — archive format: github.com/doclang-project/doclang spec.md#doclang-archive-format */
-
-const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
-const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
-const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
-const FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
-const FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
-const FRAGMENT_NAV_HINT_PREV = "Previous fragment";
-const FRAGMENT_NAV_HINT_NEXT = "Next fragment";
-const DOCLANG_NS = "https://www.doclang.ai/ns/v0";
-const PAGE_IMAGE_RE = /^(\d+)\.(png|jpe?g|webp)$/i;
-const NO_MARKUP = "(No markup to be shown.)";
-const NO_IMAGE = "(No page image available.)";
-const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
-const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
-const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
-/** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
-const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
-const MAX_DATA_IMAGE_URI_LENGTH = 2 * 1024 * 1024; // 2 MiB
-const ZIP_MAX_ENTRIES = 5000;
-const ZIP_MAX_ENTRY_COMPRESSED_BYTES = 128 * 1024 * 1024; // 128 MiB
-const ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024; // 128 MiB
-const ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024; // 512 MiB
-const ZIP_MAX_COMPRESSION_RATIO = 100; // uncompressed / compressed
-const LONG_EMBEDDED_URI_PREVIEW_LENGTH = 30;
-const HEAD_TAGS = new Set([
-  "label", "thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom",
-]);
-const SEMANTIC_TAGS = new Set([
-  "text", "heading", "footnote", "page_header", "page_footer", "field_region", "list", "table", "index",
-  "formula", "code", "picture", "marker", "group", "field_heading", "field_item", "key", "value", "hint",
-  "caption", "page_break",
-]);
-const CELL_TOKENS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow", "lcel", "ucel", "xcel", "nl"]);
-const CELL_CONTENT_TAGS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow"]);
-const CELL_SPAN_TAGS = new Set(["lcel", "ucel", "xcel"]);
-const OTSL_CONTAINER_TAGS = new Set(["table", "index", "tabular"]);
-const RENDER_BLOCK_TAGS = new Set([
-  "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "list", "code", "formula", "picture", "group",
-  "field_region", "field_item",
-  "table", "index", "tabular",
-]);
-const RENDER_FORMAT_TAGS = new Set([
-  "bold", "italic", "underline", "strikethrough", "superscript", "subscript", "handwriting", "rtl", "content",
-]);
-const FORMAT_HTML_TAG = {
-  bold: "strong",
-  italic: "em",
-  underline: "u",
-  strikethrough: "s",
-  superscript: "sup",
-  subscript: "sub",
-};
-
-function isTextLikeNode(node) {
-  return node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE;
-}
-
-function isWhitespaceOnlyText(node) {
-  return isTextLikeNode(node) && !node.textContent.trim();
-}
-
-function markupAttributes(el) {
-  return [...el.attributes]
-    .filter((a) => a.name !== "xmlns" || a.value !== DOCLANG_NS)
-    .map((a) => ({ name: a.name, value: a.value }));
-}
-
-function xmlSpan(className, text, { ghost = false } = {}) {
-  const span = document.createElement("span");
-  span.className = ghost ? `${className} markup-ghost-tag-part` : className;
-  span.textContent = text;
-  return span;
-}
-
-function createMarkupLineRow(depth, { foldToggle = false } = {}) {
-  const line = createMarkupLine();
-  line.style.setProperty("--markup-depth", String(depth));
-
-  const row = document.createElement("span");
-  row.className = "markup-line-content";
-
-  const gutter = document.createElement("span");
-  gutter.className = "markup-gutter";
-  gutter.setAttribute("aria-hidden", "true");
-  if (foldToggle) gutter.appendChild(createMarkupFoldToggle());
-  row.appendChild(gutter);
-
-  const body = document.createElement("span");
-  body.className = "markup-line-body";
-  row.appendChild(body);
-
-  line.appendChild(row);
-  return { line, content: body };
-}
-
-function isTruncatableEmbeddedImageUri(value) {
-  if (!value || value.length <= LONG_EMBEDDED_URI_PREVIEW_LENGTH) return false;
-  return /^(data:image\/|blob:)/i.test(value);
-}
-
-function formatCompactByteSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) {
-    const kb = bytes / 1024;
-    return kb < 10 ? `${kb.toFixed(1)} KB` : `${Math.round(kb)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatEmbeddedUriSizeLabel(value) {
-  if (/^blob:/i.test(value)) {
-    return value.length >= 1024 ? `${Math.round(value.length / 1024)} KB URL` : `${value.length} char URL`;
-  }
-  const comma = value.indexOf(",");
-  if (comma === -1) return "embedded data";
-  const header = value.slice(0, comma);
-  const payload = value.slice(comma + 1).replace(/\s/g, "");
-  const mime = /^data:([^;,]+)/i.exec(header)?.[1] ?? "";
-  const shortMime = mime.startsWith("image/") ? mime.slice(6) : (mime || "data");
-  const bytes = Math.floor(payload.replace(/=+$/, "").length * 3 / 4);
-  return `${shortMime} · ${formatCompactByteSize(bytes)}`;
-}
-
-function createEmbeddedUriContinuationPanel(value, depth) {
-  const { line, content } = createMarkupLineRow(depth);
-  line.className = "markup-line markup-embedded-uri-panel";
-  const body = document.createElement("div");
-  body.className = "markup-embedded-uri-panel-body";
-  body.textContent = value;
-  body.addEventListener("click", (e) => e.stopPropagation());
-  content.appendChild(body);
-  return line;
-}
-
-function createTruncatableMarkupAttrValue(value) {
-  const wrapper = document.createElement("span");
-  wrapper.className = "xml-attr-value xml-attr-value-truncatable";
-  wrapper.dataset.fullValue = value;
-
-  const text = document.createElement("span");
-  text.className = "xml-attr-value-text";
-  text.textContent = value.slice(0, LONG_EMBEDDED_URI_PREVIEW_LENGTH);
-
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "xml-attr-value-chip";
-  const sizeLabel = formatEmbeddedUriSizeLabel(value);
-  toggle.dataset.collapsedLabel = sizeLabel;
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-label", `Show full value (${sizeLabel})`);
-
-  const label = document.createElement("span");
-  label.className = "xml-attr-value-chip-label";
-  label.textContent = sizeLabel;
-  toggle.appendChild(label);
-
-  wrapper.append(text, toggle);
-  return wrapper;
-}
-
-function appendMarkupAttrValue(line, value) {
-  if (isTruncatableEmbeddedImageUri(value)) {
-    line.appendChild(createTruncatableMarkupAttrValue(value));
-  } else {
-    line.appendChild(xmlSpan("xml-attr-value", value));
-  }
-}
-
-function toggleTruncatableMarkupAttrValue(toggle) {
-  const wrapper = toggle.closest(".xml-attr-value-truncatable");
-  if (!wrapper) return;
-
-  const markupLine = wrapper.closest(".markup-line");
-  const fullValue = wrapper.dataset.fullValue ?? "";
-  const label = toggle.querySelector(".xml-attr-value-chip-label");
-  const collapsedLabel = toggle.dataset.collapsedLabel ?? label?.textContent ?? "";
-  const expanded = toggle.getAttribute("aria-expanded") === "true";
-
-  if (expanded) {
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-label", `Show full value (${collapsedLabel})`);
-    if (label) label.textContent = collapsedLabel;
-    markupLine?.nextElementSibling?.classList.contains("markup-embedded-uri-panel")
-      && markupLine.nextElementSibling.remove();
-    return;
-  }
-
-  toggle.setAttribute("aria-expanded", "true");
-  toggle.setAttribute("aria-label", "Hide full value");
-  if (label) label.textContent = "hide";
-  if (!markupLine || markupLine.nextElementSibling?.classList.contains("markup-embedded-uri-panel")) {
-    return;
-  }
-  const depth = Number(markupLine.style.getPropertyValue("--markup-depth") || 0);
-  markupLine.insertAdjacentElement("afterend", createEmbeddedUriContinuationPanel(fullValue, depth));
-}
-
-function appendMarkupAttributes(line, attributes) {
-  for (const { name, value } of attributes) {
-    line.appendChild(document.createTextNode(" "));
-    line.appendChild(xmlSpan("xml-attr-name", name));
-    line.appendChild(xmlSpan("xml-bracket", '="'));
-    appendMarkupAttrValue(line, value);
-    line.appendChild(xmlSpan("xml-bracket", '"'));
-  }
-}
-
-function appendMarkupTextContent(line, text) {
-  const cdataMatch = /^<!\[CDATA\[([\s\S]*)\]\]>$/.exec(text);
-  if (cdataMatch) {
-    line.appendChild(xmlSpan("xml-cdata-delimiter", "<![CDATA["));
-    line.appendChild(xmlSpan("xml-cdata", cdataMatch[1]));
-    line.appendChild(xmlSpan("xml-cdata-delimiter", "]]>"));
-    return;
-  }
-  line.appendChild(xmlSpan("xml-text", text));
-}
-
-function createMarkupLine() {
-  const line = document.createElement("div");
-  line.className = "markup-line";
-  return line;
-}
-
-function appendOpenTagContent(line, tag, attributes, ghost = false) {
-  line.appendChild(xmlSpan("xml-bracket", "<", { ghost }));
-  line.appendChild(xmlSpan("xml-tag", tag, { ghost }));
-  appendMarkupAttributes(line, attributes);
-  line.appendChild(xmlSpan("xml-bracket", ">", { ghost }));
-}
-
-function createMarkupFoldToggle() {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "markup-fold-toggle";
-  btn.setAttribute("aria-expanded", "true");
-  btn.setAttribute("aria-label", "Collapse");
-  return btn;
-}
-
-function appendMarkupFoldableOpen(parent, depth, tag, attributes, tagHint) {
-  const ghost = Boolean(tagHint);
-  const { line, content } = createMarkupLineRow(depth, { foldToggle: true });
-  line.classList.add("markup-line-open");
-  appendOpenTagContent(content, tag, attributes, ghost);
-
-  const suffix = document.createElement("span");
-  suffix.className = "markup-fold-suffix";
-  suffix.appendChild(xmlSpan("xml-bracket", "...", { ghost }));
-  suffix.appendChild(xmlSpan("xml-bracket", "</", { ghost }));
-  suffix.appendChild(xmlSpan("xml-tag", tag, { ghost }));
-  suffix.appendChild(xmlSpan("xml-bracket", ">", { ghost }));
-  content.appendChild(suffix);
-  parent.appendChild(line);
-}
-
-function appendMarkupCloseTag(parent, depth, tag, tagHint) {
-  const ghost = Boolean(tagHint);
-  const { line, content } = createMarkupLineRow(depth);
-  content.appendChild(xmlSpan("xml-bracket", "</", { ghost }));
-  content.appendChild(xmlSpan("xml-tag", tag, { ghost }));
-  content.appendChild(xmlSpan("xml-bracket", ">", { ghost }));
-  parent.appendChild(line);
-}
-
-function appendMarkupSelfClosingTag(parent, depth, tag, attributes) {
-  const { line, content } = createMarkupLineRow(depth);
-  content.appendChild(xmlSpan("xml-bracket", "<"));
-  content.appendChild(xmlSpan("xml-tag", tag));
-  appendMarkupAttributes(content, attributes);
-  content.appendChild(xmlSpan("xml-bracket", "/>"));
-  parent.appendChild(line);
-}
-
-function appendMarkupInlineElement(parent, depth, tag, attributes, text) {
-  const { line, content } = createMarkupLineRow(depth);
-  appendOpenTagContent(content, tag, attributes);
-  appendMarkupTextContent(content, text);
-  content.appendChild(xmlSpan("xml-bracket", "</"));
-  content.appendChild(xmlSpan("xml-tag", tag));
-  content.appendChild(xmlSpan("xml-bracket", ">"));
-  parent.appendChild(line);
-}
-
-function appendMarkupTextLine(parent, depth, text) {
-  const { line, content } = createMarkupLineRow(depth);
-  appendMarkupTextContent(content, text);
-  parent.appendChild(line);
-}
-
-function formatMarkupTextNode(node) {
-  if (node.nodeType === Node.CDATA_SECTION_NODE) {
-    return `<![CDATA[${node.textContent ?? ""}]]>`;
-  }
-  return node.textContent.trim();
-}
-
-function serializeMarkupTextNodes(nodes) {
-  return [...nodes]
-    .filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n))
-    .map(formatMarkupTextNode)
-    .join("");
-}
-const PAGE_WHEEL_COOLDOWN_MS = 200;
-const PAGE_WHEEL_PIXEL_THRESHOLD = 4;
-const PAGE_WHEEL_GESTURE_MS = 100;
-const OVERLAY_BADGE_FONT_SIZE = 11 * 1.5 * 0.8;
-const OVERLAY_BADGE_PAD_X = 3;
-const OVERLAY_BADGE_PAD_Y = 2;
-const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
-/** Demo page size; overlay lengths are calibrated to match pre-fix sizing on these images. */
-const OVERLAY_REF_IMAGE_WIDTH = 1224;
-const OVERLAY_REF_IMAGE_HEIGHT = 1584;
-const PAGE_ZOOM_DEFAULT = 100;
-const PAGE_PAN_DRAG_THRESHOLD = 5;
-const PAGE_VIEW_BORDER_PX = 2;
-const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
-const PANE_MIN_RATIO = 0.12;
-const PANE_KEYS = ["file", "page", "markup", "reading"];
-const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
-const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
-const LAYOUT_STACK_BREAKPOINT_PX = 1200;
-
-/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
-let state = null;
-let fileCatalog = [];
-let activeFileIndex = -1;
-let filePaneUserToggled = false;
-/** @type {ResizeObserver | null} */
-let pagePaneResizeObserver = null;
-/** @type {string | null} */
-let selectedElementId = null;
-let showAllBboxes = true;
-let showLayoutBadges = true;
-let showCaptionLinks = false;
-let showPictureContents = false;
-let showTableContents = false;
-let showFragmentLinks = false;
-let showXrefLinks = false;
-let showReadingOrder = false;
-let showReadingOrderArrows = true;
-let readingOrderGlobalNumbering = false;
-let showReadingFurniture = true;
-let showReadingBackground = true;
-let pageSettingsOpen = false;
-let readingSettingsOpen = false;
-let pageZoomPercent = PAGE_ZOOM_DEFAULT;
-/** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
-let pagePanDrag = null;
-let pagePanSuppressClick = false;
-/** @type {{ paneW: number, paneH: number, imgW: number, imgH: number, fitScale: number } | null} */
-let pageLayoutCache = null;
-/** @type {{ file: boolean, page: boolean, markup: boolean, reading: boolean }} */
-let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
-/** @type {number[]} */
-let paneRatios = [...DEFAULT_PANE_RATIOS];
-/** @type {number | null} */
-let filePaneWidthPx = null;
-let toolbarOptionsOpen = false;
-/** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
-let paneDrag = null;
-/** @type {MediaQueryList | null} */
-let layoutStackQuery = null;
-const els = {
-  openFileBtn: document.getElementById("open-file-btn"),
-  emptyStateFileTypes: document.getElementById("empty-state-file-types"),
-  docLabel: document.getElementById("doc-label"),
-  filePane: document.getElementById("file-pane"),
-  filePaneCloseAll: document.getElementById("btn-file-pane-close-all"),
-  pageNav: document.getElementById("page-nav"),
-  pageIndicator: document.getElementById("page-indicator"),
-  pageNumberInput: document.getElementById("page-number-input"),
-  pageCountIndicator: document.getElementById("page-count-indicator"),
-  btnPrev: document.getElementById("btn-prev"),
-  btnNext: document.getElementById("btn-next"),
-  showAllBboxes: document.getElementById("show-all-bboxes"),
-  showLayoutBadges: document.getElementById("show-layout-badges"),
-  showLayoutBadgesLabel: document.getElementById("show-layout-badges-label"),
-  settingsToggle: document.getElementById("btn-settings-toggle"),
-  readingSettingsToggle: document.getElementById("btn-reading-settings-toggle"),
-  pageSettingsLayer: document.getElementById("page-settings-layer"),
-  pageSettingsScrim: document.getElementById("page-settings-scrim"),
-  pageSettingsClose: document.getElementById("btn-page-settings-close"),
-  readingSettingsLayer: document.getElementById("reading-settings-layer"),
-  readingSettingsScrim: document.getElementById("reading-settings-scrim"),
-  readingSettingsClose: document.getElementById("btn-reading-settings-close"),
-  showReadingFurniture: document.getElementById("show-reading-furniture"),
-  showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
-  showReadingBackground: document.getElementById("show-reading-background"),
-  showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
-  showCaptionLinks: document.getElementById("show-caption-links"),
-  showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
-  showPictureContents: document.getElementById("show-picture-contents"),
-  showPictureContentsLabel: document.getElementById("show-picture-contents-label"),
-  showTableContents: document.getElementById("show-table-contents"),
-  showTableContentsLabel: document.getElementById("show-table-contents-label"),
-  showFragmentLinks: document.getElementById("show-fragment-links"),
-  showFragmentLinksLabel: document.getElementById("show-fragment-links-label"),
-  showXrefLinks: document.getElementById("show-xref-links"),
-  showXrefLinksLabel: document.getElementById("show-xref-links-label"),
-  showReadingOrder: document.getElementById("show-reading-order"),
-  showReadingOrderLabel: document.getElementById("show-reading-order-label"),
-  readingOrderArrows: document.getElementById("reading-order-arrows"),
-  readingOrderArrowsLabel: document.getElementById("reading-order-arrows-label"),
-  readingOrderGlobal: document.getElementById("reading-order-global"),
-  readingOrderGlobalLabel: document.getElementById("reading-order-global-label"),
-  pageZoom: document.getElementById("page-zoom"),
-  pageZoomLabel: document.getElementById("page-zoom-label"),
-  pageZoomReset: document.getElementById("page-zoom-reset"),
-  main: document.getElementById("main"),
-  emptyState: document.getElementById("empty-state"),
-  emptyStateLoading: document.getElementById("empty-state-loading"),
-  emptyStatePrompt: document.getElementById("empty-state-prompt"),
-  markupPane: document.getElementById("markup-pane"),
-  renderedPane: document.getElementById("rendered-pane"),
-  pagePane: document.getElementById("page-pane"),
-  paneFile: document.querySelector(".pane-file"),
-  panePageView: document.querySelector(".pane-page-view"),
-  paneMarkup: document.querySelector(".pane-markup"),
-  paneReading: document.querySelector(".pane-reading"),
-  splitters: [
-    document.getElementById("splitter-0"),
-    document.getElementById("splitter-1"),
-    document.getElementById("splitter-2"),
-  ],
-  toolbarOptionsBtn: document.getElementById("btn-toolbar-options"),
-  toolbarOptionsPanel: document.getElementById("toolbar-options-panel"),
-  toggleFilePane: document.getElementById("toggle-file-pane"),
-  toggleFilePaneLabel: document.getElementById("toggle-file-pane-label"),
-  togglePagePane: document.getElementById("toggle-page-pane"),
-  toggleMarkupPane: document.getElementById("toggle-markup-pane"),
-  toggleReadingPane: document.getElementById("toggle-reading-pane"),
-  togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
-  resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
-};
-
-document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
-document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  loadDemo();
-});
-document.getElementById("home-link")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  resetViewer();
-});
-document.getElementById("input-archive")?.addEventListener("change", async (e) => {
-  const files = [...e.target.files].filter((f) => isArchiveFile(f) || isMarkupFile(f));
-  if (!files.length) return;
-  await addFilesToCatalog(files, { replace: true });
-  e.target.value = "";
-});
-els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
-els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
-els.pageNumberInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    commitPageNumberInput();
-    els.pageNumberInput?.blur();
-  } else if (e.key === "Escape") {
-    e.preventDefault();
-    resetPageNumberInput();
-    els.pageNumberInput?.blur();
-  }
-});
-els.pageNumberInput?.addEventListener("blur", resetPageNumberInput);
-els.pageNumberInput?.addEventListener("focus", (e) => {
-  e.target.select();
-});
-els.showAllBboxes?.addEventListener("change", () => {
-  showAllBboxes = els.showAllBboxes.checked;
-  syncLayoutSubtoggles();
-  const img = els.pagePane?.querySelector(".page-view img");
-  if (img) syncOverlayBadges(img);
-  applyBboxVisibility();
-});
-els.showLayoutBadges?.addEventListener("change", () => {
-  showLayoutBadges = els.showLayoutBadges.checked;
-  const img = els.pagePane?.querySelector(".page-view img");
-  if (img) syncOverlayBadges(img);
-  applyBboxVisibility();
-});
-els.showCaptionLinks?.addEventListener("change", () => {
-  showCaptionLinks = els.showCaptionLinks.checked;
-  applyBboxVisibility();
-});
-els.showPictureContents?.addEventListener("change", () => {
-  showPictureContents = els.showPictureContents.checked;
-  applyBboxVisibility();
-});
-els.showTableContents?.addEventListener("change", () => {
-  showTableContents = els.showTableContents.checked;
-  applyBboxVisibility();
-});
-els.showFragmentLinks?.addEventListener("change", () => {
-  showFragmentLinks = els.showFragmentLinks.checked;
-  applyBboxVisibility();
-});
-els.showXrefLinks?.addEventListener("change", () => {
-  showXrefLinks = els.showXrefLinks.checked;
-  applyBboxVisibility();
-});
-els.showReadingOrder?.addEventListener("change", () => {
-  showReadingOrder = els.showReadingOrder.checked;
-  syncLayoutSubtoggles();
-  const img = els.pagePane?.querySelector(".page-view img");
-  if (img) syncOverlayBadges(img);
-  applyBboxVisibility();
-});
-els.readingOrderArrows?.addEventListener("change", () => {
-  showReadingOrderArrows = els.readingOrderArrows.checked;
-  applyBboxVisibility();
-});
-els.readingOrderGlobal?.addEventListener("change", () => {
-  readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
-  if (state) renderPage(state.currentPage);
-});
-els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
-els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
-els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
-els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
-els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
-els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
-  else if (pageSettingsOpen) setPageSettingsOpen(false);
-  else if (readingSettingsOpen) setReadingSettingsOpen(false);
-});
-els.showReadingFurniture?.addEventListener("change", () => {
-  showReadingFurniture = els.showReadingFurniture.checked;
-  syncReadingLayerVisibility();
-});
-els.showReadingBackground?.addEventListener("change", () => {
-  showReadingBackground = els.showReadingBackground.checked;
-  syncReadingLayerVisibility();
-});
-loadLayoutPrefs();
-normalizePaneRatios();
-initToolbarOptions();
-initPaneSplitters();
-initLayoutStackListener();
-initFileTypeHints();
-initCursorHints();
-initBboxHints();
-initDragDrop();
-initFilePaneCloseAll();
-initPageWheelNav();
-initPageViewControls();
-let demoLoadInProgress = false;
-
-function setDemoLoading(loading) {
-  document.body.classList.toggle("demo-loading", loading);
-  const btnDemo = document.getElementById("btn-demo");
-  if (btnDemo) btnDemo.disabled = loading;
-}
-
-if (document.getElementById("btn-demo")) loadDemo();
-
-async function loadDemo() {
-  if (demoLoadInProgress) return;
-  demoLoadInProgress = true;
-  setDemoLoading(true);
-  try {
-    const res = await fetch(DEMO_ARCHIVE_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const label = DEMO_ARCHIVE_URL.split("/").pop() || "demo.dclx";
-    await addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
-  } catch (err) {
-    alert(
-      `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
-    );
-  } finally {
-    demoLoadInProgress = false;
-    if (!document.body.classList.contains("viewer-loaded")) setDemoLoading(false);
-  }
-}
-
-async function loadFromFileList(fileList) {
-  if (!fileList?.length) return;
-  const files = [...fileList];
-  if (files.some((f) => f.name === "document.xml")) {
-    await appendFolderArchive(files);
-    return;
-  }
-  const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
-  if (supported.length) await addFilesToCatalog(supported, { replace: false });
-}
-
-function createFileCatalogEntry(file) {
-  return {
-    id: crypto.randomUUID(),
-    label: file.name,
-    kind: isMarkupFile(file) ? "markup" : "archive",
-    source: file,
-    currentPage: 1,
-    pageZoom: PAGE_ZOOM_DEFAULT,
-    snapshot: null,
-    thumbnailUrl: null,
-  };
-}
-
-function pageImageMimeFromExt(ext) {
-  const normalized = ext.toLowerCase().replace("jpeg", "jpg");
-  if (normalized === "png") return "image/png";
-  if (normalized === "webp") return "image/webp";
-  return "image/jpeg";
-}
-
-function createPageImageObjectUrl(data, ext) {
-  return URL.createObjectURL(new Blob([data], { type: pageImageMimeFromExt(ext) }));
-}
-
-function createFirstPageImageUrlFromFiles(files) {
-  let bestPage = Infinity;
-  /** @type {File | null} */
-  let bestFile = null;
-  for (const f of files) {
-    const relPath = f.webkitRelativePath || f.name;
-    const parts = relPath.split("/");
-    if (parts.length < 2 || parts[parts.length - 2] !== "pages") continue;
-    const m = PAGE_IMAGE_RE.exec(f.name);
-    if (!m) continue;
-    const pageNum = Number(m[1]);
-    if (pageNum < bestPage) {
-      bestPage = pageNum;
-      bestFile = f;
-    }
-  }
-  return bestFile ? URL.createObjectURL(bestFile) : null;
-}
-
-async function createFirstPageImageUrlFromZip(source) {
-  const buffer = source instanceof File ? await source.arrayBuffer() : source;
-  const entries = await unzip(buffer, {
-    shouldExtract: (name) => /^pages\/\d+\.(png|jpe?g|webp)$/i.test(name),
-  });
-  let bestPage = Infinity;
-  /** @type {{ name: string, data: Uint8Array } | null} */
-  let bestEntry = null;
-  for (const e of entries) {
-    const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
-    if (!m) continue;
-    const pageNum = Number(m[1]);
-    if (pageNum < bestPage) {
-      bestPage = pageNum;
-      bestEntry = e;
-    }
-  }
-  if (!bestEntry) return null;
-  const ext = bestEntry.name.split(".").pop() ?? "png";
-  return createPageImageObjectUrl(bestEntry.data, ext);
-}
-
-async function resolveCatalogEntryThumbnail(entry) {
-  if (entry.thumbnailUrl) return entry.thumbnailUrl;
-  if (entry.kind === "markup") return null;
-  try {
-    if (entry.kind === "folder") {
-      entry.thumbnailUrl = createFirstPageImageUrlFromFiles(entry.source);
-    } else if (entry.kind === "archive") {
-      entry.thumbnailUrl = await createFirstPageImageUrlFromZip(entry.source);
-    }
-  } catch {
-    entry.thumbnailUrl = null;
-  }
-  return entry.thumbnailUrl;
-}
-
-function enrichCatalogEntryThumbnail(entry) {
-  resolveCatalogEntryThumbnail(entry).then((url) => {
-    if (!fileCatalog.includes(entry)) {
-      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
-      return;
-    }
-    if (url) renderFileView();
-  });
-}
-
-function revokeCatalogEntry(entry) {
-  if (entry?.thumbnailUrl?.startsWith("blob:")) {
-    URL.revokeObjectURL(entry.thumbnailUrl);
-  }
-  if (entry) entry.thumbnailUrl = null;
-}
-
-function createFileViewThumbnail(entry) {
-  const thumb = document.createElement("span");
-  thumb.className = "file-view-thumb";
-  thumb.setAttribute("aria-hidden", "true");
-  if (entry.thumbnailUrl) {
-    const img = document.createElement("img");
-    img.src = entry.thumbnailUrl;
-    img.alt = "";
-    thumb.appendChild(img);
-  } else {
-    const placeholder = document.createElement("span");
-    placeholder.className = "file-view-thumb-placeholder";
-    placeholder.innerHTML = FILE_THUMB_PLACEHOLDER_SVG;
-    thumb.appendChild(placeholder);
-  }
-  return thumb;
-}
-
-async function addFilesToCatalog(files, { replace = false } = {}) {
-  if (replace) {
-    clearFileCatalog();
-    filePaneUserToggled = false;
-  }
-  const startIndex = fileCatalog.length;
-  for (const file of files) {
-    const entry = createFileCatalogEntry(file);
-    fileCatalog.push(entry);
-    enrichCatalogEntryThumbnail(entry);
-  }
-  if (!fileCatalog.length) return;
-  await switchToFile(replace ? 0 : startIndex);
-}
-
-async function appendFolderArchive(files) {
-  if (!files.some((f) => f.name === "document.xml")) {
-    alert("Archive must contain document.xml at its root.");
-    return;
-  }
-  const rootName = (files[0].webkitRelativePath || files[0].name).split("/")[0] || "archive";
-  const entry = {
-    id: crypto.randomUUID(),
-    label: rootName,
-    kind: "folder",
-    source: files,
-    currentPage: 1,
-    pageZoom: PAGE_ZOOM_DEFAULT,
-    snapshot: null,
-    thumbnailUrl: null,
-  };
-  fileCatalog.push(entry);
-  enrichCatalogEntryThumbnail(entry);
-  await switchToFile(fileCatalog.length - 1);
-}
-
-async function addArchiveBufferToCatalog(buffer, label, { replace = false } = {}) {
-  if (replace) {
-    clearFileCatalog();
-    filePaneUserToggled = false;
-  }
-  const entry = {
-    id: crypto.randomUUID(),
-    label,
-    kind: "archive",
-    source: buffer,
-    currentPage: 1,
-    pageZoom: PAGE_ZOOM_DEFAULT,
-    snapshot: null,
-    thumbnailUrl: null,
-  };
-  fileCatalog.push(entry);
-  enrichCatalogEntryThumbnail(entry);
-  await switchToFile(replace ? 0 : fileCatalog.length - 1);
-}
-
-async function extractArchiveFromFiles(files) {
-  const markupFile = files.find((f) => f.name === "document.xml");
-  if (!markupFile) throw new Error("Archive must contain document.xml at its root.");
-  const markupXml = await markupFile.text();
-  const pageImages = new Map();
-  const assetUrls = new Map();
-  for (const f of files) {
-    const relPath = f.webkitRelativePath || f.name;
-    const parts = relPath.split("/");
-    if (parts.length >= 2 && parts[parts.length - 2] === "pages") {
-      const m = PAGE_IMAGE_RE.exec(f.name);
-      if (m) pageImages.set(Number(m[1]), URL.createObjectURL(f));
-    }
-    const assetPath = archiveRelativeAssetPath(relPath);
-    if (assetPath) assetUrls.set(assetPath, URL.createObjectURL(f));
-  }
-  return { markupXml, pageImages, assetUrls };
-}
-
-async function parseCatalogEntry(entry) {
-  try {
-    if (entry.kind === "markup") {
-      const text = entry.source instanceof File
-        ? await entry.source.text()
-        : new TextDecoder().decode(entry.source);
-      return buildDocumentState(text, new Map(), entry.label, new Map(), { markupOnly: true });
-    }
-    if (entry.kind === "archive") {
-      const buffer = entry.source instanceof File
-        ? await entry.source.arrayBuffer()
-        : entry.source;
-      const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
-      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
-    }
-    if (entry.kind === "folder") {
-      const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
-      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
-    }
-  } catch (err) {
-    alert(`Failed to read ${entry.label}: ${err.message}`);
-  }
-  return null;
-}
-
-function persistActiveFileViewState() {
-  if (activeFileIndex < 0 || !state) return;
-  const entry = fileCatalog[activeFileIndex];
-  entry.currentPage = state.currentPage;
-  entry.pageZoom = pageZoomPercent;
-}
-
-function releaseActiveDocument() {
-  if (activeFileIndex >= 0) {
-    const entry = fileCatalog[activeFileIndex];
-    if (entry?.snapshot) {
-      revokeDocumentState(entry.snapshot);
-      entry.snapshot = null;
-    }
-  }
-  if (state) revokeDocumentState(state);
-  state = null;
-  selectedElementId = null;
-  pagePanDrag = null;
-  pagePanSuppressClick = false;
-}
-
-function clearFileCatalog() {
-  releaseActiveDocument();
-  for (const entry of fileCatalog) revokeCatalogEntry(entry);
-  fileCatalog = [];
-  activeFileIndex = -1;
-}
-
-async function switchToFile(index) {
-  if (index < 0 || index >= fileCatalog.length) return;
-
-  persistActiveFileViewState();
-  releaseActiveDocument();
-
-  activeFileIndex = index;
-  const entry = fileCatalog[index];
-  const docState = await parseCatalogEntry(entry);
-  if (!docState) {
-    revokeCatalogEntry(entry);
-    fileCatalog.splice(index, 1);
-    activeFileIndex = -1;
-    if (fileCatalog.length) {
-      await switchToFile(Math.min(index, fileCatalog.length - 1));
-    } else {
-      resetViewer();
-    }
-    return;
-  }
-
-  entry.snapshot = docState;
-  docState.currentPage = entry.currentPage ?? 1;
-  activateDocument(docState, entry);
-}
-
-function defaultFilePaneVisible() {
-  return fileCatalog.length > 1;
-}
-
-function syncFilePaneDefault() {
-  if (!filePaneUserToggled) {
-    const wasVisible = userPaneVisible.file;
-    const shouldBeVisible = defaultFilePaneVisible();
-    userPaneVisible.file = shouldBeVisible;
-    if (!wasVisible && shouldBeVisible) {
-      paneRatios = [...DEFAULT_PANE_RATIOS];
-      normalizePaneRatios();
-      filePaneWidthPx = null;
-    }
-  }
-}
-
-async function closeCatalogFile(index) {
-  if (index < 0 || index >= fileCatalog.length) return;
-
-  const wasActive = index === activeFileIndex;
-  const entry = fileCatalog[index];
-
-  if (wasActive) {
-    releaseActiveDocument();
-    activeFileIndex = -1;
-  }
-
-  revokeCatalogEntry(entry);
-  fileCatalog.splice(index, 1);
-
-  if (!fileCatalog.length) {
-    resetViewer();
-    return;
-  }
-
-  if (wasActive) {
-    await switchToFile(Math.min(index, fileCatalog.length - 1));
-    return;
-  }
-
-  if (index < activeFileIndex) {
-    activeFileIndex -= 1;
-  }
-  updateFileView();
-}
-
-function renderFileView() {
-  if (!els.filePane) return;
-  els.filePane.replaceChildren();
-  if (!fileCatalog.length) return;
-
-  const list = document.createElement("ul");
-  list.className = "file-view-list";
-  list.setAttribute("role", "listbox");
-  list.setAttribute("aria-label", "Open files");
-
-  fileCatalog.forEach((entry, index) => {
-    const item = document.createElement("li");
-    const card = document.createElement("div");
-    card.className = "file-view-item";
-    card.title = entry.label;
-    card.tabIndex = 0;
-    card.setAttribute("role", "option");
-    if (index === activeFileIndex) {
-      card.classList.add("is-active");
-      card.setAttribute("aria-selected", "true");
-    } else {
-      card.setAttribute("aria-selected", "false");
-    }
-
-    const thumbWrap = document.createElement("div");
-    thumbWrap.className = "file-view-thumb-wrap";
-
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "file-view-close";
-    closeBtn.setAttribute("aria-label", `Close ${entry.label}`);
-    closeBtn.textContent = "×";
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closeCatalogFile(index);
-    });
-
-    thumbWrap.append(createFileViewThumbnail(entry), closeBtn);
-
-    const label = document.createElement("span");
-    label.className = "file-view-label";
-    label.textContent = entry.label;
-
-    card.append(thumbWrap, label);
-    card.addEventListener("click", (e) => {
-      if (e.target.closest(".file-view-close")) return;
-      switchToFile(index);
-    });
-    card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        switchToFile(index);
-      }
-    });
-
-    item.appendChild(card);
-    list.appendChild(item);
-  });
-
-  els.filePane.appendChild(list);
-}
-
-function updateFileView() {
-  syncFilePaneDefault();
-  syncFilePaneCloseAllButton();
-  renderFileView();
-  syncToolbarPaneCheckboxes();
-  applyPaneLayout();
-}
-
-function syncFilePaneCloseAllButton() {
-  if (!els.filePaneCloseAll) return;
-  els.filePaneCloseAll.hidden = fileCatalog.length === 0;
-}
-
-function initFilePaneCloseAll() {
-  els.filePaneCloseAll?.addEventListener("click", () => {
-    if (!fileCatalog.length) return;
-    const count = fileCatalog.length;
-    const message = count === 1
-      ? `Remove "${fileCatalog[0].label}" from the viewer?`
-      : `Remove all ${count} open files from the viewer?`;
-    if (confirm(message)) resetViewer();
-  });
-}
-
-function initPageWheelNav() {
-  if (!els.pagePane) return;
-
-  let pixelAccum = 0;
-  let pixelGestureUntil = 0;
-  let lastFlipAt = 0;
-
-  function wheelDir(e) {
-    if (e.deltaMode === 1) {
-      return e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0;
-    }
-    if (e.deltaMode === 2) {
-      return Math.sign(e.deltaY);
-    }
-    const now = performance.now();
-    if (now > pixelGestureUntil) pixelAccum = 0;
-    pixelGestureUntil = now + PAGE_WHEEL_GESTURE_MS;
-    pixelAccum += e.deltaY;
-    if (Math.abs(pixelAccum) >= PAGE_WHEEL_PIXEL_THRESHOLD) {
-      const dir = pixelAccum > 0 ? 1 : -1;
-      pixelAccum = 0;
-      return dir;
-    }
-    return 0;
-  }
-
-  function tryFlipPage(dir) {
-    if (!dir || !state) return false;
-    const now = performance.now();
-    if (now - lastFlipAt < PAGE_WHEEL_COOLDOWN_MS) return false;
-    const before = state.currentPage;
-    goToPage(state.currentPage + dir);
-    if (state.currentPage !== before) {
-      lastFlipAt = now;
-      return true;
-    }
-    return false;
-  }
-
-  function isScrollAtTop(pane) {
-    return pane.scrollTop <= 0;
-  }
-
-  function isScrollAtBottom(pane) {
-    return pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
-  }
-
-  function onScrollPaneWheel(e, pane) {
-    if (!state || state.markupOnly || state.pageCount <= 1) return;
-    const dir = wheelDir(e);
-    if (!dir) return;
-
-    const atTop = isScrollAtTop(pane);
-    const atBottom = isScrollAtBottom(pane);
-    const wantPrev = dir < 0 && atTop;
-    const wantNext = dir > 0 && atBottom;
-    if (!wantPrev && !wantNext) return;
-
-    e.preventDefault();
-    if (!tryFlipPage(dir)) return;
-
-    requestAnimationFrame(() => {
-      pane.scrollTop = dir > 0 ? 0 : pane.scrollHeight;
-    });
-  }
-
-  els.pagePane.addEventListener(
-    "wheel",
-    (e) => {
-      if (!state?.hasPageView) return;
-      const pane = pageViewScrollPane();
-      if (!pane) return;
-      const scrollable = pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
-      if (scrollable) {
-        onScrollPaneWheel(e, pane);
-        return;
-      }
-      e.preventDefault();
-      const dir = wheelDir(e);
-      if (dir) tryFlipPage(dir);
-    },
-    { passive: false },
-  );
-
-  for (const pane of [els.markupPane, els.renderedPane]) {
-    if (!pane) continue;
-    pane.addEventListener("wheel", (e) => onScrollPaneWheel(e, pane), { passive: false });
-  }
-
-  els.pagePane.tabIndex = 0;
-  els.pagePane.setAttribute("role", "region");
-  els.pagePane.setAttribute("aria-label", "Original page");
-
-  els.pagePane.addEventListener("pointerdown", (e) => {
-    if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
-  });
-
-  els.pagePane.addEventListener("keydown", (e) => {
-    if (!state?.hasPageView) return;
-
-    let dir = 0;
-    switch (e.key) {
-      case "ArrowDown":
-      case "PageDown":
-      case "ArrowRight":
-        dir = 1;
-        break;
-      case "ArrowUp":
-      case "PageUp":
-      case "ArrowLeft":
-        dir = -1;
-        break;
-      default:
-        return;
-    }
-
-    e.preventDefault();
-    tryFlipPage(dir);
-  });
-}
-
-function pageViewScrollPane() {
-  if (!els.pagePane) return null;
-  return els.pagePane.querySelector(".page-view-port") ?? els.pagePane;
-}
-
-function isPagePaneScrollable() {
-  const pane = pageViewScrollPane();
-  if (!pane) return false;
-  return pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
-}
-
-function canStartPagePan(event) {
-  if (!(event.target instanceof Element)) return false;
-  if (!event.target.closest(".page-view")) return false;
-  return isPagePaneScrollable();
-}
-
-function updatePagePanePanCursor() {
-  if (!els.pagePane) return;
-  els.pagePane.classList.toggle("can-pan", isPagePaneScrollable() && !pagePanDrag);
-}
-
-function initPageViewControls() {
-  if (!els.pagePane) return;
-
-  els.pageZoom?.addEventListener("input", () => {
-    pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, Number(els.pageZoom.value));
-    if (Number(els.pageZoom.value) < PAGE_ZOOM_DEFAULT) {
-      els.pageZoom.value = String(pageZoomPercent);
-    }
-    els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
-    updatePageZoomResetButton();
-    refreshPageViewLayout();
-  });
-
-  els.pageZoomReset?.addEventListener("click", () => {
-    if (pageZoomPercent === PAGE_ZOOM_DEFAULT) return;
-    resetPageZoom();
-  });
-
-  els.pagePane.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || !canStartPagePan(e)) return;
-    const scrollPane = pageViewScrollPane();
-    if (!scrollPane) return;
-    pagePanDrag = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      scrollLeft: scrollPane.scrollLeft,
-      scrollTop: scrollPane.scrollTop,
-      moved: false,
-    };
-  });
-
-  els.pagePane.addEventListener("pointermove", (e) => {
-    if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
-    const dx = e.clientX - pagePanDrag.startX;
-    const dy = e.clientY - pagePanDrag.startY;
-    if (!pagePanDrag.moved && Math.hypot(dx, dy) >= PAGE_PAN_DRAG_THRESHOLD) {
-      pagePanDrag.moved = true;
-      els.pagePane.classList.add("is-panning");
-      els.pagePane.classList.remove("can-pan");
-      els.pagePane.setPointerCapture(e.pointerId);
-    }
-    if (!pagePanDrag.moved) return;
-    const scrollPane = pageViewScrollPane();
-    if (!scrollPane) return;
-    scrollPane.scrollLeft = pagePanDrag.scrollLeft + pagePanDrag.startX - e.clientX;
-    scrollPane.scrollTop = pagePanDrag.scrollTop + pagePanDrag.startY - e.clientY;
-    e.preventDefault();
-  });
-
-  function endPagePan(e) {
-    if (!pagePanDrag || e.pointerId !== pagePanDrag.pointerId) return;
-    if (pagePanDrag.moved) pagePanSuppressClick = true;
-    pagePanDrag = null;
-    els.pagePane.classList.remove("is-panning");
-    if (els.pagePane.hasPointerCapture(e.pointerId)) {
-      els.pagePane.releasePointerCapture(e.pointerId);
-    }
-    updatePagePanePanCursor();
-  }
-
-  els.pagePane.addEventListener("pointerup", endPagePan);
-  els.pagePane.addEventListener("pointercancel", endPagePan);
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function headTextPreview(el, maxLen = 72) {
-  const text = el.textContent?.replace(/\s+/g, " ").trim() ?? "";
-  if (!text) return "—";
-  return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
-}
-
-function virtualTextHeadLocations(el) {
-  const parent = el.parentElement;
-  if (!parent) return [];
-  const nodes = [...parent.childNodes];
-  const idx = nodes.indexOf(el);
-  if (idx < 0) return [];
-  return parseElementHeadAt(nodes, idx + 1)?.locs ?? [];
-}
-
-function elementHeadLocations(el) {
-  const own = headLocations(el);
-  return own.length === 4 ? own : virtualTextHeadLocations(el);
-}
-
-function firstHeadChild(el, tag) {
-  return childElements(el).find((child) => localName(child) === tag) ?? null;
-}
-
-const ELEMENT_LAYERS = new Set(["body", "background", "furniture"]);
-
-function layerFromHeadNodes(nodes, startIdx) {
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (tag === "layer") {
-      const value = node.getAttribute("value") ?? "body";
-      return ELEMENT_LAYERS.has(value) ? value : "body";
-    }
-    if (tag === "location") break;
-    if (HEAD_TAGS.has(tag)) {
-      i += 1;
-      continue;
-    }
-    break;
-  }
-  return "body";
-}
-
-function elementLayer(el) {
-  const layerEl = firstHeadChild(el, "layer");
-  if (layerEl) {
-    const value = layerEl.getAttribute("value") ?? "body";
-    return ELEMENT_LAYERS.has(value) ? value : "body";
-  }
-  if (headLocations(el).length === 4) return "body";
-  const parent = el.parentElement;
-  if (!parent) return "body";
-  const nodes = [...parent.childNodes];
-  const idx = nodes.indexOf(el);
-  if (idx < 0) return "body";
-  return layerFromHeadNodes(nodes, idx + 1);
-}
-
-function layerClassForValue(layer) {
-  if (layer === "furniture") return "layer-furniture";
-  if (layer === "background") return "layer-background";
-  return "";
-}
-
-function applyElementLayerAttr(sourceEl, domEl) {
-  domEl.setAttribute("data-doclang-layer", elementLayer(sourceEl));
-}
-
-function syncReadingLayerCheckboxes() {
-  if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
-  if (els.showReadingBackground) els.showReadingBackground.checked = showReadingBackground;
-}
-
-/** @returns {{ key: string, value: string, isDefault: boolean }[]} */
-function collectElementHeadInfo(el, defaultResolution) {
-  const labelEl = firstHeadChild(el, "label");
-  const threadEl = firstHeadChild(el, "thread");
-  const xrefEl = firstHeadChild(el, "xref");
-  const hrefEl = firstHeadChild(el, "href");
-  const layerEl = firstHeadChild(el, "layer");
-  const captionEl = firstHeadChild(el, "caption");
-  const descriptionEl = firstHeadChild(el, "description");
-  const summaryEl = firstHeadChild(el, "summary");
-  const customEl = firstHeadChild(el, "custom");
-  const locs = elementHeadLocations(el);
-  const rows = [{ key: "element", value: elementLabel(el), isDefault: false }];
-
-  rows.push({
-    key: "label",
-    value: labelEl?.getAttribute("value") ?? "undefined",
-    isDefault: !labelEl?.hasAttribute("value"),
-  });
-
-  if (threadEl) {
-    rows.push({
-      key: "thread_id",
-      value: threadEl.getAttribute("thread_id") ?? "—",
-      isDefault: false,
-    });
-  } else {
-    rows.push({ key: "thread", value: "—", isDefault: true });
-  }
-
-  if (xrefEl) {
-    rows.push({
-      key: "xref",
-      value: `thread_id ${xrefEl.getAttribute("thread_id") ?? "—"}`,
-      isDefault: false,
-    });
-  } else {
-    rows.push({ key: "xref", value: "—", isDefault: true });
-  }
-
-  if (hrefEl) {
-    rows.push({
-      key: "href",
-      value: hrefEl.getAttribute("uri") ?? "—",
-      isDefault: false,
-    });
-  } else {
-    rows.push({ key: "href", value: "—", isDefault: true });
-  }
-
-  rows.push({
-    key: "layer",
-    value: layerEl?.getAttribute("value") ?? "body",
-    isDefault: !layerEl?.hasAttribute("value"),
-  });
-
-  const cornerLabels = ["x_min", "y_min", "x_max", "y_max"];
-  if (locs.length === 4) {
-    for (let idx = 0; idx < 4; idx += 1) {
-      const loc = locs[idx];
-      const axisDefault = idx % 2 === 0 ? defaultResolution.width : defaultResolution.height;
-      const resolution = locationResolution(loc, axisDefault);
-      const value = loc.getAttribute("value") ?? "0";
-      rows.push({
-        key: cornerLabels[idx],
-        value: `${value} @ ${resolution}`,
-        isDefault: false,
-      });
-    }
-  } else {
-    for (const key of cornerLabels) {
-      rows.push({ key, value: "—", isDefault: false });
-    }
-  }
-
-  rows.push({
-    key: "caption",
-    value: captionEl ? headTextPreview(captionEl) : "—",
-    isDefault: !captionEl,
-  });
-  rows.push({
-    key: "description",
-    value: descriptionEl ? headTextPreview(descriptionEl) : "—",
-    isDefault: !descriptionEl,
-  });
-  rows.push({
-    key: "summary",
-    value: summaryEl ? headTextPreview(summaryEl) : "—",
-    isDefault: !summaryEl,
-  });
-  rows.push({
-    key: "custom",
-    value: customEl ? headTextPreview(customEl) : "—",
-    isDefault: !customEl,
-  });
-
-  return rows;
-}
-
-function elementHeadTooltipHtml(el, defaultResolution) {
-  const rows = collectElementHeadInfo(el, defaultResolution);
-  const body = rows
-    .map(({ key, value, isDefault }) => {
-      const rendered = escapeHtml(value);
-      const suffix = isDefault ? ' <span class="head-default">(default)</span>' : "";
-      return `<tr><th scope="row">${escapeHtml(key)}</th><td>${rendered}${suffix}</td></tr>`;
-    })
-    .join("");
-  return `<table class="head-tooltip"><tbody>${body}</tbody></table>`;
-}
-
-const cursorHintEl = document.getElementById("cursor-hint");
-const CURSOR_HINT_OFFSET = 10;
-const CURSOR_HINT_MARGIN = 8;
-
-function hideCursorHint() {
-  cursorHintEl.hidden = true;
-  cursorHintEl.classList.remove("cursor-hint-detail");
-  cursorHintEl.replaceChildren();
-}
-
-function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
-  cursorHintEl.replaceChildren();
-  if (typeof content === "string") {
-    cursorHintEl.textContent = content;
-  } else {
-    cursorHintEl.appendChild(content);
-  }
-  cursorHintEl.classList.toggle("cursor-hint-detail", detail);
-  cursorHintEl.hidden = false;
-
-  let left = clientX + CURSOR_HINT_OFFSET;
-  let top = clientY + CURSOR_HINT_OFFSET;
-  const rect = cursorHintEl.getBoundingClientRect();
-  if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) {
-    left = clientX - rect.width - CURSOR_HINT_OFFSET;
-  }
-  if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) {
-    top = clientY - rect.height - CURSOR_HINT_OFFSET;
-  }
-  cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
-  cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
-}
-
-function showCursorHintHtml(html, clientX, clientY) {
-  cursorHintEl.innerHTML = html;
-  cursorHintEl.classList.add("cursor-hint-detail");
-  cursorHintEl.hidden = false;
-
-  let left = clientX + CURSOR_HINT_OFFSET;
-  let top = clientY + CURSOR_HINT_OFFSET;
-  const rect = cursorHintEl.getBoundingClientRect();
-  if (left + rect.width > window.innerWidth - CURSOR_HINT_MARGIN) {
-    left = clientX - rect.width - CURSOR_HINT_OFFSET;
-  }
-  if (top + rect.height > window.innerHeight - CURSOR_HINT_MARGIN) {
-    top = clientY - rect.height - CURSOR_HINT_OFFSET;
-  }
-  cursorHintEl.style.left = `${Math.max(CURSOR_HINT_MARGIN, left)}px`;
-  cursorHintEl.style.top = `${Math.max(CURSOR_HINT_MARGIN, top)}px`;
-}
-
-function initFileTypeHints() {
-  if (!els.emptyStateFileTypes) return;
-  const markup = SUPPORTED_FILE_EXTENSIONS.map((ext) => `<code>${ext}</code>`).join(", ");
-  els.emptyStateFileTypes.innerHTML = markup;
-}
-
-function initCursorHints() {
-  els.markupPane?.addEventListener("mousemove", (e) => {
-    if (!e.target.closest(".markup-ghost-tag-part")) {
-      hideCursorHint();
-      return;
-    }
-    showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
-  });
-  els.markupPane?.addEventListener("mouseleave", hideCursorHint);
-
-  els.openFileBtn?.addEventListener("mousemove", (e) => {
-    showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY);
-  });
-  els.openFileBtn?.addEventListener("mouseleave", hideCursorHint);
-}
-
-function initBboxHints() {
-  if (!els.pagePane) return;
-
-  els.pagePane.addEventListener("mousemove", (e) => {
-    if (pagePanDrag?.moved || els.pagePane.classList.contains("is-panning")) {
-      hideCursorHint();
-      return;
-    }
-    const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
-    if (navBtn) {
-      const hint = navBtn.getAttribute("data-nav") === "prev"
-        ? FRAGMENT_NAV_HINT_PREV
-        : FRAGMENT_NAV_HINT_NEXT;
-      showCursorHint(hint, e.clientX, e.clientY);
-      return;
-    }
-    const badge = e.target.closest(".element-badge[data-element-id]");
-    if (!badge || !state?.idToElement) {
-      hideCursorHint();
-      return;
-    }
-    const elementId = badge.getAttribute("data-element-id");
-    const xmlEl = state.idToElement.get(elementId);
-    if (!xmlEl) {
-      hideCursorHint();
-      return;
-    }
-    showCursorHintHtml(elementHeadTooltipHtml(xmlEl, state.defaultResolution), e.clientX, e.clientY);
-  });
-  els.pagePane.addEventListener("mouseleave", hideCursorHint);
-}
-
-function initDragDrop() {
-  document.body.addEventListener("dragenter", (e) => {
-    if (!hasArchiveTransfer(e.dataTransfer)) return;
-    e.preventDefault();
-    document.body.classList.add("drag-over");
-  });
-
-  document.body.addEventListener("dragover", (e) => {
-    if (!hasArchiveTransfer(e.dataTransfer)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  });
-
-  document.body.addEventListener("dragleave", (e) => {
-    if (!hasArchiveTransfer(e.dataTransfer)) return;
-    if (e.relatedTarget && document.body.contains(e.relatedTarget)) return;
-    document.body.classList.remove("drag-over");
-  });
-
-  document.body.addEventListener("drop", async (e) => {
-    if (!hasArchiveTransfer(e.dataTransfer)) return;
-    e.preventDefault();
-    document.body.classList.remove("drag-over");
-    await loadFromDrop(e.dataTransfer);
-  });
-}
-
-function hasArchiveTransfer(dataTransfer) {
-  return [...dataTransfer.types].includes("Files");
-}
-
-function isArchiveFile(file) {
-  return /\.dclx$/i.test(file.name) || /\.zip$/i.test(file.name);
-}
-
-function isMarkupFile(file) {
-  return /\.(?:dclg(?:\.xml)?|xml)$/i.test(file.name);
-}
-
-async function loadFromDrop(dataTransfer) {
-  const files = [...dataTransfer.files];
-  if (files.some((f) => f.name === "document.xml")) {
-    await appendFolderArchive(files);
-    return;
-  }
-  const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
-  if (supported.length) await addFilesToCatalog(supported, { replace: false });
-}
-
-function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnly }) {
-  const doc = new DOMParser().parseFromString(markupXml, "application/xml");
-  const parseError = doc.querySelector("parsererror");
-  if (parseError) {
-    alert(`Invalid XML in ${label}`);
-    return null;
-  }
-  const root = doc.documentElement;
-  if (localName(root) !== "doclang") {
-    alert(`${label}: root element must be <doclang>`);
-    return null;
-  }
-
-  const head = childElements(root).find((el) => localName(el) === "head") ?? null;
-  const defaultResolution = readDefaultResolution(head);
-  const segments = markupOnly
-    ? [childElements(root).filter((el) => localName(el) !== "head")]
-    : splitIntoSegments(root);
-  const hasPageView = !markupOnly && pageImages.size > 0;
-  const maxImagePage = hasPageView ? Math.max(...pageImages.keys()) : 0;
-  const pageCount = markupOnly ? 1 : Math.max(segments.length, maxImagePage, 1);
-  const readingOrder = computeReadingOrder(root);
-  const elementPageByEl = buildElementPageMap(segments);
-
-  return {
-    pageImages,
-    assetUrls,
-    currentPage: 1,
-    pageCount,
-    segments,
-    defaultResolution,
-    hasPageView,
-    markupOnly,
-    docRoot: root,
-    threadPagesById: buildThreadPagesById(root, elementPageByEl),
-    elementPageByEl,
-    threadNavByElement: buildThreadNavByElement(root),
-    pendingSelectElement: null,
-    readingOrder,
-    readingOrderDisplayNumbers: computeReadingOrderDisplayNumbers(readingOrder),
-    pageViewOverlay: null,
-  };
-}
-
-function activateDocument(docState, entry) {
-  state = docState;
-  resetPageLayoutCache();
-  closeAllSettings();
-
-  pageZoomPercent = entry.pageZoom ?? PAGE_ZOOM_DEFAULT;
-  if (els.pageZoom) {
-    els.pageZoom.value = String(pageZoomPercent);
-    els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
-  }
-  updatePageZoomResetButton();
-  const port = pageViewScrollPane();
-  if (port) {
-    port.scrollLeft = 0;
-    port.scrollTop = 0;
-  }
-
-  setDocLabel(entry.label);
-  setDocumentOpen(true, { markupOnly: state.markupOnly });
-  setPageViewVisible(state.hasPageView);
-  renderPage(state.currentPage);
-  updateFileView();
-}
-
-function setDocLabel(label) {
-  if (!els.docLabel) return;
-  if (label) {
-    els.docLabel.textContent = label;
-    els.docLabel.hidden = false;
-  } else {
-    els.docLabel.textContent = "";
-    els.docLabel.hidden = true;
-  }
-}
-
-function setDocumentOpen(open, { markupOnly = false } = {}) {
-  document.body.classList.toggle("viewer-loaded", open);
-  document.body.classList.toggle("markup-only", open && markupOnly);
-  if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
-  syncToolbarPaneCheckboxes();
-  applyPaneLayout();
-}
-
-function applyReadingLayerClasses(root) {
-  root.classList.toggle("show-reading-furniture", showReadingFurniture);
-  root.classList.toggle("show-reading-background", showReadingBackground);
-}
-
-function syncReadingLayerVisibility() {
-  const root = els.renderedPane?.querySelector(".rendered-doc");
-  if (root) applyReadingLayerClasses(root);
-}
-
-function closeAllSettings() {
-  setPageSettingsOpen(false);
-  setReadingSettingsOpen(false);
-}
-
-function resetPageZoom() {
-  pageZoomPercent = PAGE_ZOOM_DEFAULT;
-  if (els.pageZoom) {
-    els.pageZoom.value = String(PAGE_ZOOM_DEFAULT);
-    els.pageZoom.setAttribute("aria-valuenow", String(PAGE_ZOOM_DEFAULT));
-  }
-  updatePageZoomResetButton();
-  const port = pageViewScrollPane();
-  if (port) {
-    port.scrollLeft = 0;
-    port.scrollTop = 0;
-  }
-  refreshPageViewLayout();
-}
-
-function updatePageZoomResetButton() {
-  if (!els.pageZoomReset) return;
-  els.pageZoomReset.textContent = `${pageZoomPercent}%`;
-  els.pageZoomReset.disabled = pageZoomPercent === PAGE_ZOOM_DEFAULT;
-}
-
-function resetViewer() {
-  setDemoLoading(false);
-  clearFileCatalog();
-  filePaneUserToggled = false;
-  selectedElementId = null;
-  pagePanDrag = null;
-  pagePanSuppressClick = false;
-  showReadingFurniture = true;
-  showReadingBackground = true;
-  syncReadingLayerCheckboxes();
-  resetPageZoom();
-  setDocLabel(null);
-  setDocumentOpen(false);
-  document.body.classList.remove("has-page-view");
-  closeAllSettings();
-  setToolbarOptionsOpen(false);
-  if (els.markupPane) els.markupPane.innerHTML = "";
-  if (els.renderedPane) els.renderedPane.innerHTML = "";
-  if (els.pagePane) els.pagePane.innerHTML = "";
-  setPageIndicator(1, 1);
-  if (els.btnPrev) els.btnPrev.disabled = true;
-  if (els.btnNext) els.btnNext.disabled = true;
-  if (els.filePane) els.filePane.replaceChildren();
-  updateFileView();
-  applyPaneLayout();
-}
-
-function setPageViewVisible(visible) {
-  document.body.classList.toggle("has-page-view", visible);
-  syncPagePaneControls();
-  syncToolbarPaneCheckboxes();
-  if (!visible) setPageSettingsOpen(false);
-  applyPaneLayout();
-  syncLayoutSubtoggles();
-}
-
-function syncPagePaneControls() {
-  const pageVisible = isPaneVisible("page");
-  if (els.settingsToggle) els.settingsToggle.hidden = !pageVisible;
-  if (els.pageZoomLabel) els.pageZoomLabel.hidden = !pageVisible;
-  if (pageVisible) updatePageZoomResetButton();
-  if (els.pagePane) els.pagePane.tabIndex = pageVisible ? 0 : -1;
-}
-
-function setPageSettingsOpen(open) {
-  pageSettingsOpen = open;
-  if (els.pageSettingsLayer) els.pageSettingsLayer.hidden = !open;
-  if (els.settingsToggle) els.settingsToggle.setAttribute("aria-expanded", String(open));
-}
-
-function setReadingSettingsOpen(open) {
-  readingSettingsOpen = open;
-  if (els.readingSettingsLayer) els.readingSettingsLayer.hidden = !open;
-  if (els.readingSettingsToggle) els.readingSettingsToggle.setAttribute("aria-expanded", String(open));
-}
-
-function syncLayoutSubtoggles() {
-  const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
-  for (const label of [
-    els.showLayoutBadgesLabel,
-    els.showPictureContentsLabel,
-    els.showTableContentsLabel,
-    els.showFragmentLinksLabel,
-    els.showCaptionLinksLabel,
-    els.showXrefLinksLabel,
-    els.showReadingOrderLabel,
-  ]) {
-    if (!label) continue;
-    label.classList.toggle("settings-option-disabled", !layoutEnabled);
-    const input = label.querySelector("input");
-    if (input) input.disabled = !layoutEnabled;
-  }
-
-  const readingOrderEnabled = layoutEnabled && showReadingOrder;
-  for (const label of [els.readingOrderArrowsLabel, els.readingOrderGlobalLabel]) {
-    if (!label) continue;
-    label.classList.toggle("settings-option-disabled", !readingOrderEnabled);
-    const input = label.querySelector("input");
-    if (input) input.disabled = !readingOrderEnabled;
-  }
-}
-
-function paneDef(key) {
-  const defs = {
-    file: { key: "file", el: els.paneFile, canShow: () => fileCatalog.length > 0 },
-    page: { key: "page", el: els.panePageView, canShow: () => Boolean(state?.hasPageView) },
-    markup: { key: "markup", el: els.paneMarkup, canShow: () => Boolean(state) },
-    reading: { key: "reading", el: els.paneReading, canShow: () => Boolean(state) },
-  };
-  return defs[key];
-}
-
-function isPaneAvailable(key) {
-  const def = paneDef(key);
-  return def?.canShow() ?? false;
-}
-
-function isPaneVisible(key) {
-  if (!isPaneAvailable(key)) return false;
-  return Boolean(userPaneVisible[key]);
-}
-
-function visiblePaneKeys() {
-  return PANE_KEYS.filter((key) => isPaneVisible(key));
-}
-
-function paneMinRatio(key) {
-  return PANE_MIN_RATIO;
-}
-
-function filePaneFitWidthPx() {
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:absolute;visibility:hidden;width:var(--file-pane-fit-width);";
-  document.documentElement.appendChild(probe);
-  const px = probe.getBoundingClientRect().width;
-  probe.remove();
-  return Math.ceil(px) || 108;
-}
-
-function resolvedFilePaneWidthPx() {
-  const fit = filePaneFitWidthPx();
-  return Math.max(fit, filePaneWidthPx ?? fit);
-}
-
-function contentPaneFrWeights(keys) {
-  const contentKeys = keys.filter((key) => key !== "file");
-  const weights = contentKeys.map((key) => paneRatios[paneRatioIndex(key)]);
-  const sum = weights.reduce((a, b) => a + b, 0) || contentKeys.length;
-  return weights.map((weight) => weight / sum);
-}
-
-function paneRatioIndex(key) {
-  return PANE_KEYS.indexOf(key);
-}
-
-function normalizePaneRatios() {
-  const sum = paneRatios.reduce((a, b) => a + b, 0);
-  if (sum <= 0) {
-    paneRatios = [...DEFAULT_PANE_RATIOS];
-    return;
-  }
-  paneRatios = paneRatios.map((r) => r / sum);
-}
-
-function visiblePaneRatios(keys) {
-  const weights = keys.map((key) => paneRatios[paneRatioIndex(key)]);
-  const sum = weights.reduce((a, b) => a + b, 0) || keys.length;
-  return weights.map((w) => w / sum);
-}
-
-function loadLayoutPrefs() {
-  try {
-    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    if (data?.visible && typeof data.visible === "object") {
-      for (const key of PANE_KEYS) {
-        if (typeof data.visible[key] === "boolean") userPaneVisible[key] = data.visible[key];
-      }
-      if (typeof data.visible.file === "boolean") filePaneUserToggled = true;
-    }
-    if (Array.isArray(data?.ratios)) {
-      const valid = data.ratios.every((n) => typeof n === "number" && n > 0);
-      if (valid && data.ratios.length === 4) {
-        paneRatios = [...data.ratios];
-        normalizePaneRatios();
-      } else if (valid && data.ratios.length === 3) {
-        paneRatios = [1, ...data.ratios];
-        normalizePaneRatios();
-      }
-    }
-    if (typeof data?.filePaneWidthPx === "number" && data.filePaneWidthPx > 0) {
-      filePaneWidthPx = data.filePaneWidthPx;
-    }
-  } catch {
-    /* ignore invalid stored layout */
-  }
-}
-
-function saveLayoutPrefs() {
-  try {
-    localStorage.setItem(
-      LAYOUT_STORAGE_KEY,
-      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx }),
-    );
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-function resetPaneLayout() {
-  filePaneUserToggled = false;
-  userPaneVisible = {
-    file: defaultFilePaneVisible(),
-    page: true,
-    markup: true,
-    reading: true,
-  };
-  paneRatios = [...DEFAULT_PANE_RATIOS];
-  normalizePaneRatios();
-  filePaneWidthPx = null;
-  setReadingSettingsOpen(false);
-  syncPagePaneControls();
-  syncToolbarPaneCheckboxes();
-  saveLayoutPrefs();
-  applyPaneLayout();
-}
-
-function isLayoutStacked() {
-  return Boolean(layoutStackQuery?.matches);
-}
-
-function initLayoutStackListener() {
-  if (!els.main) return;
-  layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
-  const onChange = () => applyPaneLayout();
-  layoutStackQuery.addEventListener("change", onChange);
-  onChange();
-}
-
-function setToolbarOptionsOpen(open) {
-  toolbarOptionsOpen = open;
-  if (els.toolbarOptionsPanel) els.toolbarOptionsPanel.hidden = !open;
-  if (els.toolbarOptionsBtn) els.toolbarOptionsBtn.setAttribute("aria-expanded", String(open));
-}
-
-function syncToolbarPaneCheckboxes() {
-  if (els.toggleFilePane) {
-    const available = isPaneAvailable("file");
-    els.toggleFilePane.checked = available && userPaneVisible.file;
-    els.toggleFilePane.disabled = !available;
-  }
-  if (els.toggleFilePaneLabel) {
-    els.toggleFilePaneLabel.classList.toggle("toolbar-options-item-disabled", !isPaneAvailable("file"));
-  }
-  if (els.togglePagePane) {
-    const available = isPaneAvailable("page");
-    els.togglePagePane.checked = available && userPaneVisible.page;
-    els.togglePagePane.disabled = !available;
-  }
-  if (els.togglePagePaneLabel) {
-    els.togglePagePaneLabel.classList.toggle("toolbar-options-item-disabled", !isPaneAvailable("page"));
-  }
-  if (els.toggleMarkupPane) {
-    els.toggleMarkupPane.checked = userPaneVisible.markup;
-    els.toggleMarkupPane.disabled = !state;
-  }
-  if (els.toggleReadingPane) {
-    els.toggleReadingPane.checked = userPaneVisible.reading;
-    els.toggleReadingPane.disabled = !state;
-  }
-  for (const label of [
-    els.toggleFilePaneLabel,
-    els.togglePagePaneLabel,
-    document.getElementById("toggle-markup-pane-label"),
-    document.getElementById("toggle-reading-pane-label"),
-  ]) {
-    if (!label) continue;
-    const input = label.querySelector("input");
-    label.classList.toggle("toolbar-options-item-disabled", Boolean(input?.disabled));
-  }
-  if (els.resetPaneLayoutBtn) els.resetPaneLayoutBtn.disabled = !state;
-}
-
-function paneKeysAdjacent(leftKey, rightKey) {
-  const leftIdx = PANE_KEYS.indexOf(leftKey);
-  const rightIdx = PANE_KEYS.indexOf(rightKey);
-  return leftIdx >= 0 && rightIdx === leftIdx + 1;
-}
-
-function onlyHiddenPanesBetween(leftKey, rightKey) {
-  const leftIdx = PANE_KEYS.indexOf(leftKey);
-  const rightIdx = PANE_KEYS.indexOf(rightKey);
-  if (leftIdx < 0 || rightIdx <= leftIdx) return false;
-  for (let i = leftIdx + 1; i < rightIdx; i++) {
-    if (isPaneVisible(PANE_KEYS[i])) return false;
-  }
-  return true;
-}
-
-function shouldShowSplitterBetween(leftKey, rightKey) {
-  if (!isPaneVisible(leftKey) || !isPaneVisible(rightKey)) return false;
-  if (paneKeysAdjacent(leftKey, rightKey)) return true;
-  return onlyHiddenPanesBetween(leftKey, rightKey);
-}
-
-function splitterForLayoutGap(leftKey, rightKey) {
-  if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
-  const leftIdx = PANE_KEYS.indexOf(leftKey);
-  if (leftIdx < 0) return null;
-  return els.splitters[leftIdx] ?? null;
-}
-
-function visiblePaneNeighborAfter(key) {
-  const idx = PANE_KEYS.indexOf(key);
-  if (idx < 0) return null;
-  for (let i = idx + 1; i < PANE_KEYS.length; i++) {
-    const neighbor = PANE_KEYS[i];
-    if (isPaneVisible(neighbor)) return neighbor;
-  }
-  return null;
-}
-
-function visiblePaneNeighborBefore(key) {
-  const idx = PANE_KEYS.indexOf(key);
-  if (idx < 0) return null;
-  for (let i = idx - 1; i >= 0; i--) {
-    const neighbor = PANE_KEYS[i];
-    if (isPaneVisible(neighbor)) return neighbor;
-  }
-  return null;
-}
-
-function resolvedPhysicalSplitterKeys(physicalSplitterIndex) {
-  const leftPhysical = PANE_KEYS[physicalSplitterIndex];
-  const rightPhysical = PANE_KEYS[physicalSplitterIndex + 1];
-  if (!leftPhysical || !rightPhysical) return null;
-
-  const leftKey = isPaneVisible(leftPhysical) ? leftPhysical : visiblePaneNeighborBefore(rightPhysical);
-  const rightKey = isPaneVisible(rightPhysical) ? rightPhysical : visiblePaneNeighborAfter(leftPhysical);
-  if (!leftKey || !rightKey || leftKey === rightKey) return null;
-  if (!shouldShowSplitterBetween(leftKey, rightKey)) return null;
-
-  const canonical = splitterForLayoutGap(leftKey, rightKey);
-  if (!canonical || canonical !== els.splitters[physicalSplitterIndex]) return null;
-  return { leftKey, rightKey };
-}
-
-function resetPaneGridStyles() {
-  for (const key of PANE_KEYS) {
-    const el = paneDef(key)?.el;
-    if (el) {
-      el.style.gridColumn = "";
-      el.style.gridRow = "";
-    }
-  }
-  for (const splitter of els.splitters) {
-    if (!splitter) continue;
-    splitter.style.gridColumn = "";
-    splitter.style.gridRow = "";
-    splitter.hidden = true;
-  }
-}
-
-function setUserPaneVisible(key, visible) {
-  userPaneVisible[key] = visible;
-  if (key === "file") filePaneUserToggled = true;
-  if (key === "page") syncPagePaneControls();
-  if (key === "reading" && !visible) setReadingSettingsOpen(false);
-  syncToolbarPaneCheckboxes();
-  saveLayoutPrefs();
-  applyPaneLayout();
-}
-
-function applyPaneLayout() {
-  if (!els.main) return;
-
-  const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
-  els.main.classList.toggle("layout-stacked", stacked);
-
-  for (const key of PANE_KEYS) {
-    const def = paneDef(key);
-    if (!def?.el) continue;
-    def.el.hidden = !isPaneVisible(key);
-    def.el.classList.remove("pane-layout-last");
-  }
-
-  if (!document.body.classList.contains("viewer-loaded")) {
-    resetPaneGridStyles();
-    els.main.style.gridTemplateColumns = "";
-    els.main.style.gridTemplateRows = "";
-    return;
-  }
-
-  let keys = visiblePaneKeys();
-  if (!keys.length) {
-    userPaneVisible.markup = true;
-    keys = visiblePaneKeys();
-  }
-
-  const lastKey = keys[keys.length - 1];
-  paneDef(lastKey)?.el?.classList.add("pane-layout-last");
-
-  resetPaneGridStyles();
-
-  if (stacked) {
-    els.main.style.gridTemplateRows = "";
-    els.main.style.gridTemplateColumns = "1fr";
-    let row = 1;
-    for (const key of keys) {
-      const def = paneDef(key);
-      if (!def?.el) continue;
-      def.el.style.gridRow = String(row++);
-    }
-    refreshPageViewLayout();
-    if (els.readingSettingsToggle) {
-      els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
-    }
-    return;
-  }
-
-  const contentFr = contentPaneFrWeights(keys);
-  const cols = [];
-  let contentFrIndex = 0;
-  keys.forEach((key, index) => {
-    if (key === "file") {
-      cols.push(`${resolvedFilePaneWidthPx()}px`);
-    } else {
-      cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
-    }
-    if (index < keys.length - 1 && shouldShowSplitterBetween(keys[index], keys[index + 1])) {
-      cols.push("1px");
-    }
-  });
-  els.main.style.gridTemplateColumns = cols.join(" ");
-  els.main.style.gridTemplateRows = "minmax(0, 1fr)";
-
-  let col = 1;
-  keys.forEach((key, index) => {
-    const def = paneDef(key);
-    if (!def?.el) return;
-    def.el.style.gridColumn = String(col);
-    col += 1;
-    if (index < keys.length - 1) {
-      const leftKey = keys[index];
-      const rightKey = keys[index + 1];
-      if (!shouldShowSplitterBetween(leftKey, rightKey)) return;
-      const splitter = splitterForLayoutGap(leftKey, rightKey);
-      if (splitter) {
-        splitter.hidden = false;
-        splitter.style.gridColumn = String(col);
-        col += 1;
-      }
-    }
-  });
-
-  refreshPageViewLayout();
-  if (els.readingSettingsToggle) {
-    els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
-  }
-}
-
-function initToolbarOptions() {
-  if (!els.toolbarOptionsBtn || !els.toolbarOptionsPanel) return;
-
-  els.toolbarOptionsBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    setToolbarOptionsOpen(!toolbarOptionsOpen);
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!toolbarOptionsOpen) return;
-    if (e.target instanceof Node && els.toolbarOptionsPanel.contains(e.target)) return;
-    if (e.target instanceof Node && els.toolbarOptionsBtn.contains(e.target)) return;
-    setToolbarOptionsOpen(false);
-  });
-
-  const onToggle = (key, input) => {
-    input?.addEventListener("change", () => {
-      if (!state) return;
-      const nextKeys = PANE_KEYS.filter((k) => (k === key ? input.checked : userPaneVisible[k] && isPaneAvailable(k)));
-      if (!nextKeys.length) {
-        input.checked = true;
-        return;
-      }
-      setUserPaneVisible(key, input.checked);
-    });
-  };
-
-  onToggle("file", els.toggleFilePane);
-  onToggle("page", els.togglePagePane);
-  onToggle("markup", els.toggleMarkupPane);
-  onToggle("reading", els.toggleReadingPane);
-  els.resetPaneLayoutBtn?.addEventListener("click", () => {
-    if (!state) return;
-    resetPaneLayout();
-  });
-  syncToolbarPaneCheckboxes();
-}
-
-function initPaneSplitters() {
-  for (const [index, splitter] of els.splitters.entries()) {
-    if (!splitter) continue;
-    splitter.addEventListener("pointerdown", (e) => startPaneDrag(e, index));
-  }
-  window.addEventListener("pointermove", onPaneDragMove);
-  window.addEventListener("pointerup", endPaneDrag);
-  window.addEventListener("pointercancel", endPaneDrag);
-}
-
-function startPaneDrag(e, physicalSplitterIndex) {
-  if (e.button !== 0 || isLayoutStacked() || !document.body.classList.contains("viewer-loaded")) return;
-
-  const resolved = resolvedPhysicalSplitterKeys(physicalSplitterIndex);
-  if (!resolved) return;
-
-  const { leftKey, rightKey } = resolved;
-
-  normalizePaneRatios();
-  const leftIndex = paneRatioIndex(leftKey);
-  const rightIndex = paneRatioIndex(rightKey);
-  const dragState = {
-    physicalSplitterIndex,
-    leftKey,
-    rightKey,
-    startX: e.clientX,
-    leftStart: paneRatios[leftIndex],
-    rightStart: paneRatios[rightIndex],
-    pointerId: e.pointerId,
-  };
-  if (leftKey === "file") {
-    dragState.leftStartPx = resolvedFilePaneWidthPx();
-  } else if (rightKey === "file") {
-    dragState.rightStartPx = resolvedFilePaneWidthPx();
-  }
-  paneDrag = dragState;
-
-  e.preventDefault();
-  e.currentTarget.setPointerCapture(e.pointerId);
-  e.currentTarget.classList.add("is-dragging");
-  document.body.classList.add("pane-drag-active");
-}
-
-function contentPaneAvailableWidthPx() {
-  if (!els.main) return 1;
-  const rect = els.main.getBoundingClientRect();
-  const keys = visiblePaneKeys();
-  let reserved = 0;
-  if (keys.includes("file")) reserved += resolvedFilePaneWidthPx();
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (shouldShowSplitterBetween(keys[i], keys[i + 1])) reserved += 1;
-  }
-  return Math.max(rect.width - reserved, 1);
-}
-
-function onPaneDragMove(e) {
-  if (!paneDrag || e.pointerId !== paneDrag.pointerId || !els.main) return;
-
-  if (paneDrag.leftKey === "file" && typeof paneDrag.leftStartPx === "number") {
-    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.leftStartPx + (e.clientX - paneDrag.startX));
-    applyPaneLayout();
-    return;
-  }
-  if (paneDrag.rightKey === "file" && typeof paneDrag.rightStartPx === "number") {
-    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.rightStartPx - (e.clientX - paneDrag.startX));
-    applyPaneLayout();
-    return;
-  }
-
-  const keys = visiblePaneKeys();
-  const contentFr = contentPaneFrWeights(keys);
-  const contentKeys = keys.filter((key) => key !== "file");
-  const leftContentIndex = contentKeys.indexOf(paneDrag.leftKey);
-  if (leftContentIndex < 0 || leftContentIndex + 1 >= contentFr.length) return;
-
-  const pairFrTotal = contentFr[leftContentIndex] + contentFr[leftContentIndex + 1];
-  if (!(pairFrTotal > 0)) return;
-
-  const pairPixels = Math.max(contentPaneAvailableWidthPx() * pairFrTotal, 1);
-  const deltaRatio = (e.clientX - paneDrag.startX) / pairPixels;
-
-  const leftIndex = paneRatioIndex(paneDrag.leftKey);
-  const rightIndex = paneRatioIndex(paneDrag.rightKey);
-  const pairStoredTotal = paneDrag.leftStart + paneDrag.rightStart;
-  if (!(pairStoredTotal > 0) || leftIndex < 0 || rightIndex < 0) return;
-
-  let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-  const leftMin = Math.min(paneMinRatio(paneDrag.leftKey), pairStoredTotal / 2);
-  const rightMin = Math.min(paneMinRatio(paneDrag.rightKey), pairStoredTotal / 2);
-  nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
-  paneRatios[leftIndex] = nextLeft;
-  paneRatios[rightIndex] = pairStoredTotal - nextLeft;
-  applyPaneLayout();
-}
-
-function endPaneDrag(e) {
-  if (!paneDrag || e.pointerId !== paneDrag.pointerId) return;
-  const splitter = els.splitters[paneDrag.physicalSplitterIndex];
-  splitter?.classList.remove("is-dragging");
-  if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
-  paneDrag = null;
-  document.body.classList.remove("pane-drag-active");
-  normalizePaneRatios();
-  saveLayoutPrefs();
-}
-
-function goToPage(n) {
-  if (!state) return;
-  setPageSettingsOpen(false);
-  const page = Math.min(Math.max(1, n), state.pageCount);
-  state.currentPage = page;
-  renderPage(page);
-}
-
-function resetPageNumberInput() {
-  if (!els.pageNumberInput) return;
-  els.pageNumberInput.value = state ? String(state.currentPage) : "1";
-}
-
-function commitPageNumberInput() {
-  if (!state || !els.pageNumberInput) return;
-  const n = Number.parseInt(els.pageNumberInput.value.trim(), 10);
-  if (!Number.isFinite(n)) {
-    resetPageNumberInput();
-    return;
-  }
-  goToPage(n);
-}
-
-function setPageIndicator(pageNum, pageCount) {
-  if (!els.pageIndicator) return;
-  if (els.pageCountIndicator) els.pageCountIndicator.textContent = `\u00A0of ${pageCount}`;
-  if (els.pageNumberInput) {
-    const digits = Math.max(1, String(pageCount).length);
-    els.pageNumberInput.style.setProperty("--page-num-digits", String(digits));
-    els.pageNumberInput.disabled = !state;
-    if (document.activeElement !== els.pageNumberInput) {
-      els.pageNumberInput.value = String(pageNum);
-    }
-  }
-}
-
-function renderPage(pageNum) {
-  if (!state) return;
-  const { segments, pageImages, pageCount, defaultResolution } = state;
-  const idx = pageNum - 1;
-  const segment = segments[idx] ?? [];
-  selectedElementId = null;
-
-  setPageIndicator(pageNum, pageCount);
-  if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
-  if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
-
-  if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
-
-  els.markupPane.innerHTML = "";
-  const elementIds = assignElementIds(segment);
-  state.elementIds = elementIds;
-  state.idToElement = invertElementIds(elementIds);
-
-  if (segmentHasMarkup(segment)) {
-    els.markupPane.appendChild(buildMarkupView(segment, elementIds));
-    els.renderedPane.innerHTML = "";
-    els.renderedPane.appendChild(buildRenderedView(segment, elementIds));
-  } else {
-    els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-    els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-  }
-
-  els.pagePane.innerHTML = "";
-  if (state.hasPageView) {
-    const imageUrl = pageImages.get(pageNum);
-    if (imageUrl) {
-      const port = document.createElement("div");
-      port.className = "page-view-port";
-      const wrap = document.createElement("div");
-      wrap.className = "page-view";
-      const img = document.createElement("img");
-      img.alt = `Page ${pageNum}`;
-
-      const onImageReady = () => {
-        if (img.dataset.layoutGeneration === String(pageNum)) return;
-        img.dataset.layoutGeneration = String(pageNum);
-
-        applyPageImageSize(img, els.pagePane);
-
-        const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
-        const existing = wrap.querySelector("svg.overlay");
-        if (existing) existing.remove();
-        const readingOrderSteps = collectReadingOrderSteps(
-          segment,
-          elementIds,
-          boxes,
-          state.readingOrder,
-          readingOrderGlobalNumbering,
-          state.readingOrderDisplayNumbers,
-        );
-        state.pageViewOverlay = { boxes, readingOrderSteps };
-        if (boxes.length) {
-          wrap.appendChild(
-            buildOverlay(
-              img,
-              boxes,
-              collectCaptionLinks(segment, elementIds, boxes),
-              collectXrefLinks(segment, elementIds, boxes),
-              readingOrderSteps,
-              collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById),
-              collectFragmentNavItems(segment, elementIds, boxes),
-              defaultResolution,
-            ),
-          );
-        }
-        syncPageViewChrome(img);
-        const pending = state.pendingSelectElement;
-        if (pending) {
-          state.pendingSelectElement = null;
-          const id = findElementIdOnPage(pending);
-          if (id) selectElement(id);
-        }
-      };
-
-      img.addEventListener("load", onImageReady, { once: true });
-      wrap.appendChild(img);
-      port.appendChild(wrap);
-      els.pagePane.appendChild(port);
-      img.src = imageUrl;
-      if (img.complete) onImageReady();
-
-      if (!pagePaneResizeObserver) {
-        pagePaneResizeObserver = new ResizeObserver(() => {
-          refreshPageViewLayout();
-        });
-        pagePaneResizeObserver.observe(els.pagePane);
-      }
-    } else {
-      els.pagePane.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
-    }
-  }
-}
-
-function pageZoomFactor() {
-  return pageZoomPercent / PAGE_ZOOM_DEFAULT;
-}
-
-/**
- * Convert a legacy overlay length (image pixels as tuned on the demo pages) to SVG user
- * units for the current page. Matches the old demo on-screen size, stays zoom-stable,
- * and scales with page resolution so other images look the same.
- */
-function overlayUserLength(baseUserPx, img = els.pagePane?.querySelector(".page-view img")) {
-  const zoom = pageZoomFactor();
-  if (!(zoom > 0)) return baseUserPx;
-  if (!img?.naturalWidth || !img.naturalHeight || !els.pagePane) {
-    return baseUserPx / zoom;
-  }
-
-  const { w: paneW, h: paneH } = paneContentSize(els.pagePane);
-  if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
-
-  const refFit = Math.min(
-    (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
-    (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT,
-  );
-  const fitScale = getCachedFitScale(img, els.pagePane);
-  if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
-
-  return (baseUserPx * refFit) / (fitScale * zoom);
-}
-
-function computePageFitScale(img, pane) {
-  return getCachedFitScale(img, pane);
-}
-
-function resetPageLayoutCache() {
-  pageLayoutCache = null;
-}
-
-function paneContentSize(pane) {
-  const style = getComputedStyle(pane);
-  const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-  const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-  return {
-    w: pane.clientWidth - padX,
-    h: pane.clientHeight - padY,
-  };
-}
-
-function getCachedFitScale(img, pane) {
-  const { w: paneW, h: paneH } = paneContentSize(pane);
-  const imgW = img.naturalWidth;
-  const imgH = img.naturalHeight;
-  if (
-    pageLayoutCache &&
-    pageLayoutCache.paneW === paneW &&
-    pageLayoutCache.paneH === paneH &&
-    pageLayoutCache.imgW === imgW &&
-    pageLayoutCache.imgH === imgH
-  ) {
-    return pageLayoutCache.fitScale;
-  }
-  const fitScale =
-    paneW > 0 && paneH > 0 && imgW > 0 && imgH > 0
-      ? Math.min(
-          (paneW - PAGE_VIEW_BORDER_PX) / imgW,
-          (paneH - PAGE_VIEW_BORDER_PX) / imgH,
-        )
-      : 1;
-  pageLayoutCache = { paneW, paneH, imgW, imgH, fitScale };
-  return fitScale;
-}
-
-function applyPageImageSize(img, pane = els.pagePane) {
-  if (!img?.naturalWidth || !img.naturalHeight) return false;
-  pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, pageZoomPercent);
-  const fitScale = getCachedFitScale(img, pane);
-  const scale = fitScale * (pageZoomPercent / PAGE_ZOOM_DEFAULT);
-  const w = Math.floor(img.naturalWidth * scale);
-  const h = Math.floor(img.naturalHeight * scale);
-  const nextW = `${w}px`;
-  const nextH = `${h}px`;
-  const unchanged = img.style.width === nextW && img.style.height === nextH;
-  if (!unchanged) {
-    img.style.width = nextW;
-    img.style.height = nextH;
-    img.style.maxWidth = "none";
-    img.style.maxHeight = "none";
-  }
-  img.dataset.layoutReady = "1";
-  return !unchanged;
-}
-
-function syncPageViewChrome(img) {
-  syncOverlayBadges(img);
-  updatePagePanePanCursor();
-  applyBboxVisibility();
-}
-
-function applyPageLayout(img, pane = els.pagePane) {
-  applyPageImageSize(img, pane);
-  syncPageViewChrome(img);
-}
-
-let pageLayoutFrame = 0;
-
-function refreshPageViewLayout() {
-  if (!els.pagePane) return;
-  cancelAnimationFrame(pageLayoutFrame);
-  pageLayoutFrame = requestAnimationFrame(() => {
-    pageLayoutFrame = 0;
-    const img = els.pagePane?.querySelector(".page-view img");
-    if (img?.naturalWidth) applyPageLayout(img);
-  });
-}
-
-function overlayBadgeLayout(svg, text, fontSizeUser) {
-  const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X);
-  const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y);
-  const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  probe.setAttribute("class", "overlay-badge-label");
-  probe.setAttribute("font-size", String(fontSizeUser));
-  probe.setAttribute("font-weight", "700");
-  probe.setAttribute("text-anchor", "start");
-  probe.setAttribute("dominant-baseline", "text-before-edge");
-  probe.setAttribute("visibility", "hidden");
-  probe.textContent = String(text);
-  svg.appendChild(probe);
-
-  let width;
-  let height;
-  try {
-    const bbox = probe.getBBox();
-    width = bbox.width + padXUser * 2;
-    height = bbox.height + padYUser * 2;
-  } catch {
-    const label = String(text);
-    width = overlayUserLength(label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2);
-    height = overlayUserLength(OVERLAY_BADGE_FONT_SIZE * 1.1 + OVERLAY_BADGE_PAD_Y * 2);
-  }
-  probe.remove();
-  return { width, height };
-}
-
-function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }) {
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-  const { width, height } = overlayBadgeLayout(svg, text, fontSize);
-  const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX);
-
-  const badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  badge.setAttribute("class", `overlay-badge ${extraClass}`);
-  badge.setAttribute("data-element-id", elementId);
-
-  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  bg.setAttribute("class", "overlay-badge-bg");
-  bg.setAttribute("x", String(anchorX - width / 2));
-  bg.setAttribute("y", String(anchorY - height / 2));
-  bg.setAttribute("width", String(width));
-  bg.setAttribute("height", String(height));
-  bg.setAttribute("rx", String(radius));
-  bg.setAttribute("ry", String(radius));
-  badge.appendChild(bg);
-
-  const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  label.setAttribute("class", "overlay-badge-label");
-  label.setAttribute("x", String(anchorX));
-  label.setAttribute("y", String(anchorY));
-  label.setAttribute("font-size", String(fontSize));
-  label.textContent = String(text);
-  badge.appendChild(label);
-
-  svg.appendChild(badge);
-  return badge;
-}
-
-function syncOverlayBadges(img) {
-  const svg = img.parentElement?.querySelector("svg.overlay");
-  const meta = state?.pageViewOverlay;
-  if (!svg || !img.naturalWidth || !meta) return;
-
-  svg.querySelectorAll(".element-badge, .reading-order-badge").forEach((badge) => badge.remove());
-
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-  const badgeGap = overlayUserLength(2);
-  const readingOrderByElementId = new Map();
-  if (showAllBboxes && showReadingOrder) {
-    for (const step of meta.readingOrderSteps ?? []) {
-      readingOrderByElementId.set(step.elementId, step);
-    }
-  }
-
-  const boxes = sortedOverlayBoxes(meta.boxes ?? []);
-
-  for (const b of boxes) {
-    const { x, y } = boxPixelRect(b, img);
-    let tagLayout = { width: 0 };
-    if (showAllBboxes && showLayoutBadges) {
-      tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
-      appendOverlayBadge(svg, x, y, b.tag, {
-        extraClass: `element-badge ${kindClassForTag(b.kind)}`,
-        elementId: b.elementId,
-      });
-    }
-
-    const step = readingOrderByElementId.get(b.elementId);
-    if (step) {
-      const orderText = String(step.order);
-      const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
-      const orderAnchorX = showAllBboxes && showLayoutBadges
-        ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2
-        : x;
-      appendOverlayBadge(svg, orderAnchorX, y, orderText, {
-        extraClass: "reading-order-badge",
-        elementId: b.elementId,
-      });
-    }
-  }
-}
-
-function splitIntoSegments(root) {
-  const body = childElements(root).filter((el) => localName(el) !== "head");
-  /** @type {Element[][]} */
-  const segments = [[]];
-  for (const el of body) {
-    if (localName(el) === "page_break") {
-      segments.push([]);
-    } else {
-      segments[segments.length - 1].push(el);
-    }
-  }
-  return segments.length ? segments : [[]];
-}
-
-function segmentHasMarkup(segment) {
-  return segment.some((el) => el.nodeType === Node.ELEMENT_NODE);
-}
-
-function readDefaultResolution(head) {
-  const fallback = { width: 512, height: 512 };
-  if (!head) return fallback;
-  const dr = childElements(head).find((el) => localName(el) === "default_resolution");
-  if (!dr) return fallback;
-  const w = parseInt(dr.getAttribute("width") ?? "512", 10);
-  const h = parseInt(dr.getAttribute("height") ?? "512", 10);
-  return {
-    width: Number.isFinite(w) && w > 0 ? w : 512,
-    height: Number.isFinite(h) && h > 0 ? h : 512,
-  };
-}
-
-/** @returns {Map<Element, string>} */
-function assignElementIds(segment) {
-  const ids = new Map();
-  let counter = 0;
-  walkElements(segment, (el) => {
-    ids.set(el, `el-${counter++}`);
-  });
-  return ids;
-}
-
-/** @returns {Map<string, Element>} */
-function invertElementIds(elementIds) {
-  const idToElement = new Map();
-  for (const [el, id] of elementIds) idToElement.set(id, el);
-  return idToElement;
-}
-
-function isSemanticElement(el) {
-  return SEMANTIC_TAGS.has(localName(el));
-}
-
-function isVirtualTextHost(el) {
-  const tag = localName(el);
-  return tag === "ldiv" || CELL_CONTENT_TAGS.has(tag);
-}
-
-function xmlContains(target, ancestor) {
-  let node = target;
-  while (node) {
-    if (node === ancestor) return true;
-    node = node.parentNode;
-  }
-  return false;
-}
-
-function findListVirtualTextHost(list, target) {
-  const nodes = [...list.childNodes];
-  let i = skipContainerLevelHead(nodes, 0);
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE || localName(node) !== "ldiv") {
-      i += 1;
-      continue;
-    }
-    const ldiv = node;
-    i += 1;
-    const end = skipUntilListItemBoundary(nodes, i);
-    if (target === ldiv || nodes.slice(i, end).some((n) => xmlContains(target, n))) {
-      return ldiv;
-    }
-    i = end;
-  }
-  return null;
-}
-
-function findTableVirtualTextHost(container, target) {
-  const nodes = [...container.childNodes];
-  let i = skipContainerLevelHead(nodes, 0);
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (tag === "nl" || CELL_SPAN_TAGS.has(tag) || !isCellToken(tag)) {
-      i += 1;
-      continue;
-    }
-    const cell = node;
-    i += 1;
-    const end = skipUntilCellBoundary(nodes, i);
-    if (target === cell || nodes.slice(i, end).some((n) => xmlContains(target, n))) {
-      return cell;
-    }
-    i = end;
-  }
-  return null;
-}
-
-function isListOrOtslContainer(el) {
-  const tag = localName(el);
-  return tag === "list" || OTSL_CONTAINER_TAGS.has(tag);
-}
-
-function findVirtualTextHost(xmlEl) {
-  let node = xmlEl;
-  while (node) {
-    const parent = node.parentElement;
-    if (!parent) return null;
-    const tag = localName(parent);
-    if (tag === "list") {
-      const host = findListVirtualTextHost(parent, xmlEl);
-      if (host) return host;
-    }
-    if (OTSL_CONTAINER_TAGS.has(tag)) {
-      const host = findTableVirtualTextHost(parent, xmlEl);
-      if (host) return host;
-    }
-    node = parent;
-  }
-  return null;
-}
-
-function resolveSelectionElement(xmlEl) {
-  if (!xmlEl) return null;
-  if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
-
-  let node = xmlEl.parentElement;
-  while (node) {
-    const tag = localName(node);
-    if (tag === "doclang") break;
-    if (isSemanticElement(node) && !isListOrOtslContainer(node)) return node;
-    node = node.parentElement;
-  }
-
-  const virtualHost = findVirtualTextHost(xmlEl);
-  if (virtualHost) return virtualHost;
-
-  node = xmlEl.parentElement;
-  while (node) {
-    const tag = localName(node);
-    if (tag === "doclang") break;
-    if (isSemanticElement(node) || isVirtualTextHost(node)) return node;
-    node = node.parentElement;
-  }
-
-  return null;
-}
-
-function resolveSelectionElementId(rawElementId) {
-  if (!rawElementId || !state?.idToElement || !state.elementIds) return null;
-  const xmlEl = state.idToElement.get(rawElementId);
-  if (!xmlEl) return null;
-  const resolved = resolveSelectionElement(xmlEl);
-  return resolved ? state.elementIds.get(resolved) ?? null : null;
-}
-
-function resolveMarkupClickTarget(eventTarget) {
-  if (!state) return null;
-
-  const ghostText = eventTarget.closest(".markup-el-virtual-text");
-  if (ghostText?.hasAttribute("data-element-id")) {
-    return ghostText.getAttribute("data-element-id");
-  }
-
-  const markupEl = eventTarget.closest(".markup-el[data-element-id]");
-  if (!markupEl) return null;
-  return resolveSelectionElementId(markupEl.getAttribute("data-element-id"));
-}
-
-function resolveRenderedClickTarget(eventTarget) {
-  const ghostText = eventTarget.closest(".rendered-el-virtual-text");
-  if (ghostText?.hasAttribute("data-element-id")) {
-    return ghostText.getAttribute("data-element-id");
-  }
-
-  const renderedEl = eventTarget.closest(".rendered-el[data-element-id]");
-  if (!renderedEl) return null;
-  return resolveSelectionElementId(renderedEl.getAttribute("data-element-id"));
-}
-
-/** @returns {{ kind: string, tag: string, elementId: string, layer: string, x0: number, y0: number, x1: number, y1: number, resW: number, resH: number }[]} */
-function collectBoundingBoxes(segment, defaultResolution, elementIds) {
-  /** @type {{ kind: string, tag: string, elementId: string, layer: string, x0: number, y0: number, x1: number, y1: number, resW: number, resH: number }[]} */
-  const boxes = [];
-  walkElements(segment, (el) => {
-    const locs = headLocations(el);
-    if (locs.length !== 4) return;
-    const elementId = elementIds.get(el);
-    if (!elementId) return;
-    pushBoundingBox(
-      boxes,
-      locs,
-      defaultResolution,
-      localName(el),
-      elementLabel(el),
-      elementId,
-      elementLayer(el),
-    );
-  });
-  walkElements(segment, (el) => {
-    const tag = localName(el);
-    if (tag === "list") collectListVirtualTextBoxes(el, defaultResolution, boxes, elementIds);
-    else if (tag === "table" || tag === "index" || tag === "tabular") {
-      collectTableVirtualTextBoxes(el, defaultResolution, boxes, elementIds);
-    }
-  });
-  return boxes;
-}
-
-/** @returns {{ captionBox: object, hostBox: object, captionElementId: string, hostElementId: string }[]} */
-function collectCaptionLinks(segment, elementIds, boxes) {
-  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {{ captionBox: object, hostBox: object, captionElementId: string, hostElementId: string }[]} */
-  const links = [];
-  walkElements(segment, (el) => {
-    if (localName(el) !== "caption") return;
-    const captionId = elementIds.get(el);
-    const captionBox = captionId ? boxById.get(captionId) : null;
-    if (!captionBox) return;
-    const host = el.parentElement;
-    if (!host || headLocations(host).length !== 4) return;
-    const hostId = elementIds.get(host);
-    const hostBox = hostId ? boxById.get(hostId) : null;
-    if (!hostBox) return;
-    links.push({
-      captionBox,
-      hostBox,
-      captionElementId: captionId,
-      hostElementId: hostId,
-    });
-  });
-  return links;
-}
-
-/** @returns {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]} */
-function collectXrefLinks(segment, elementIds, boxes) {
-  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {Map<string, { elementId: string, box: object }[]>} */
-  const threadsById = new Map();
-
-  walkElements(segment, (el) => {
-    const elementId = elementIds.get(el);
-    const box = elementId ? boxById.get(elementId) : null;
-    if (!box) return;
-    for (const thread of childElements(el)) {
-      if (localName(thread) !== "thread") continue;
-      const threadId = thread.getAttribute("thread_id");
-      if (!threadId) continue;
-      if (!threadsById.has(threadId)) threadsById.set(threadId, []);
-      threadsById.get(threadId).push({ elementId, box });
-    }
-  });
-
-  /** @type {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]} */
-  const links = [];
-  walkElements(segment, (el) => {
-    const xrefs = childElements(el).filter((c) => localName(c) === "xref");
-    if (!xrefs.length) return;
-
-    const from = findNearestLocatedBox(el, elementIds, boxById);
-    if (!from) return;
-
-    for (const xref of xrefs) {
-      const threadId = xref.getAttribute("thread_id");
-      if (!threadId) continue;
-      for (const { elementId: toId, box: toBox } of threadsById.get(threadId) ?? []) {
-        if (toId === from.elementId) continue;
-        links.push({
-          fromBox: from.box,
-          toBox,
-          fromElementId: from.elementId,
-          toElementId: toId,
-        });
-      }
-    }
-  });
-  return links;
-}
-
-/** @returns {{ fromBox: object, toBox: object | null, fromElementId: string, toElementId: string | null, threadId: string, targetCorner?: "tl" | "br" }[]} */
-function collectFragmentLinks(segment, elementIds, boxes, pageNum, threadPagesById) {
-  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {Map<string, { elementId: string, box: object }[]>} */
-  const onPage = new Map();
-
-  walkElements(segment, (el) => {
-    const thread = firstHeadChild(el, "thread");
-    const threadId = thread?.getAttribute("thread_id");
-    if (!threadId) return;
-    const elementId = elementIds.get(el);
-    const box = elementId ? boxById.get(elementId) : null;
-    if (!box) return;
-    if (!onPage.has(threadId)) onPage.set(threadId, []);
-    onPage.get(threadId).push({ elementId, box });
-  });
-
-  const segmentEls = new Set();
-  walkElements(segment, (el) => segmentEls.add(el));
-
-  /** @type {{ fromBox: object, toBox: object | null, fromElementId: string, toElementId: string | null, threadId: string, targetCorner?: "tl" | "br" }[]} */
-  const links = [];
-
-  for (const [threadId, members] of onPage) {
-    if (members.length >= 2) {
-      for (let i = 0; i < members.length - 1; i += 1) {
-        links.push({
-          fromBox: members[i].box,
-          toBox: members[i + 1].box,
-          fromElementId: members[i].elementId,
-          toElementId: members[i + 1].elementId,
-          threadId,
-        });
-      }
-      continue;
-    }
-
-    if (members.length !== 1) continue;
-    const threadPages = threadPagesById.get(threadId);
-    if (!threadPages) continue;
-    const hasPrevious = [...threadPages].some((p) => p < pageNum);
-    const hasFollowing = [...threadPages].some((p) => p > pageNum);
-    if (!hasPrevious && !hasFollowing) continue;
-
-    const base = {
-      fromBox: members[0].box,
-      toBox: null,
-      fromElementId: members[0].elementId,
-      toElementId: null,
-      threadId,
-    };
-    if (hasPrevious) links.push({ ...base, targetCorner: "tl" });
-    if (hasFollowing) links.push({ ...base, targetCorner: "br" });
-  }
-
-  return links;
-}
-
-function isReadingOrderUnit(el) {
-  const tag = localName(el);
-  if (tag === "caption") return true;
-  if (HEAD_TAGS.has(tag) || tag === "location" || tag === "h_thread" || tag === "page_break") return false;
-  if (tag === "nl" || CELL_SPAN_TAGS.has(tag)) return false;
-  if (RENDER_FORMAT_TAGS.has(tag) || tag === "src" || tag === "checkbox") return false;
-  return true;
-}
-
-/** @returns {Map<string, Element[]>} */
-function buildThreadsById(docRoot) {
-  const map = new Map();
-  const roots = childElements(docRoot).filter((el) => localName(el) !== "head");
-  walkElements(roots, (el) => {
-    for (const child of childElements(el)) {
-      if (localName(child) !== "thread") continue;
-      const threadId = child.getAttribute("thread_id");
-      if (!threadId) continue;
-      if (!map.has(threadId)) map.set(threadId, []);
-      map.get(threadId).push(el);
-    }
-  });
-  return map;
-}
-
-/** @returns {Map<Element, number>} */
-function buildElementPageMap(segments) {
-  const elementPage = new Map();
-  segments.forEach((segment, idx) => {
-    const pageNum = idx + 1;
-    walkElements(segment, (el) => elementPage.set(el, pageNum));
-  });
-  return elementPage;
-}
-
-/** @returns {Map<string, Set<number>>} */
-function buildThreadPagesById(docRoot, elementPageByEl) {
-  /** @type {Map<string, Set<number>>} */
-  const threadPagesById = new Map();
-  for (const [threadId, elements] of buildThreadsById(docRoot)) {
-    const pages = new Set();
-    for (const el of elements) {
-      const page = elementPageByEl.get(el);
-      if (page) pages.add(page);
-    }
-    if (pages.size) threadPagesById.set(threadId, pages);
-  }
-  return threadPagesById;
-}
-
-/** @returns {Map<Element, { prev: Element | null, next: Element | null }>} */
-function buildThreadNavByElement(docRoot) {
-  /** @type {Map<Element, { prev: Element | null, next: Element | null }>} */
-  const nav = new Map();
-  for (const [, elements] of buildThreadsById(docRoot)) {
-    for (let i = 0; i < elements.length; i += 1) {
-      nav.set(elements[i], {
-        prev: i > 0 ? elements[i - 1] : null,
-        next: i < elements.length - 1 ? elements[i + 1] : null,
-      });
-    }
-  }
-  return nav;
-}
-
-/** @returns {{ elementId: string, box: object, hasPrev: boolean, hasNext: boolean }[]} */
-function collectFragmentNavItems(segment, elementIds, boxes) {
-  if (!state?.threadNavByElement) return [];
-  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {{ elementId: string, box: object, hasPrev: boolean, hasNext: boolean }[]} */
-  const items = [];
-  walkElements(segment, (el) => {
-    const nav = state.threadNavByElement.get(el);
-    if (!nav || (!nav.prev && !nav.next)) return;
-    const elementId = elementIds.get(el);
-    const box = elementId ? boxById.get(elementId) : null;
-    if (!box) return;
-    items.push({
-      elementId,
-      box,
-      hasPrev: nav.prev !== null,
-      hasNext: nav.next !== null,
-    });
-  });
-  return items;
-}
-
-function findElementIdOnPage(el) {
-  if (!state?.elementIds) return null;
-  for (const [node, id] of state.elementIds) {
-    if (node === el) return id;
-  }
-  return null;
-}
-
-function navigateThreadFragment(elementId, direction) {
-  const el = state?.idToElement?.get(elementId);
-  if (!el) return;
-  const nav = state?.threadNavByElement?.get(el);
-  if (!nav) return;
-  const target = direction === "prev" ? nav.prev : nav.next;
-  if (!target) return;
-  const page = state.elementPageByEl.get(target);
-  if (!page) return;
-  if (page === state.currentPage) {
-    const id = findElementIdOnPage(target);
-    if (id) selectElement(id);
-    return;
-  }
-  state.pendingSelectElement = target;
-  goToPage(page);
-}
-
-/** @returns {Element[]} */
-function computeReadingOrder(docRoot) {
-  const bodyChildren = childElements(docRoot).filter((el) => localName(el) !== "head");
-  const threadsById = buildThreadsById(docRoot);
-  const consumedViaXref = new Set();
-  /** @type {Element[]} */
-  const order = [];
-
-  function record(el) {
-    if (!isReadingOrderUnit(el)) return;
-    order.push(el);
-  }
-
-  function consumeThread(threadId) {
-    for (const target of threadsById.get(threadId) ?? []) {
-      if (consumedViaXref.has(target)) continue;
-      consumedViaXref.add(target);
-      visitElement(target);
-    }
-  }
-
-  function walkChildren(parent) {
-    for (const child of parent.childNodes) {
-      if (child.nodeType !== Node.ELEMENT_NODE) continue;
-      const tag = localName(child);
-      if (tag === "xref") {
-        const threadId = child.getAttribute("thread_id");
-        if (threadId) consumeThread(threadId);
-        continue;
-      }
-      if (tag === "page_break") continue;
-      visitElement(child);
-    }
-  }
-
-  function visitElement(el) {
-    record(el);
-    walkChildren(el);
-  }
-
-  for (const el of bodyChildren) {
-    if (localName(el) === "page_break") continue;
-    if (consumedViaXref.has(el)) continue;
-    visitElement(el);
-  }
-
-  return order;
-}
-
-function hasVirtualTextLocations(el) {
-  const parent = el.parentElement;
-  if (!parent) return false;
-  const nodes = [...parent.childNodes];
-  const idx = nodes.indexOf(el);
-  if (idx < 0) return false;
-  return parseElementHeadAt(nodes, idx + 1) !== null;
-}
-
-function isVirtualTextOverlayUnit(el) {
-  if (headLocations(el).length === 4) return false;
-  if (!hasVirtualTextLocations(el)) return false;
-  const tag = localName(el);
-  if (tag === "ldiv" && localName(el.parentElement) === "list") return true;
-  if (isCellToken(tag) && tag !== "nl" && !CELL_SPAN_TAGS.has(tag)) {
-    return OTSL_CONTAINER_TAGS.has(localName(el.parentElement));
-  }
-  return false;
-}
-
-function isPictureContentElement(el) {
-  if (!el) return false;
-  const tag = localName(el);
-  if (tag === "picture" || tag === "caption") return false;
-  let node = el.parentElement;
-  while (node) {
-    if (localName(node) === "picture") return true;
-    node = node.parentElement;
-  }
-  return false;
-}
-
-function isTableContentElement(el) {
-  if (!el) return false;
-  const tag = localName(el);
-  if (OTSL_CONTAINER_TAGS.has(tag) || tag === "caption") return false;
-  let node = el.parentElement;
-  while (node) {
-    if (OTSL_CONTAINER_TAGS.has(localName(node))) return true;
-    node = node.parentElement;
-  }
-  return false;
-}
-
-function isPictureOrTableContentElement(el) {
-  return isPictureContentElement(el) || isTableContentElement(el);
-}
-
-function isReadingOrderOverlayUnit(el) {
-  if (!isReadingOrderUnit(el)) return false;
-  if (isPictureOrTableContentElement(el)) return false;
-  if (headLocations(el).length === 4) return true;
-  return isVirtualTextOverlayUnit(el);
-}
-
-/** @returns {Map<Element, number>} */
-function computeReadingOrderDisplayNumbers(readingOrder) {
-  const numbers = new Map();
-  let n = 0;
-  for (const el of readingOrder) {
-    if (!isReadingOrderOverlayUnit(el)) continue;
-    n += 1;
-    numbers.set(el, n);
-  }
-  return numbers;
-}
-
-/** @returns {{ order: number, box: object, elementId: string }[]} */
-function collectReadingOrderSteps(
-  segment,
-  elementIds,
-  boxes,
-  readingOrder,
-  globalNumbering = true,
-  displayNumbers = null,
-) {
-  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {{ order: number, box: object, elementId: string }[]} */
-  const steps = [];
-  let pageOrder = 0;
-
-  readingOrder.forEach((el) => {
-    if (isPictureOrTableContentElement(el)) return;
-    const elementId = elementIds.get(el);
-    if (!elementId) return;
-    const box = boxById.get(elementId);
-    if (!box) return;
-    pageOrder += 1;
-    steps.push({
-      order: globalNumbering ? (displayNumbers?.get(el) ?? pageOrder) : pageOrder,
-      box,
-      elementId,
-    });
-  });
-
-  return steps;
-}
-
-function pushBoundingBox(boxes, locs, defaultResolution, kind, tag, elementId, layer = "body") {
-  const [x0el, y0el, x1el, y1el] = locs;
-  const resW = locationResolution(x0el, defaultResolution.width);
-  const resH = locationResolution(y0el, defaultResolution.height);
-  boxes.push({
-    kind,
-    tag,
-    elementId,
-    layer,
-    x0: parseInt(x0el.getAttribute("value") ?? "0", 10),
-    y0: parseInt(y0el.getAttribute("value") ?? "0", 10),
-    x1: parseInt(x1el.getAttribute("value") ?? "0", 10),
-    y1: parseInt(y1el.getAttribute("value") ?? "0", 10),
-    resW,
-    resH,
-  });
-}
-
-function collectListVirtualTextBoxes(list, defaultResolution, boxes, elementIds) {
-  const nodes = [...list.childNodes];
-  let i = skipContainerLevelHead(nodes, 0);
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE || localName(node) !== "ldiv") {
-      i += 1;
-      continue;
-    }
-    i += 1;
-    const head = parseElementHeadAt(nodes, i);
-    if (head) {
-      const elementId = elementIds.get(node);
-      if (elementId) {
-        pushBoundingBox(boxes, head.locs, defaultResolution, "text", "text", elementId, elementLayer(node));
-      }
-      i = head.nextIndex;
-    }
-    i = skipUntilListItemBoundary(nodes, i);
-  }
-}
-
-function collectTableVirtualTextBoxes(container, defaultResolution, boxes, elementIds) {
-  const nodes = [...container.childNodes];
-  let i = skipContainerLevelHead(nodes, 0);
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (!isCellToken(tag)) {
-      i += 1;
-      continue;
-    }
-    if (tag === "nl") {
-      i += 1;
-      continue;
-    }
-    i += 1;
-    const head = parseElementHeadAt(nodes, i);
-    if (head) {
-      const elementId = elementIds.get(node);
-      if (elementId) {
-        pushBoundingBox(boxes, head.locs, defaultResolution, "text", "text", elementId, elementLayer(node));
-      }
-      i = head.nextIndex;
-    }
-    i = skipUntilCellBoundary(nodes, i);
-  }
-}
-
-function skipContainerLevelHead(nodes, startIdx) {
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (tag === "ldiv" || isCellToken(tag)) break;
-    if (HEAD_TAGS.has(tag) || tag === "location") {
-      i += 1;
-      continue;
-    }
-    break;
-  }
-  return i;
-}
-
-function skipUntilListItemBoundary(nodes, startIdx) {
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType === Node.ELEMENT_NODE && localName(node) === "ldiv") break;
-    i += 1;
-  }
-  return i;
-}
-
-function skipUntilCellBoundary(nodes, startIdx) {
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType === Node.ELEMENT_NODE && isCellToken(localName(node))) break;
-    i += 1;
-  }
-  return i;
-}
-
-function isCellToken(tag) {
-  return CELL_TOKENS.has(tag);
-}
-
-/** @returns {{ locs: Element[], nextIndex: number } | null} */
-function parseElementHeadAt(nodes, startIdx) {
-  const locs = [];
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (tag === "location") {
-      locs.push(node);
-      i += 1;
-      if (locs.length === 4) return { locs, nextIndex: i };
-      continue;
-    }
-    if (locs.length) break;
-    if (HEAD_TAGS.has(tag)) {
-      i += 1;
-      continue;
-    }
-    break;
-  }
-  return locs.length === 4 ? { locs, nextIndex: i } : null;
-}
-
-function walkElements(nodes, fn) {
-  for (const node of nodes) {
-    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-    fn(node);
-    walkElements(childElements(node), fn);
-  }
-}
-
-function headLocations(el) {
-  return parseElementHeadAt([...el.childNodes], 0)?.locs ?? [];
-}
-
-/** @returns {{ elementId: string, box: object } | null} */
-function findNearestLocatedBox(el, elementIds, boxById) {
-  let node = el;
-  while (node) {
-    const elementId = elementIds.get(node);
-    const box = elementId ? boxById.get(elementId) : null;
-    if (box) return { elementId, box };
-    if (localName(node) === "doclang") break;
-    node = node.parentElement;
-  }
-  return null;
-}
-
-function locationResolution(el, axisDefault) {
-  const r = parseInt(el.getAttribute("resolution") ?? String(axisDefault), 10);
-  return Number.isFinite(r) && r > 0 ? r : axisDefault;
-}
-
-function headingLevel(el) {
-  return Math.min(Math.max(parseInt(el.getAttribute("level") ?? "1", 10) || 1, 1), 6);
-}
-
-function elementLabel(el) {
-  if (isVirtualTextOverlayUnit(el)) return "text";
-  const tag = localName(el);
-  if (tag === "heading" || tag === "field_heading") return `${tag}[${headingLevel(el)}]`;
-  const level = el.getAttribute("level");
-  if (level) return `${tag}[${level}]`;
-  const cls = el.getAttribute("class");
-  if (cls) return `${tag}.${cls}`;
-  return tag;
-}
-
-function elementKindKey(kind) {
-  if (kind.startsWith("field_") || kind === "key" || kind === "value" || kind === "hint") return "field";
-  if (kind === "tabular") return "table";
-  const known = new Set([
-    "text", "heading", "list", "ldiv", "table", "index", "formula", "code", "picture",
-    "group", "footnote", "page_header", "page_footer", "caption",
-  ]);
-  return known.has(kind) ? kind : "default";
-}
-
-function kindClassForTag(tag) {
-  return `kind-${elementKindKey(tag)}`;
-}
-
-function bboxClassForKind(kind) {
-  return elementKindKey(kind);
-}
-
-function boxPixelRect(b, img) {
-  const x = (b.x0 / b.resW) * img.naturalWidth;
-  const y = (b.y0 / b.resH) * img.naturalHeight;
-  const w = ((b.x1 - b.x0) / b.resW) * img.naturalWidth;
-  const h = ((b.y1 - b.y0) / b.resH) * img.naturalHeight;
-  return { x, y, w, h, area: w * h };
-}
-
-function overlayBoxPaintPriority(box) {
-  if (box.kind === "text") return 0;
-  if (box.kind === "list" || box.kind === "table" || box.kind === "index" || box.kind === "tabular") {
-    return 2;
-  }
-  return 1;
-}
-
-function overlayLayerPriority(layer) {
-  if (layer === "background") return 0;
-  if (layer === "furniture") return 1;
-  return 2;
-}
-
-function compareOverlayBoxPaintOrder(a, b) {
-  const byLayer = overlayLayerPriority(a.layer ?? "body") - overlayLayerPriority(b.layer ?? "body");
-  if (byLayer !== 0) return byLayer;
-  const byPriority = overlayBoxPaintPriority(a) - overlayBoxPaintPriority(b);
-  if (byPriority !== 0) return byPriority;
-  if (selectedElementId) {
-    const aSelected = a.elementId === selectedElementId;
-    const bSelected = b.elementId === selectedElementId;
-    if (aSelected !== bSelected) return aSelected ? 1 : -1;
-  }
-  return 0;
-}
-
-function sortedOverlayBoxes(boxes) {
-  return [...boxes].sort(compareOverlayBoxPaintOrder);
-}
-
-function boxCenter(rect) {
-  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-}
-
-function ensureArrowMarker(defs, markerId) {
-  if (defs.querySelector(`#${markerId}`)) return;
-  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-  marker.setAttribute("id", markerId);
-  marker.setAttribute("viewBox", "0 0 6 6");
-  marker.setAttribute("refX", "6");
-  marker.setAttribute("refY", "3");
-  marker.setAttribute("markerWidth", "5");
-  marker.setAttribute("markerHeight", "5");
-  marker.setAttribute("orient", "auto");
-  const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  arrowPath.setAttribute("d", "M0,0 L6,3 L0,6 Z");
-  arrowPath.setAttribute("fill", "currentColor");
-  marker.appendChild(arrowPath);
-  defs.appendChild(marker);
-}
-
-function alignDashedLineToEnd(line, start, end) {
-  const dash = 6;
-  const gap = 4;
-  const period = dash + gap;
-  const len = Math.hypot(end.x - start.x, end.y - start.y);
-  if (!len) return;
-  line.setAttribute("stroke-dasharray", `${dash} ${gap}`);
-  const offset = len % period;
-  if (offset > 0.01) line.setAttribute("stroke-dashoffset", String(offset));
-}
-
-function ensureLayerHatchPatterns(defs) {
-  if (defs.querySelector("#layer-hatch")) return;
-
-  const pattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
-  pattern.setAttribute("id", "layer-hatch");
-  pattern.setAttribute("width", "16");
-  pattern.setAttribute("height", "16");
-  pattern.setAttribute("patternUnits", "userSpaceOnUse");
-  pattern.setAttribute("patternTransform", "rotate(45 8 8)");
-  const stripe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  stripe.setAttribute("class", "layer-hatch-stripe");
-  stripe.setAttribute("x", "10");
-  stripe.setAttribute("y", "-4");
-  stripe.setAttribute("width", "6");
-  stripe.setAttribute("height", "24");
-  pattern.appendChild(stripe);
-  defs.appendChild(pattern);
-}
-
-function ensureOverlayDefs(svg) {
-  let defs = svg.querySelector("defs");
-  if (!defs) {
-    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    svg.insertBefore(defs, svg.firstChild);
-  }
-  return defs;
-}
-
-function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, toIdAttr }) {
-  if (!links.length) return;
-
-  const defs = ensureOverlayDefs(svg);
-  ensureArrowMarker(defs, markerId);
-
-  for (const link of links) {
-    const from = boxPixelRect(link.fromBox ?? link.captionBox, img);
-    const to = boxPixelRect(link.toBox ?? link.hostBox, img);
-    const start = boxCenter(from);
-    const end = boxCenter(to);
-
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("class", linkClass);
-    line.setAttribute("x1", String(start.x));
-    line.setAttribute("y1", String(start.y));
-    line.setAttribute("x2", String(end.x));
-    line.setAttribute("y2", String(end.y));
-    line.setAttribute("marker-end", `url(#${markerId})`);
-    line.setAttribute(fromIdAttr, link.fromElementId ?? link.captionElementId);
-    line.setAttribute(toIdAttr, link.toElementId ?? link.hostElementId);
-    svg.appendChild(line);
-  }
-}
-
-function appendCaptionLinks(svg, img, captionLinks) {
-  appendOverlayLinks(svg, img, captionLinks, {
-    markerId: "caption-arrowhead",
-    linkClass: "caption-link",
-    fromIdAttr: "data-caption-id",
-    toIdAttr: "data-host-id",
-  });
-}
-
-function appendXrefLinks(svg, img, xrefLinks) {
-  appendOverlayLinks(svg, img, xrefLinks, {
-    markerId: "xref-arrowhead",
-    linkClass: "xref-link",
-    fromIdAttr: "data-xref-from-id",
-    toIdAttr: "data-xref-to-id",
-  });
-}
-
-function docPointToPixel(xDoc, yDoc, resW, resH, img) {
-  return {
-    x: (xDoc / resW) * img.naturalWidth,
-    y: (yDoc / resH) * img.naturalHeight,
-  };
-}
-
-function pageCornerTarget(img, defaultResolution, corner) {
-  const { width: resW, height: resH } = defaultResolution;
-  const inset = overlayUserLength(5);
-  const tl = docPointToPixel(0, 0, resW, resH, img);
-  const br = docPointToPixel(resW, resH, resW, resH, img);
-  if (corner === "tl") {
-    return {
-      x: Math.min(tl.x + inset, br.x - inset),
-      y: Math.min(tl.y + inset, br.y - inset),
-    };
-  }
-  return {
-    x: Math.max(br.x - inset, tl.x + inset),
-    y: Math.max(br.y - inset, tl.y + inset),
-  };
-}
-
-function elementThreadId(el) {
-  return firstHeadChild(el, "thread")?.getAttribute("thread_id") ?? null;
-}
-
-/** @returns {Set<string>} */
-function fragmentPeerElementIds(elementId) {
-  const peers = new Set();
-  if (!elementId || !state?.elementIds || !state.idToElement) return peers;
-  const el = state.idToElement.get(elementId);
-  const threadId = el ? elementThreadId(el) : null;
-  if (!threadId) return peers;
-  for (const [node, id] of state.elementIds) {
-    if (elementThreadId(node) === threadId) peers.add(id);
-  }
-  return peers;
-}
-
-function isFragmentLinkRelevant(linkEl, peerIds) {
-  const fromId = linkEl.getAttribute("data-fragment-from-id");
-  const toId = linkEl.getAttribute("data-fragment-to-id");
-  if (fromId && peerIds.has(fromId)) return true;
-  if (toId && peerIds.has(toId)) return true;
-  return false;
-}
-
-function appendFragmentLinks(svg, img, links, defaultResolution) {
-  if (!links.length) return;
-
-  const defs = ensureOverlayDefs(svg);
-  ensureArrowMarker(defs, "fragment-arrowhead");
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-
-  for (const link of links) {
-    const fromRect = boxPixelRect(link.fromBox, img);
-
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    group.setAttribute("class", "fragment-link");
-    group.setAttribute("data-thread-id", link.threadId);
-    group.setAttribute("data-fragment-from-id", link.fromElementId);
-    if (link.toElementId) group.setAttribute("data-fragment-to-id", link.toElementId);
-
-    let labelAt;
-    if (link.toBox) {
-      const toRect = boxPixelRect(link.toBox, img);
-      const start = boxCenter(fromRect);
-      const end = boxCenter(toRect);
-
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
-      line.setAttribute("x1", String(start.x));
-      line.setAttribute("y1", String(start.y));
-      line.setAttribute("x2", String(end.x));
-      line.setAttribute("y2", String(end.y));
-      line.setAttribute("marker-end", "url(#fragment-arrowhead)");
-      alignDashedLineToEnd(line, start, end);
-      group.appendChild(line);
-      labelAt = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-    } else {
-      const corner = link.targetCorner ?? "br";
-      const cornerPoint = pageCornerTarget(img, defaultResolution, corner);
-      const elementAnchor = boxCenter(fromRect);
-      const incoming = corner === "tl";
-      const start = incoming ? cornerPoint : elementAnchor;
-      const end = incoming ? elementAnchor : cornerPoint;
-
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
-      line.setAttribute("x1", String(start.x));
-      line.setAttribute("y1", String(start.y));
-      line.setAttribute("x2", String(end.x));
-      line.setAttribute("y2", String(end.y));
-      line.setAttribute("marker-end", "url(#fragment-arrowhead)");
-      alignDashedLineToEnd(line, start, end);
-      group.appendChild(line);
-      labelAt = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-    }
-
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("class", "fragment-link-label");
-    text.setAttribute("x", String(labelAt.x));
-    text.setAttribute("y", String(labelAt.y));
-    text.setAttribute("font-size", String(fontSize));
-    text.textContent = link.toBox ? FRAGMENT_LINK_LABEL_SAME_PAGE : FRAGMENT_LINK_LABEL_CROSS_PAGE;
-    group.appendChild(text);
-
-    svg.appendChild(group);
-  }
-}
-
-function appendFragmentNavButtons(svg, img, items) {
-  if (!items.length) return;
-
-  const btnSize = overlayUserLength(13 * 1.5);
-  const gap = overlayUserLength(2);
-  const inset = overlayUserLength(3);
-  const fontSize = overlayUserLength(10 * 1.5);
-  const radius = overlayUserLength(2 * 1.5);
-
-  for (const item of items) {
-    const { x, y, w, h } = boxPixelRect(item.box, img);
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    group.setAttribute("class", "fragment-nav");
-    group.setAttribute("data-element-id", item.elementId);
-
-    const rowY = y + h - inset - btnSize;
-    const nextX = x + w - inset - btnSize;
-    const prevX = nextX - gap - btnSize;
-
-    appendFragmentNavButton(group, prevX, rowY, btnSize, radius, fontSize, "prev", "‹", item.hasPrev);
-    appendFragmentNavButton(group, nextX, rowY, btnSize, radius, fontSize, "next", "›", item.hasNext);
-
-    svg.appendChild(group);
-  }
-}
-
-function appendFragmentNavButton(group, x, y, size, radius, fontSize, direction, label, enabled) {
-  const btn = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  btn.setAttribute("class", `fragment-nav-btn fragment-nav-btn-${direction}${enabled ? "" : " fragment-nav-btn-disabled"}`);
-  btn.setAttribute("data-nav", direction);
-  if (enabled) {
-    btn.setAttribute("role", "button");
-    btn.setAttribute(
-      "aria-label",
-      direction === "prev" ? FRAGMENT_NAV_HINT_PREV : FRAGMENT_NAV_HINT_NEXT,
-    );
-  }
-
-  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  bg.setAttribute("class", "fragment-nav-btn-bg");
-  bg.setAttribute("x", String(x));
-  bg.setAttribute("y", String(y));
-  bg.setAttribute("width", String(size));
-  bg.setAttribute("height", String(size));
-  bg.setAttribute("rx", String(radius));
-  bg.setAttribute("ry", String(radius));
-  btn.appendChild(bg);
-
-  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  text.setAttribute("class", "fragment-nav-btn-label");
-  text.setAttribute("x", String(x + size / 2));
-  text.setAttribute("y", String(y + size / 2));
-  text.setAttribute("font-size", String(fontSize));
-  text.textContent = label;
-  btn.appendChild(text);
-
-  group.appendChild(btn);
-}
-
-function appendReadingOrderOverlay(svg, img, steps) {
-  if (!steps.length) return;
-
-  if (steps.length >= 2) {
-    const defs = ensureOverlayDefs(svg);
-    ensureArrowMarker(defs, "reading-order-arrowhead");
-
-    for (let i = 0; i < steps.length - 1; i += 1) {
-      const from = boxPixelRect(steps[i].box, img);
-      const to = boxPixelRect(steps[i + 1].box, img);
-      const start = boxCenter(from);
-      const end = boxCenter(to);
-
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("class", "reading-order-step");
-      line.setAttribute("x1", String(start.x));
-      line.setAttribute("y1", String(start.y));
-      line.setAttribute("x2", String(end.x));
-      line.setAttribute("y2", String(end.y));
-      line.setAttribute("marker-end", "url(#reading-order-arrowhead)");
-      svg.appendChild(line);
-    }
-  }
-}
-
-function imageCoordsFromEvent(svg, evt) {
-  const pt = svg.createSVGPoint();
-  pt.x = evt.clientX;
-  pt.y = evt.clientY;
-  const ctm = svg.getScreenCTM()?.inverse();
-  if (!ctm) return null;
-  const p = pt.matrixTransform(ctm);
-  return { x: p.x, y: p.y };
-}
-
-function hitTestBoxes(boxes, img, x, y) {
-  let best = null;
-  let bestArea = Infinity;
-  for (const b of boxes) {
-    const { x: bx, y: by, w, h, area } = boxPixelRect(b, img);
-    if (x >= bx && x <= bx + w && y >= by && y <= by + h && area < bestArea) {
-      best = b;
-      bestArea = area;
-    }
-  }
-  return best;
-}
-
-function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.classList.add("overlay");
-  svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
-  svg.setAttribute("overflow", "hidden");
-
-  appendCaptionLinks(svg, img, captionLinks);
-  appendXrefLinks(svg, img, xrefLinks);
-  appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
-  appendReadingOrderOverlay(svg, img, readingOrderSteps);
-
-  const defs = ensureOverlayDefs(svg);
-  ensureLayerHatchPatterns(defs);
-
-  for (const b of sortedOverlayBoxes(boxes)) {
-    const { x, y, w, h } = boxPixelRect(b, img);
-    const cls = bboxClassForKind(b.kind);
-    const kindClass = kindClassForTag(b.kind);
-    const layerClass = layerClassForValue(b.layer ?? "body");
-
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute(
-      "class",
-      `bbox bbox-${cls} ${kindClass}${layerClass ? ` ${layerClass}` : ""}`,
-    );
-    rect.setAttribute("x", String(x));
-    rect.setAttribute("y", String(y));
-    rect.setAttribute("width", String(Math.max(w, 1)));
-    rect.setAttribute("height", String(Math.max(h, 1)));
-    rect.setAttribute("data-element-id", b.elementId);
-    svg.appendChild(rect);
-  }
-
-  appendFragmentNavButtons(svg, img, fragmentNavItems);
-
-  svg.addEventListener("click", (e) => {
-    if (pagePanSuppressClick) {
-      pagePanSuppressClick = false;
-      return;
-    }
-    const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
-    if (navBtn) {
-      e.stopPropagation();
-      const navGroup = navBtn.closest(".fragment-nav");
-      const elementId = navGroup?.getAttribute("data-element-id");
-      const direction = navBtn.getAttribute("data-nav");
-      if (elementId && direction) navigateThreadFragment(elementId, direction);
-      return;
-    }
-    const badge = e.target.closest(".overlay-badge[data-element-id]");
-    if (badge) {
-      const elementId = resolveSelectionElementId(badge.getAttribute("data-element-id"));
-      if (elementId) selectElement(elementId);
-      return;
-    }
-    const coords = imageCoordsFromEvent(svg, e);
-    if (!coords) return;
-    const hit = hitTestBoxes(boxes, img, coords.x, coords.y);
-    if (hit) selectElement(hit.elementId);
-    else clearSelection();
-  });
-
-  svg.addEventListener("mousemove", (e) => {
-    const coords = imageCoordsFromEvent(svg, e);
-    svg.style.cursor = coords && hitTestBoxes(boxes, img, coords.x, coords.y) ? "pointer" : "";
-  });
-  svg.addEventListener("mouseleave", () => {
-    svg.style.cursor = "";
-  });
-
-  return svg;
-}
-
-function selectElement(elementId) {
-  if (!elementId) return;
-  selectedElementId = elementId;
-  applySelection();
-}
-
-function clearSelection() {
-  selectedElementId = null;
-  applySelection();
-}
-
-function isPictureContentOverlayElement(elementId) {
-  return isPictureContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-
-function isTableContentOverlayElement(elementId) {
-  return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-
-function isContentsOptionHidden(elementId, clickVisible) {
-  if (clickVisible) return false;
-  if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
-  if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
-  return false;
-}
-
-function applyBboxVisibility() {
-  if (!state?.hasPageView || !els.pagePane) return;
-
-  const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set();
-
-  for (const el of els.pagePane.querySelectorAll(".bbox")) {
-    el.classList.remove("related");
-    const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (showAllBboxes) {
-      if (isContentsOptionHidden(elementId, clickVisible)) {
-        el.classList.add("bbox-hidden");
-      } else {
-        el.classList.remove("bbox-hidden");
-        if (peerIds.has(elementId)) {
-          el.classList.add("related");
-        }
-      }
-      continue;
-    }
-    if (elementId === selectedElementId) {
-      el.classList.remove("bbox-hidden");
-    } else if (peerIds.has(elementId)) {
-      el.classList.remove("bbox-hidden");
-      el.classList.add("related");
-    } else {
-      el.classList.add("bbox-hidden");
-    }
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".element-badge")) {
-    const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showLayoutBadges) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    if (isContentsOptionHidden(elementId, clickVisible)) {
-      el.classList.add("bbox-hidden");
-    } else {
-      el.classList.remove("bbox-hidden");
-    }
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".caption-link")) {
-    if (!showAllBboxes || !showCaptionLinks) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".xref-link")) {
-    if (!showAllBboxes || !showXrefLinks) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".fragment-link")) {
-    const clickVisible = Boolean(selectedElementId && isFragmentLinkRelevant(el, peerIds));
-    const optionVisible = showAllBboxes && showFragmentLinks;
-    el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".fragment-nav")) {
-    const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    const optionVisible = showAllBboxes && showFragmentLinks;
-    el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".reading-order-badge")) {
-    const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showReadingOrder) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    if (
-      isPictureContentOverlayElement(elementId)
-      || isTableContentOverlayElement(elementId)
-      || isContentsOptionHidden(elementId, clickVisible)
-    ) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
-  }
-
-  for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
-    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
-  }
-}
-
-function findMarkupElementForSelection(elementId) {
-  if (!els.markupPane) return null;
-  return (
-    els.markupPane.querySelector(`.markup-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.markupPane.querySelector(`[data-element-id="${elementId}"]`)
-  );
-}
-
-function findRenderedElementForSelection(elementId) {
-  if (!els.renderedPane) return null;
-  const direct =
-    els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
-  if (direct) return direct;
-
-  const xmlEl = state?.idToElement?.get(elementId);
-  const threadId = xmlEl ? elementThreadId(xmlEl) : null;
-  if (!threadId) return null;
-
-  const merged = els.renderedPane.querySelector(
-    `.rendered-fragment-merged[data-thread-id="${threadId}"]`,
-  );
-  if (!merged) return null;
-
-  const primaryId = merged.getAttribute("data-element-id");
-  if (!primaryId || primaryId === elementId) return merged;
-  return fragmentPeerElementIds(primaryId).has(elementId) ? merged : null;
-}
-
-function revealRenderedSelectionContext(renderedEl) {
-  const pictureContents = renderedEl.closest(".rendered-picture-contents");
-  if (pictureContents && !pictureContents.open) {
-    pictureContents.open = true;
-  }
-  revealReadingLayerForSelection(renderedEl);
-}
-
-function revealReadingLayerForSelection(renderedEl) {
-  const layer = renderedEl.getAttribute("data-doclang-layer");
-  if (!layer || layer === "body") return;
-  let changed = false;
-  if (layer === "furniture" && !showReadingFurniture) {
-    showReadingFurniture = true;
-    changed = true;
-  } else if (layer === "background" && !showReadingBackground) {
-    showReadingBackground = true;
-    changed = true;
-  }
-  if (!changed) return;
-  syncReadingLayerCheckboxes();
-  syncReadingLayerVisibility();
-}
-
-function applySelection() {
-  els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => {
-    el.classList.remove("selected");
-  });
-  els.renderedPane?.querySelectorAll(".rendered-el.selected").forEach((el) => {
-    el.classList.remove("selected");
-  });
-  if (!els.pagePane) return;
-  els.pagePane.querySelectorAll(".bbox.selected, .overlay-badge.selected").forEach((el) => {
-    el.classList.remove("selected");
-  });
-
-  if (!selectedElementId) {
-    const img = els.pagePane.querySelector(".page-view img");
-    if (img) syncOverlayBadges(img);
-    applyBboxVisibility();
-    return;
-  }
-
-  const markupEl = findMarkupElementForSelection(selectedElementId);
-  if (markupEl) {
-    markupEl.classList.add("selected");
-    markupEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }
-
-  const renderedEl = findRenderedElementForSelection(selectedElementId);
-  if (renderedEl) {
-    revealRenderedSelectionContext(renderedEl);
-    renderedEl.classList.add("selected");
-    renderedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }
-
-  if (state?.hasPageView) {
-    for (const el of els.pagePane.querySelectorAll(`[data-element-id="${selectedElementId}"]`)) {
-      el.classList.add("selected");
-    }
-  }
-
-  const img = els.pagePane.querySelector(".page-view img");
-  if (img) syncOverlayBadges(img);
-  applyBboxVisibility();
-}
-
-function buildMarkupView(segment, elementIds) {
-  const root = document.createElement("div");
-  root.className = "markup";
-  for (const el of segment) {
-    if (el.nodeType === Node.ELEMENT_NODE) {
-      root.appendChild(buildMarkupElement(el, 0, elementIds));
-    }
-  }
-  root.addEventListener("click", (e) => {
-    const attrToggle = e.target.closest(".xml-attr-value-chip");
-    if (attrToggle) {
-      e.stopPropagation();
-      toggleTruncatableMarkupAttrValue(attrToggle);
-      return;
-    }
-    const toggle = e.target.closest(".markup-fold-toggle");
-    if (toggle) {
-      e.stopPropagation();
-      const block = toggle.closest(".markup-el-foldable");
-      if (block) {
-        const collapsed = block.classList.toggle("markup-collapsed");
-        toggle.setAttribute("aria-expanded", String(!collapsed));
-        toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
-      }
-      return;
-    }
-    const elementId = resolveMarkupClickTarget(e.target);
-    if (elementId) selectElement(elementId);
-  });
-  return root;
-}
-
-function sliceHasMarkupContent(nodes) {
-  for (const node of nodes) {
-    if (isTextLikeNode(node) && !isWhitespaceOnlyText(node)) return true;
-    if (node.nodeType === Node.ELEMENT_NODE) return true;
-  }
-  return false;
-}
-
-function isVirtualTextSkippableNode(node) {
-  if (isWhitespaceOnlyText(node)) return true;
-  if (node.nodeType !== Node.ELEMENT_NODE) return false;
-  const tag = localName(node);
-  return tag === "location" || HEAD_TAGS.has(tag);
-}
-
-function shouldWrapVirtualText(contentNodes) {
-  if (!sliceHasMarkupContent(contentNodes)) return false;
-
-  for (const node of contentNodes) {
-    if (isVirtualTextSkippableNode(node)) continue;
-    if (isTextLikeNode(node)) return true;
-    if (node.nodeType === Node.ELEMENT_NODE && !isSemanticElement(node)) return true;
-  }
-  return false;
-}
-
-function appendRenderedSliceContent(container, hostEl, contentNodes, elementIds) {
-  if (!sliceHasMarkupContent(contentNodes)) return;
-  if (shouldWrapVirtualText(contentNodes)) {
-    container.appendChild(renderVirtualTextBlock(hostEl, contentNodes, elementIds));
-    return;
-  }
-  for (const node of contentNodes) {
-    if (isVirtualTextSkippableNode(node)) continue;
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-      const rendered = renderBlockElement(node, elementIds, { inline: false });
-      if (rendered) container.appendChild(rendered);
-    } else {
-      appendRenderedNode(container, node, elementIds, { inline: true });
-    }
-  }
-}
-
-function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
-  for (const child of nodes) {
-    if (isTextLikeNode(child)) {
-      const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(parent, depth, text);
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      parent.appendChild(buildMarkupElement(child, depth, elementIds));
-    }
-  }
-}
-
-function appendMarkupVirtualText(parent, depth, hostEl, contentNodes, elementIds) {
-  if (!shouldWrapVirtualText(contentNodes)) {
-    appendMarkupNodesFromSlice(parent, depth, contentNodes, elementIds);
-    return;
-  }
-
-  const block = document.createElement("div");
-  block.className = "markup-el markup-el-virtual-text";
-  const elementId = elementIds.get(hostEl);
-  if (elementId) block.setAttribute("data-element-id", elementId);
-
-  appendMarkupFoldableOpen(block, depth, "text", [], VIRTUAL_TEXT_TAG_HINT);
-  block.classList.add("markup-el-foldable");
-
-  const foldBody = document.createElement("div");
-  foldBody.className = "markup-fold-body";
-  const children = document.createElement("div");
-  children.className = "markup-children";
-  appendMarkupNodesFromSlice(children, depth + 1, contentNodes, elementIds);
-  foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, "text", VIRTUAL_TEXT_TAG_HINT);
-  block.appendChild(foldBody);
-  parent.appendChild(block);
-}
-
-function buildMarkupFoldableElement(el, depth, elementIds, buildBody) {
-  const tag = localName(el);
-  const block = document.createElement("div");
-  block.className = "markup-el";
-  const elementId = elementIds.get(el);
-  if (elementId) block.setAttribute("data-element-id", elementId);
-
-  const attributes = markupAttributes(el);
-  appendMarkupFoldableOpen(block, depth, tag, attributes);
-  block.classList.add("markup-el-foldable");
-
-  const foldBody = document.createElement("div");
-  foldBody.className = "markup-fold-body";
-  const children = document.createElement("div");
-  children.className = "markup-children";
-  buildBody(children, depth + 1);
-  foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, tag);
-  block.appendChild(foldBody);
-  return block;
-}
-
-function buildMarkupList(el, depth, elementIds) {
-  return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
-    const nodes = [...el.childNodes];
-    let i = 0;
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (node.nodeType === Node.ELEMENT_NODE && localName(node) === "ldiv") break;
-      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
-        i += 1;
-        continue;
-      }
-      if (isTextLikeNode(node)) break;
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = localName(node);
-        if (HEAD_TAGS.has(tag) || tag === "location") {
-          children.appendChild(buildMarkupElement(node, childDepth, elementIds));
-          i += 1;
-          continue;
-        }
-      }
-      break;
-    }
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (node.nodeType !== Node.ELEMENT_NODE || localName(node) !== "ldiv") {
-        appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
-        i += 1;
-        continue;
-      }
-      const ldiv = node;
-      children.appendChild(buildMarkupElement(ldiv, childDepth, elementIds));
-      i += 1;
-      const end = skipUntilListItemBoundary(nodes, i);
-      appendMarkupVirtualText(children, childDepth, ldiv, nodes.slice(i, end), elementIds);
-      i = end;
-    }
-  });
-}
-
-function buildMarkupOtslContainer(el, depth, elementIds) {
-  return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
-    const nodes = [...el.childNodes];
-    let i = 0;
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (node.nodeType === Node.ELEMENT_NODE && isCellToken(localName(node))) break;
-      if (isTextLikeNode(node) && isWhitespaceOnlyText(node)) {
-        i += 1;
-        continue;
-      }
-      if (isTextLikeNode(node)) break;
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = localName(node);
-        if (HEAD_TAGS.has(tag) || tag === "location" || tag === "h_thread") {
-          children.appendChild(buildMarkupElement(node, childDepth, elementIds));
-          i += 1;
-          continue;
-        }
-      }
-      break;
-    }
-    while (i < nodes.length) {
-      const node = nodes[i];
-      if (node.nodeType !== Node.ELEMENT_NODE) {
-        appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
-        i += 1;
-        continue;
-      }
-      const tag = localName(node);
-      if (tag === "nl") {
-        appendMarkupSelfClosingTag(children, childDepth, "nl", []);
-        i += 1;
-        continue;
-      }
-      if (!isCellToken(tag)) {
-        appendMarkupNodesFromSlice(children, childDepth, [node], elementIds);
-        i += 1;
-        continue;
-      }
-      const cell = node;
-      children.appendChild(buildMarkupElement(cell, childDepth, elementIds));
-      i += 1;
-      if (CELL_SPAN_TAGS.has(tag)) continue;
-      const end = skipUntilCellBoundary(nodes, i);
-      appendMarkupVirtualText(children, childDepth, cell, nodes.slice(i, end), elementIds);
-      i = end;
-    }
-  });
-}
-
-function buildMarkupElement(el, depth, elementIds) {
-  const tag = localName(el);
-  if (tag === "list") return buildMarkupList(el, depth, elementIds);
-  if (OTSL_CONTAINER_TAGS.has(tag)) return buildMarkupOtslContainer(el, depth, elementIds);
-
-  const block = document.createElement("div");
-  block.className = "markup-el";
-  const elementId = elementIds.get(el);
-  if (elementId) block.setAttribute("data-element-id", elementId);
-
-  const attributes = markupAttributes(el);
-
-  if (!el.childNodes.length) {
-    appendMarkupSelfClosingTag(block, depth, tag, attributes);
-    return block;
-  }
-
-  const meaningfulText = [...el.childNodes].filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
-  const textOnly = meaningfulText.length > 0 && meaningfulText.every(isTextLikeNode) && !childElements(el).length;
-  if (textOnly) {
-    const text = serializeMarkupTextNodes(el.childNodes);
-    if (text) {
-      appendMarkupInlineElement(block, depth, tag, attributes, text);
-      return block;
-    }
-  }
-
-  appendMarkupFoldableOpen(block, depth, tag, attributes);
-  block.classList.add("markup-el-foldable");
-
-  const foldBody = document.createElement("div");
-  foldBody.className = "markup-fold-body";
-  const children = document.createElement("div");
-  children.className = "markup-children";
-  for (const child of el.childNodes) {
-    if (isTextLikeNode(child)) {
-      const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(children, depth + 1, text);
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      children.appendChild(buildMarkupElement(child, depth + 1, elementIds));
-    }
-  }
-  foldBody.appendChild(children);
-  appendMarkupCloseTag(foldBody, depth, tag);
-  block.appendChild(foldBody);
-  return block;
-}
-
-/** @returns {Map<string, Element[]>} */
-function collectIntraPageThreads(segment) {
-  /** @type {Map<string, Element[]>} */
-  const byThread = new Map();
-  for (const el of segment) {
-    if (el.nodeType !== Node.ELEMENT_NODE) continue;
-    if (localName(el) === "page_break") continue;
-    const threadId = elementThreadId(el);
-    if (!threadId) continue;
-    if (!byThread.has(threadId)) byThread.set(threadId, []);
-    byThread.get(threadId).push(el);
-  }
-  for (const [threadId, members] of byThread) {
-    if (members.length < 2) byThread.delete(threadId);
-  }
-  return byThread;
-}
-
-function findLastTextNode(node) {
-  if (isTextLikeNode(node)) return node;
-  if (node.nodeType !== Node.ELEMENT_NODE) return null;
-  for (let i = node.childNodes.length - 1; i >= 0; i -= 1) {
-    const found = findLastTextNode(node.childNodes[i]);
-    if (found) return found;
-  }
-  return null;
-}
-
-function trimParentTrailingForFragmentJoin(parent) {
-  const lastText = findLastTextNode(parent);
-  if (!lastText) return;
-  let value = lastText.textContent ?? "";
-  value = value.replace(/\s+$/u, "");
-  if (value.endsWith("-")) value = value.slice(0, -1);
-  if (!value) {
-    lastText.parentNode?.removeChild(lastText);
-    trimParentTrailingForFragmentJoin(parent);
-    return;
-  }
-  lastText.textContent = value;
-}
-
-function appendMergedTextFragments(parent, fragments, elementIds) {
-  for (let i = 0; i < fragments.length; i += 1) {
-    if (i > 0) trimParentTrailingForFragmentJoin(parent);
-    appendRenderedBody(parent, fragments[i], elementIds, {
-      inline: true,
-      trimLeading: i > 0,
-    });
-  }
-}
-
-function renderMergedIntraPageFragments(fragments, elementIds) {
-  const first = fragments[0];
-  const tag = localName(first);
-  const firstId = elementIds.get(first);
-  const threadId = elementThreadId(first);
-
-  let node;
-  if (tag === "text") {
-    node = document.createElement("p");
-    appendMergedTextFragments(node, fragments, elementIds);
-  } else if (tag === "list") {
-    const listClass = first.getAttribute("class") ?? "unordered";
-    node = document.createElement(listClass === "ordered" ? "ol" : "ul");
-    for (const el of fragments) {
-      appendListItemsFromElement(node, el, elementIds);
-    }
-  } else {
-    node = document.createElement("div");
-    node.className = "rendered-fragment-merged-body";
-    for (const el of fragments) {
-      appendRenderedBodyBlocks(node, el, elementIds);
-    }
-  }
-
-  const wrap = wrapRendered(first, node, firstId, "rendered-fragment-merged");
-  if (threadId) wrap.setAttribute("data-thread-id", threadId);
-  return wrap;
-}
-
-function buildRenderedView(segment, elementIds) {
-  const intraPageThreads = collectIntraPageThreads(segment);
-  const skipElements = new Set();
-  /** @type {Map<Element, Element[]>} */
-  const mergeGroups = new Map();
-
-  for (const [, members] of intraPageThreads) {
-    mergeGroups.set(members[0], members);
-    for (let i = 1; i < members.length; i += 1) {
-      skipElements.add(members[i]);
-    }
-  }
-
-  const root = document.createElement("article");
-  root.className = "rendered-doc";
-  for (const el of segment) {
-    if (el.nodeType !== Node.ELEMENT_NODE) continue;
-    if (localName(el) === "page_break") continue;
-    if (skipElements.has(el)) continue;
-
-    const mergeGroup = mergeGroups.get(el);
-    const rendered = mergeGroup
-      ? renderMergedIntraPageFragments(mergeGroup, elementIds)
-      : renderBlockElement(el, elementIds, { inline: false });
-    if (rendered) root.appendChild(rendered);
-  }
-  root.addEventListener("click", (e) => {
-    const elementId = resolveRenderedClickTarget(e.target);
-    if (elementId) selectElement(elementId);
-  });
-  applyReadingLayerClasses(root);
-  return root;
-}
-
-function wrapRendered(el, node, elementId, extraClass) {
-  const tag = localName(el);
-  const wrap = document.createElement("div");
-  wrap.className = `rendered-el rendered-${tag}${extraClass ? ` ${extraClass}` : ""}`;
-  if (elementId) wrap.setAttribute("data-element-id", elementId);
-  applyElementLayerAttr(el, wrap);
-  wrap.appendChild(node);
-  return wrap;
-}
-
-function renderBlockElement(el, elementIds, ctx) {
-  const tag = localName(el);
-  const elementId = elementIds.get(el);
-
-  switch (tag) {
-    case "text": {
-      const p = document.createElement("p");
-      appendRenderedBody(p, el, elementIds, { inline: true });
-      return wrapRendered(el, p, elementId);
-    }
-    case "heading": {
-      const h = document.createElement(`h${headingLevel(el)}`);
-      appendRenderedBody(h, el, elementIds, { inline: true });
-      return wrapRendered(el, h, elementId);
-    }
-    case "field_heading": {
-      const h = document.createElement(`h${headingLevel(el)}`);
-      h.className = "rendered-field-heading";
-      appendRenderedBody(h, el, elementIds, { inline: true });
-      return wrapRendered(el, h, elementId);
-    }
-    case "footnote": {
-      const aside = document.createElement("aside");
-      appendRenderedBody(aside, el, elementIds, { inline: false });
-      return wrapRendered(el, aside, elementId);
-    }
-    case "page_header": {
-      const header = document.createElement("header");
-      header.className = "rendered-page-header";
-      appendRenderedBody(header, el, elementIds, { inline: true });
-      return wrapRendered(el, header, elementId);
-    }
-    case "page_footer": {
-      const footer = document.createElement("footer");
-      footer.className = "rendered-page-footer";
-      appendRenderedBody(footer, el, elementIds, { inline: true });
-      return wrapRendered(el, footer, elementId);
-    }
-    case "list":
-      return renderList(el, elementIds);
-    case "table":
-    case "index":
-    case "tabular":
-      return renderOtslContainer(el, elementIds);
-    case "code":
-      return renderCode(el, elementIds, ctx);
-    case "formula":
-      return renderFormula(el, elementIds, ctx);
-    case "picture":
-      return renderPicture(el, elementIds);
-    case "group": {
-      const figure = document.createElement("figure");
-      figure.className = "rendered-group";
-      appendRenderedBodyBlocks(figure, el, elementIds);
-      const captionEl = readCaptionElement(el);
-      if (captionEl) {
-        figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
-      }
-      return wrapRendered(el, figure, elementId);
-    }
-    case "field_region": {
-      const div = document.createElement("div");
-      div.className = "rendered-field-region";
-      appendRenderedBodyBlocks(div, el, elementIds);
-      return wrapRendered(el, div, elementId);
-    }
-    case "field_item": {
-      const div = document.createElement("div");
-      div.className = "rendered-field-item";
-      appendRenderedBodyBlocks(div, el, elementIds);
-      return wrapRendered(el, div, elementId);
-    }
-    default:
-      return renderUnsupported(el, elementIds);
-  }
-}
-
-function renderUnsupported(el, elementIds) {
-  const stub = document.createElement("div");
-  stub.className = "rendered-unsupported";
-  stub.textContent = `<${localName(el)}> — not yet rendered`;
-  return wrapRendered(el, stub, elementIds.get(el));
-}
-
-function skipElementHeadNodes(nodes, startIdx) {
-  let i = startIdx;
-  while (i < nodes.length && isWhitespaceOnlyText(nodes[i])) i += 1;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType === Node.ELEMENT_NODE && HEAD_TAGS.has(localName(node))) {
-      i += 1;
-      while (i < nodes.length && isWhitespaceOnlyText(nodes[i])) i += 1;
-      continue;
-    }
-    break;
-  }
-  return i;
-}
-
-function readCaptionElement(el) {
-  return childElements(el).find((c) => localName(c) === "caption") ?? null;
-}
-
-function renderEmbeddedCaption(captionEl, elementIds, tagName) {
-  const node = document.createElement(tagName);
-  node.classList.add("rendered-el", "rendered-caption");
-  const elementId = elementIds.get(captionEl);
-  if (elementId) node.setAttribute("data-element-id", elementId);
-  appendRenderedBody(node, captionEl, elementIds, { inline: true });
-  return node;
-}
-
-function appendRenderedBody(parent, el, elementIds, ctx) {
-  const nodes = [...el.childNodes];
-  let i = skipElementHeadNodes(nodes, 0);
-  while (i < nodes.length) {
-    appendRenderedNode(parent, nodes[i], elementIds, ctx);
-    i += 1;
-  }
-}
-
-function appendRenderedBodyBlocks(parent, el, elementIds) {
-  const nodes = [...el.childNodes];
-  let i = skipElementHeadNodes(nodes, 0);
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-      const rendered = renderBlockElement(node, elementIds, { inline: false });
-      if (rendered) parent.appendChild(rendered);
-    } else {
-      appendRenderedNode(parent, node, elementIds, { inline: false });
-    }
-    i += 1;
-  }
-}
-
-function renderMarkerElement(el, elementIds, ctx) {
-  const marker = document.createElement("span");
-  marker.className = "rendered-marker rendered-el";
-  const elementId = elementIds.get(el);
-  if (elementId) marker.setAttribute("data-element-id", elementId);
-  appendRenderedBody(marker, el, elementIds, ctx);
-  return marker;
-}
-
-function renderCheckboxElement(el, elementIds) {
-  const cb = document.createElement("input");
-  cb.type = "checkbox";
-  cb.disabled = true;
-  cb.checked = (el.getAttribute("class") ?? "unselected") === "selected";
-  cb.className = "rendered-checkbox";
-
-  const wrap = document.createElement("span");
-  wrap.className = "rendered-checkbox-wrap rendered-el";
-  const elementId = elementIds.get(el);
-  if (elementId) wrap.setAttribute("data-element-id", elementId);
-  applyElementLayerAttr(el, wrap);
-  wrap.appendChild(cb);
-  return wrap;
-}
-
-function renderFieldKeyElement(el, elementIds, ctx) {
-  const node = document.createElement("span");
-  node.className = "rendered-field-key rendered-el";
-  const elementId = elementIds.get(el);
-  if (elementId) node.setAttribute("data-element-id", elementId);
-  applyElementLayerAttr(el, node);
-  appendRenderedBody(node, el, elementIds, { ...ctx, inline: true });
-  return node;
-}
-
-function renderFieldValueElement(el, elementIds, ctx) {
-  const valueClass = el.getAttribute("class") ?? "read_only";
-  const node = document.createElement("span");
-  node.className = `rendered-field-value rendered-field-value-${valueClass} rendered-el`;
-  const elementId = elementIds.get(el);
-  if (elementId) node.setAttribute("data-element-id", elementId);
-  applyElementLayerAttr(el, node);
-  appendRenderedBody(node, el, elementIds, { ...ctx, inline: true });
-  if (
-    valueClass === "fillable"
-    && !node.textContent.trim()
-    && !node.querySelector(".rendered-checkbox-wrap, img, .rendered-marker")
-  ) {
-    const slot = document.createElement("span");
-    slot.className = "rendered-field-fillable-slot";
-    slot.setAttribute("aria-hidden", "true");
-    node.appendChild(slot);
-  }
-  return node;
-}
-
-function renderFieldHintElement(el, elementIds, ctx) {
-  const node = document.createElement("span");
-  node.className = "rendered-field-hint rendered-el";
-  const elementId = elementIds.get(el);
-  if (elementId) node.setAttribute("data-element-id", elementId);
-  applyElementLayerAttr(el, node);
-  appendRenderedBody(node, el, elementIds, { ...ctx, inline: true });
-  return node;
-}
-
-function appendRenderedNode(parent, node, elementIds, ctx) {
-  if (isTextLikeNode(node)) {
-    let text = node.textContent;
-    if (!text || !text.trim()) return;
-    if (ctx.trimLeading) {
-      text = text.replace(/^\s+/u, "");
-      ctx.trimLeading = false;
-      if (!text) return;
-    }
-    parent.appendChild(document.createTextNode(text));
-    return;
-  }
-  if (node.nodeType !== Node.ELEMENT_NODE) return;
-
-  const tag = localName(node);
-  if (HEAD_TAGS.has(tag)) return;
-
-  if (RENDER_FORMAT_TAGS.has(tag)) {
-    parent.appendChild(renderFormatElement(node, elementIds, ctx));
-    return;
-  }
-
-  if (tag === "code" || tag === "formula") {
-    const rendered = renderBlockElement(node, elementIds, { inline: true });
-    if (rendered) parent.appendChild(rendered);
-    return;
-  }
-
-  if (RENDER_BLOCK_TAGS.has(tag)) {
-    const rendered = renderBlockElement(node, elementIds, ctx);
-    if (rendered) parent.appendChild(rendered);
-    return;
-  }
-
-  if (tag === "marker") {
-    parent.appendChild(renderMarkerElement(node, elementIds, ctx));
-    return;
-  }
-
-  if (tag === "checkbox") {
-    parent.appendChild(renderCheckboxElement(node, elementIds));
-    return;
-  }
-
-  if (tag === "key") {
-    parent.appendChild(renderFieldKeyElement(node, elementIds, ctx));
-    return;
-  }
-
-  if (tag === "value") {
-    parent.appendChild(renderFieldValueElement(node, elementIds, ctx));
-    return;
-  }
-
-  if (tag === "hint") {
-    parent.appendChild(renderFieldHintElement(node, elementIds, ctx));
-    return;
-  }
-
-  if (tag === "ldiv") return;
-  if (isCellToken(tag) || tag === "src" || tag === "tabular") return;
-
-  appendRenderedBody(parent, node, elementIds, ctx);
-}
-
-function renderFormatElement(el, elementIds, ctx) {
-  const tag = localName(el);
-  if (tag === "content") {
-    const span = document.createElement("span");
-    span.textContent = el.textContent ?? "";
-    return span;
-  }
-
-  let node;
-  if (tag === "handwriting") {
-    node = document.createElement("span");
-    node.className = "rendered-handwriting";
-  } else if (tag === "rtl") {
-    node = document.createElement("bdi");
-    node.setAttribute("dir", "rtl");
-  } else {
-    node = document.createElement(FORMAT_HTML_TAG[tag] ?? "span");
-  }
-
-  appendRenderedBody(node, el, elementIds, ctx);
-  return node;
-}
-
-function renderCode(el, elementIds, ctx) {
-  const labelEl = childElements(el).find((c) => localName(c) === "label");
-  const labelValue = labelEl?.getAttribute("value");
-
-  const code = document.createElement("code");
-  appendRenderedBody(code, el, elementIds, { inline: ctx.inline });
-
-  if (ctx.inline) {
-    code.classList.add("rendered-el");
-    const id = elementIds.get(el);
-    if (id) code.setAttribute("data-element-id", id);
-    return code;
-  }
-
-  const pre = document.createElement("pre");
-  if (labelValue && labelValue !== "undefined") {
-    const label = document.createElement("span");
-    label.className = "rendered-code-label";
-    label.textContent = labelValue;
-    pre.appendChild(label);
-  }
-  pre.appendChild(code);
-  return wrapRendered(el, pre, elementIds.get(el));
-}
-
-function renderFormula(el, elementIds, ctx) {
-  const span = document.createElement("span");
-  span.className = ctx.inline ? "rendered-formula-inline" : "rendered-formula";
-  appendRenderedBody(span, el, elementIds, { inline: true });
-  if (ctx.inline) {
-    span.classList.add("rendered-el");
-    const id = elementIds.get(el);
-    if (id) span.setAttribute("data-element-id", id);
-    return span;
-  }
-  return wrapRendered(el, span, elementIds.get(el));
-}
-
-function markPictureUnavailable(img) {
-  img.classList.add("rendered-picture-unavailable");
-  img.alt = "\u00A0";
-  img.setAttribute("aria-label", PICTURE_UNAVAILABLE_ALT);
-}
-
-function appendPictureFigureImage(figure, uri, captionEl, elementIds) {
-  const img = document.createElement("img");
-  figure.appendChild(img);
-
-  const resolved = uri ? resolveArchiveUri(uri) : null;
-  if (resolved) {
-    img.alt = "";
-    img.src = resolved;
-    img.addEventListener("error", () => markPictureUnavailable(img), { once: true });
-  } else {
-    markPictureUnavailable(img);
-    img.src = INVALID_PICTURE_SRC;
-  }
-
-  if (captionEl) {
-    figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
-  }
-}
-
-function renderPicture(el, elementIds) {
-  const figure = document.createElement("figure");
-  const captionEl = readCaptionElement(el);
-  const srcEl = childElements(el).find((c) => localName(c) === "src") ?? null;
-  const uri = srcEl?.getAttribute("uri")?.trim() || null;
-
-  appendPictureFigureImage(figure, uri, captionEl, elementIds);
-
-  const nodes = [...el.childNodes];
-  let i = skipElementHeadNodes(nodes, 0);
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (tag === "src") {
-      i += 1;
-      continue;
-    }
-    if (tag === "tabular") {
-      const rendered = renderOtslContainer(node, elementIds);
-      if (rendered) figure.appendChild(rendered);
-      i += 1;
-      continue;
-    }
-    break;
-  }
-
-  const bodyInner = document.createElement("div");
-  bodyInner.className = "rendered-picture-contents-body";
-  appendPictureBodyContent(bodyInner, nodes, i, elementIds);
-  if (bodyInner.textContent.trim()) {
-    const details = document.createElement("details");
-    details.className = "rendered-picture-contents";
-    const summary = document.createElement("summary");
-    summary.textContent = "Picture contents";
-    details.appendChild(summary);
-    details.appendChild(bodyInner);
-    figure.appendChild(details);
-  }
-
-  return wrapRendered(el, figure, elementIds.get(el));
-}
-
-function appendPictureBodyContent(container, nodes, startIdx, elementIds) {
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-      const rendered = renderBlockElement(node, elementIds, { inline: false });
-      if (rendered) container.appendChild(rendered);
-    } else {
-      appendRenderedNode(container, node, elementIds, { inline: false });
-    }
-    i += 1;
-  }
-}
-
-function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
-  const hasBlock = contentNodes.some(
-    (n) => n.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(n)),
-  );
-  const inner = document.createElement(hasBlock ? "div" : "p");
-  for (const node of contentNodes) {
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
-      const rendered = renderBlockElement(node, elementIds, { inline: false });
-      if (rendered) inner.appendChild(rendered);
-    } else {
-      appendRenderedNode(inner, node, elementIds, { inline: true });
-    }
-  }
-  const wrap = document.createElement("div");
-  wrap.className = "rendered-el rendered-text rendered-el-virtual-text";
-  const elementId = elementIds.get(hostEl);
-  if (elementId) wrap.setAttribute("data-element-id", elementId);
-  applyElementLayerAttr(hostEl, wrap);
-  wrap.appendChild(inner);
-  return wrap;
-}
-
-function appendListItemsFromElement(list, el, elementIds) {
-  const nodes = [...el.childNodes];
-  let i = skipContainerLevelHead(nodes, 0);
-
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE || localName(node) !== "ldiv") {
-      i += 1;
-      continue;
-    }
-
-    const ldiv = node;
-    i += 1;
-    const li = document.createElement("li");
-
-    for (const child of childElements(ldiv)) {
-      const childTag = localName(child);
-      if (childTag === "marker") {
-        li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
-      } else if (childTag === "checkbox") {
-        li.appendChild(renderCheckboxElement(child, elementIds));
-      }
-    }
-
-    const contentStart = i;
-    const head = parseElementHeadAt(nodes, i);
-    if (head) i = head.nextIndex;
-
-    while (i < nodes.length) {
-      const contentNode = nodes[i];
-      if (contentNode.nodeType === Node.ELEMENT_NODE && localName(contentNode) === "ldiv") break;
-      i += 1;
-    }
-
-    const contentNodes = nodes.slice(contentStart, i);
-    appendRenderedSliceContent(li, ldiv, contentNodes, elementIds);
-
-    list.appendChild(li);
-  }
-}
-
-function renderList(el, elementIds) {
-  const listClass = el.getAttribute("class") ?? "unordered";
-  const list = document.createElement(listClass === "ordered" ? "ol" : "ul");
-  appendListItemsFromElement(list, el, elementIds);
-  return wrapRendered(el, list, elementIds.get(el));
-}
-
-function isHeaderCellKind(kind) {
-  return kind === "ched" || kind === "rhed" || kind === "corn" || kind === "srow";
-}
-
-function skipOtslContainerHead(nodes, startIdx) {
-  let i = startIdx;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (isCellToken(tag)) break;
-    if (HEAD_TAGS.has(tag) || tag === "h_thread" || tag === "location") {
-      i += 1;
-      continue;
-    }
-    break;
-  }
-  return i;
-}
-
-/** @returns {{ kind: string, token: Element, contentNodes: Node[] }[][]} */
-function parseOtslRows(container) {
-  const nodes = [...container.childNodes];
-  let i = skipOtslContainerHead(nodes, 0);
-  /** @type {{ kind: string, token: Element, contentNodes: Node[] }[][]} */
-  const rows = [];
-  /** @type {{ kind: string, token: Element, contentNodes: Node[] }[]} */
-  let currentRow = [];
-
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      i += 1;
-      continue;
-    }
-    const tag = localName(node);
-    if (tag === "nl") {
-      rows.push(currentRow);
-      currentRow = [];
-      i += 1;
-      continue;
-    }
-    if (!isCellToken(tag)) {
-      i += 1;
-      continue;
-    }
-
-    if (CELL_SPAN_TAGS.has(tag)) {
-      currentRow.push({ kind: tag, token: node, contentNodes: [] });
-      i += 1;
-      continue;
-    }
-
-    i += 1;
-    const head = parseElementHeadAt(nodes, i);
-    if (head) i = head.nextIndex;
-    const contentStart = i;
-    i = skipUntilCellBoundary(nodes, i);
-    currentRow.push({ kind: tag, token: node, contentNodes: nodes.slice(contentStart, i) });
-  }
-
-  if (currentRow.length) rows.push(currentRow);
-  return rows;
-}
-
-function findVerticalCellOrigin(grid, row, col) {
-  for (let r = row - 1; r >= 0; r -= 1) {
-    const cell = grid[r]?.[col];
-    if (!cell || cell.covered) continue;
-    return { cell, row: r, col };
-  }
-  return null;
-}
-
-function findHorizontalCellOrigin(grid, row, col) {
-  for (let c = col - 1; c >= 0; c -= 1) {
-    const cell = grid[row]?.[c];
-    if (!cell || cell.covered) continue;
-    return { cell, row, col: c };
-  }
-  return null;
-}
-
-function nextFreeColumn(grid, row, col) {
-  let c = col;
-  while (grid[row]?.[c]?.covered) c += 1;
-  return c;
-}
-
-/** @returns {{ kind: string, token: Element, contentNodes: Node[], colspan: number, rowspan: number, covered?: boolean }[][]} */
-function buildOtslGrid(rows) {
-  /** @type {{ kind: string, token: Element, contentNodes: Node[], colspan: number, rowspan: number, covered?: boolean }[][]} */
-  const grid = [];
-
-  for (let rowIdx = 0; rowIdx < rows.length; rowIdx += 1) {
-    if (!grid[rowIdx]) grid[rowIdx] = [];
-    let col = 0;
-
-    for (const parsed of rows[rowIdx]) {
-      col = nextFreeColumn(grid, rowIdx, col);
-
-      if (parsed.kind === "lcel") {
-        const origin = findHorizontalCellOrigin(grid, rowIdx, col);
-        if (origin) origin.cell.colspan += 1;
-        grid[rowIdx][col] = { kind: "lcel", token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true };
-        col += 1;
-        continue;
-      }
-
-      if (parsed.kind === "ucel") {
-        const origin = findVerticalCellOrigin(grid, rowIdx, col);
-        if (origin) origin.cell.rowspan += 1;
-        grid[rowIdx][col] = { kind: "ucel", token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true };
-        col += 1;
-        continue;
-      }
-
-      if (parsed.kind === "xcel") {
-        const vOrigin = findVerticalCellOrigin(grid, rowIdx, col);
-        const hOrigin = findHorizontalCellOrigin(grid, rowIdx, col);
-        if (vOrigin && hOrigin && vOrigin.cell === hOrigin.cell) {
-          vOrigin.cell.rowspan += 1;
-          vOrigin.cell.colspan += 1;
-        } else {
-          if (vOrigin) vOrigin.cell.rowspan += 1;
-          if (hOrigin) hOrigin.cell.colspan += 1;
-        }
-        grid[rowIdx][col] = { kind: "xcel", token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true };
-        col += 1;
-        continue;
-      }
-
-      grid[rowIdx][col] = {
-        kind: parsed.kind,
-        token: parsed.token,
-        contentNodes: parsed.contentNodes,
-        colspan: 1,
-        rowspan: 1,
-        covered: false,
-      };
-      col += 1;
-    }
-  }
-
-  return grid;
-}
-
-function appendTableCellContent(container, nodes, elementIds, cellToken) {
-  appendRenderedSliceContent(container, cellToken, nodes, elementIds);
-}
-
-function renderOtslContainer(el, elementIds) {
-  const table = document.createElement("table");
-  table.className = "rendered-table";
-
-  const captionEl = readCaptionElement(el);
-  if (captionEl) {
-    table.appendChild(renderEmbeddedCaption(captionEl, elementIds, "caption"));
-  }
-
-  const grid = buildOtslGrid(parseOtslRows(el));
-  const tbody = document.createElement("tbody");
-
-  for (const row of grid) {
-    const tr = document.createElement("tr");
-    for (const cell of row) {
-      if (!cell || cell.covered) continue;
-      const cellTag = isHeaderCellKind(cell.kind) ? "th" : "td";
-      const td = document.createElement(cellTag);
-      if (cell.colspan > 1) td.colSpan = cell.colspan;
-      if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
-      appendTableCellContent(td, cell.contentNodes, elementIds, cell.token);
-      tr.appendChild(td);
-    }
-    if (tr.childNodes.length) tbody.appendChild(tr);
-  }
-
-  if (tbody.childNodes.length) table.appendChild(tbody);
-  return wrapRendered(el, table, elementIds.get(el));
-}
-
-function serializeSegment(segment) {
-  return segment.map((el) => serializeElement(el, 0)).join("\n");
-}
-
-function serializeElement(el, depth) {
-  const pad = "  ".repeat(depth);
-  const tag = localName(el);
-  const attrs = [...el.attributes]
-    .filter((a) => a.name !== "xmlns" || a.value !== DOCLANG_NS)
-    .map((a) => `${a.name}="${a.value}"`)
-    .join(" ");
-  const attrStr = attrs ? ` ${attrs}` : "";
-
-  if (!el.childNodes.length) return `${pad}<${tag}${attrStr}/>`;
-
-  const meaningfulText = [...el.childNodes].filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
-  const textOnly = meaningfulText.length > 0 && meaningfulText.every(isTextLikeNode) && !childElements(el).length;
-  if (textOnly) {
-    const text = serializeMarkupTextNodes(el.childNodes);
-    if (text) {
-      return `${pad}<${tag}${attrStr}>${text}</${tag}>`;
-    }
-  }
-
-  const parts = [`${pad}<${tag}${attrStr}>`];
-  for (const child of el.childNodes) {
-    if (isTextLikeNode(child)) {
-      const text = formatMarkupTextNode(child);
-      if (text) parts.push("  ".repeat(depth + 1) + text);
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      parts.push(serializeElement(child, depth + 1));
-    }
-  }
-  parts.push(`${pad}</${tag}>`);
-  return parts.join("\n");
-}
-
-function childElements(el) {
-  return [...el.children];
-}
-
-function localName(el) {
-  return el.localName || el.tagName.replace(/^.*:/, "");
-}
-
-function normalizeArchivePath(path) {
-  return path.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function archiveRelativeAssetPath(path) {
-  const norm = normalizeArchivePath(path);
-  const idx = norm.indexOf("assets/");
-  return idx === -1 ? null : norm.slice(idx);
-}
-
-function mimeFromAssetPath(path) {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  switch (ext) {
-    case "png":
-      return "image/png";
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "webp":
-      return "image/webp";
-    case "gif":
-      return "image/gif";
-    case "svg":
-      return "image/svg+xml";
-    default:
-      return "application/octet-stream";
-  }
-}
-
-/**
- * Resolve a picture @uri to a safe img src.
- * Only archive asset blob URLs and small raster data: URIs are allowed.
- * Remote, protocol-relative, blob:, and unresolved relative URIs are rejected.
- * @returns {string | null}
- */
-function resolveArchiveUri(uri) {
-  if (!uri) return null;
-  const trimmed = uri.trim();
-  if (!trimmed) return null;
-
-  if (SAFE_DATA_IMAGE_RE.test(trimmed)) {
-    return trimmed.length <= MAX_DATA_IMAGE_URI_LENGTH ? trimmed : null;
-  }
-
-  // Reject any other scheme (http, https, blob, javascript, …) and protocol-relative URLs.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith("//")) return null;
-
-  return state?.assetUrls?.get(normalizeArchivePath(trimmed)) ?? null;
-}
-
-function revokeDocumentState(docState) {
-  if (!docState) return;
-  for (const url of docState.pageImages.values()) {
-    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
-  }
-  for (const url of docState.assetUrls.values()) {
-    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
-  }
-}
-
-function revokeArchiveUrls() {
-  revokeDocumentState(state);
-}
-
-async function extractArchiveFromZipBuffer(buffer) {
-  const entries = await unzip(buffer);
-  const markupEntry = findArchiveEntry(entries, "document.xml");
-  if (!markupEntry) {
-    throw new Error("Archive must contain document.xml");
-  }
-  const markupXml = new TextDecoder().decode(markupEntry.data);
-  const pageImages = new Map();
-  const assetUrls = new Map();
-  for (const e of entries) {
-    const m = e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);
-    if (m) {
-      const ext = m[2].toLowerCase().replace("jpeg", "jpg");
-      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-      pageImages.set(Number(m[1]), URL.createObjectURL(new Blob([e.data], { type: mime })));
-      continue;
-    }
-    if (e.name.startsWith("assets/") && !e.name.endsWith("/")) {
-      assetUrls.set(
-        e.name,
-        URL.createObjectURL(new Blob([e.data], { type: mimeFromAssetPath(e.name) })),
-      );
-    }
-  }
-  return { markupXml, pageImages, assetUrls };
-}
-
-async function unzip(buffer, { shouldExtract } = {}) {
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error("ZIP decompression requires a browser with DecompressionStream support");
-  }
-
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  const eocdOffset = findEndOfCentralDirectory(bytes);
-  const entryCount = view.getUint16(eocdOffset + 10, true);
-  const centralDirOffset = view.getUint32(eocdOffset + 16, true);
-
-  if (entryCount > ZIP_MAX_ENTRIES) {
-    throw new Error("ZIP archive has too many entries");
-  }
-  if (centralDirOffset >= bytes.length) {
-    throw new Error("Invalid ZIP central directory offset");
-  }
-
-  /** @type {{ name: string, data: Uint8Array }[]} */
-  const entries = [];
-  let offset = centralDirOffset;
-  let totalUncompressed = 0;
-
-  for (let i = 0; i < entryCount; i += 1) {
-    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50) {
-      throw new Error("Invalid ZIP central directory");
-    }
-
-    const compression = view.getUint16(offset + 10, true);
-    const compressedSize = view.getUint32(offset + 20, true);
-    const uncompressedSize = view.getUint32(offset + 24, true);
-    const nameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    const localHeaderOffset = view.getUint32(offset + 42, true);
-    const nameEnd = offset + 46 + nameLength;
-    if (nameEnd > bytes.length) {
-      throw new Error("Invalid ZIP entry name");
-    }
-    const rawName = new TextDecoder().decode(bytes.subarray(offset + 46, nameEnd));
-    const name = normalizeZipEntryName(rawName);
-
-    offset = nameEnd + extraLength + commentLength;
-    if (offset > bytes.length) {
-      throw new Error("Invalid ZIP central directory");
-    }
-
-    if (!name || name.endsWith("/") || isIgnoredArchiveEntry(name)) continue;
-    if (shouldExtract && !shouldExtract(name)) continue;
-
-    if (compressedSize > ZIP_MAX_ENTRY_COMPRESSED_BYTES || uncompressedSize > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
-      throw new Error(`ZIP entry exceeds size limit: ${name}`);
-    }
-    if (
-      compressedSize > 0 &&
-      uncompressedSize > 0 &&
-      uncompressedSize / compressedSize > ZIP_MAX_COMPRESSION_RATIO
-    ) {
-      throw new Error(`ZIP entry compression ratio exceeds limit: ${name}`);
-    }
-    if (totalUncompressed + uncompressedSize > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) {
-      throw new Error("ZIP archive exceeds total uncompressed size limit");
-    }
-
-    if (localHeaderOffset + 30 > bytes.length || view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
-      throw new Error(`Invalid ZIP local header: ${name}`);
-    }
-    const localNameLength = view.getUint16(localHeaderOffset + 26, true);
-    const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
-    const dataOffset = localHeaderOffset + 30 + localNameLength + localExtraLength;
-    if (dataOffset + compressedSize > bytes.length) {
-      throw new Error(`ZIP entry data out of bounds: ${name}`);
-    }
-    const compressed = bytes.subarray(dataOffset, dataOffset + compressedSize);
-    const data = await decompressZipEntry(compressed, compression, uncompressedSize);
-    totalUncompressed += data.length;
-    if (totalUncompressed > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) {
-      throw new Error("ZIP archive exceeds total uncompressed size limit");
-    }
-    entries.push({ name, data });
-  }
-
-  return entries;
-}
-
-function findEndOfCentralDirectory(bytes) {
-  for (let i = bytes.length - 22; i >= 0; i -= 1) {
-    if (
-      bytes[i] === 0x50 &&
-      bytes[i + 1] === 0x4b &&
-      bytes[i + 2] === 0x05 &&
-      bytes[i + 3] === 0x06
-    ) {
-      return i;
-    }
-  }
-  throw new Error("Invalid ZIP archive");
-}
-
-function concatUint8Arrays(chunks, totalLength) {
-  const out = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
-}
-
-async function decompressZipEntry(data, method, uncompressedSize) {
-  if (method === 0) {
-    if (data.length > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
-      throw new Error("ZIP entry exceeds size limit");
-    }
-    return data;
-  }
-  if (method === 8) {
-    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    const reader = stream.getReader();
-    const chunks = [];
-    let total = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
-          throw new Error("ZIP entry exceeds size limit");
-        }
-        if (data.length > 0 && total / data.length > ZIP_MAX_COMPRESSION_RATIO) {
-          throw new Error("ZIP entry compression ratio exceeds limit");
-        }
-        chunks.push(value);
-      }
-    } catch (err) {
-      try {
-        await reader.cancel();
-      } catch {
-        /* ignore cancel errors */
-      }
-      throw err;
-    }
-
-    const out = concatUint8Arrays(chunks, total);
-    if (uncompressedSize && out.length !== uncompressedSize) {
-      return out.slice(0, Math.min(out.length, uncompressedSize));
-    }
-    return out;
-  }
-  throw new Error(`Unsupported ZIP compression method ${method}`);
-}
-
-function normalizeZipEntryName(name) {
-  return name.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-/** Match archive root files by exact name; skip macOS metadata entries. */
-function findArchiveEntry(entries, fileName) {
-  return entries.find((e) => e.name === fileName);
-}
-
-function isIgnoredArchiveEntry(name) {
-  if (name === ".DS_Store" || name.endsWith("/.DS_Store")) return true;
-  return name.split("/").some((part) => part.startsWith("._") || part === "__MACOSX");
-}
+(function(){var e=Object.defineProperty,t=(e,t,n)=>()=>{if(n)throw n[0];try{return e&&(t=e(e=0)),t}catch(e){throw n=[e],e}},n=(t,n)=>{let r={};for(var i in t)e(r,i,{get:t[i],enumerable:!0});return n||e(r,Symbol.toStringTag,{value:`Module`}),r},r=globalThis,i=r.ShadowRoot&&(r.ShadyCSS===void 0||r.ShadyCSS.nativeShadow)&&`adoptedStyleSheets`in Document.prototype&&`replace`in CSSStyleSheet.prototype,a=Symbol(),o=new WeakMap,s=class{constructor(e,t,n){if(this._$cssResult$=!0,n!==a)throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");this.cssText=e,this.t=t}get styleSheet(){let e=this.o,t=this.t;if(i&&e===void 0){let n=t!==void 0&&t.length===1;n&&(e=o.get(t)),e===void 0&&((this.o=e=new CSSStyleSheet).replaceSync(this.cssText),n&&o.set(t,e))}return e}toString(){return this.cssText}},c=e=>new s(typeof e==`string`?e:e+``,void 0,a),l=(e,t)=>{if(i)e.adoptedStyleSheets=t.map(e=>e instanceof CSSStyleSheet?e:e.styleSheet);else for(let n of t){let t=document.createElement(`style`),i=r.litNonce;i!==void 0&&t.setAttribute(`nonce`,i),t.textContent=n.cssText,e.appendChild(t)}},u=i?e=>e:e=>e instanceof CSSStyleSheet?(e=>{let t=``;for(let n of e.cssRules)t+=n.cssText;return c(t)})(e):e,{is:d,defineProperty:f,getOwnPropertyDescriptor:p,getOwnPropertyNames:m,getOwnPropertySymbols:ee,getPrototypeOf:te}=Object,h=globalThis,ne=h.trustedTypes,re=ne?ne.emptyScript:``,ie=h.reactiveElementPolyfillSupport,ae=(e,t)=>e,oe={toAttribute(e,t){switch(t){case Boolean:e=e?re:null;break;case Object:case Array:e=e==null?e:JSON.stringify(e)}return e},fromAttribute(e,t){let n=e;switch(t){case Boolean:n=e!==null;break;case Number:n=e===null?null:Number(e);break;case Object:case Array:try{n=JSON.parse(e)}catch{n=null}}return n}},se=(e,t)=>!d(e,t),ce={attribute:!0,type:String,converter:oe,reflect:!1,useDefault:!1,hasChanged:se};Symbol.metadata??=Symbol(`metadata`),h.litPropertyMetadata??=new WeakMap;var g=class extends HTMLElement{static addInitializer(e){this._$Ei(),(this.l??=[]).push(e)}static get observedAttributes(){return this.finalize(),this._$Eh&&[...this._$Eh.keys()]}static createProperty(e,t=ce){if(t.state&&(t.attribute=!1),this._$Ei(),this.prototype.hasOwnProperty(e)&&((t=Object.create(t)).wrapped=!0),this.elementProperties.set(e,t),!t.noAccessor){let n=Symbol(),r=this.getPropertyDescriptor(e,n,t);r!==void 0&&f(this.prototype,e,r)}}static getPropertyDescriptor(e,t,n){let{get:r,set:i}=p(this.prototype,e)??{get(){return this[t]},set(e){this[t]=e}};return{get:r,set(t){let a=r?.call(this);i?.call(this,t),this.requestUpdate(e,a,n)},configurable:!0,enumerable:!0}}static getPropertyOptions(e){return this.elementProperties.get(e)??ce}static _$Ei(){if(this.hasOwnProperty(ae(`elementProperties`)))return;let e=te(this);e.finalize(),e.l!==void 0&&(this.l=[...e.l]),this.elementProperties=new Map(e.elementProperties)}static finalize(){if(this.hasOwnProperty(ae(`finalized`)))return;if(this.finalized=!0,this._$Ei(),this.hasOwnProperty(ae(`properties`))){let e=this.properties,t=[...m(e),...ee(e)];for(let n of t)this.createProperty(n,e[n])}let e=this[Symbol.metadata];if(e!==null){let t=litPropertyMetadata.get(e);if(t!==void 0)for(let[e,n]of t)this.elementProperties.set(e,n)}this._$Eh=new Map;for(let[e,t]of this.elementProperties){let n=this._$Eu(e,t);n!==void 0&&this._$Eh.set(n,e)}this.elementStyles=this.finalizeStyles(this.styles)}static finalizeStyles(e){let t=[];if(Array.isArray(e)){let n=new Set(e.flat(1/0).reverse());for(let e of n)t.unshift(u(e))}else e!==void 0&&t.push(u(e));return t}static _$Eu(e,t){let n=t.attribute;return!1===n?void 0:typeof n==`string`?n:typeof e==`string`?e.toLowerCase():void 0}constructor(){super(),this._$Ep=void 0,this.isUpdatePending=!1,this.hasUpdated=!1,this._$Em=null,this._$Ev()}_$Ev(){this._$ES=new Promise(e=>this.enableUpdating=e),this._$AL=new Map,this._$E_(),this.requestUpdate(),this.constructor.l?.forEach(e=>e(this))}addController(e){(this._$EO??=new Set).add(e),this.renderRoot!==void 0&&this.isConnected&&e.hostConnected?.()}removeController(e){this._$EO?.delete(e)}_$E_(){let e=new Map,t=this.constructor.elementProperties;for(let n of t.keys())this.hasOwnProperty(n)&&(e.set(n,this[n]),delete this[n]);e.size>0&&(this._$Ep=e)}createRenderRoot(){let e=this.shadowRoot??this.attachShadow(this.constructor.shadowRootOptions);return l(e,this.constructor.elementStyles),e}connectedCallback(){this.renderRoot??=this.createRenderRoot(),this.enableUpdating(!0),this._$EO?.forEach(e=>e.hostConnected?.())}enableUpdating(e){}disconnectedCallback(){this._$EO?.forEach(e=>e.hostDisconnected?.())}attributeChangedCallback(e,t,n){this._$AK(e,n)}_$ET(e,t){let n=this.constructor.elementProperties.get(e),r=this.constructor._$Eu(e,n);if(r!==void 0&&!0===n.reflect){let i=(n.converter?.toAttribute===void 0?oe:n.converter).toAttribute(t,n.type);this._$Em=e,i==null?this.removeAttribute(r):this.setAttribute(r,i),this._$Em=null}}_$AK(e,t){let n=this.constructor,r=n._$Eh.get(e);if(r!==void 0&&this._$Em!==r){let e=n.getPropertyOptions(r),i=typeof e.converter==`function`?{fromAttribute:e.converter}:e.converter?.fromAttribute===void 0?oe:e.converter;this._$Em=r;let a=i.fromAttribute(t,e.type);this[r]=a??this._$Ej?.get(r)??a,this._$Em=null}}requestUpdate(e,t,n,r=!1,i){if(e!==void 0){let a=this.constructor;if(!1===r&&(i=this[e]),n??=a.getPropertyOptions(e),!((n.hasChanged??se)(i,t)||n.useDefault&&n.reflect&&i===this._$Ej?.get(e)&&!this.hasAttribute(a._$Eu(e,n))))return;this.C(e,t,n)}!1===this.isUpdatePending&&(this._$ES=this._$EP())}C(e,t,{useDefault:n,reflect:r,wrapped:i},a){n&&!(this._$Ej??=new Map).has(e)&&(this._$Ej.set(e,a??t??this[e]),!0!==i||a!==void 0)||(this._$AL.has(e)||(this.hasUpdated||n||(t=void 0),this._$AL.set(e,t)),!0===r&&this._$Em!==e&&(this._$Eq??=new Set).add(e))}async _$EP(){this.isUpdatePending=!0;try{await this._$ES}catch(e){Promise.reject(e)}let e=this.scheduleUpdate();return e!=null&&await e,!this.isUpdatePending}scheduleUpdate(){return this.performUpdate()}performUpdate(){if(!this.isUpdatePending)return;if(!this.hasUpdated){if(this.renderRoot??=this.createRenderRoot(),this._$Ep){for(let[e,t]of this._$Ep)this[e]=t;this._$Ep=void 0}let e=this.constructor.elementProperties;if(e.size>0)for(let[t,n]of e){let{wrapped:e}=n,r=this[t];!0!==e||this._$AL.has(t)||r===void 0||this.C(t,void 0,n,r)}}let e=!1,t=this._$AL;try{e=this.shouldUpdate(t),e?(this.willUpdate(t),this._$EO?.forEach(e=>e.hostUpdate?.()),this.update(t)):this._$EM()}catch(t){throw e=!1,this._$EM(),t}e&&this._$AE(t)}willUpdate(e){}_$AE(e){this._$EO?.forEach(e=>e.hostUpdated?.()),this.hasUpdated||(this.hasUpdated=!0,this.firstUpdated(e)),this.updated(e)}_$EM(){this._$AL=new Map,this.isUpdatePending=!1}get updateComplete(){return this.getUpdateComplete()}getUpdateComplete(){return this._$ES}shouldUpdate(e){return!0}update(e){this._$Eq&&=this._$Eq.forEach(e=>this._$ET(e,this[e])),this._$EM()}updated(e){}firstUpdated(e){}};g.elementStyles=[],g.shadowRootOptions={mode:`open`},g[ae(`elementProperties`)]=new Map,g[ae(`finalized`)]=new Map,ie?.({ReactiveElement:g}),(h.reactiveElementVersions??=[]).push(`2.1.2`);var le=globalThis,ue=e=>e,de=le.trustedTypes,fe=de?de.createPolicy(`lit-html`,{createHTML:e=>e}):void 0,pe=`$lit$`,_=`lit$${Math.random().toFixed(9).slice(2)}$`,me=`?`+_,he=`<${me}>`,v=document,ge=()=>v.createComment(``),_e=e=>e===null||typeof e!=`object`&&typeof e!=`function`,ve=Array.isArray,ye=e=>ve(e)||typeof e?.[Symbol.iterator]==`function`,be=`[ 	
+\f\r]`,xe=/<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g,Se=/-->/g,Ce=/>/g,y=RegExp(`>|${be}(?:([^\\s"'>=/]+)(${be}*=${be}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`,`g`),we=/'/g,Te=/"/g,Ee=/^(?:script|style|textarea|title)$/i,b=(e=>(t,...n)=>({_$litType$:e,strings:t,values:n}))(1),x=Symbol.for(`lit-noChange`),S=Symbol.for(`lit-nothing`),De=new WeakMap,C=v.createTreeWalker(v,129);function Oe(e,t){if(!ve(e)||!e.hasOwnProperty(`raw`))throw Error(`invalid template strings array`);return fe===void 0?t:fe.createHTML(t)}var ke=(e,t)=>{let n=e.length-1,r=[],i,a=t===2?`<svg>`:t===3?`<math>`:``,o=xe;for(let t=0;t<n;t++){let n=e[t],s,c,l=-1,u=0;for(;u<n.length&&(o.lastIndex=u,c=o.exec(n),c!==null);)u=o.lastIndex,o===xe?c[1]===`!--`?o=Se:c[1]===void 0?c[2]===void 0?c[3]!==void 0&&(o=y):(Ee.test(c[2])&&(i=RegExp(`</`+c[2],`g`)),o=y):o=Ce:o===y?c[0]===`>`?(o=i??xe,l=-1):c[1]===void 0?l=-2:(l=o.lastIndex-c[2].length,s=c[1],o=c[3]===void 0?y:c[3]===`"`?Te:we):o===Te||o===we?o=y:o===Se||o===Ce?o=xe:(o=y,i=void 0);let d=o===y&&e[t+1].startsWith(`/>`)?` `:``;a+=o===xe?n+he:l>=0?(r.push(s),n.slice(0,l)+pe+n.slice(l)+_+d):n+_+(l===-2?t:d)}return[Oe(e,a+(e[n]||`<?>`)+(t===2?`</svg>`:t===3?`</math>`:``)),r]},Ae=class e{constructor({strings:t,_$litType$:n},r){let i;this.parts=[];let a=0,o=0,s=t.length-1,c=this.parts,[l,u]=ke(t,n);if(this.el=e.createElement(l,r),C.currentNode=this.el.content,n===2||n===3){let e=this.el.content.firstChild;e.replaceWith(...e.childNodes)}for(;(i=C.nextNode())!==null&&c.length<s;){if(i.nodeType===1){if(i.hasAttributes())for(let e of i.getAttributeNames())if(e.endsWith(pe)){let t=u[o++],n=i.getAttribute(e).split(_),r=/([.?@])?(.*)/.exec(t);c.push({type:1,index:a,name:r[2],strings:n,ctor:r[1]===`.`?Pe:r[1]===`?`?Fe:r[1]===`@`?Ie:Ne}),i.removeAttribute(e)}else e.startsWith(_)&&(c.push({type:6,index:a}),i.removeAttribute(e));if(Ee.test(i.tagName)){let e=i.textContent.split(_),t=e.length-1;if(t>0){i.textContent=de?de.emptyScript:``;for(let n=0;n<t;n++)i.append(e[n],ge()),C.nextNode(),c.push({type:2,index:++a});i.append(e[t],ge())}}}else if(i.nodeType===8){if(i.data===me)c.push({type:2,index:a});else{let e=-1;for(;(e=i.data.indexOf(_,e+1))!==-1;)c.push({type:7,index:a}),e+=_.length-1}}a++}}static createElement(e,t){let n=v.createElement(`template`);return n.innerHTML=e,n}};function w(e,t,n=e,r){if(t===x)return t;let i=r===void 0?n._$Cl:n._$Co?.[r],a=_e(t)?void 0:t._$litDirective$;return i?.constructor!==a&&(i?._$AO?.(!1),a===void 0?i=void 0:(i=new a(e),i._$AT(e,n,r)),r===void 0?n._$Cl=i:(n._$Co??=[])[r]=i),i!==void 0&&(t=w(e,i._$AS(e,t.values),i,r)),t}var je=class{constructor(e,t){this._$AV=[],this._$AN=void 0,this._$AD=e,this._$AM=t}get parentNode(){return this._$AM.parentNode}get _$AU(){return this._$AM._$AU}u(e){let{el:{content:t},parts:n}=this._$AD,r=(e?.creationScope??v).importNode(t,!0);C.currentNode=r;let i=C.nextNode(),a=0,o=0,s=n[0];for(;s!==void 0;){if(a===s.index){let t;s.type===2?t=new Me(i,i.nextSibling,this,e):s.type===1?t=new s.ctor(i,s.name,s.strings,this,e):s.type===6&&(t=new Le(i,this,e)),this._$AV.push(t),s=n[++o]}a!==s?.index&&(i=C.nextNode(),a++)}return C.currentNode=v,r}p(e){let t=0;for(let n of this._$AV)n!==void 0&&(n.strings===void 0?n._$AI(e[t]):(n._$AI(e,n,t),t+=n.strings.length-2)),t++}},Me=class e{get _$AU(){return this._$AM?._$AU??this._$Cv}constructor(e,t,n,r){this.type=2,this._$AH=S,this._$AN=void 0,this._$AA=e,this._$AB=t,this._$AM=n,this.options=r,this._$Cv=r?.isConnected??!0}get parentNode(){let e=this._$AA.parentNode,t=this._$AM;return t!==void 0&&e?.nodeType===11&&(e=t.parentNode),e}get startNode(){return this._$AA}get endNode(){return this._$AB}_$AI(e,t=this){e=w(this,e,t),_e(e)?e===S||e==null||e===``?(this._$AH!==S&&this._$AR(),this._$AH=S):e!==this._$AH&&e!==x&&this._(e):e._$litType$===void 0?e.nodeType===void 0?ye(e)?this.k(e):this._(e):this.T(e):this.$(e)}O(e){return this._$AA.parentNode.insertBefore(e,this._$AB)}T(e){this._$AH!==e&&(this._$AR(),this._$AH=this.O(e))}_(e){this._$AH!==S&&_e(this._$AH)?this._$AA.nextSibling.data=e:this.T(v.createTextNode(e)),this._$AH=e}$(e){let{values:t,_$litType$:n}=e,r=typeof n==`number`?this._$AC(e):(n.el===void 0&&(n.el=Ae.createElement(Oe(n.h,n.h[0]),this.options)),n);if(this._$AH?._$AD===r)this._$AH.p(t);else{let e=new je(r,this),n=e.u(this.options);e.p(t),this.T(n),this._$AH=e}}_$AC(e){let t=De.get(e.strings);return t===void 0&&De.set(e.strings,t=new Ae(e)),t}k(t){ve(this._$AH)||(this._$AH=[],this._$AR());let n=this._$AH,r,i=0;for(let a of t)i===n.length?n.push(r=new e(this.O(ge()),this.O(ge()),this,this.options)):r=n[i],r._$AI(a),i++;i<n.length&&(this._$AR(r&&r._$AB.nextSibling,i),n.length=i)}_$AR(e=this._$AA.nextSibling,t){for(this._$AP?.(!1,!0,t);e!==this._$AB;){let t=ue(e).nextSibling;ue(e).remove(),e=t}}setConnected(e){this._$AM===void 0&&(this._$Cv=e,this._$AP?.(e))}},Ne=class{get tagName(){return this.element.tagName}get _$AU(){return this._$AM._$AU}constructor(e,t,n,r,i){this.type=1,this._$AH=S,this._$AN=void 0,this.element=e,this.name=t,this._$AM=r,this.options=i,n.length>2||n[0]!==``||n[1]!==``?(this._$AH=Array(n.length-1).fill(new String),this.strings=n):this._$AH=S}_$AI(e,t=this,n,r){let i=this.strings,a=!1;if(i===void 0)e=w(this,e,t,0),a=!_e(e)||e!==this._$AH&&e!==x,a&&(this._$AH=e);else{let r=e,o,s;for(e=i[0],o=0;o<i.length-1;o++)s=w(this,r[n+o],t,o),s===x&&(s=this._$AH[o]),a||=!_e(s)||s!==this._$AH[o],s===S?e=S:e!==S&&(e+=(s??``)+i[o+1]),this._$AH[o]=s}a&&!r&&this.j(e)}j(e){e===S?this.element.removeAttribute(this.name):this.element.setAttribute(this.name,e??``)}},Pe=class extends Ne{constructor(){super(...arguments),this.type=3}j(e){this.element[this.name]=e===S?void 0:e}},Fe=class extends Ne{constructor(){super(...arguments),this.type=4}j(e){this.element.toggleAttribute(this.name,!!e&&e!==S)}},Ie=class extends Ne{constructor(e,t,n,r,i){super(e,t,n,r,i),this.type=5}_$AI(e,t=this){if((e=w(this,e,t,0)??S)===x)return;let n=this._$AH,r=e===S&&n!==S||e.capture!==n.capture||e.once!==n.once||e.passive!==n.passive,i=e!==S&&(n===S||r);r&&this.element.removeEventListener(this.name,this,n),i&&this.element.addEventListener(this.name,this,e),this._$AH=e}handleEvent(e){typeof this._$AH==`function`?this._$AH.call(this.options?.host??this.element,e):this._$AH.handleEvent(e)}},Le=class{constructor(e,t,n){this.element=e,this.type=6,this._$AN=void 0,this._$AM=t,this.options=n}get _$AU(){return this._$AM._$AU}_$AI(e){w(this,e)}},Re={M:pe,P:_,A:me,C:1,L:ke,R:je,D:ye,V:w,I:Me,H:Ne,N:Fe,U:Ie,B:Pe,F:Le},ze=le.litHtmlPolyfillSupport;ze?.(Ae,Me),(le.litHtmlVersions??=[]).push(`3.3.3`);var Be=(e,t,n)=>{let r=n?.renderBefore??t,i=r._$litPart$;if(i===void 0){let e=n?.renderBefore??null;r._$litPart$=i=new Me(t.insertBefore(ge(),e),e,void 0,n??{})}return i._$AI(e),i},Ve=globalThis,T=class extends g{constructor(){super(...arguments),this.renderOptions={host:this},this._$Do=void 0}createRenderRoot(){let e=super.createRenderRoot();return this.renderOptions.renderBefore??=e.firstChild,e}update(e){let t=this.render();this.hasUpdated||(this.renderOptions.isConnected=this.isConnected),super.update(e),this._$Do=Be(t,this.renderRoot,this.renderOptions)}connectedCallback(){super.connectedCallback(),this._$Do?.setConnected(!0)}disconnectedCallback(){super.disconnectedCallback(),this._$Do?.setConnected(!1)}render(){return x}};T._$litElement$=!0,T.finalized=!0,Ve.litElementHydrateSupport?.({LitElement:T});var He=Ve.litElementPolyfillSupport;He?.({LitElement:T}),(Ve.litElementVersions??=[]).push(`4.2.2`);var E=e=>(t,n)=>{n===void 0?customElements.define(e,t):n.addInitializer(()=>{customElements.define(e,t)})},Ue={attribute:!0,type:String,converter:oe,reflect:!1,hasChanged:se},We=(e=Ue,t,n)=>{let{kind:r,metadata:i}=n,a=globalThis.litPropertyMetadata.get(i);if(a===void 0&&globalThis.litPropertyMetadata.set(i,a=new Map),r===`setter`&&((e=Object.create(e)).wrapped=!0),a.set(n.name,e),r===`accessor`){let{name:r}=n;return{set(n){let i=t.get.call(this);t.set.call(this,n),this.requestUpdate(r,i,e,!0,n)},init(t){return t!==void 0&&this.C(r,void 0,e,t),t}}}if(r===`setter`){let{name:r}=n;return function(n){let i=this[r];t.call(this,n),this.requestUpdate(r,i,e,!0,n)}}throw Error(`Unsupported decorator location: `+r)};function Ge(e){return(t,n)=>typeof n==`object`?We(e,t,n):((e,t,n)=>{let r=t.hasOwnProperty(n);return t.constructor.createProperty(n,e),r?Object.getOwnPropertyDescriptor(t,n):void 0})(e,t,n)}function D(e){return Ge({...e,state:!0,attribute:!1})}var{I:Ke}=Re,qe=e=>e,Je=e=>e.strings===void 0,Ye=()=>document.createComment(``),Xe=(e,t,n)=>{let r=e._$AA.parentNode,i=t===void 0?e._$AB:t._$AA;if(n===void 0)n=new Ke(r.insertBefore(Ye(),i),r.insertBefore(Ye(),i),e,e.options);else{let t=n._$AB.nextSibling,a=n._$AM,o=a!==e;if(o){let t;n._$AQ?.(e),n._$AM=e,n._$AP!==void 0&&(t=e._$AU)!==a._$AU&&n._$AP(t)}if(t!==i||o){let e=n._$AA;for(;e!==t;){let t=qe(e).nextSibling;qe(r).insertBefore(e,i),e=t}}}return n},O=(e,t,n=e)=>(e._$AI(t,n),e),Ze={},Qe=(e,t=Ze)=>e._$AH=t,$e=e=>e._$AH,et=e=>{e._$AR(),e._$AA.remove()},tt={ATTRIBUTE:1,CHILD:2,PROPERTY:3,BOOLEAN_ATTRIBUTE:4,EVENT:5,ELEMENT:6},nt=e=>(...t)=>({_$litDirective$:e,values:t}),rt=class{constructor(e){}get _$AU(){return this._$AM._$AU}_$AT(e,t,n){this._$Ct=e,this._$AM=t,this._$Ci=n}_$AS(e,t){return this.update(e,t)}update(e,t){return this.render(...t)}},it=(e,t)=>{let n=e._$AN;if(n===void 0)return!1;for(let e of n)e._$AO?.(t,!1),it(e,t);return!0},at=e=>{let t,n;do{if((t=e._$AM)===void 0)break;n=t._$AN,n.delete(e),e=t}while(n?.size===0)},ot=e=>{for(let t;t=e._$AM;e=t){let n=t._$AN;if(n===void 0)t._$AN=n=new Set;else if(n.has(e))break;n.add(e),lt(t)}};function st(e){this._$AN===void 0?this._$AM=e:(at(this),this._$AM=e,ot(this))}function ct(e,t=!1,n=0){let r=this._$AH,i=this._$AN;if(i!==void 0&&i.size!==0){if(t){if(Array.isArray(r))for(let e=n;e<r.length;e++)it(r[e],!1),at(r[e]);else r!=null&&(it(r,!1),at(r))}else it(this,e)}}var lt=e=>{e.type==tt.CHILD&&(e._$AP??=ct,e._$AQ??=st)},ut=class extends rt{constructor(){super(...arguments),this._$AN=void 0}_$AT(e,t,n){super._$AT(e,t,n),ot(this),this.isConnected=e._$AU}_$AO(e,t=!0){e!==this.isConnected&&(this.isConnected=e,e?this.reconnected?.():this.disconnected?.()),t&&(it(this,e),at(this))}setValue(e){if(Je(this._$Ct))this._$Ct._$AI(e,this);else{let t=[...this._$Ct._$AH];t[this._$Ci]=e,this._$Ct._$AI(t,this,0)}}disconnected(){}reconnected(){}},k=()=>new dt,dt=class{},ft=new WeakMap,A=nt(class extends ut{render(e){return S}update(e,[t]){let n=t!==this.G;return n&&this.rt(void 0),(n||this.lt!==this.ct)&&(this.G=t,this.ht=e.options?.host,this.rt(this.ct=e.element)),S}rt(e){if(this.G!==void 0){if(this.isConnected||(e=void 0),typeof this.G==`function`){let t=this.ht??globalThis,n=ft.get(t);n===void 0&&(n=new WeakMap,ft.set(t,n)),n.get(this.G)!==void 0&&this.G.call(this.ht,void 0),n.set(this.G,e),e!==void 0&&this.G.call(this.ht,e)}else this.G.value=e}}get lt(){return typeof this.G==`function`?ft.get(this.ht??globalThis)?.get(this.G):this.G?.value}disconnected(){this.lt===this.ct&&this.rt(void 0)}reconnected(){this.rt(this.ct)}}),pt=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{display:contents}nav{align-items:center;gap:.75rem;margin-left:.25rem;display:flex}nav:before{content:"";background:var(--border);flex-shrink:0;align-self:center;width:1px;height:1.125rem;margin-right:.75rem}nav[hidden]{display:none}.page-nav-btns{align-items:center;gap:.25rem;display:inline-flex}.page-nav-btn{appearance:none;border:1px solid var(--border);background:var(--panel);width:1.875rem;height:1.875rem;color:var(--text);font:inherit;cursor:pointer;border-radius:.375rem;flex-shrink:0;justify-content:center;align-items:center;padding:0;font-size:.875rem;display:inline-flex}.page-nav-btn:hover{border-color:var(--accent)}.page-nav-btn:disabled{opacity:.45;cursor:not-allowed}.page-nav-chevron{width:.875rem;height:.875rem;display:block}.page-indicator{color:var(--muted);font-variant-numeric:tabular-nums;align-items:center;font-size:.875rem;display:inline-flex}.page-number-input{appearance:none;border:1px solid var(--border);background:var(--panel);color:var(--text);font:inherit;font-variant-numeric:tabular-nums;text-align:center;box-sizing:border-box;height:1.875rem;width:calc(var(--doclang-page-num-digits,1) * 1ch + .75rem);cursor:text;border-radius:.375rem;margin:0;padding:0 .35rem;font-size:.875rem;line-height:1}.page-number-input:hover:not(:disabled){border-color:var(--accent)}.page-number-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);outline:none}.page-number-input:disabled{opacity:.55;cursor:not-allowed}`;function j(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a}var mt=class extends T{static styles=c(pt);_currentPage=1;_pageCount=1;_visible=!1;_inputRef=k();render(){if(!this._visible)return S;let e=Math.max(1,String(this._pageCount).length);return b`
+      <nav id="page-nav" aria-label="Page navigation">
+        <div class="page-nav-btns">
+          <button
+            type="button"
+            class="page-nav-btn btn-prev"
+            aria-label="Previous page"
+            title="Previous page"
+            ?disabled=${this._currentPage<=1}
+            @click=${()=>this.dispatchEvent(new CustomEvent(`doclang-prev-page`,{bubbles:!0,composed:!0}))}
+          >
+            <svg
+              class="page-nav-chevron"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              aria-hidden="true"
+            >
+              <path
+                d="M10.5 3.5 5.5 8l5 4.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="page-nav-btn btn-next"
+            aria-label="Next page"
+            title="Next page"
+            ?disabled=${this._currentPage>=this._pageCount}
+            @click=${()=>this.dispatchEvent(new CustomEvent(`doclang-next-page`,{bubbles:!0,composed:!0}))}
+          >
+            <svg
+              class="page-nav-chevron"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              aria-hidden="true"
+            >
+              <path
+                d="M5.5 3.5 10.5 8l-5 4.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </button>
+        </div>
+        <div class="page-indicator">
+          <span>Page&#xA0;</span>
+          <input
+            ${A(this._inputRef)}
+            type="text"
+            inputmode="numeric"
+            class="page-number-input"
+            .value=${String(this._currentPage)}
+            style="--doclang-page-num-digits:${e}"
+            aria-label="Page number"
+            @keydown=${this._onInputKeydown}
+            @blur=${this._onInputBlur}
+            @focus=${e=>e.target.select()}
+          />
+          <span class="page-count">&#xA0;of ${this._pageCount}</span>
+        </div>
+      </nav>
+    `}setVisible(e){this._visible=e,this.requestUpdate()}setIndicator(e,t){this._currentPage=e,this._pageCount=t,this.requestUpdate()}_onInputKeydown=e=>{e.key===`Enter`?(e.preventDefault(),this._commitInput(),e.target.blur()):e.key===`Escape`&&(e.preventDefault(),this._resetInput(),e.target.blur())};_onInputBlur=()=>this._resetInput();_resetInput(){let e=this._inputRef.value;e&&(e.value=String(this._currentPage))}_commitInput(){let e=this._inputRef.value;if(!e)return;let t=Number.parseInt(e.value.trim(),10);if(!Number.isFinite(t)){this._resetInput();return}let n=Math.min(Math.max(1,t),this._pageCount);this.dispatchEvent(new CustomEvent(`doclang-go-to-page`,{bubbles:!0,composed:!0,detail:{page:n}}))}};mt=j([E(`doclang-page-nav`)],mt);var M=nt(class extends rt{constructor(e){if(super(e),e.type!==tt.ATTRIBUTE||e.name!==`class`||e.strings?.length>2)throw Error("`classMap()` can only be used in the `class` attribute and must be the only part in the attribute.")}render(e){return` `+Object.keys(e).filter(t=>e[t]).join(` `)+` `}update(e,[t]){if(this.st===void 0){this.st=new Set,e.strings!==void 0&&(this.nt=new Set(e.strings.join(` `).split(/\s/).filter(e=>e!==``)));for(let e in t)t[e]&&!this.nt?.has(e)&&this.st.add(e);return this.render(t)}let n=e.element.classList;for(let e of this.st)e in t||(n.remove(e),this.st.delete(e));for(let e in t){let r=!!t[e];r===this.st.has(e)||this.nt?.has(e)||(r?(n.add(e),this.st.add(e)):(n.remove(e),this.st.delete(e)))}return x}}),ht=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{display:contents}.toolbar{flex-wrap:wrap;grid-column:3;justify-self:end;align-items:center;gap:.5rem;display:flex}.header-divider{background:var(--border);flex-shrink:0;align-self:center;width:1px;height:1.125rem}.toolbar-options-item{cursor:pointer;font-size:.875rem;font-family:var(--font-ui);align-items:center;gap:.5rem;padding:.35rem .75rem;display:flex}.toolbar-options-item:hover{background:color-mix(in srgb, var(--accent) 6%, var(--panel))}.toolbar-options-item input{cursor:pointer;flex-shrink:0;margin:0}.toolbar-options-item-disabled{opacity:.45;cursor:not-allowed}.toolbar-options-item-disabled input{cursor:not-allowed}.toolbar-options-divider{border-top:1px solid var(--border);margin:.35rem 0}.toolbar-options-reset{box-sizing:border-box;width:100%;color:var(--text);font:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:0;margin:0;padding:.35rem .75rem;font-size:.875rem;display:block}.toolbar-options-reset:hover:not(:disabled){background:color-mix(in srgb, var(--accent) 6%, var(--panel));color:var(--accent)}.toolbar-options-reset:disabled{opacity:.45;cursor:not-allowed}.toolbar-file-group{align-items:center;display:inline-flex}button,label.file-btn{appearance:none;border:1px solid var(--border);background:var(--panel);color:var(--text);font:inherit;cursor:pointer;border-radius:.375rem;padding:.4rem .75rem;font-size:.875rem}button:hover,label.file-btn:hover{border-color:var(--accent)}button:disabled{opacity:.45;cursor:not-allowed}label.file-btn input{display:none}.header-site-link{color:var(--muted);white-space:nowrap;font-size:.875rem;text-decoration:none}.header-site-link:hover{color:var(--accent);text-decoration:underline}.header-site-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:.125rem}`,gt=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{display:contents}.dropdown-wrap{position:relative}.dropdown-btn{appearance:none;color:var(--muted);cursor:pointer;white-space:nowrap;font-size:.8125rem;font-weight:500;line-height:1.2;font:inherit;background:0 0;border:1px solid #0000;border-radius:.375rem;flex-shrink:0;align-items:center;padding:.35rem .45rem .35rem .55rem;transition:color .12s,background .12s,border-color .12s;display:inline-flex}.dropdown-btn:after{content:"";opacity:.65;border-bottom:1.5px solid;border-right:1.5px solid;flex-shrink:0;width:.32rem;height:.32rem;margin-top:-.14em;margin-left:.3rem;transform:rotate(45deg)}.dropdown-btn:hover{color:var(--text);background:color-mix(in srgb, var(--text) 5%, transparent)}.dropdown-btn[aria-expanded=true]{color:var(--accent);background:color-mix(in srgb, var(--accent) 10%, var(--panel));border-color:color-mix(in srgb, var(--accent) 22%, transparent)}.dropdown-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.dropdown-panel{z-index:30;border:1px solid var(--border);background:var(--panel);min-width:11rem;box-shadow:0 .5rem 1.25rem color-mix(in srgb, var(--text) 12%, transparent);border-radius:.375rem;padding:.5rem 0;position:absolute;top:calc(100% + .35rem);right:0}`,_t=class extends T{static styles=c(gt);label=``;_open=!1;render(){return b`
+      <div class="dropdown-wrap">
+        <button
+          type="button"
+          class="dropdown-btn"
+          aria-expanded=${this._open?`true`:`false`}
+          aria-haspopup="true"
+          @click=${this._onBtnClick}
+        >
+          ${this.label}
+        </button>
+        ${this._open?b`<div class="dropdown-panel" role="menu"><slot></slot></div>`:S}
+      </div>
+    `}setOpen(e){this._open=e,this.requestUpdate()}get isOpen(){return this._open}connectedCallback(){super.connectedCallback(),document.addEventListener(`click`,this._onDocClick)}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener(`click`,this._onDocClick)}_onBtnClick=e=>{e.stopPropagation(),this.setOpen(!this._open)};_onDocClick=e=>{this._open&&(e.composedPath().includes(this)||this.setOpen(!1))}};j([Ge({type:String})],_t.prototype,`label`,void 0),_t=j([E(`doclang-dropdown`)],_t);var vt=class extends T{static styles=c(ht);_demoLoading=!1;_panes={file:!0,page:!0,markup:!0,reading:!0,fileAvailable:!1,pageAvailable:!1,hasState:!1};_inputArchiveRef=k();_dropdownRef=k();render(){let{file:e,page:t,markup:n,reading:r,fileAvailable:i,pageAvailable:a,hasState:o}=this._panes;return b`
+      <div class="toolbar">
+        <doclang-dropdown
+          ${A(this._dropdownRef)}
+          label="Views"
+        >
+          <label
+            class=${M({"toolbar-options-item":!0,"toolbar-options-item-disabled":!i})}
+          >
+            <input
+              type="checkbox"
+              class="cb-file-pane"
+              role="menuitemcheckbox"
+              .checked=${i&&e}
+              ?disabled=${!i}
+              @change=${e=>this._emitTogglePane(`file`,e.target.checked)}
+            />
+            <span>Files</span>
+          </label>
+          <label
+            class=${M({"toolbar-options-item":!0,"toolbar-options-item-disabled":!a})}
+          >
+            <input
+              type="checkbox"
+              class="cb-page-pane"
+              role="menuitemcheckbox"
+              .checked=${a&&t}
+              ?disabled=${!a}
+              @change=${e=>this._emitTogglePane(`page`,e.target.checked)}
+            />
+            <span>Original page</span>
+          </label>
+          <label
+            class=${M({"toolbar-options-item":!0,"toolbar-options-item-disabled":!o})}
+          >
+            <input
+              type="checkbox"
+              class="cb-markup-pane"
+              role="menuitemcheckbox"
+              .checked=${n}
+              ?disabled=${!o}
+              @change=${e=>this._emitTogglePane(`markup`,e.target.checked)}
+            />
+            <span>DocLang</span>
+          </label>
+          <label
+            class=${M({"toolbar-options-item":!0,"toolbar-options-item-disabled":!o})}
+          >
+            <input
+              type="checkbox"
+              class="cb-reading-pane"
+              role="menuitemcheckbox"
+              .checked=${r}
+              ?disabled=${!o}
+              @change=${e=>this._emitTogglePane(`reading`,e.target.checked)}
+            />
+            <span>Reading view</span>
+          </label>
+          <div class="toolbar-options-divider" role="separator"></div>
+          <button
+            type="button"
+            class="toolbar-options-reset"
+            role="menuitem"
+            ?disabled=${!o}
+            @click=${()=>this.dispatchEvent(new CustomEvent(`doclang-reset-pane-layout`,{bubbles:!0,composed:!0}))}
+          >
+            Reset views
+          </button>
+        </doclang-dropdown>
+        <span class="header-divider" aria-hidden="true"></span>
+        <span class="toolbar-file-group">
+          <label
+            class="file-btn"
+            title="Open a DocLang file (.dclx, .dclg)"
+          >
+            Open file
+            <input
+              ${A(this._inputArchiveRef)}
+              type="file"
+              class="input-archive"
+              multiple
+              accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml"
+              @change=${this._onArchiveChange}
+            />
+          </label>
+        </span>
+        <button
+          type="button"
+          class="btn-demo"
+          ?disabled=${this._demoLoading}
+          @click=${()=>this.dispatchEvent(new CustomEvent(`doclang-load-demo`,{bubbles:!0,composed:!0}))}
+        >
+          Load demo
+        </button>
+        <span class="header-divider" aria-hidden="true"></span>
+        <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
+      </div>
+    `}syncPaneToggles(e){this._panes=e,this.requestUpdate()}setDemoLoading(e){this._demoLoading=e,this.requestUpdate()}setOptionsOpen(e){this._dropdownRef.value?.setOpen(e)}_emitTogglePane(e,t){this.dispatchEvent(new CustomEvent(`doclang-toggle-pane`,{bubbles:!0,composed:!0,detail:{pane:e,checked:t}}))}_onArchiveChange=e=>{let t=e.target;this.dispatchEvent(new CustomEvent(`doclang-open-files`,{bubbles:!0,composed:!0,detail:{files:[...t.files??[]]}})),t.value=``}};vt=j([E(`doclang-toolbar`)],vt);var yt=(e,t,n)=>{let r=new Map;for(let i=t;i<=n;i++)r.set(e[i],i);return r},bt=nt(class extends rt{constructor(e){if(super(e),e.type!==tt.CHILD)throw Error(`repeat() can only be used in text expressions`)}dt(e,t,n){let r;n===void 0?n=t:t!==void 0&&(r=t);let i=[],a=[],o=0;for(let t of e)i[o]=r?r(t,o):o,a[o]=n(t,o),o++;return{values:a,keys:i}}render(e,t,n){return this.dt(e,t,n).values}update(e,[t,n,r]){let i=$e(e),{values:a,keys:o}=this.dt(t,n,r);if(!Array.isArray(i))return this.ut=o,a;let s=this.ut??=[],c=[],l,u,d=0,f=i.length-1,p=0,m=a.length-1;for(;d<=f&&p<=m;)if(i[d]===null)d++;else if(i[f]===null)f--;else if(s[d]===o[p])c[p]=O(i[d],a[p]),d++,p++;else if(s[f]===o[m])c[m]=O(i[f],a[m]),f--,m--;else if(s[d]===o[m])c[m]=O(i[d],a[m]),Xe(e,c[m+1],i[d]),d++,m--;else if(s[f]===o[p])c[p]=O(i[f],a[p]),Xe(e,i[d],i[f]),f--,p++;else if(l===void 0&&(l=yt(o,p,m),u=yt(s,d,f)),l.has(s[d])){if(l.has(s[f])){let t=u.get(o[p]),n=t===void 0?null:i[t];if(n===null){let t=Xe(e,i[d]);O(t,a[p]),c[p]=t}else c[p]=O(n,a[p]),Xe(e,i[d],n),i[t]=null;p++}else et(i[f]),f--}else et(i[d]),d++;for(;p<=m;){let t=Xe(e,c[m+1]);O(t,a[p]),c[p++]=t}for(;d<=f;){let e=i[d++];e!==null&&et(e)}return this.ut=o,Qe(e,c),x}}),xt=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{border-right:1px solid var(--border);background:var(--panel);--file-thumb-size:var(--doclang-file-thumb-size,3.75rem);--file-thumb-close-overflow:var(--doclang-file-thumb-close-overflow,.25rem);--file-item-pad-x:var(--doclang-file-item-pad-x,.35rem);--file-pane-pad-x:var(--doclang-file-pane-pad-x,.5rem);--file-pane-fit-width:var(--doclang-file-pane-fit-width,calc(( var(--file-pane-pad-x) * 2 + var(--file-item-pad-x) * 2 + var(--file-thumb-size) + var(--file-thumb-close-overflow) ) * 1.5));flex-direction:column;min-width:0;min-height:0;display:flex;overflow:hidden}:host([hidden]){display:none!important}:host(.pane-layout-last){border-right:none}.pane-header{box-sizing:border-box;letter-spacing:.04em;text-transform:uppercase;height:2.125rem;color:var(--muted);border-bottom:1px solid var(--border);background:var(--panel);justify-content:space-between;align-items:center;gap:.35rem;padding:0 .35rem;font-size:.75rem;font-weight:600;display:flex}.pane-header-title{text-overflow:ellipsis;white-space:nowrap;min-width:0;padding-inline:.4rem;overflow:hidden}.file-pane-close-all{appearance:none;color:var(--muted);font:inherit;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;white-space:nowrap;background:0 0;border:1px solid #0000;border-radius:.25rem;flex-shrink:0;height:1.25rem;padding:0 .15rem;font-size:.625rem;font-weight:600;line-height:1;transition:color .12s,background .12s,border-color .12s}.file-pane-close-all:hover{color:var(--text);background:color-mix(in srgb, var(--text) 5%, transparent)}.file-pane-close-all:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.pane-body{min-height:0;padding:.375rem var(--file-pane-pad-x,.5rem);flex:1;min-width:0;overflow:auto}.file-view-list{flex-direction:column;gap:.25rem;width:100%;min-width:0;margin:0;padding:0;list-style:none;display:flex}.file-view-list>li{width:100%;max-width:100%}.file-view-item{box-sizing:border-box;width:100%;max-width:100%;color:var(--text);font:inherit;text-align:center;padding:.5rem var(--file-item-pad-x,.35rem);cursor:pointer;background:0 0;border:none;border-radius:0;flex-direction:column;align-items:center;gap:.35rem;font-size:.8125rem;line-height:1.35;display:flex}.file-view-thumb-wrap{flex-shrink:0;position:relative}.file-view-close{appearance:none;border:1px solid var(--border);background:var(--bg);width:1rem;height:1rem;color:var(--muted);font:inherit;cursor:pointer;z-index:1;border-radius:50%;justify-content:center;align-items:center;padding:0;font-size:.75rem;line-height:1;display:flex;position:absolute;top:-.25rem;right:-.25rem;box-shadow:0 1px 2px #00000014}.file-view-close:hover{color:var(--text);background:var(--panel)}.file-view-close:focus-visible{outline:2px solid var(--accent);outline-offset:1px}.file-view-thumb{width:var(--file-thumb-size,3.75rem);height:var(--file-thumb-size,3.75rem);background:var(--placeholder-bg);border:1px solid var(--border);border-radius:.25rem;flex-shrink:0;justify-content:center;align-items:center;display:flex;overflow:hidden}.file-view-thumb img{object-fit:contain;width:100%;height:100%;display:block}.file-view-thumb-placeholder{width:100%;height:100%;color:var(--muted);justify-content:center;align-items:center;display:flex}.file-view-thumb-placeholder svg{width:1.875rem;height:1.875rem;display:block}.file-view-label{text-overflow:ellipsis;white-space:nowrap;width:100%;max-width:100%;overflow:hidden}.file-view-item:hover{background:var(--markup-hover)}.file-view-item.is-active{background:var(--markup-selected);color:var(--accent);font-weight:500}.file-view-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}`,St=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,Ct=class extends T{static styles=c(xt);_entries=[];connectedCallback(){super.connectedCallback(),this.classList.add(`pane`,`pane-file`)}render(){let e=this._entries.length>0;return b`
+      <div class="pane-header">
+        <span class="pane-header-title">Files</span>
+        ${e?b`<button
+          type="button"
+          class="file-pane-close-all"
+          aria-label="Clear all open files"
+          @click=${this._onCloseAll}
+        >
+          Clear
+        </button>`:S}
+      </div>
+      <div class="pane-body">${e?b`
+          <ul class="file-view-list" role="listbox" aria-label="Open files">
+            ${bt(this._entries,(e,t)=>t,this._renderEntry)}
+          </ul>
+        `:S}</div>
+    `}renderFiles(e){this._entries=e,this.requestUpdate()}_onCloseAll=()=>{this.dispatchEvent(new CustomEvent(`doclang-file-pane-close-all`,{bubbles:!0,composed:!0}))};_renderEntry=(e,t)=>{let n=e=>{e.target.closest(`.file-view-close`)||this._emitFileSelect(t)},r=e=>{(e.key===`Enter`||e.key===` `)&&(e.preventDefault(),this._emitFileSelect(t))},i=e=>{e.stopPropagation(),this._emitFileClose(t)},a=e.thumbnailUrl?b`<img src=${e.thumbnailUrl} alt="" />`:b`<span
+          class="file-view-thumb-placeholder"
+          .innerHTML=${St}
+        ></span>`;return b`
+      <li>
+        <div
+          class="file-view-item${e.isActive?` is-active`:``}"
+          title=${e.label}
+          tabindex="0"
+          role="option"
+          aria-selected=${e.isActive?`true`:`false`}
+          @click=${n}
+          @keydown=${r}
+        >
+          <div class="file-view-thumb-wrap">
+            <span class="file-view-thumb" aria-hidden="true">${a}</span>
+            <button
+              type="button"
+              class="file-view-close"
+              aria-label="Close ${e.label}"
+              @click=${i}
+            >
+              ×
+            </button>
+          </div>
+          <span class="file-view-label">${e.label}</span>
+        </div>
+      </li>
+    `};_emitFileSelect(e){this.dispatchEvent(new CustomEvent(`doclang-file-select`,{bubbles:!0,composed:!0,detail:{index:e}}))}_emitFileClose(e){this.dispatchEvent(new CustomEvent(`doclang-file-close`,{bubbles:!0,composed:!0,detail:{index:e}}))}};Ct=j([E(`doclang-file-pane`)],Ct);function N(e){return e.nodeType===Node.TEXT_NODE||e.nodeType===Node.CDATA_SECTION_NODE}function P(e){return N(e)&&!e.textContent?.trim()}function wt(e){return[...e.attributes].filter(e=>e.name!==`xmlns`||e.value!==`https://www.doclang.ai/ns/v0`).map(e=>({name:e.name,value:e.value}))}function F(e){return[...e.children]}function I(e){return e.localName||e.tagName.replace(/^.*:/,``)}function L(e){return R([...e.childNodes],0)?.locs??[]}function R(e,t){let n=[],r=t;for(;r<e.length;){let t=e[r];if(!t){r+=1;continue}if(t.nodeType!==Node.ELEMENT_NODE){r+=1;continue}let i=I(t);if(i===`location`){if(n.push(t),r+=1,n.length===4)return{locs:n,nextIndex:r};continue}if(n.length)break;if(H.has(i)){r+=1;continue}break}return n.length===4?{locs:n,nextIndex:r}:null}function z(e,t){for(let n=0;n<e.length;n+=1){let r=e[n];!r||r.nodeType!==Node.ELEMENT_NODE||(t(r),z(F(r),t))}}function B(e){return en.has(e)}function Tt(e){let t=I(e);return t===`list`||U.has(t)}function Et(e,t){let n=t;for(;n<e.length;){let t=e[n];if(!t){n+=1;continue}if(t.nodeType!==Node.ELEMENT_NODE){n+=1;continue}let r=I(t);if(r===`ldiv`||B(r))break;if(H.has(r)||r===`location`){n+=1;continue}break}return n}function Dt(e,t){let n=t;for(;n<e.length;){let t=e[n];if(t&&t.nodeType===Node.ELEMENT_NODE&&I(t)===`ldiv`)break;n+=1}return n}function Ot(e,t){let n=t;for(;n<e.length;){let t=e[n];if(t&&t.nodeType===Node.ELEMENT_NODE&&B(I(t)))break;n+=1}return n}function kt(e,t){let n=parseInt(e.getAttribute(`resolution`)??String(t),10);return Number.isFinite(n)&&n>0?n:t}function At(e){return Math.min(Math.max(parseInt(e.getAttribute(`level`)??`1`,10)||1,1),6)}function V(e,t){return F(e).find(e=>I(e)===t)??null}function jt(e,t){let n=e;for(;n;){if(n===t)return!0;n=n.parentNode}return!1}function Mt(e){return e.nodeType===Node.CDATA_SECTION_NODE?`<![CDATA[${e.textContent??``}]]>`:e.textContent?.trim()??``}function Nt(e){return Array.from(e).filter(e=>N(e)&&!P(e)).map(Mt).join(``)}function Pt(e){return String(e).replace(/&/g,`&amp;`).replace(/</g,`&lt;`).replace(/>/g,`&gt;`)}function Ft(e){return e.replace(/\\/g,`/`).replace(/^\.\//,``)}function It(e){let t=Ft(e),n=t.indexOf(`assets/`);return n===-1?null:t.slice(n)}function Lt(e){switch(e.split(`.`).pop()?.toLowerCase()??``){case`png`:return`image/png`;case`jpg`:case`jpeg`:return`image/jpeg`;case`webp`:return`image/webp`;case`gif`:return`image/gif`;case`svg`:return`image/svg+xml`;default:return`application/octet-stream`}}function Rt(e,t){let n=t;for(;n<e.length;){let t=e[n];if(!t){n+=1;continue}if(t.nodeType!==Node.ELEMENT_NODE){n+=1;continue}let r=I(t);if(B(r))break;if(H.has(r)||r===`h_thread`||r===`location`){n+=1;continue}break}return n}function zt(e,t){let n=t;for(;n<e.length&&P(e[n]);)n+=1;for(;n<e.length;){let t=e[n];if(t&&t.nodeType===Node.ELEMENT_NODE&&H.has(I(t))){for(n+=1;n<e.length&&P(e[n]);)n+=1;continue}break}return n}function Bt(e){return $t.has(I(e))}function Vt(e){let t=I(e);return t===`ldiv`||tn.has(t)}function Ht(e){return V(e,`thread`)?.getAttribute(`thread_id`)??null}function Ut(e){let t=V(e,`layer`);if(t){let e=t.getAttribute(`value`)??`body`;return rn.has(e)?e:`body`}if(L(e).length===4)return`body`;let n=e.parentElement;if(!n)return`body`;let r=[...n.childNodes],i=r.indexOf(e);return i<0?`body`:Wt(r,i+1)}function Wt(e,t){let n=t;for(;n<e.length;){let t=e[n];if(!t){n+=1;continue}if(t.nodeType!==Node.ELEMENT_NODE){n+=1;continue}let r=I(t);if(r===`layer`){let e=t.getAttribute(`value`)??`body`;return rn.has(e)?e:`body`}if(r===`location`)break;if(H.has(r)){n+=1;continue}break}return`body`}function Gt(e){return e===`furniture`?`layer-furniture`:e===`background`?`layer-background`:``}function Kt(e){if(qt(e))return`text`;let t=I(e);if(t===`heading`||t===`field_heading`)return`${t}[${At(e)}]`;let n=e.getAttribute(`level`);if(n)return`${t}[${n}]`;let r=e.getAttribute(`class`);return r?`${t}.${r}`:t}function qt(e){if(L(e).length===4||!Jt(e))return!1;let t=I(e);return t===`ldiv`&&e.parentElement&&I(e.parentElement)===`list`?!0:B(t)&&t!==`nl`&&!nn.has(t)&&e.parentElement?U.has(I(e.parentElement)):!1}function Jt(e){let t=e.parentElement;if(!t)return!1;let n=[...t.childNodes],r=n.indexOf(e);return r<0?!1:R(n,r+1)!==null}function Yt(e){let t=e.parentElement;if(!t)return[];let n=[...t.childNodes],r=n.indexOf(e);return r<0?[]:R(n,r+1)?.locs??[]}function Xt(e){let t=L(e);return t.length===4?t:Yt(e)}function Zt(e){if(!e)return!1;let t=I(e);if(t===`picture`||t===`caption`)return!1;let n=e.parentElement;for(;n;){if(I(n)===`picture`)return!0;n=n.parentElement}return!1}function Qt(e){if(!e)return!1;let t=I(e);if(U.has(t)||t===`caption`)return!1;let n=e.parentElement;for(;n;){if(U.has(I(n)))return!0;n=n.parentElement}return!1}var H,$t,en,tn,nn,U,rn,W=t((()=>{H=new Set([`label`,`thread`,`xref`,`href`,`layer`,`location`,`caption`,`description`,`summary`,`custom`]),$t=new Set([`text`,`heading`,`footnote`,`page_header`,`page_footer`,`field_region`,`list`,`table`,`index`,`formula`,`code`,`picture`,`marker`,`group`,`field_heading`,`field_item`,`key`,`value`,`hint`,`caption`,`page_break`]),en=new Set([`fcel`,`ecel`,`ched`,`rhed`,`corn`,`srow`,`lcel`,`ucel`,`xcel`,`nl`]),tn=new Set([`fcel`,`ecel`,`ched`,`rhed`,`corn`,`srow`]),nn=new Set([`lcel`,`ucel`,`xcel`]),U=new Set([`table`,`index`,`tabular`]),rn=new Set([`body`,`background`,`furniture`])}));async function an(e,{shouldExtract:t}={}){if(typeof DecompressionStream>`u`)throw Error(`ZIP decompression requires a browser with DecompressionStream support`);let n=new Uint8Array(e),r=new DataView(e),i=on(n),a=r.getUint16(i+10,!0),o=r.getUint32(i+16,!0);if(a>pn)throw Error(`ZIP archive has too many entries`);if(o>=n.length)throw Error(`Invalid ZIP central directory offset`);let s=[],c=o,l=0;for(let e=0;e<a;e+=1){if(c+46>n.length||r.getUint32(c,!0)!==33639248)throw Error(`Invalid ZIP central directory`);let e=r.getUint16(c+10,!0),i=r.getUint32(c+20,!0),a=r.getUint32(c+24,!0),o=r.getUint16(c+28,!0),u=r.getUint16(c+30,!0),d=r.getUint16(c+32,!0),f=r.getUint32(c+42,!0),p=c+46+o;if(p>n.length)throw Error(`Invalid ZIP entry name`);let m=ln(vn.decode(n.subarray(c+46,p)));if(c=p+u+d,c>n.length)throw Error(`Invalid ZIP central directory`);if(!m||m.endsWith(`/`)||dn(m)||t&&!t(m))continue;if(i>mn||a>hn)throw Error(`ZIP entry exceeds size limit: ${m}`);if(i>0&&a>0&&a/i>_n)throw Error(`ZIP entry compression ratio exceeds limit: ${m}`);if(l+a>gn)throw Error(`ZIP archive exceeds total uncompressed size limit`);if(f+30>n.length||r.getUint32(f,!0)!==67324752)throw Error(`Invalid ZIP local header: ${m}`);let ee=r.getUint16(f+26,!0),te=r.getUint16(f+28,!0),h=f+30+ee+te;if(h+i>n.length)throw Error(`ZIP entry data out of bounds: ${m}`);let ne=await cn(n.subarray(h,h+i),e,a);if(l+=ne.length,l>gn)throw Error(`ZIP archive exceeds total uncompressed size limit`);s.push({name:m,data:ne})}return s}function on(e){for(let t=e.length-22;t>=0;--t)if(e[t]===80&&e[t+1]===75&&e[t+2]===5&&e[t+3]===6)return t;throw Error(`Invalid ZIP archive`)}function sn(e,t){let n=new Uint8Array(t),r=0;for(let t of e)n.set(t,r),r+=t.byteLength;return n}async function cn(e,t,n){if(t===0){if(e.length>hn)throw Error(`ZIP entry exceeds size limit`);return e}if(t===8){let t=new Blob([e]).stream().pipeThrough(new DecompressionStream(`deflate-raw`)).getReader(),r=[],i=0;try{for(;;){let{done:n,value:a}=await t.read();if(n)break;if(i+=a.byteLength,i>hn)throw Error(`ZIP entry exceeds size limit`);if(e.length>0&&i/e.length>_n)throw Error(`ZIP entry compression ratio exceeds limit`);r.push(a)}}catch(e){try{await t.cancel()}catch{}throw e}let a=sn(r,i);return n&&a.length!==n?a.slice(0,Math.min(a.length,n)):a}throw Error(`Unsupported ZIP compression method ${t}`)}function ln(e){return e.replace(/\\/g,`/`).replace(/^\.\//,``)}function un(e,t){return e.find(e=>e.name===t)}function dn(e){return e===`.DS_Store`||e.endsWith(`/.DS_Store`)?!0:e.split(`/`).some(e=>e.startsWith(`._`)||e===`__MACOSX`)}async function fn(e){let t=await an(e),n=un(t,`document.xml`);if(!n)throw Error(`Archive must contain document.xml`);let r=new TextDecoder().decode(n.data),i=new Map,a=new Map;for(let e of t){let t=e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);if(t){i.set(Number(t[1]),URL.createObjectURL(new Blob([e.data],{type:Lt(e.name)})));continue}e.name.startsWith(`assets/`)&&!e.name.endsWith(`/`)&&a.set(e.name,URL.createObjectURL(new Blob([e.data],{type:Lt(e.name)})))}return{markupXml:r,pageImages:i,assetUrls:a}}var pn,mn,hn,gn,_n,vn,yn=t((()=>{W(),pn=5e3,mn=134217728,hn=134217728,gn=536870912,_n=100,vn=new TextDecoder})),bn=n({NO_MARKUP:()=>Xn,PAGE_IMAGE_RE:()=>Yn,assignElementIds:()=>wn,buildDocumentState:()=>Wn,buildElementPageMap:()=>Dn,buildThreadNavByElement:()=>kn,buildThreadPagesById:()=>On,collectBoundingBoxes:()=>Ln,collectCaptionLinks:()=>Rn,collectFragmentLinks:()=>Vn,collectFragmentNavItems:()=>Hn,collectReadingOrderSteps:()=>Un,collectXrefLinks:()=>zn,computeReadingOrder:()=>jn,computeReadingOrderDisplayNumbers:()=>Nn,extractArchiveFromFiles:()=>Gn,extractArchiveFromZipBuffer:()=>fn,invertElementIds:()=>Tn,readDefaultResolution:()=>Cn,revokeDocumentState:()=>Kn,segmentHasMarkup:()=>Sn,serializeSegment:()=>qn,splitIntoSegments:()=>xn});function xn(e){let t=F(e).filter(e=>I(e)!==`head`),n=[[]];for(let e of t)I(e)===`page_break`?n.push([]):n[n.length-1].push(e);return n.length?n:[[]]}function Sn(e){return e.some(e=>e.nodeType===Node.ELEMENT_NODE)}function Cn(e){let t={width:512,height:512};if(!e)return t;let n=F(e).find(e=>I(e)===`default_resolution`);if(!n)return t;let r=parseInt(n.getAttribute(`width`)??`512`,10),i=parseInt(n.getAttribute(`height`)??`512`,10);return{width:Number.isFinite(r)&&r>0?r:512,height:Number.isFinite(i)&&i>0?i:512}}function wn(e){let t=new Map,n=0;return z(e,e=>{t.set(e,`el-${n++}`)}),t}function Tn(e){let t=new Map;for(let[n,r]of e)t.set(r,n);return t}function En(e){let t=new Map;return z(F(e).filter(e=>I(e)!==`head`),e=>{for(let n of F(e)){if(I(n)!==`thread`)continue;let r=n.getAttribute(`thread_id`);r&&(t.has(r)||t.set(r,[]),t.get(r).push(e))}}),t}function Dn(e){let t=new Map;return e.forEach((e,n)=>{let r=n+1;z(e,e=>t.set(e,r))}),t}function On(e,t){let n=new Map;for(let[r,i]of En(e)){let e=new Set;for(let n of i){let r=t.get(n);r&&e.add(r)}e.size&&n.set(r,e)}return n}function kn(e){let t=new Map;for(let[,n]of En(e))for(let e=0;e<n.length;e+=1)t.set(n[e],{prev:e>0?n[e-1]:null,next:e<n.length-1?n[e+1]:null});return t}function An(e){let t=I(e);return t===`caption`||!(H.has(t)||t===`location`||t===`h_thread`||t===`page_break`||t===`nl`||nn.has(t)||Zn.has(t)||t===`src`||t===`checkbox`)}function jn(e){let t=F(e).filter(e=>I(e)!==`head`),n=En(e),r=new Set,i=[];function a(e){An(e)&&i.push(e)}function o(e){for(let t of n.get(e)??[])r.has(t)||(r.add(t),c(t))}function s(e){for(let t of e.childNodes){if(t.nodeType!==Node.ELEMENT_NODE)continue;let e=t,n=I(e);if(n===`xref`){let t=e.getAttribute(`thread_id`);t&&o(t);continue}n!==`page_break`&&c(e)}}function c(e){a(e),s(e)}for(let e of t)I(e)!==`page_break`&&(r.has(e)||c(e));return i}function Mn(e){return!An(e)||Zt(e)||Qt(e)?!1:L(e).length===4||qt(e)}function Nn(e){let t=new Map,n=0;for(let r of e)Mn(r)&&(n+=1,t.set(r,n));return t}function Pn(e,t,n,r,i,a,o=`body`){let[s,c,l,u]=t,d=kt(s,n.width),f=kt(c,n.height);e.push({kind:r,tag:i,elementId:a,layer:o,x0:parseInt(s.getAttribute(`value`)??`0`,10),y0:parseInt(c.getAttribute(`value`)??`0`,10),x1:parseInt(l.getAttribute(`value`)??`0`,10),y1:parseInt(u.getAttribute(`value`)??`0`,10),resW:d,resH:f})}function Fn(e,t,n,r){let i=[...e.childNodes],a=Et(i,0);for(;a<i.length;){let e=i[a];if(e.nodeType!==Node.ELEMENT_NODE||I(e)!==`ldiv`){a+=1;continue}a+=1;let o=R(i,a);if(o){let i=r.get(e);i&&Pn(n,o.locs,t,`text`,`text`,i,Ut(e)),a=o.nextIndex}a=Dt(i,a)}}function In(e,t,n,r){let i=[...e.childNodes],a=Et(i,0);for(;a<i.length;){let e=i[a];if(e.nodeType!==Node.ELEMENT_NODE){a+=1;continue}let o=I(e);if(!B(o)){a+=1;continue}if(o===`nl`){a+=1;continue}a+=1;let s=R(i,a);if(s){let i=r.get(e);i&&Pn(n,s.locs,t,`text`,`text`,i,Ut(e)),a=s.nextIndex}a=Ot(i,a)}}function Ln(e,t,n){let r=[];return z(e,e=>{let i=L(e);if(i.length!==4)return;let a=n.get(e);a&&Pn(r,i,t,I(e),Kt(e),a,Ut(e))}),z(e,e=>{let i=I(e);i===`list`?Fn(e,t,r,n):U.has(i)&&In(e,t,r,n)}),r}function Rn(e,t,n){let r=new Map(n.map(e=>[e.elementId,e])),i=[];return z(e,e=>{if(I(e)!==`caption`)return;let n=t.get(e),a=n?r.get(n):null;if(!a)return;let o=e.parentElement;if(!o||L(o).length!==4)return;let s=t.get(o),c=s?r.get(s):null;c&&i.push({captionBox:a,hostBox:c,captionElementId:n,hostElementId:s})}),i}function zn(e,t,n){let r=new Map(n.map(e=>[e.elementId,e])),i=new Map;z(e,e=>{let n=t.get(e),a=n?r.get(n):null;if(a)for(let t of F(e)){if(I(t)!==`thread`)continue;let e=t.getAttribute(`thread_id`);e&&(i.has(e)||i.set(e,[]),i.get(e).push({elementId:n,box:a}))}});let a=[];return z(e,e=>{let n=F(e).filter(e=>I(e)===`xref`);if(!n.length)return;let o=Bn(e,t,r);if(o)for(let e of n){let t=e.getAttribute(`thread_id`);if(t)for(let{elementId:e,box:n}of i.get(t)??[])e!==o.elementId&&a.push({fromBox:o.box,toBox:n,fromElementId:o.elementId,toElementId:e})}}),a}function Bn(e,t,n){let r=e;for(;r;){let e=t.get(r),i=e?n.get(e):null;if(i)return{elementId:e,box:i};if(I(r)===`doclang`)break;r=r.parentElement}return null}function Vn(e,t,n,r,i){let a=new Map(n.map(e=>[e.elementId,e])),o=new Map;z(e,e=>{let n=V(e,`thread`)?.getAttribute(`thread_id`);if(!n)return;let r=t.get(e),i=r?a.get(r):null;i&&(o.has(n)||o.set(n,[]),o.get(n).push({elementId:r,box:i}))});let s=[];for(let[e,t]of o){if(t.length>=2){for(let n=0;n<t.length-1;n+=1)s.push({fromBox:t[n].box,toBox:t[n+1].box,fromElementId:t[n].elementId,toElementId:t[n+1].elementId,threadId:e});continue}if(t.length!==1)continue;let n=i.get(e);if(!n)continue;let a=[...n].some(e=>e<r),o=[...n].some(e=>e>r);if(!a&&!o)continue;let c={fromBox:t[0].box,toBox:null,fromElementId:t[0].elementId,toElementId:null,threadId:e};a&&s.push({...c,targetCorner:`tl`}),o&&s.push({...c,targetCorner:`br`})}return s}function Hn(e,t,n,r){let i=new Map(n.map(e=>[e.elementId,e])),a=[];return z(e,e=>{let n=r.get(e);if(!n||!n.prev&&!n.next)return;let o=t.get(e),s=o?i.get(o):null;s&&a.push({elementId:o,box:s,hasPrev:n.prev!==null,hasNext:n.next!==null})}),a}function Un(e,t,n,r,i=!0,a=null){let o=new Map(n.map(e=>[e.elementId,e])),s=[],c=0;return r.forEach(e=>{if(Zt(e)||Qt(e))return;let n=t.get(e);if(!n)return;let r=o.get(n);r&&(c+=1,s.push({order:i?a?.get(e)??c:c,box:r,elementId:n}))}),s}function Wn(e,t,n,r,{markupOnly:i}){let a=new DOMParser().parseFromString(e,`application/xml`);if(a.querySelector(`parsererror`))return alert(`Invalid XML in ${n}`),null;let o=a.documentElement;if(I(o)!==`doclang`)return alert(`${n}: root element must be <doclang>`),null;let s=Cn(F(o).find(e=>I(e)===`head`)??null),c=i?[F(o).filter(e=>I(e)!==`head`)]:xn(o),l=!i&&t.size>0,u=l?Math.max(...t.keys()):0,d=i?1:Math.max(c.length,u,1),f=jn(o),p=Dn(c);return{pageImages:t,assetUrls:r,currentPage:1,pageCount:d,segments:c,defaultResolution:s,elementIds:new Map,idToElement:new Map,hasPageView:l,markupOnly:i,docRoot:o,threadPagesById:On(o,p),elementPageByEl:p,threadNavByElement:kn(o),pendingSelectElement:null,readingOrder:f,readingOrderDisplayNumbers:Nn(f),pageViewOverlay:null}}async function Gn(e){let t=e.find(e=>e.name===`document.xml`);if(!t)throw Error(`Archive must contain document.xml at its root.`);let n=await t.text(),r=new Map,i=new Map;for(let t of e){let e=t.webkitRelativePath||t.name,n=e.split(`/`);if(n.length>=2&&n[n.length-2]===`pages`){let e=Yn.exec(t.name);e&&r.set(Number(e[1]),URL.createObjectURL(t))}let a=It(e);a&&i.set(a,URL.createObjectURL(t))}return{markupXml:n,pageImages:r,assetUrls:i}}function Kn(e){if(e){for(let t of e.pageImages.values())t.startsWith(`blob:`)&&URL.revokeObjectURL(t);for(let t of e.assetUrls.values())t.startsWith(`blob:`)&&URL.revokeObjectURL(t)}}function qn(e){return e.map(e=>Jn(e,0)).join(`
+`)}function Jn(e,t){let n=`  `.repeat(t),r=I(e),i=[...e.attributes].filter(e=>e.name!==`xmlns`||e.value!==`https://www.doclang.ai/ns/v0`).map(e=>`${e.name}="${e.value}"`).join(` `),a=i?` ${i}`:``;if(!e.childNodes.length)return`${n}<${r}${a}/>`;let o=[...e.childNodes].filter(e=>N(e)&&!P(e));if(o.length>0&&o.every(N)&&!F(e).length){let t=Nt(e.childNodes);if(t)return`${n}<${r}${a}>${t}</${r}>`}let s=[`${n}<${r}${a}>`];for(let n of e.childNodes)if(N(n)){let e=Mt(n);e&&s.push(`  `.repeat(t+1)+e)}else n.nodeType===Node.ELEMENT_NODE&&s.push(Jn(n,t+1));return s.push(`${n}</${r}>`),s.join(`
+`)}var Yn,Xn,Zn,Qn=t((()=>{W(),yn(),Yn=/^(\d+)\.(png|jpe?g|webp)$/i,Xn=`(No markup to be shown.)`,Zn=new Set([`bold`,`italic`,`underline`,`strikethrough`,`superscript`,`subscript`,`handwriting`,`rtl`,`content`])}));Qn(),W();var $n=class extends T{static get observedAttributes(){return[...super.observedAttributes,`src`,`page`,`selected`]}_docState=null;_currentPage=1;_selectedId=null;_peerIds=new Set;get document(){return this._docState}set document(e){this._docState=e,this._currentPage=e?e.currentPage:1,e?this._renderDocument():this._clearDocument()}get selected(){return this._selectedId}set selected(e){e!==this._selectedId&&(this._selectedId=e,this._peerIds=e?this._computePeerIds(e):new Set,e?this.setAttribute(`selected`,e):this.removeAttribute(`selected`),this._applySelection())}get page(){return this._currentPage}set page(e){if(!this._docState)return;let t=Math.min(Math.max(1,e),this._docState.pageCount);t!==this._currentPage&&(this._currentPage=t,this._docState.currentPage=t,this.setAttribute(`page`,String(t)),this._renderDocument())}connectedCallback(){if(super.connectedCallback(),!this._docState&&!this.hasAttribute(`src`)){let e=this.querySelector(`script[type="application/doclang+xml"]`);e?.textContent?.trim()&&this._loadXmlString(e.textContent.trim(),this.getAttribute(`label`)??``)}}attributeChangedCallback(e,t,n){if(super.attributeChangedCallback(e,t,n),e===`src`&&n&&this._loadFromUrl(n),e===`page`&&n){let e=parseInt(n,10);isNaN(e)||(this.page=e)}e===`selected`&&(this.selected=n||null)}_applySelection(){}_clearDocument(){}_computePeerIds(e){let t=new Set;if(!this._docState?.elementIds||!this._docState.idToElement)return t;let n=this._docState.idToElement.get(e),r=n?Ht(n):null;if(!r)return t;for(let[e,n]of this._docState.elementIds)Ht(e)===r&&t.add(n);return t}_loadXmlString(e,t){let n=Wn(e,new Map,t,new Map,{markupOnly:!0});n&&(this.document=n)}async _loadFromUrl(e){try{let t=await fetch(e);if(!t.ok)throw Error(`HTTP ${t.status}`);if(e.includes(`.dclx`)||e.includes(`.zip`)||t.headers.get(`content-type`)?.includes(`zip`)){let{extractArchiveFromZipBuffer:n}=await Promise.resolve().then(()=>(Qn(),bn)),{markupXml:r,pageImages:i,assetUrls:a}=await n(await t.arrayBuffer()),o=Wn(r,i,e.split(`/`).pop()??``,a,{markupOnly:!1});o&&(this.document=o)}else{let n=await t.text(),r=e.split(`/`).pop()??``;this._loadXmlString(n,r)}}catch(e){this.dispatchEvent(new CustomEvent(`doclang-load-error`,{bubbles:!0,composed:!0,detail:{error:e}}))}}},er=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{border-right:1px solid var(--border);background:var(--panel);--xml-tag:var(--doclang-xml-tag,#116329);--xml-bracket:var(--doclang-xml-bracket,#24292e);--xml-attr-name:var(--doclang-xml-attr-name,#0550ae);--xml-attr-value:var(--doclang-xml-attr-value,#0a3069);--xml-text:var(--doclang-xml-text,#24292e);--xml-cdata:var(--doclang-xml-cdata,#6a737d);--xml-cdata-delimiter:var(--doclang-xml-cdata-delimiter,#6a737d);flex-direction:column;min-width:0;min-height:0;display:flex}:host([hidden]){display:none!important}:host(.pane-layout-last){border-right:none}.pane-header{box-sizing:border-box;letter-spacing:.04em;text-transform:uppercase;height:2.125rem;color:var(--muted);border-bottom:1px solid var(--border);background:var(--panel);align-items:center;gap:.5rem;padding:0 .75rem;font-size:.75rem;font-weight:600;display:flex}.pane-body{background:var(--markup-bg);min-height:0;color:var(--markup-fg);flex:1;padding:0;overflow:auto}.pane-body .placeholder{margin:1rem}.placeholder{min-height:12rem;color:var(--muted);background:var(--placeholder-bg);border:1px dashed var(--border);text-align:center;border-radius:.5rem;justify-content:center;align-items:center;padding:2rem;font-style:italic;display:flex}pre.markup{font-family:var(--font-mono);white-space:pre-wrap;word-break:break-word;margin:0;font-size:.8125rem;line-height:1.5}.markup{font-family:var(--font-mono);tab-size:2;--markup-indent:2ch;--markup-gutter-width:1rem;margin:0;padding:.75rem 1rem 1rem;font-size:.8125rem;line-height:1.55}.markup-ghost-tag-part{opacity:.35;cursor:help}.head-tooltip{border-collapse:collapse;width:100%;font-size:.6875rem;line-height:1.4}.head-tooltip th{color:var(--muted);text-align:left;vertical-align:top;white-space:nowrap;padding:.1rem .55rem .1rem 0;font-weight:600}.head-tooltip td{vertical-align:top;word-break:break-word;padding:.1rem 0}.head-tooltip .head-default{color:var(--muted);white-space:nowrap;font-style:italic}.markup-el{cursor:pointer;border-radius:.2rem}.markup-el:hover{background:var(--markup-hover)}.markup-el.selected{background:var(--markup-selected);box-shadow:inset 0 0 0 1px var(--accent)}.markup-line{white-space:pre-wrap;word-break:break-word;cursor:pointer;border-radius:.15rem;padding:0 .25rem}.markup-line-content{min-width:0;padding-left:calc(var(--markup-depth,0) * var(--markup-indent));align-items:baseline;display:flex}.markup-gutter{flex:0 0 var(--markup-gutter-width);width:var(--markup-gutter-width);justify-content:center;align-items:center;display:flex}.markup-line-body{flex:auto;min-width:0}summary::-webkit-details-marker{display:none}summary{list-style:none;display:block}summary:focus{outline:none}.markup-fold-toggle{appearance:none;width:var(--markup-gutter-width);height:1rem;color:var(--muted);cursor:pointer;background:0 0;border:none;border-radius:.15rem;flex-shrink:0;justify-content:center;align-items:center;margin:0;padding:0;display:inline-flex}.markup-fold-toggle:before{content:"";border-top:4px solid #0000;border-bottom:4px solid #0000;border-left:5px solid;width:0;height:0;transition:transform .12s;display:block;transform:rotate(90deg)}details:not([open])>summary .markup-fold-toggle:before{transform:rotate(0)}.markup-fold-toggle:hover{background:var(--markup-hover);color:var(--markup-fg)}.markup-fold-suffix{display:none}details:not([open])>summary .markup-fold-suffix{display:inline}details:not([open])>.markup-fold-body{display:none}.xml-tag{color:var(--xml-tag)}.xml-bracket{color:var(--xml-bracket)}.xml-attr-name{color:var(--xml-attr-name)}.xml-attr-value{color:var(--xml-attr-value)}.xml-attr-value-truncatable{display:inline}.xml-attr-value-chip{appearance:none;border:1px solid var(--border);background:var(--placeholder-bg);color:var(--muted);font-family:var(--font-ui,system-ui, sans-serif);cursor:pointer;vertical-align:baseline;white-space:nowrap;border-radius:.25rem;align-items:center;gap:.3em;margin:0 0 0 .35em;padding:.08em .45em .08em .5em;font-size:.72em;font-weight:600;line-height:1.35;display:inline-flex}.xml-attr-value-chip:after{content:"";opacity:.75;border-top:.28em solid;border-left:.22em solid #0000;border-right:.22em solid #0000;width:0;height:0;transition:transform .12s}.xml-attr-value-chip[aria-expanded=true]:after{transform:rotate(180deg)}.xml-attr-value-chip:hover,.xml-attr-value-chip[aria-expanded=true]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg))}.markup-embedded-uri-panel{cursor:text}.markup-embedded-uri-panel:hover{background:0 0}.markup-embedded-uri-panel-body{max-height:8rem;color:var(--xml-attr-value);word-break:break-all;background:var(--placeholder-bg);border:1px solid var(--border);-webkit-user-select:text;user-select:text;border-radius:.25rem;margin:.1rem 0 .25rem;padding:.45rem .6rem;overflow:auto}.xml-text{color:var(--xml-text)}.xml-cdata{color:var(--xml-cdata)}.xml-cdata-delimiter{color:var(--xml-cdata-delimiter)}@media (prefers-color-scheme:dark){:host{--xml-tag:var(--doclang-xml-tag,#4ec9b0);--xml-bracket:var(--doclang-xml-bracket,gray);--xml-attr-name:var(--doclang-xml-attr-name,#9cdcfe);--xml-attr-value:var(--doclang-xml-attr-value,#ce9178);--xml-text:var(--doclang-xml-text,#d4d4d4);--xml-cdata:var(--doclang-xml-cdata,#b5cea8);--xml-cdata-delimiter:var(--doclang-xml-cdata-delimiter,gray)}}`;Qn(),W();var tr=`DocLang virtual <text>; wrapping tags not included in source`,nr=30;function rr(e){return!e||e.length<=nr?!1:/^(data:image\/|blob:)/i.test(e)}function ir(e){if(e<1024)return`${e} B`;if(e<1048576){let t=e/1024;return t<10?`${t.toFixed(1)} KB`:`${Math.round(t)} KB`}return`${(e/1048576).toFixed(1)} MB`}function ar(e){if(/^blob:/i.test(e))return e.length>=1024?`${Math.round(e.length/1024)} KB URL`:`${e.length} char URL`;let t=e.indexOf(`,`);if(t===-1)return`embedded data`;let n=e.slice(0,t),r=e.slice(t+1).replace(/\s/g,``),i=/^data:([^;,]+)/i.exec(n)?.[1]??``;return`${i.startsWith(`image/`)?i.slice(6):i||`data`} · ${ir(Math.floor(r.replace(/=+$/,``).length*3/4))}`}function or(e){for(let t=0;t<e.length;t+=1){let n=e[t];if(n&&(N(n)&&!P(n)||n.nodeType===Node.ELEMENT_NODE))return!0}return!1}function sr(e){if(P(e))return!0;if(e.nodeType!==Node.ELEMENT_NODE)return!1;let t=I(e);return t===`location`||H.has(t)}function cr(e){if(!or(e))return!1;for(let t of e)if(!sr(t)&&(N(t)||t.nodeType===Node.ELEMENT_NODE&&!Bt(t)))return!0;return!1}var lr=class extends $n{static styles=c(er);_hasMarkup=null;_markupTemplate=null;connectedCallback(){super.connectedCallback(),this.classList.add(`pane`,`pane-markup`)}render(){return b`<div class="pane-header">DocLang</div><div class="pane-body" id="markup-pane" @click=${this._onBodyClick}>${this._hasMarkup===!1?b`<div class="placeholder">${Xn}</div>`:this._hasMarkup===!0&&this._markupTemplate?b`<div class="markup">${this._markupTemplate}</div>`:S}</div>`}get scrollPane(){return this.shadowRoot?.querySelector(`.pane-body`)??null}_applySelection(){if(!this.shadowRoot)return;for(let e of this.shadowRoot.querySelectorAll(`.markup-el.selected`))e.classList.remove(`selected`);if(!this._selectedId)return;let e=this.shadowRoot.querySelector(`.markup-el-virtual-text[data-element-id="${this._selectedId}"]`)??this.shadowRoot.querySelector(`[data-element-id="${this._selectedId}"]`);e&&(e.classList.add(`selected`),e.scrollIntoView({block:`nearest`,behavior:`smooth`}))}_renderDocument(){let e=this._docState;if(!e){this._markupTemplate=null,this._hasMarkup=null;return}let t=e.segments[this._currentPage-1]??[],n=wn(t);e.elementIds=n,e.idToElement=Tn(n),Sn(t)?(this._markupTemplate=this._buildMarkupView(t,n),this._hasMarkup=!0):(this._markupTemplate=null,this._hasMarkup=!1),this.requestUpdate()}_clearDocument(){this._markupTemplate=null,this._hasMarkup=null,this.requestUpdate()}_buildMarkupView(e,t){let n=[];for(let r of e)r.nodeType===Node.ELEMENT_NODE&&n.push(this._renderMarkupElement(r,0,t));return n}_onBodyClick=e=>{let t=e.target,n=t.closest(`.xml-attr-value-chip`);if(n){e.stopPropagation(),this._toggleTruncatableMarkupAttrValue(n);return}let r=t.closest(`.markup-el-virtual-text`),i=r?.hasAttribute(`data-element-id`)?r.getAttribute(`data-element-id`):t.closest(`.markup-el[data-element-id]`)?.getAttribute(`data-element-id`)??null;i&&this.dispatchEvent(new CustomEvent(`doclang-element-select`,{bubbles:!0,composed:!0,detail:{id:i}}))};_onSummaryClick=e=>{let t=e.target;!t.closest(`.markup-fold-toggle`)&&!t.closest(`.markup-gutter`)&&e.preventDefault()};_createEmbeddedUriContinuationPanel(e,t){let n=document.createElement(`div`);return Be(b`<div class="markup-line markup-embedded-uri-panel" style="--markup-depth: ${t}"><span class="markup-line-content"><span class="markup-gutter" aria-hidden="true"></span><span class="markup-line-body"><div class="markup-embedded-uri-panel-body" @click=${e=>e.stopPropagation()}>${e}</div></span></span></div>`,n),n.firstElementChild}_renderTruncatableMarkupAttrValue(e){let t=ar(e);return b`<span class="xml-attr-value xml-attr-value-truncatable" data-full-value=${e}><span class="xml-attr-value-text">${e.slice(0,nr)}</span><button type="button" class="xml-attr-value-chip" data-collapsed-label=${t} aria-expanded="false" aria-label="Show full value (${t})"><span class="xml-attr-value-chip-label">${t}</span></button></span>`}_toggleTruncatableMarkupAttrValue(e){let t=e.closest(`.xml-attr-value-truncatable`);if(!t)return;let n=t.closest(`.markup-line`),r=t.dataset.fullValue??``,i=e.querySelector(`.xml-attr-value-chip-label`),a=e.dataset.collapsedLabel??i?.textContent??``;if(e.getAttribute(`aria-expanded`)===`true`){e.setAttribute(`aria-expanded`,`false`),e.setAttribute(`aria-label`,`Show full value (${a})`),i&&(i.textContent=a),n?.nextElementSibling?.classList.contains(`markup-embedded-uri-panel`)&&n.nextElementSibling.remove();return}if(e.setAttribute(`aria-expanded`,`true`),e.setAttribute(`aria-label`,`Hide full value`),i&&(i.textContent=`hide`),!n||n.nextElementSibling?.classList.contains(`markup-embedded-uri-panel`))return;let o=Number(n.style.getPropertyValue(`--markup-depth`)||0);n.insertAdjacentElement(`afterend`,this._createEmbeddedUriContinuationPanel(r,o))}_renderXmlSpan(e,t,{ghost:n=!1}={}){return n?b`<span class="${e} markup-ghost-tag-part" title=${tr}>${t}</span>`:b`<span class=${e}>${t}</span>`}_renderMarkupLineRow(e,t,{foldToggle:n=!1}={}){return b`<div class="markup-line" style="--markup-depth: ${e}"><span class="markup-line-content"><span class="markup-gutter" aria-hidden="true">${n?b`<span class="markup-fold-toggle"></span>`:S}</span><span class="markup-line-body">${t}</span></span></div>`}_renderMarkupAttrValue(e){return rr(e)?this._renderTruncatableMarkupAttrValue(e):this._renderXmlSpan(`xml-attr-value`,e)}_renderMarkupAttributes(e){return e.map(({name:e,value:t})=>b` ${this._renderXmlSpan(`xml-attr-name`,e)}${this._renderXmlSpan(`xml-bracket`,`="`)}${this._renderMarkupAttrValue(t)}${this._renderXmlSpan(`xml-bracket`,`"`)}`)}_renderMarkupTextContent(e){let t=/^<!\[CDATA\[([\s\S]*)\]\]>$/.exec(e);return t?b`${this._renderXmlSpan(`xml-cdata-delimiter`,`<![CDATA[`)}${this._renderXmlSpan(`xml-cdata`,t[1]??``)}${this._renderXmlSpan(`xml-cdata-delimiter`,`]]>`)}`:this._renderXmlSpan(`xml-text`,e)}_renderOpenTagContent(e,t,n=!1){return b`${this._renderXmlSpan(`xml-bracket`,`<`,{ghost:n})}${this._renderXmlSpan(`xml-tag`,e,{ghost:n})}${this._renderMarkupAttributes(t)}${this._renderXmlSpan(`xml-bracket`,`>`,{ghost:n})}`}_renderMarkupFoldableOpen(e,t,n,r){let i=!!r,a=b`${this._renderOpenTagContent(t,n,i)}<span class="markup-fold-suffix">${this._renderXmlSpan(`xml-bracket`,`...`,{ghost:i})}${this._renderXmlSpan(`xml-bracket`,`</`,{ghost:i})}${this._renderXmlSpan(`xml-tag`,t,{ghost:i})}${this._renderXmlSpan(`xml-bracket`,`>`,{ghost:i})}</span>`;return b`<summary class="markup-line markup-line-open" style="--markup-depth: ${e}" @click=${this._onSummaryClick}><span class="markup-line-content"><span class="markup-gutter" aria-hidden="true"><span class="markup-fold-toggle"></span></span><span class="markup-line-body">${a}</span></span></summary>`}_renderMarkupCloseTag(e,t,n){let r=!!n,i=b`${this._renderXmlSpan(`xml-bracket`,`</`,{ghost:r})}${this._renderXmlSpan(`xml-tag`,t,{ghost:r})}${this._renderXmlSpan(`xml-bracket`,`>`,{ghost:r})}`;return this._renderMarkupLineRow(e,i)}_renderMarkupSelfClosingTag(e,t,n){let r=b`${this._renderXmlSpan(`xml-bracket`,`<`)}${this._renderXmlSpan(`xml-tag`,t)}${this._renderMarkupAttributes(n)}${this._renderXmlSpan(`xml-bracket`,`/>`)}`;return this._renderMarkupLineRow(e,r)}_renderMarkupInlineElement(e,t,n,r){let i=b`${this._renderOpenTagContent(t,n)}${this._renderMarkupTextContent(r)}${this._renderXmlSpan(`xml-bracket`,`</`)}${this._renderXmlSpan(`xml-tag`,t)}${this._renderXmlSpan(`xml-bracket`,`>`)}`;return this._renderMarkupLineRow(e,i)}_renderMarkupTextLine(e,t){return this._renderMarkupLineRow(e,this._renderMarkupTextContent(t))}_renderMarkupNodesFromSlice(e,t,n){let r=[];for(let i=0;i<t.length;i+=1){let a=t[i];if(a){if(N(a)){let t=Mt(a);t&&r.push(this._renderMarkupTextLine(e,t))}else a.nodeType===Node.ELEMENT_NODE&&r.push(this._renderMarkupElement(a,e,n))}}return r}_renderMarkupVirtualText(e,t,n,r){return cr(n)?b`<details class="markup-el markup-el-foldable markup-el-virtual-text" ?open=${!0} data-element-id=${r.get(t)??S}>${this._renderMarkupFoldableOpen(e,`text`,[],tr)}<div class="markup-fold-body"><div class="markup-children">${this._renderMarkupNodesFromSlice(e+1,n,r)}</div>${this._renderMarkupCloseTag(e,`text`,tr)}</div></details>`:this._renderMarkupNodesFromSlice(e,n,r)}_renderMarkupFoldableElement(e,t,n,r){let i=I(e);return b`<details class="markup-el markup-el-foldable" ?open=${!0} data-element-id=${n.get(e)??S}>${this._renderMarkupFoldableOpen(t,i,wt(e))}<div class="markup-fold-body"><div class="markup-children">${r(t+1)}</div>${this._renderMarkupCloseTag(t,i)}</div></details>`}_renderMarkupList(e,t,n){return this._renderMarkupFoldableElement(e,t,n,t=>{let r=[],i=[...e.childNodes],a=0;for(;a<i.length;){let e=i[a];if(!e){a+=1;continue}if(e.nodeType===Node.ELEMENT_NODE&&I(e)===`ldiv`)break;if(N(e)&&P(e)){a+=1;continue}if(N(e))break;if(e.nodeType===Node.ELEMENT_NODE){let i=I(e);if(H.has(i)||i===`location`){r.push(this._renderMarkupElement(e,t,n)),a+=1;continue}}break}for(;a<i.length;){let e=i[a];if(!e){a+=1;continue}if(e.nodeType!==Node.ELEMENT_NODE||I(e)!==`ldiv`){r.push(...this._renderMarkupNodesFromSlice(t,[e],n)),a+=1;continue}let o=e;r.push(this._renderMarkupElement(o,t,n)),a+=1;let s=Dt(i,a);r.push(this._renderMarkupVirtualText(t,o,i.slice(a,s),n)),a=s}return r})}_renderMarkupOtslContainer(e,t,n){return this._renderMarkupFoldableElement(e,t,n,t=>{let r=[],i=[...e.childNodes],a=0;for(;a<i.length;){let e=i[a];if(!e){a+=1;continue}if(e.nodeType===Node.ELEMENT_NODE&&B(I(e)))break;if(N(e)&&P(e)){a+=1;continue}if(N(e))break;if(e.nodeType===Node.ELEMENT_NODE){let i=I(e);if(H.has(i)||i===`location`||i===`h_thread`){r.push(this._renderMarkupElement(e,t,n)),a+=1;continue}}break}for(;a<i.length;){let e=i[a];if(!e){a+=1;continue}if(e.nodeType!==Node.ELEMENT_NODE){r.push(...this._renderMarkupNodesFromSlice(t,[e],n)),a+=1;continue}let o=I(e);if(o===`nl`){r.push(this._renderMarkupSelfClosingTag(t,`nl`,[])),a+=1;continue}if(!B(o)){r.push(...this._renderMarkupNodesFromSlice(t,[e],n)),a+=1;continue}let s=e;if(r.push(this._renderMarkupElement(s,t,n)),a+=1,nn.has(o))continue;let c=Ot(i,a);r.push(this._renderMarkupVirtualText(t,s,i.slice(a,c),n)),a=c}return r})}_renderMarkupElement(e,t,n){let r=I(e);if(r===`list`)return this._renderMarkupList(e,t,n);if(U.has(r))return this._renderMarkupOtslContainer(e,t,n);let i=n.get(e),a=wt(e);if(!e.childNodes.length)return b`<div class="markup-el" data-element-id=${i??S}>${this._renderMarkupSelfClosingTag(t,r,a)}</div>`;let o=[...e.childNodes].filter(e=>N(e)&&!P(e));if(o.length>0&&o.every(N)&&!F(e).length){let n=Nt(e.childNodes);if(n)return b`<div class="markup-el" data-element-id=${i??S}>${this._renderMarkupInlineElement(t,r,a,n)}</div>`}return b`<details class="markup-el markup-el-foldable" ?open=${!0} data-element-id=${i??S}>${this._renderMarkupFoldableOpen(t,r,a)}<div class="markup-fold-body"><div class="markup-children">${[...e.childNodes].map(e=>{if(N(e)){let n=Mt(e);return n?this._renderMarkupTextLine(t+1,n):S}return e.nodeType===Node.ELEMENT_NODE?this._renderMarkupElement(e,t+1,n):S})}</div>${this._renderMarkupCloseTag(t,r)}</div></details>`}};j([D()],lr.prototype,`_hasMarkup`,void 0),j([D()],lr.prototype,`_markupTemplate`,void 0),lr=j([E(`doclang-markup-pane`)],lr);var ur=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{border-right:1px solid var(--border);background:var(--panel);--overlay-reading-order:var(--doclang-overlay-reading-order,#71717a);--overlay-fragment:var(--doclang-overlay-fragment,#9333ea);flex-direction:column;min-width:0;min-height:0;display:flex}:host([hidden]){display:none!important}:host(.pane-layout-last){border-right:none}.pane-header{box-sizing:border-box;letter-spacing:.04em;text-transform:uppercase;height:2.125rem;color:var(--muted);border-bottom:1px solid var(--border);background:var(--panel);justify-content:space-between;align-items:center;gap:.5rem;padding:0 .75rem;font-size:.75rem;font-weight:600;display:flex}.pane-header-title{min-width:0}.pane-page-controls{flex-shrink:0;align-items:center;gap:.5rem;display:flex}.page-zoom-control{-webkit-user-select:none;user-select:none;align-items:center;gap:.35rem;display:flex}.page-zoom-control-label{letter-spacing:.04em;text-transform:uppercase;color:var(--muted);cursor:pointer;font-size:.625rem;font-weight:600}.page-zoom-control input[type=range]{cursor:pointer;width:5.5rem;height:1rem;margin:0}.page-zoom-reset{appearance:none;border:1px solid var(--border);background:var(--bg);color:var(--muted);height:1.25rem;font:inherit;font-variant-numeric:tabular-nums;cursor:pointer;border-radius:.375rem;min-width:2.75rem;padding:0 .45rem;font-size:.6875rem;font-weight:600;line-height:1}.page-zoom-reset:not(:disabled):hover{border-color:var(--accent);color:var(--text)}.page-zoom-reset:disabled{opacity:.55;cursor:default}.pane-settings-toggle{appearance:none;color:var(--muted);cursor:pointer;white-space:nowrap;letter-spacing:.04em;text-transform:uppercase;height:1.25rem;font-size:.625rem;font-weight:600;line-height:1;font:inherit;background:0 0;border:1px solid #0000;border-radius:.25rem;flex-shrink:0;align-items:center;padding:0 .28rem 0 .4rem;transition:color .12s,background .12s,border-color .12s;display:inline-flex}.pane-settings-toggle:after{content:"";opacity:.65;border-bottom:1.5px solid;border-right:1.5px solid;flex-shrink:0;width:.26rem;height:.26rem;margin-top:-.1em;margin-left:.22rem;transform:rotate(45deg)}.pane-settings-toggle:hover{color:var(--text);background:color-mix(in srgb, var(--text) 5%, transparent)}.pane-settings-toggle[aria-expanded=true]{color:var(--accent);background:color-mix(in srgb, var(--accent) 10%, var(--panel));border-color:color-mix(in srgb, var(--accent) 22%, transparent)}.pane-settings-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.pane-page-layout{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.pane-body{flex-direction:column;flex:auto;min-width:0;min-height:0;padding:.75rem;display:flex;overflow:hidden}.settings-option{cursor:pointer;-webkit-user-select:none;user-select:none;align-items:flex-start;gap:.5rem;font-size:.875rem;display:flex}.settings-option-primary+.settings-subgroup{margin-top:.65rem}.settings-option-primary{font-weight:600}.settings-subgroup{flex-direction:column;gap:.5rem;padding-left:.85rem;display:flex}.settings-reading-order-group{gap:.35rem;padding-left:1.6rem}.settings-option-nested{padding-left:0}.settings-option-sub{color:var(--muted);font-size:.8125rem}.settings-option-disabled{opacity:.45;cursor:not-allowed}.settings-option-disabled input{cursor:not-allowed}.settings-option input{cursor:pointer;flex-shrink:0;margin:.15rem 0 0}.page-view-port{scrollbar-gutter:stable;flex:auto;width:100%;min-width:0;height:100%;min-height:0;display:flex;overflow:auto}.pane-body.can-pan{cursor:grab}.pane-body.is-panning{cursor:grabbing;-webkit-user-select:none;user-select:none}.pane-body:focus{outline:none}.pane-body:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.placeholder{min-height:12rem;color:var(--muted);background:var(--placeholder-bg);border:1px dashed var(--border);text-align:center;border-radius:.5rem;justify-content:center;align-items:center;padding:2rem;font-style:italic;display:flex}.page-view{border:1px solid var(--border);border-radius:.25rem;flex-shrink:0;width:fit-content;margin:auto;line-height:0;display:block;position:relative;overflow:hidden}.page-view img{border:none;border-radius:0;width:auto;max-width:none;height:auto;max-height:none;display:block}.page-view img:not([data-layout-ready]){opacity:0}.page-view svg.overlay{pointer-events:auto;width:100%;height:100%;position:absolute;top:0;left:0;overflow:hidden}.overlay rect.bbox.bbox-hidden,.overlay .overlay-badge.bbox-hidden{display:none}.overlay rect.bbox{stroke-width:2px;vector-effect:non-scaling-stroke;pointer-events:none}.kind-text{--doclang-kind-stroke:var(--kind-text)}.kind-heading{--doclang-kind-stroke:var(--kind-heading)}.kind-list{--doclang-kind-stroke:var(--kind-list)}.kind-ldiv{--doclang-kind-stroke:var(--kind-ldiv)}.kind-table{--doclang-kind-stroke:var(--kind-table)}.kind-index{--doclang-kind-stroke:var(--kind-index)}.kind-formula{--doclang-kind-stroke:var(--kind-formula)}.kind-code{--doclang-kind-stroke:var(--kind-code)}.kind-picture{--doclang-kind-stroke:var(--kind-picture)}.kind-group{--doclang-kind-stroke:var(--kind-group)}.kind-footnote{--doclang-kind-stroke:var(--kind-footnote)}.kind-page_header{--doclang-kind-stroke:var(--kind-page_header)}.kind-page_footer{--doclang-kind-stroke:var(--kind-page_footer)}.kind-caption{--doclang-kind-stroke:var(--kind-caption)}.kind-field{--doclang-kind-stroke:var(--kind-field)}.kind-default{--doclang-kind-stroke:var(--kind-default)}.overlay rect.bbox.selected{stroke-width:3.5px;filter:drop-shadow(0 0 3px color-mix(in srgb, var(--kind-stroke,var(--accent)) 60%, transparent));fill:color-mix(in srgb, var(--kind-stroke,var(--accent)) 30%, transparent)!important}.overlay rect.bbox.related:not(.selected){fill:color-mix(in srgb, var(--kind-stroke,var(--accent)) 30%, transparent)!important}.overlay rect.bbox.layer-furniture,.overlay rect.bbox.layer-background{stroke:color-mix(in srgb, var(--kind-stroke,var(--muted)) 50%, transparent);fill:url(#layer-hatch)!important}.overlay .layer-hatch-stripe{fill:var(--muted);fill-opacity:.06}.overlay rect.bbox.layer-furniture.selected,.overlay rect.bbox.layer-background.selected{fill:color-mix(in srgb, var(--kind-stroke,var(--accent)) 22%, transparent)!important}.overlay rect.bbox.layer-furniture.related:not(.selected),.overlay rect.bbox.layer-background.related:not(.selected){fill:color-mix(in srgb, var(--kind-stroke,var(--accent)) 18%, transparent)!important}.overlay .bbox-text{fill:color-mix(in srgb, var(--kind-text) 14%, transparent);stroke:var(--kind-text)}.overlay .bbox-heading{fill:color-mix(in srgb, var(--kind-heading) 14%, transparent);stroke:var(--kind-heading)}.overlay .bbox-list,.overlay .bbox-ldiv{fill:color-mix(in srgb, var(--kind-list) 14%, transparent);stroke:var(--kind-list)}.overlay .bbox-table{fill:color-mix(in srgb, var(--kind-table) 14%, transparent);stroke:var(--kind-table)}.overlay .bbox-index{fill:color-mix(in srgb, var(--kind-index) 14%, transparent);stroke:var(--kind-index)}.overlay .bbox-formula{fill:color-mix(in srgb, var(--kind-formula) 14%, transparent);stroke:var(--kind-formula)}.overlay .bbox-code{fill:color-mix(in srgb, var(--kind-code) 16%, transparent);stroke:var(--kind-code)}.overlay .bbox-picture{fill:color-mix(in srgb, var(--kind-picture) 14%, transparent);stroke:var(--kind-picture)}.overlay .bbox-group{fill:color-mix(in srgb, var(--kind-group) 14%, transparent);stroke:var(--kind-group)}.overlay .bbox-footnote{fill:color-mix(in srgb, var(--kind-footnote) 14%, transparent);stroke:var(--kind-footnote)}.overlay .bbox-page_header,.overlay .bbox-page_footer{fill:color-mix(in srgb, var(--kind-page_header) 14%, transparent);stroke:var(--kind-page_header)}.overlay .bbox-caption{fill:color-mix(in srgb, var(--kind-caption) 14%, transparent);stroke:var(--kind-caption)}.overlay line.caption-link{color:var(--kind-caption);stroke:currentColor;stroke-width:1.5px;vector-effect:non-scaling-stroke;pointer-events:none;fill:none}.overlay line.caption-link.bbox-hidden{display:none}.overlay line.xref-link{color:var(--kind-footnote);stroke:currentColor;stroke-width:1.5px;vector-effect:non-scaling-stroke;pointer-events:none;fill:none}.overlay line.xref-link.bbox-hidden{display:none}.overlay .fragment-link{pointer-events:none}.overlay .fragment-link.bbox-hidden{display:none}.overlay .fragment-link-path{color:var(--overlay-fragment);fill:none;stroke:currentColor;stroke-width:1.5px;vector-effect:non-scaling-stroke}.overlay .fragment-link-path-dashed{stroke-dasharray:6 4}.overlay .fragment-nav{pointer-events:none}.overlay .fragment-nav.bbox-hidden{display:none}.overlay .fragment-nav-btn{pointer-events:auto;cursor:pointer}.overlay .fragment-nav-btn-disabled{pointer-events:none;cursor:default;opacity:.35}.overlay .fragment-nav-btn-bg{fill:var(--panel);stroke:var(--overlay-fragment);stroke-width:1px;vector-effect:non-scaling-stroke}.overlay .fragment-nav-btn-label{fill:var(--overlay-fragment);font-family:var(--font-ui);text-anchor:middle;dominant-baseline:central;pointer-events:none;font-weight:700}.overlay .fragment-nav-btn:not(.fragment-nav-btn-disabled):hover .fragment-nav-btn-bg{fill:color-mix(in srgb, var(--overlay-fragment) 12%, var(--panel))}.overlay .fragment-link-label{fill:var(--overlay-fragment);font-family:var(--font-ui);text-anchor:middle;dominant-baseline:middle;paint-order:stroke fill;stroke:var(--panel);stroke-width:3px;font-style:italic;font-weight:600}.overlay .reading-order-step{color:var(--overlay-reading-order);stroke:currentColor;stroke-width:1.5px;stroke-dasharray:5 4;vector-effect:non-scaling-stroke;pointer-events:none;fill:none}.overlay .reading-order-step.bbox-hidden,.overlay .reading-order-badge.bbox-hidden{display:none}.overlay .overlay-badge{pointer-events:none}.overlay .overlay-badge-bg{fill-opacity:1;stroke:none}.reading-order-badge .overlay-badge-bg{fill:var(--overlay-reading-order)}.overlay .element-badge{opacity:.8;pointer-events:auto;cursor:help}.overlay .element-badge .overlay-badge-bg{fill:var(--accent)}.overlay .element-badge.kind-text .overlay-badge-bg{fill:var(--kind-text)}.overlay .element-badge.kind-heading .overlay-badge-bg{fill:var(--kind-heading)}.overlay .element-badge.kind-list .overlay-badge-bg{fill:var(--kind-list)}.overlay .element-badge.kind-table .overlay-badge-bg{fill:var(--kind-table)}.overlay .element-badge.kind-index .overlay-badge-bg{fill:var(--kind-index)}.overlay .element-badge.kind-formula .overlay-badge-bg{fill:var(--kind-formula)}.overlay .element-badge.kind-code .overlay-badge-bg{fill:var(--kind-code)}.overlay .element-badge.kind-picture .overlay-badge-bg{fill:var(--kind-picture)}.overlay .element-badge.kind-group .overlay-badge-bg{fill:var(--kind-group)}.overlay .element-badge.kind-footnote .overlay-badge-bg{fill:var(--kind-footnote)}.overlay .element-badge.kind-page_header .overlay-badge-bg{fill:var(--kind-page_header)}.overlay .element-badge.kind-caption .overlay-badge-bg{fill:var(--kind-caption)}.overlay .element-badge.kind-field .overlay-badge-bg{fill:var(--kind-field)}.overlay .overlay-badge-label{fill:#fff;fill-opacity:1;font-family:var(--font-ui);text-anchor:middle;dominant-baseline:central;pointer-events:none;font-weight:700}.overlay .bbox-field{fill:color-mix(in srgb, var(--kind-field) 14%, transparent);stroke:var(--kind-field)}.overlay .bbox-default{fill:color-mix(in srgb, var(--kind-default) 12%, transparent);stroke:var(--kind-default)}@media (prefers-color-scheme:dark){:host{--overlay-reading-order:var(--doclang-overlay-reading-order,#a1a1aa);--overlay-fragment:var(--doclang-overlay-fragment,#c084fc)}.overlay .bbox-text{fill:color-mix(in srgb, var(--kind-text) 20%, transparent)}.overlay .bbox-heading{fill:color-mix(in srgb, var(--kind-heading) 20%, transparent)}.overlay .bbox-list,.overlay .bbox-ldiv{fill:color-mix(in srgb, var(--kind-list) 20%, transparent)}.overlay .bbox-table{fill:color-mix(in srgb, var(--kind-table) 18%, transparent)}.overlay .bbox-index{fill:color-mix(in srgb, var(--kind-index) 18%, transparent)}.overlay .bbox-formula{fill:color-mix(in srgb, var(--kind-formula) 18%, transparent)}.overlay .bbox-code{fill:color-mix(in srgb, var(--kind-code) 20%, transparent)}.overlay .bbox-picture{fill:color-mix(in srgb, var(--kind-picture) 20%, transparent)}.overlay .bbox-group{fill:color-mix(in srgb, var(--kind-group) 20%, transparent)}.overlay .bbox-footnote{fill:color-mix(in srgb, var(--kind-footnote) 18%, transparent)}.overlay .bbox-page_header,.overlay .bbox-page_footer{fill:color-mix(in srgb, var(--kind-page_header) 18%, transparent)}.overlay .bbox-caption{fill:color-mix(in srgb, var(--kind-caption) 18%, transparent)}.overlay .bbox-field{fill:color-mix(in srgb, var(--kind-field) 18%, transparent)}.overlay .bbox-default{fill:color-mix(in srgb, var(--kind-default) 18%, transparent)}}.page-view-hint{inset:unset;background:var(--panel);border:1px solid var(--border);width:max-content;max-width:24rem;color:var(--text);font-family:var(--font-ui);text-align:left;white-space:normal;pointer-events:none;border-radius:.25rem;margin:0;padding:.45rem .55rem;font-size:.75rem;line-height:1.35;position:fixed;top:0;left:0;box-shadow:0 2px 8px #0000001f}.page-view-hint .head-tooltip{border-collapse:collapse;width:100%;font-size:.6875rem;line-height:1.4}.page-view-hint .head-tooltip th{color:var(--muted);text-align:left;vertical-align:top;white-space:nowrap;padding:.1rem .55rem .1rem 0;font-weight:600}.page-view-hint .head-tooltip td{vertical-align:top;word-break:break-word;padding:.1rem 0}.page-view-hint .head-tooltip .head-default{color:var(--muted);white-space:nowrap;font-style:italic}`,dr=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{display:contents}.settings-layer{z-index:5;position:absolute;inset:0}.settings-scrim{z-index:0;appearance:none;background:color-mix(in srgb, var(--bg) 28%, transparent);cursor:default;border:none;margin:0;padding:0;position:absolute;inset:0}.settings-panel{z-index:1;border:1px solid var(--border);background:var(--panel);border-radius:.5rem;flex-direction:column;width:13rem;min-height:0;max-height:calc(100% - 1rem);display:flex;position:absolute;top:.5rem;right:.5rem;overflow:hidden;box-shadow:0 4px 20px #00000024}.settings-header{border-bottom:1px solid var(--border);justify-content:space-between;align-items:center;gap:.5rem;padding:.5rem .75rem;display:flex}.settings-title{letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0;font-size:.6875rem;font-weight:600}.settings-close{appearance:none;color:var(--muted);cursor:pointer;background:0 0;border:none;border-radius:.25rem;width:1.5rem;height:1.5rem;font-size:1.1rem;line-height:1}.settings-close:hover{color:var(--text);background:var(--bg)}.settings-body{padding:.75rem;overflow:auto}`,fr=class extends T{static styles=c(dr);label=``;_open=!1;_titleId=`settings-title-${Math.random().toString(36).slice(2)}`;render(){return this._open?b`
+      <div class="settings-layer">
+        <button
+          type="button"
+          class="settings-scrim"
+          tabindex="-1"
+          aria-label="Close ${this.label}"
+          @click=${this._onClose}
+        ></button>
+        <aside
+          class="settings-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby=${this._titleId}
+        >
+          <div class="settings-header">
+            <h2 class="settings-title" id=${this._titleId}>${this.label}</h2>
+            <button
+              type="button"
+              class="settings-close"
+              aria-label="Close ${this.label}"
+              @click=${this._onClose}
+            >
+              ×
+            </button>
+          </div>
+          <div class="settings-body">
+            <slot></slot>
+          </div>
+        </aside>
+      </div>
+    `:S}setOpen(e){this._open!==e&&(this._open=e,this.requestUpdate(),e||this.dispatchEvent(new CustomEvent(`doclang-settings-close`,{bubbles:!0,composed:!0})))}get isOpen(){return this._open}_onClose=()=>{this.setOpen(!1)}};j([Ge({type:String})],fr.prototype,`label`,void 0),fr=j([E(`doclang-settings-panel`)],fr),W();var pr=16.5*.8,mr=3,hr=2,gr=3,_r=1224,vr=1584,yr=`Previous fragment`,br=`Next fragment`,xr=`cross-page content`,Sr=`fragmented content`;function Cr(e){return e.startsWith(`field_`)||e===`key`||e===`value`||e===`hint`?`field`:e===`tabular`?`table`:new Set([`text`,`heading`,`list`,`ldiv`,`table`,`index`,`formula`,`code`,`picture`,`group`,`footnote`,`page_header`,`page_footer`,`caption`]).has(e)?e:`default`}function wr(e){return`kind-${Cr(e)}`}function Tr(e){return Cr(e)}function Er(e){return e.zoomPct/100}function Dr(e){let t=getComputedStyle(e),n=parseFloat(t.paddingLeft)+parseFloat(t.paddingRight),r=parseFloat(t.paddingTop)+parseFloat(t.paddingBottom);return{w:e.clientWidth-n,h:e.clientHeight-r}}function Or(e,t,n){let{w:r,h:i}=Dr(t),a=e.naturalWidth,o=e.naturalHeight,s=n.layoutCache;if(s&&s.paneW===r&&s.paneH===i&&s.imgW===a&&s.imgH===o)return s.fitScale;let c=r>0&&i>0&&a>0&&o>0?Math.min((r-2)/a,(i-2)/o):1;return n.setLayoutCache({paneW:r,paneH:i,imgW:a,imgH:o,fitScale:c}),c}function G(e,t,n){let r=n??t.pane.querySelector(`.page-view img`),i=Er(t);if(!(i>0))return e;let{pane:a}=t;if(!r?.naturalWidth||!r.naturalHeight)return e/i;let{w:o,h:s}=Dr(a);if(!(o>0&&s>0))return e/i;let c=Math.min((o-2)/_r,(s-2)/vr),l=Or(r,a,t);return!(c>0)||!(l>0)?e/i:e*c/(l*i)}function kr(e,t,n){if(!e?.naturalWidth||!e.naturalHeight)return!1;let r=Math.max(100,n.zoomPct),i=Or(e,t,n)*(r/100),a=Math.floor(e.naturalWidth*i),o=Math.floor(e.naturalHeight*i),s=`${a}px`,c=`${o}px`,l=e.style.width===s&&e.style.height===c;return l||(e.style.width=s,e.style.height=c,e.style.maxWidth=`none`,e.style.maxHeight=`none`),e.dataset.layoutReady=`1`,!l}function K(e,t){let n=e.x0/e.resW*t.naturalWidth,r=e.y0/e.resH*t.naturalHeight,i=(e.x1-e.x0)/e.resW*t.naturalWidth,a=(e.y1-e.y0)/e.resH*t.naturalHeight;return{x:n,y:r,w:i,h:a,area:i*a}}function q(e){return{x:e.x+e.w/2,y:e.y+e.h/2}}function Ar(e){return e.kind===`text`?0:e.kind===`list`||e.kind===`table`||e.kind===`index`||e.kind===`tabular`?2:1}function jr(e){return e===`background`?0:e===`furniture`?1:2}function Mr(e,t,n){let r=jr(e.layer??`body`)-jr(t.layer??`body`);if(r!==0)return r;let i=Ar(e)-Ar(t);if(i!==0)return i;if(n){let r=e.elementId===n;if(r!==(t.elementId===n))return r?1:-1}return 0}function Nr(e,t){return[...e].sort((e,n)=>Mr(e,n,t))}function Pr(e,t){if(e.querySelector(`#${t}`))return;let n=document.createElementNS(`http://www.w3.org/2000/svg`,`marker`);n.setAttribute(`id`,t),n.setAttribute(`viewBox`,`0 0 6 6`),n.setAttribute(`refX`,`6`),n.setAttribute(`refY`,`3`),n.setAttribute(`markerWidth`,`5`),n.setAttribute(`markerHeight`,`5`),n.setAttribute(`orient`,`auto`);let r=document.createElementNS(`http://www.w3.org/2000/svg`,`path`);r.setAttribute(`d`,`M0,0 L6,3 L0,6 Z`),r.setAttribute(`fill`,`currentColor`),n.appendChild(r),e.appendChild(n)}function Fr(e,t,n){let r=Math.hypot(n.x-t.x,n.y-t.y);if(!r)return;e.setAttribute(`stroke-dasharray`,`6 4`);let i=r%10;i>.01&&e.setAttribute(`stroke-dashoffset`,String(i))}function Ir(e){if(e.querySelector(`#layer-hatch`))return;let t=document.createElementNS(`http://www.w3.org/2000/svg`,`pattern`);t.setAttribute(`id`,`layer-hatch`),t.setAttribute(`width`,`16`),t.setAttribute(`height`,`16`),t.setAttribute(`patternUnits`,`userSpaceOnUse`),t.setAttribute(`patternTransform`,`rotate(45 8 8)`);let n=document.createElementNS(`http://www.w3.org/2000/svg`,`rect`);n.setAttribute(`class`,`layer-hatch-stripe`),n.setAttribute(`x`,`10`),n.setAttribute(`y`,`-4`),n.setAttribute(`width`,`6`),n.setAttribute(`height`,`24`),t.appendChild(n),e.appendChild(t)}function Lr(e){let t=e.querySelector(`defs`);return t||(t=document.createElementNS(`http://www.w3.org/2000/svg`,`defs`),e.insertBefore(t,e.firstChild)),t}function Rr(e,t,n,r){let i=G(mr,r),a=G(hr,r),o=document.createElementNS(`http://www.w3.org/2000/svg`,`text`);o.setAttribute(`class`,`overlay-badge-label`),o.setAttribute(`font-size`,String(n)),o.setAttribute(`font-weight`,`700`),o.setAttribute(`text-anchor`,`start`),o.setAttribute(`dominant-baseline`,`text-before-edge`),o.setAttribute(`visibility`,`hidden`),o.textContent=String(t),e.appendChild(o);let s,c;try{let e=o.getBBox();s=e.width+i*2,c=e.height+a*2}catch{s=G(String(t).length*pr*.55+6,r),c=G(18.520000000000003,r)}return o.remove(),{width:s,height:c}}function zr(e,t,n,r,{extraClass:i,elementId:a},o){let s=G(pr,o),{width:c,height:l}=Rr(e,r,s,o),u=G(gr,o),d=document.createElementNS(`http://www.w3.org/2000/svg`,`g`);d.setAttribute(`class`,`overlay-badge ${i}`),d.setAttribute(`data-element-id`,a);let f=document.createElementNS(`http://www.w3.org/2000/svg`,`rect`);f.setAttribute(`class`,`overlay-badge-bg`),f.setAttribute(`x`,String(t-c/2)),f.setAttribute(`y`,String(n-l/2)),f.setAttribute(`width`,String(c)),f.setAttribute(`height`,String(l)),f.setAttribute(`rx`,String(u)),f.setAttribute(`ry`,String(u)),d.appendChild(f);let p=document.createElementNS(`http://www.w3.org/2000/svg`,`text`);return p.setAttribute(`class`,`overlay-badge-label`),p.setAttribute(`x`,String(t)),p.setAttribute(`y`,String(n)),p.setAttribute(`font-size`,String(s)),p.textContent=String(r),d.appendChild(p),e.appendChild(d),d}function Br(e,t,n,r,i,a,o,s){if(!e.naturalWidth)return;t.querySelectorAll(`.element-badge, .reading-order-badge`).forEach(e=>e.remove());let c=G(pr,s),l=G(2,s),u=new Map;if(i&&o)for(let e of r)u.set(e.elementId,e);let d=Nr(n,s.selectedId);for(let n of d){let{x:r,y:o}=K(n,e),d={width:0};i&&a&&(d=Rr(t,n.tag,c,s),zr(t,r,o,n.tag,{extraClass:`element-badge ${wr(n.kind)}`,elementId:n.elementId},s));let f=u.get(n.elementId);if(f){let e=String(f.order),u=Rr(t,e,c,s);zr(t,i&&a?r+d.width/2+l+u.width/2:r,o,e,{extraClass:`reading-order-badge`,elementId:n.elementId},s)}}}function Vr(e,t,n,{markerId:r,linkClass:i,fromIdAttr:a,toIdAttr:o}){if(n.length){Pr(Lr(e),r);for(let s of n){let n=s.captionBox??s.fromBox,c=s.hostBox??s.toBox,l=K(n,t),u=K(c,t),d=q(l),f=q(u),p=document.createElementNS(`http://www.w3.org/2000/svg`,`line`);p.setAttribute(`class`,i),p.setAttribute(`x1`,String(d.x)),p.setAttribute(`y1`,String(d.y)),p.setAttribute(`x2`,String(f.x)),p.setAttribute(`y2`,String(f.y)),p.setAttribute(`marker-end`,`url(#${r})`);let m=s.captionElementId??s.fromElementId,ee=s.hostElementId??s.toElementId;p.setAttribute(a,m),p.setAttribute(o,ee),e.appendChild(p)}}}function Hr(e,t,n){Vr(e,t,n,{markerId:`caption-arrowhead`,linkClass:`caption-link`,fromIdAttr:`data-caption-id`,toIdAttr:`data-host-id`})}function Ur(e,t,n){Vr(e,t,n,{markerId:`xref-arrowhead`,linkClass:`xref-link`,fromIdAttr:`data-xref-from-id`,toIdAttr:`data-xref-to-id`})}function Wr(e,t,n,r,i){return{x:e/n*i.naturalWidth,y:t/r*i.naturalHeight}}function Gr(e,t,n,r){let{width:i,height:a}=t,o=G(5,r),s=Wr(0,0,i,a,e),c=Wr(i,a,i,a,e);return n===`tl`?{x:Math.min(s.x+o,c.x-o),y:Math.min(s.y+o,c.y-o)}:{x:Math.max(c.x-o,s.x+o),y:Math.max(c.y-o,s.y+o)}}function Kr(e,t,n,r,i){if(!n.length)return;Pr(Lr(e),`fragment-arrowhead`);let a=G(pr,i);for(let o of n){let n=K(o.fromBox,t),s=document.createElementNS(`http://www.w3.org/2000/svg`,`g`);s.setAttribute(`class`,`fragment-link`),s.setAttribute(`data-thread-id`,o.threadId),s.setAttribute(`data-fragment-from-id`,o.fromElementId),o.toElementId&&s.setAttribute(`data-fragment-to-id`,o.toElementId);let c;if(o.toBox){let e=K(o.toBox,t),r=q(n),i=q(e),a=document.createElementNS(`http://www.w3.org/2000/svg`,`line`);a.setAttribute(`class`,`fragment-link-path fragment-link-path-dashed`),a.setAttribute(`x1`,String(r.x)),a.setAttribute(`y1`,String(r.y)),a.setAttribute(`x2`,String(i.x)),a.setAttribute(`y2`,String(i.y)),a.setAttribute(`marker-end`,`url(#fragment-arrowhead)`),Fr(a,r,i),s.appendChild(a),c={x:(r.x+i.x)/2,y:(r.y+i.y)/2}}else{let e=o.targetCorner??`br`,a=Gr(t,r,e,i),l=q(n),u=e===`tl`,d=u?a:l,f=u?l:a,p=document.createElementNS(`http://www.w3.org/2000/svg`,`line`);p.setAttribute(`class`,`fragment-link-path fragment-link-path-dashed`),p.setAttribute(`x1`,String(d.x)),p.setAttribute(`y1`,String(d.y)),p.setAttribute(`x2`,String(f.x)),p.setAttribute(`y2`,String(f.y)),p.setAttribute(`marker-end`,`url(#fragment-arrowhead)`),Fr(p,d,f),s.appendChild(p),c={x:(d.x+f.x)/2,y:(d.y+f.y)/2}}let l=document.createElementNS(`http://www.w3.org/2000/svg`,`text`);l.setAttribute(`class`,`fragment-link-label`),l.setAttribute(`x`,String(c.x)),l.setAttribute(`y`,String(c.y)),l.setAttribute(`font-size`,String(a)),l.textContent=o.toBox?Sr:xr,s.appendChild(l),e.appendChild(s)}}function qr(e,t,n,r){if(!n.length)return;let i=G(19.5,r),a=G(2,r),o=G(3,r),s=G(15,r),c=G(3,r);for(let r of n){let{x:n,y:l,w:u,h:d}=K(r.box,t),f=document.createElementNS(`http://www.w3.org/2000/svg`,`g`);f.setAttribute(`class`,`fragment-nav`),f.setAttribute(`data-element-id`,r.elementId);let p=l+d-o-i,m=n+u-o-i;Jr(f,m-a-i,p,i,c,s,`prev`,`‹`,r.hasPrev),Jr(f,m,p,i,c,s,`next`,`›`,r.hasNext),e.appendChild(f)}}function Jr(e,t,n,r,i,a,o,s,c){let l=document.createElementNS(`http://www.w3.org/2000/svg`,`g`);if(l.setAttribute(`class`,`fragment-nav-btn fragment-nav-btn-${o}${c?``:` fragment-nav-btn-disabled`}`),l.setAttribute(`data-nav`,o),c){l.setAttribute(`role`,`button`);let e=o===`prev`?yr:br;l.setAttribute(`aria-label`,e);let t=document.createElementNS(`http://www.w3.org/2000/svg`,`title`);t.textContent=e,l.appendChild(t)}let u=document.createElementNS(`http://www.w3.org/2000/svg`,`rect`);u.setAttribute(`class`,`fragment-nav-btn-bg`),u.setAttribute(`x`,String(t)),u.setAttribute(`y`,String(n)),u.setAttribute(`width`,String(r)),u.setAttribute(`height`,String(r)),u.setAttribute(`rx`,String(i)),u.setAttribute(`ry`,String(i)),l.appendChild(u);let d=document.createElementNS(`http://www.w3.org/2000/svg`,`text`);d.setAttribute(`class`,`fragment-nav-btn-label`),d.setAttribute(`x`,String(t+r/2)),d.setAttribute(`y`,String(n+r/2)),d.setAttribute(`font-size`,String(a)),d.textContent=s,l.appendChild(d),e.appendChild(l)}function Yr(e,t,n){if(n.length&&n.length>=2){Pr(Lr(e),`reading-order-arrowhead`);for(let r=0;r<n.length-1;r+=1){let i=K(n[r].box,t),a=K(n[r+1].box,t),o=q(i),s=q(a),c=document.createElementNS(`http://www.w3.org/2000/svg`,`line`);c.setAttribute(`class`,`reading-order-step`),c.setAttribute(`x1`,String(o.x)),c.setAttribute(`y1`,String(o.y)),c.setAttribute(`x2`,String(s.x)),c.setAttribute(`y2`,String(s.y)),c.setAttribute(`marker-end`,`url(#reading-order-arrowhead)`),e.appendChild(c)}}}function Xr(e,t,n=[],r=[],i=[],a=[],o=[],s={width:512,height:512},c,l,u,d,f,p){let m=document.createElementNS(`http://www.w3.org/2000/svg`,`svg`);m.classList.add(`overlay`),m.setAttribute(`viewBox`,`0 0 ${e.naturalWidth} ${e.naturalHeight}`),m.setAttribute(`overflow`,`hidden`),Hr(m,e,n),Ur(m,e,r),Kr(m,e,a,s,p),Yr(m,e,i),Ir(Lr(m));for(let n of Nr(t,p.selectedId)){let{x:t,y:r,w:i,h:a}=K(n,e),o=Tr(n.kind),s=wr(n.kind),c=Gt(n.layer??`body`),l=document.createElementNS(`http://www.w3.org/2000/svg`,`rect`);l.setAttribute(`class`,`bbox bbox-${o} ${s}${c?` ${c}`:``}`),l.setAttribute(`x`,String(t)),l.setAttribute(`y`,String(r)),l.setAttribute(`width`,String(Math.max(i,1))),l.setAttribute(`height`,String(Math.max(a,1))),l.setAttribute(`data-element-id`,n.elementId),m.appendChild(l)}return qr(m,e,o,p),m.addEventListener(`click`,n=>{if(d()){f(!1);return}let r=n.target,i=r.closest(`.fragment-nav-btn:not(.fragment-nav-btn-disabled)`);if(i){n.stopPropagation();let e=i.closest(`.fragment-nav`)?.getAttribute(`data-element-id`),t=i.getAttribute(`data-nav`);e&&t&&l(e,t);return}let a=r.closest(`.overlay-badge[data-element-id]`);if(a){let e=a.getAttribute(`data-element-id`);e&&c(e);return}let o=Zr(m,n);if(!o)return;let s=Qr(t,e,o.x,o.y);s?c(s.elementId):u()}),m.addEventListener(`mousemove`,n=>{let r=Zr(m,n);m.style.cursor=r&&Qr(t,e,r.x,r.y)?`pointer`:``}),m.addEventListener(`mouseleave`,()=>{m.style.cursor=``}),m}function Zr(e,t){let n=e.createSVGPoint();n.x=t.clientX,n.y=t.clientY;let r=e.getScreenCTM()?.inverse();if(!r)return null;let i=n.matrixTransform(r);return{x:i.x,y:i.y}}function Qr(e,t,n,r){let i=null,a=1/0;for(let o of e){let{x:e,y:s,w:c,h:l,area:u}=K(o,t);n>=e&&n<=e+c&&r>=s&&r<=s+l&&u<a&&(i=o,a=u)}return i}Qn(),W();var $r=5,ei=`(No page image available.)`,ti=class extends $n{static styles=c(ur);_bodyRef=k();_settingsPanelRef=k();_settingsOpen=!1;_visible=!1;_zoomPct=100;_opts={showAllBboxes:!0,showLayoutBadges:!0,showReadingOrder:!1,readingOrderArrows:!0,readingOrderGlobal:!1,showPictureContents:!1,showTableContents:!1,showFragmentLinks:!1,showXrefLinks:!1,showCaptionLinks:!1};_panDrag=null;_suppressClick=!1;_layoutCache=null;_layoutFrame=0;_resizeObserver=null;connectedCallback(){super.connectedCallback(),this.classList.add(`pane`,`pane-page-view`),this.addEventListener(`doclang-panning-change`,this._onPanningChange),this.addEventListener(`mousemove`,this._onMousemove),this.addEventListener(`mouseleave`,this._onMouseleave)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener(`doclang-panning-change`,this._onPanningChange),this.removeEventListener(`mousemove`,this._onMousemove),this.removeEventListener(`mouseleave`,this._onMouseleave),this._resizeObserver?.disconnect(),this._resizeObserver=null}render(){let e=this._opts.showAllBboxes,t=e&&this._opts.showReadingOrder;return b`
+      <div class="pane-header">
+        <span class="pane-header-title">Original page</span>
+        <div class="pane-page-controls">
+          ${this._visible?b`
+                  <div class="page-zoom-control">
+                    <label class="page-zoom-control-label">
+                      <span aria-hidden="true">Zoom</span>
+                      <input
+                        type="range"
+                        class="zoom-input"
+                        min="100"
+                        max="300"
+                        step="10"
+                        .value=${String(this._zoomPct)}
+                        aria-valuemin="100"
+                        aria-valuemax="300"
+                        aria-valuenow=${this._zoomPct}
+                        aria-label="Page zoom"
+                        @input=${this._onZoomInput}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      class="page-zoom-reset"
+                      title="Reset zoom"
+                      aria-label="Reset zoom"
+                      ?disabled=${this._zoomPct===100}
+                      @click=${()=>{this._zoomPct!==100&&this.resetZoom()}}
+                    >
+                      ${this._zoomPct}%
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    class="pane-settings-toggle"
+                    aria-expanded=${this._settingsOpen?`true`:`false`}
+                    @click=${()=>this.toggleSettings()}
+                  >
+                    Overlays
+                  </button>
+                `:S}
+        </div>
+      </div>
+      <div class="pane-page-layout">
+        <div
+          class="pane-body"
+          id="page-pane"
+          tabindex=${this._visible?`0`:`-1`}
+          ${A(this._bodyRef)}
+        ></div>
+        ${this._visible?b`
+              <doclang-settings-panel
+                ${A(this._settingsPanelRef)}
+                label="Overlays"
+                @doclang-settings-close=${()=>this._applySettingsOpen(!1)}
+              >
+                <label class="settings-option settings-option-primary">
+                  <input
+                    type="checkbox"
+                    class="cb-all-bboxes"
+                    .checked=${this._opts.showAllBboxes}
+                    @change=${e=>this._onOptChange(`showAllBboxes`,e.target.checked)}
+                  />
+                  <span>Layout</span>
+                </label>
+                <div class="settings-subgroup">
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-reading-order"
+                      .checked=${this._opts.showReadingOrder}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showReadingOrder`,e.target.checked)}
+                    />
+                    <span>Reading order</span>
+                  </label>
+                  <div class="settings-subgroup settings-reading-order-group">
+                    <label
+                      class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-nested":!0,"settings-option-disabled":!t})}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-reading-order-arrows"
+                        .checked=${this._opts.readingOrderArrows}
+                        ?disabled=${!t}
+                        @change=${e=>this._onOptChange(`readingOrderArrows`,e.target.checked)}
+                      />
+                      <span>Arrows</span>
+                    </label>
+                    <label
+                      class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-nested":!0,"settings-option-disabled":!t})}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-reading-order-global"
+                        .checked=${this._opts.readingOrderGlobal}
+                        ?disabled=${!t}
+                        @change=${e=>this._onOptChange(`readingOrderGlobal`,e.target.checked)}
+                      />
+                      <span>Global numbering</span>
+                    </label>
+                  </div>
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-picture-contents"
+                      .checked=${this._opts.showPictureContents}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showPictureContents`,e.target.checked)}
+                    />
+                    <span>Picture contents</span>
+                  </label>
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-table-contents"
+                      .checked=${this._opts.showTableContents}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showTableContents`,e.target.checked)}
+                    />
+                    <span>Table contents</span>
+                  </label>
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-fragment-links"
+                      .checked=${this._opts.showFragmentLinks}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showFragmentLinks`,e.target.checked)}
+                    />
+                    <span>Fragments</span>
+                  </label>
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-xref-links"
+                      .checked=${this._opts.showXrefLinks}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showXrefLinks`,e.target.checked)}
+                    />
+                    <span>Cross-references</span>
+                  </label>
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-caption-links"
+                      .checked=${this._opts.showCaptionLinks}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showCaptionLinks`,e.target.checked)}
+                    />
+                    <span>Captions</span>
+                  </label>
+                  <label
+                    class=${M({"settings-option":!0,"settings-option-sub":!0,"settings-option-disabled":!e})}
+                  >
+                    <input
+                      type="checkbox"
+                      class="cb-layout-badges"
+                      .checked=${this._opts.showLayoutBadges}
+                      ?disabled=${!e}
+                      @change=${e=>this._onOptChange(`showLayoutBadges`,e.target.checked)}
+                    />
+                    <span>Badges</span>
+                  </label>
+                </div>
+              </doclang-settings-panel>
+            `:S}
+      </div>
+      <div
+        id="page-view-hint"
+        popover="manual"
+        role="tooltip"
+        class="page-view-hint"
+      ></div>
+    `}firstUpdated(){let e=this._bodyRef.value;e&&this._wirePanEvents(e)}get zoomPercent(){return this._zoomPct}get overlaySettings(){return this._opts}get scrollPane(){return this._scrollPane()}setVisible(e){this._visible=e,this.hidden=!e,this.requestUpdate()}refreshLayout(){let e=this._bodyRef.value;e&&(this._resizeObserver||(this._resizeObserver=new ResizeObserver(()=>this.refreshLayout()),this._resizeObserver.observe(e)),cancelAnimationFrame(this._layoutFrame),this._layoutFrame=requestAnimationFrame(()=>{this._layoutFrame=0;let t=e.querySelector(`.page-view img`);t?.naturalWidth&&(kr(t,e,this._overlayCtx()),this._updatePanCursor(),this._syncOverlayBadgesForImg(t),this.dispatchEvent(new CustomEvent(`doclang-layout-refresh`,{bubbles:!0,composed:!0})))}))}activateZoom(e){this._zoomPct=e,this._layoutCache=null,this.requestUpdate(),this._resetScroll()}resetZoom(){this._zoomPct=100,this._layoutCache=null,this.requestUpdate(),this._resetScroll(),this.dispatchEvent(new CustomEvent(`doclang-zoom-change`,{bubbles:!0,composed:!0,detail:{pct:this._zoomPct}}))}toggleSettings(){this._applySettingsOpen(!this._settingsOpen)}closeSettings(){this._applySettingsOpen(!1)}_applySettingsOpen(e){this._settingsOpen=e,this._settingsPanelRef.value?.setOpen(e),this.requestUpdate()}_applySelection(){let e=this._bodyRef.value;if(!e)return;for(let t of e.querySelectorAll(`.bbox.selected, .overlay-badge.selected`))t.classList.remove(`selected`);if(this._selectedId&&this._docState?.hasPageView)for(let t of e.querySelectorAll(`[data-element-id="${this._selectedId}"]`))t.classList.add(`selected`);let t=e.querySelector(`.page-view img`);t&&this._syncOverlayBadgesForImg(t),this._applyBboxVisibility()}_renderDocument(){let e=this._bodyRef.value;if(!e){this.requestUpdate(),this.updateComplete.then(()=>this._renderDocument());return}let t=this._docState;if(e.innerHTML=``,this._layoutCache=null,this._selectedId=null,this._peerIds=new Set,!t?.hasPageView)return;let n=t.pageImages.get(this._currentPage);if(!n){e.innerHTML=`<div class="placeholder">${ei}</div>`;return}let r=document.createElement(`div`);r.className=`page-view-port`;let i=document.createElement(`div`);i.className=`page-view`;let a=document.createElement(`img`);a.alt=`Page ${this._currentPage}`;let o=this._currentPage,s=()=>{if(a.dataset.layoutGeneration===String(o))return;a.dataset.layoutGeneration=String(o),kr(a,e,this._overlayCtx());let n=t.segments[o-1]??[],r=wn(n);t.elementIds=r,t.idToElement=Tn(r);let s=Ln(n,t.defaultResolution,r),c=i.querySelector(`svg.overlay`);c&&c.remove();let l=Un(n,r,s,t.readingOrder,this._opts.readingOrderGlobal,t.readingOrderDisplayNumbers);t.pageViewOverlay={boxes:s,readingOrderSteps:l},s.length&&i.appendChild(Xr(a,s,Rn(n,r,s),zn(n,r,s),l,Vn(n,r,s,o,t.threadPagesById),Hn(n,r,s,t.threadNavByElement),t.defaultResolution,e=>this.dispatchEvent(new CustomEvent(`doclang-element-select`,{bubbles:!0,composed:!0,detail:{id:e}})),(e,t)=>this.dispatchEvent(new CustomEvent(`doclang-navigate-thread`,{bubbles:!0,composed:!0,detail:{elementId:e,direction:t}})),()=>this.dispatchEvent(new CustomEvent(`doclang-clear-selection`,{bubbles:!0,composed:!0})),()=>this._suppressClick,e=>{this._suppressClick=e},this._overlayCtx())),this._syncOverlayBadgesForImg(a),this._applyBboxVisibility();let u=t.pendingSelectElement;if(u){t.pendingSelectElement=null;let e=this._findElementIdOnPage(u,r);e&&this.dispatchEvent(new CustomEvent(`doclang-element-select`,{bubbles:!0,composed:!0,detail:{id:e}}))}};a.addEventListener(`load`,s,{once:!0}),i.appendChild(a),r.appendChild(i),e.appendChild(r),a.src=n,a.complete&&s(),this.refreshLayout()}_clearDocument(){let e=this._bodyRef.value;e&&(e.innerHTML=``),this._layoutCache=null}_overlayCtx(){let e=this._bodyRef.value;return{zoomPct:this._zoomPct,pane:e,layoutCache:this._layoutCache,setLayoutCache:e=>{this._layoutCache=e},selectedId:this._selectedId}}_syncOverlayBadgesForImg(e){let t=e.parentElement?.querySelector(`svg.overlay`),n=this._docState?.pageViewOverlay;if(!t||!n)return;let{showAllBboxes:r,showLayoutBadges:i,showReadingOrder:a}=this._opts;Br(e,t,n.boxes,n.readingOrderSteps,r,i,a,this._overlayCtx())}_isContentsOptionHidden(e,t){if(t)return!1;let n=this._docState?.idToElement?.get(e)??null;return!!(!this._opts.showPictureContents&&Zt(n)||!this._opts.showTableContents&&Qt(n))}_isFragmentLinkRelevant(e){let t=e.getAttribute(`data-fragment-from-id`),n=e.getAttribute(`data-fragment-to-id`);return!!(t&&this._peerIds.has(t)||n&&this._peerIds.has(n))}_applyBboxVisibility(){let e=this._bodyRef.value;if(!e||!this._docState?.hasPageView)return;let{showAllBboxes:t,showLayoutBadges:n,showCaptionLinks:r,showXrefLinks:i,showFragmentLinks:a,showReadingOrder:o,readingOrderArrows:s}=this._opts,c=this._selectedId,l=this._peerIds;for(let n of e.querySelectorAll(`.bbox`)){n.classList.remove(`related`);let e=n.getAttribute(`data-element-id`)??``,r=e===c||l.has(e);if(t){this._isContentsOptionHidden(e,r)?n.classList.add(`bbox-hidden`):(n.classList.remove(`bbox-hidden`),l.has(e)&&n.classList.add(`related`));continue}e===c?n.classList.remove(`bbox-hidden`):l.has(e)?(n.classList.remove(`bbox-hidden`),n.classList.add(`related`)):n.classList.add(`bbox-hidden`)}for(let r of e.querySelectorAll(`.element-badge`)){let e=r.getAttribute(`data-element-id`)??``,i=e===c||l.has(e);if(!t||!n){r.classList.add(`bbox-hidden`);continue}this._isContentsOptionHidden(e,i)?r.classList.add(`bbox-hidden`):r.classList.remove(`bbox-hidden`)}for(let n of e.querySelectorAll(`.caption-link`))n.classList.toggle(`bbox-hidden`,!t||!r);for(let n of e.querySelectorAll(`.xref-link`))n.classList.toggle(`bbox-hidden`,!t||!i);for(let n of e.querySelectorAll(`.fragment-link`)){let e=!!(c&&this._isFragmentLinkRelevant(n));n.classList.toggle(`bbox-hidden`,!(e||t&&a))}for(let n of e.querySelectorAll(`.fragment-nav`)){let e=n.getAttribute(`data-element-id`)??``,r=e===c||l.has(e);n.classList.toggle(`bbox-hidden`,!(r||t&&a))}for(let n of e.querySelectorAll(`.reading-order-badge`)){let e=n.getAttribute(`data-element-id`)??``,r=e===c||l.has(e);if(!t||!o){n.classList.add(`bbox-hidden`);continue}let i=this._docState?.idToElement?.get(e)??null;if(Zt(i)||Qt(i)||this._isContentsOptionHidden(e,r)){n.classList.add(`bbox-hidden`);continue}n.classList.remove(`bbox-hidden`)}for(let n of e.querySelectorAll(`.reading-order-step`))n.classList.toggle(`bbox-hidden`,!t||!o||!s)}_findElementIdOnPage(e,t){return t.get(e)??null}_scrollPane(){let e=this._bodyRef.value;return e?e.querySelector(`.page-view-port`)??e:null}_isScrollable(){let e=this._scrollPane();return e?e.scrollWidth>e.clientWidth||e.scrollHeight>e.clientHeight:!1}_resetScroll(){let e=this._scrollPane();e&&(e.scrollLeft=0,e.scrollTop=0)}_updatePanCursor(){let e=this._bodyRef.value;e&&e.classList.toggle(`can-pan`,this._isScrollable()&&!this._panDrag)}_onOptChange(e,t){this._opts[e]=t,e===`readingOrderGlobal`&&this._docState&&this._renderDocument();let n=this._bodyRef.value?.querySelector(`.page-view img`);n&&this._syncOverlayBadgesForImg(n),this._applyBboxVisibility(),this._emitOverlayChange(),this.requestUpdate()}_emitOverlayChange(){this.dispatchEvent(new CustomEvent(`doclang-overlay-change`,{bubbles:!0,composed:!0,detail:{...this._opts}}))}_onZoomInput=e=>{this._zoomPct=Math.max(100,Number(e.target.value)),this._layoutCache=null,this.requestUpdate(),this.dispatchEvent(new CustomEvent(`doclang-zoom-change`,{bubbles:!0,composed:!0,detail:{pct:this._zoomPct}}))};_wirePanEvents(e){e.addEventListener(`pointerdown`,e=>{if(e.button!==0||!(e.target instanceof Element)||!e.target.closest(`.page-view`)||!this._isScrollable())return;let t=this._scrollPane();t&&(this._panDrag={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,scrollLeft:t.scrollLeft,scrollTop:t.scrollTop,moved:!1})}),e.addEventListener(`pointermove`,t=>{if(!this._panDrag||t.pointerId!==this._panDrag.pointerId)return;let n=t.clientX-this._panDrag.startX,r=t.clientY-this._panDrag.startY;if(!this._panDrag.moved&&Math.hypot(n,r)>=$r&&(this._panDrag.moved=!0,e.classList.add(`is-panning`),e.classList.remove(`can-pan`),e.setPointerCapture(t.pointerId),this.dispatchEvent(new CustomEvent(`doclang-panning-change`,{bubbles:!0,composed:!0,detail:{panning:!0}}))),!this._panDrag.moved)return;let i=this._scrollPane();i&&(i.scrollLeft=this._panDrag.scrollLeft+this._panDrag.startX-t.clientX,i.scrollTop=this._panDrag.scrollTop+this._panDrag.startY-t.clientY,t.preventDefault())});let t=t=>{if(!this._panDrag||t.pointerId!==this._panDrag.pointerId)return;let n=this._panDrag.moved;n&&(this._suppressClick=!0),this._panDrag=null,e.classList.remove(`is-panning`),n&&this.dispatchEvent(new CustomEvent(`doclang-panning-change`,{bubbles:!0,composed:!0,detail:{panning:!1}})),e.hasPointerCapture(t.pointerId)&&e.releasePointerCapture(t.pointerId),this._updatePanCursor()};e.addEventListener(`pointerup`,e=>t(e)),e.addEventListener(`pointercancel`,e=>t(e)),e.setAttribute(`role`,`region`),e.setAttribute(`aria-label`,`Original page`),e.addEventListener(`pointerdown`,()=>{this._docState?.hasPageView&&e.focus({preventScroll:!0})}),e.addEventListener(`keydown`,e=>{if(!this._docState?.hasPageView)return;let t=0;switch(e.key){case`ArrowDown`:case`PageDown`:case`ArrowRight`:t=1;break;case`ArrowUp`:case`PageUp`:case`ArrowLeft`:t=-1}t&&(e.preventDefault(),this.dispatchEvent(new CustomEvent(`doclang-page-key-nav`,{bubbles:!0,composed:!0,detail:{dir:t}})))})}_onPanningChange=e=>{e.detail.panning&&this._hideHint()};_onMousemove=e=>{if(this._panDrag?.moved){this._hideHint();return}let t=(e.composedPath()[0]??e.target).closest(`.element-badge[data-element-id]`);if(!t||!this._docState?.idToElement){this._hideHint();return}let n=t.getAttribute(`data-element-id`),r=n?this._docState.idToElement.get(n):null;if(!r){this._hideHint();return}this._showHint(this._elementHeadTooltipHtml(r,this._docState.defaultResolution),e)};_onMouseleave=()=>this._hideHint();_showHint(e,t){let n=this.shadowRoot?.querySelector(`.page-view-hint`)??null;n&&(n.innerHTML=e,n.style.top=`${t.clientY+14}px`,n.style.left=`${t.clientX+14}px`,n.matches(`:popover-open`)||n.showPopover())}_hideHint(){let e=this.shadowRoot?.querySelector(`.page-view-hint`)??null;e?.matches(`:popover-open`)&&e.hidePopover()}_elementHeadTooltipHtml(e,t){return`<table class="head-tooltip"><tbody>${this._collectElementHeadInfo(e,t).map(({key:e,value:t,isDefault:n})=>{let r=Pt(t),i=n?` <span class="head-default">(default)</span>`:``;return`<tr><th scope="row">${Pt(e)}</th><td>${r}${i}</td></tr>`}).join(``)}</tbody></table>`}_collectElementHeadInfo(e,t){let n=V(e,`label`),r=V(e,`thread`),i=V(e,`xref`),a=V(e,`href`),o=V(e,`layer`),s=V(e,`caption`),c=V(e,`description`),l=V(e,`summary`),u=V(e,`custom`),d=Xt(e),f=[{key:`element`,value:Kt(e),isDefault:!1}];f.push({key:`label`,value:n?.getAttribute(`value`)??`undefined`,isDefault:!n?.hasAttribute(`value`)}),r?f.push({key:`thread_id`,value:r.getAttribute(`thread_id`)??`—`,isDefault:!1}):f.push({key:`thread`,value:`—`,isDefault:!0}),i?f.push({key:`xref`,value:`thread_id ${i.getAttribute(`thread_id`)??`—`}`,isDefault:!1}):f.push({key:`xref`,value:`—`,isDefault:!0}),a?f.push({key:`href`,value:a.getAttribute(`uri`)??`—`,isDefault:!1}):f.push({key:`href`,value:`—`,isDefault:!0}),f.push({key:`layer`,value:o?.getAttribute(`value`)??`body`,isDefault:!o?.hasAttribute(`value`)});let p=[`x_min`,`y_min`,`x_max`,`y_max`];if(d.length===4)for(let e=0;e<4;e+=1){let n=d[e],r=kt(n,e%2==0?t.width:t.height),i=n.getAttribute(`value`)??`0`;f.push({key:p[e],value:`${i} @ ${r}`,isDefault:!1})}else for(let e of p)f.push({key:e,value:`—`,isDefault:!1});let m=(e,t=72)=>{let n=e.textContent?.replace(/\s+/g,` `).trim()??``;return n?n.length>t?`${n.slice(0,t)}…`:n:`—`};return f.push({key:`caption`,value:s?m(s):`—`,isDefault:!s}),f.push({key:`description`,value:c?m(c):`—`,isDefault:!c}),f.push({key:`summary`,value:l?m(l):`—`,isDefault:!l}),f.push({key:`custom`,value:u?m(u):`—`,isDefault:!u}),f}};ti=j([E(`doclang-page-view-pane`)],ti);var ni=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{border-right:1px solid var(--border);background:var(--panel);flex-direction:column;min-width:0;min-height:0;display:flex}:host([hidden]){display:none!important}:host(.pane-layout-last){border-right:none}.pane-header{box-sizing:border-box;letter-spacing:.04em;text-transform:uppercase;height:2.125rem;color:var(--muted);border-bottom:1px solid var(--border);background:var(--panel);justify-content:space-between;align-items:center;padding:0 .75rem;font-size:.75rem;font-weight:600;display:flex}.pane-header-title{min-width:0}.pane-settings-toggle{appearance:none;color:var(--muted);cursor:pointer;white-space:nowrap;letter-spacing:.04em;text-transform:uppercase;height:1.25rem;font-size:.625rem;font-weight:600;line-height:1;font:inherit;background:0 0;border:1px solid #0000;border-radius:.25rem;flex-shrink:0;align-items:center;padding:0 .28rem 0 .4rem;transition:color .12s,background .12s,border-color .12s;display:inline-flex}.pane-settings-toggle:after{content:"";opacity:.65;border-bottom:1.5px solid;border-right:1.5px solid;flex-shrink:0;width:.26rem;height:.26rem;margin-top:-.1em;margin-left:.22rem;transform:rotate(45deg)}.pane-settings-toggle:hover{color:var(--text);background:color-mix(in srgb, var(--text) 5%, transparent)}.pane-settings-toggle[aria-expanded=true]{color:var(--accent);background:color-mix(in srgb, var(--accent) 10%, var(--panel));border-color:color-mix(in srgb, var(--accent) 22%, transparent)}.pane-settings-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.pane-reading-layout{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.pane-body{flex:auto;min-width:0;min-height:0;padding:1rem;overflow:auto}.settings-option{cursor:pointer;-webkit-user-select:none;user-select:none;align-items:flex-start;gap:.5rem;font-size:.875rem;display:flex}.settings-subgroup{flex-direction:column;gap:.5rem;padding-left:.85rem;display:flex}.settings-option-sub{color:var(--muted);font-size:.8125rem}.settings-option input{cursor:pointer;flex-shrink:0;margin:.15rem 0 0}.rendered-doc{max-width:42rem;margin:0 auto;line-height:1.6}.rendered-el-virtual-text>p,.rendered-el-virtual-text>div{margin:0;display:inline}.rendered-doc li>.rendered-el-virtual-text{display:inline}.rendered-doc li>.rendered-el-virtual-text>p,.rendered-doc li>.rendered-el-virtual-text>div,.rendered-table .rendered-el-virtual-text,.rendered-table .rendered-el-virtual-text>p,.rendered-table .rendered-el-virtual-text>div{margin:0;display:inline}.rendered-el-virtual-text>div>.rendered-el{margin:.25rem 0;display:block}.rendered-el{cursor:pointer;border-radius:.25rem}.rendered-el:hover{outline:1px solid color-mix(in srgb, var(--accent) 35%, transparent)}.rendered-el.selected{outline:2px solid var(--accent);outline-offset:2px;background:color-mix(in srgb, var(--accent) 8%, transparent)}.rendered-doc p{margin:0 0 .75rem}.rendered-doc h1,.rendered-doc h2,.rendered-doc h3,.rendered-doc h4,.rendered-doc h5,.rendered-doc h6{margin:1.25rem 0 .5rem;line-height:1.25}.rendered-doc h1:first-child,.rendered-doc h2:first-child,.rendered-doc h3:first-child{margin-top:0}.rendered-doc ul,.rendered-doc ol{margin:0 0 .75rem;padding-left:1.5rem}.rendered-doc li{margin:.25rem 0}.rendered-doc li>.rendered-el>p:first-child,.rendered-doc li>.rendered-el>h1:first-child,.rendered-doc li>.rendered-el>h2:first-child,.rendered-doc li>.rendered-el>h3:first-child,.rendered-doc li>.rendered-el>h4:first-child,.rendered-doc li>.rendered-el>h5:first-child,.rendered-doc li>.rendered-el>h6:first-child{margin-top:0}.rendered-marker{margin-right:.35rem}.rendered-handwriting{font-family:Segoe Print,Bradley Hand,cursive}.rendered-doc pre{font-family:var(--font-mono);background:var(--placeholder-bg);border:1px solid var(--border);border-radius:.375rem;margin:0 0 .75rem;padding:.75rem 1rem;font-size:.8125rem;line-height:1.5;overflow-x:auto}.rendered-doc code{font-family:var(--font-mono);font-size:.875em}.rendered-doc pre code{font-size:inherit;background:0 0;border:none;padding:0}.rendered-code-label{color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem;font-size:.75rem;font-weight:600;display:block}.rendered-formula{font-family:var(--font-mono);background:var(--placeholder-bg);border-left:3px solid var(--border);margin:0 0 .75rem;padding:.5rem .75rem;font-size:.875rem;display:block;overflow-x:auto}.rendered-formula-inline{font-family:var(--font-mono);font-size:.875em;display:inline}.rendered-doc figure{margin:0 0 .75rem}.rendered-doc figure img{border:1px solid var(--border);border-radius:.25rem;max-width:100%;height:auto}.rendered-doc figure img.rendered-picture-unavailable{object-fit:contain;vertical-align:middle;min-width:3rem;min-height:2.5rem;display:inline-block}.rendered-doc figcaption{color:var(--muted);margin-top:.35rem;font-size:.875rem}.rendered-picture-contents{border:1px solid var(--border);background:var(--placeholder-bg);border-radius:.375rem;margin-top:.5rem;font-size:.875rem}.rendered-picture-contents summary{cursor:pointer;color:var(--muted);-webkit-user-select:none;user-select:none;padding:.4rem .65rem;font-weight:600}.rendered-picture-contents summary:hover{color:var(--text)}.rendered-picture-contents-body{border-top:1px solid var(--border);padding:.5rem .75rem .75rem}.rendered-picture-contents-body .rendered-el>p{margin-bottom:.35rem;font-size:.8125rem}.rendered-table{border-collapse:collapse;width:100%;margin:0 0 .75rem;font-size:.875rem}.rendered-table caption{caption-side:top;color:var(--muted);text-align:left;margin-bottom:.35rem;font-size:.875rem}.rendered-table th,.rendered-table td{border:1px solid var(--border);vertical-align:top;text-align:left;padding:.35rem .5rem}.rendered-table th{background:color-mix(in srgb, var(--border) 35%, var(--panel));font-weight:600}.rendered-table .rendered-table-cell-text{display:inline}.rendered-table .rendered-el,.rendered-table .rendered-el-virtual-text>p,.rendered-table .rendered-el-virtual-text>div{margin:0}.rendered-table .rendered-table{margin:.25rem 0 0}.rendered-page-header,.rendered-page-footer{color:var(--muted);font-size:.875rem}.rendered-page-header{border-bottom:1px solid var(--border);margin-bottom:1rem;padding-bottom:.5rem}.rendered-page-footer{border-top:1px solid var(--border);margin-top:1rem;padding-top:.5rem}.pane-body:not(.show-reading-furniture) .rendered-el[data-doclang-layer=furniture],.pane-body:not(.show-reading-background) .rendered-el[data-doclang-layer=background]{display:none}.rendered-el[data-doclang-layer=furniture],.rendered-el[data-doclang-layer=background]{position:relative}.rendered-el[data-doclang-layer=furniture]:before,.rendered-el[data-doclang-layer=background]:before{content:"";border-radius:inherit;pointer-events:none;background:repeating-linear-gradient(-45deg, transparent 0 10px, color-mix(in srgb, var(--muted) 6%, transparent) 10px 16px);position:absolute;inset:0}.rendered-el.rendered-footnote>aside{color:var(--muted);border-left:2px solid var(--border);margin:0 0 .75rem;padding-left:.75rem;font-size:.875rem}.rendered-unsupported{color:var(--muted);background:var(--placeholder-bg);border:1px dashed var(--border);border-radius:.375rem;margin:0 0 .75rem;padding:.5rem .75rem;font-size:.8125rem;font-style:italic}.rendered-field-region{border:1px solid var(--border);background:color-mix(in srgb, var(--kind-field) 6%, transparent);border-radius:.5rem;margin:0 0 1rem;padding:.75rem 1rem}.rendered-field-region>.rendered-field-heading:first-child,.rendered-field-region>.rendered-el.rendered-field_heading>.rendered-field-heading:first-child{margin-top:0}.rendered-field-item{margin:.5rem 0}.rendered-field-item>.rendered-el.rendered-field-key,.rendered-field-key{font-weight:600}.rendered-field-item>.rendered-el.rendered-field-key+.rendered-el,.rendered-field-item>.rendered-el.rendered-field-key+.rendered-el-virtual-text{margin-top:.15rem}.rendered-field-value-fillable .rendered-field-fillable-slot{border-bottom:1px solid color-mix(in srgb, var(--text) 55%, transparent);vertical-align:bottom;min-width:6rem;min-height:1.25em;display:inline-block}.rendered-field-hint{color:var(--muted);font-size:.85em;font-style:italic}.rendered-field-heading{color:var(--text)}.rendered-checkbox{vertical-align:middle;accent-color:var(--kind-field);margin:0 .25rem 0 0}.rendered-checkbox-wrap{display:inline}`;Qn(),W();var ri=new Set([`text`,`heading`,`field_heading`,`footnote`,`page_header`,`page_footer`,`list`,`code`,`formula`,`picture`,`group`,`field_region`,`field_item`,`table`,`index`,`tabular`]),ii=new Set([`bold`,`italic`,`underline`,`strikethrough`,`superscript`,`subscript`,`handwriting`,`rtl`,`content`]),ai={bold:`strong`,italic:`em`,underline:`u`,strikethrough:`s`,superscript:`sup`,subscript:`sub`},oi=`Picture asset not available`,si=`data:image/png;base64,NOT_A_VALID_IMAGE`,ci=/^data:image\/(png|jpe?g|webp|gif);base64,/i,li=2097152;function ui(e,t){t.setAttribute(`data-doclang-layer`,Ut(e))}function di(e,t){if(!e)return null;let n=e.trim();return n?ci.test(n)?n.length<=li?n:null:/^[a-z][a-z0-9+.-]*:/i.test(n)||n.startsWith(`//`)?null:t?.get(Ft(n))??null:null}function fi(e){e.classList.add(`rendered-picture-unavailable`),e.alt=`\xA0`,e.setAttribute(`aria-label`,oi)}function pi(e,t,n,r,i){let a=document.createElement(`img`);e.appendChild(a);let o=t?di(t,i):null;o?(a.alt=``,a.src=o,a.addEventListener(`error`,()=>fi(a),{once:!0})):(fi(a),a.src=si),n&&e.appendChild(hi(n,r,`figcaption`,i))}function mi(e){return F(e).find(e=>I(e)===`caption`)??null}function hi(e,t,n,r){let i=document.createElement(n);i.classList.add(`rendered-el`,`rendered-caption`);let a=t.get(e);return a&&i.setAttribute(`data-element-id`,a),Y(i,e,t,{inline:!0},r),i}function J(e,t,n,r){let i=I(e),a=document.createElement(`div`);return a.className=`rendered-el rendered-${i}${r?` ${r}`:``}`,n&&a.setAttribute(`data-element-id`,n),ui(e,a),a.appendChild(t),a}function Y(e,t,n,r,i){let a=[...t.childNodes],o=zt(a,0);for(;o<a.length;)Hi(e,a[o],n,r,i),o+=1}function gi(e,t,n,r){let i=[...t.childNodes],a=zt(i,0);for(;a<i.length;){let t=i[a];if(t.nodeType===Node.ELEMENT_NODE&&ri.has(I(t))){let i=X(t,n,{inline:!1},r);i&&e.appendChild(i)}else Hi(e,t,n,{inline:!1},r);a+=1}}function _i(e,t,n,r){let i=document.createElement(`span`);i.className=`rendered-marker rendered-el`;let a=t.get(e);return a&&i.setAttribute(`data-element-id`,a),Y(i,e,t,n,r),i}function vi(e,t){let n=document.createElement(`input`);n.type=`checkbox`,n.disabled=!0,n.checked=(e.getAttribute(`class`)??`unselected`)===`selected`,n.className=`rendered-checkbox`;let r=document.createElement(`span`);r.className=`rendered-checkbox-wrap rendered-el`;let i=t.get(e);return i&&r.setAttribute(`data-element-id`,i),ui(e,r),r.appendChild(n),r}function yi(e,t,n,r){let i=document.createElement(`span`);i.className=`rendered-field-key rendered-el`;let a=t.get(e);return a&&i.setAttribute(`data-element-id`,a),ui(e,i),Y(i,e,t,{...n,inline:!0},r),i}function bi(e,t,n,r){let i=e.getAttribute(`class`)??`read_only`,a=document.createElement(`span`);a.className=`rendered-field-value rendered-field-value-${i} rendered-el`;let o=t.get(e);if(o&&a.setAttribute(`data-element-id`,o),ui(e,a),Y(a,e,t,{...n,inline:!0},r),i===`fillable`&&!a.textContent?.trim()&&!a.querySelector(`.rendered-checkbox-wrap, img, .rendered-marker`)){let e=document.createElement(`span`);e.className=`rendered-field-fillable-slot`,e.setAttribute(`aria-hidden`,`true`),a.appendChild(e)}return a}function xi(e,t,n,r){let i=document.createElement(`span`);i.className=`rendered-field-hint rendered-el`;let a=t.get(e);return a&&i.setAttribute(`data-element-id`,a),ui(e,i),Y(i,e,t,{...n,inline:!0},r),i}function Si(e,t,n,r){let i=I(e);if(i===`content`){let t=document.createElement(`span`);return t.textContent=e.textContent??``,t}let a;return i===`handwriting`?(a=document.createElement(`span`),a.className=`rendered-handwriting`):i===`rtl`?(a=document.createElement(`bdi`),a.setAttribute(`dir`,`rtl`)):a=document.createElement(ai[i]??`span`),Y(a,e,t,n,r),a}function Ci(e,t,n,r){let i=F(e).find(e=>I(e)===`label`)?.getAttribute(`value`),a=document.createElement(`code`);if(Y(a,e,t,{inline:n.inline},r),n.inline){a.classList.add(`rendered-el`);let n=t.get(e);return n&&a.setAttribute(`data-element-id`,n),a}let o=document.createElement(`pre`);if(i&&i!==`undefined`){let e=document.createElement(`span`);e.className=`rendered-code-label`,e.textContent=i,o.appendChild(e)}return o.appendChild(a),J(e,o,t.get(e))}function wi(e,t,n,r){let i=document.createElement(`span`);if(i.className=n.inline?`rendered-formula-inline`:`rendered-formula`,Y(i,e,t,{inline:!0},r),n.inline){i.classList.add(`rendered-el`);let n=t.get(e);return n&&i.setAttribute(`data-element-id`,n),i}return J(e,i,t.get(e))}function Ti(e,t,n){let r=document.createElement(`figure`),i=mi(e);pi(r,(F(e).find(e=>I(e)===`src`)??null)?.getAttribute(`uri`)?.trim()||null,i,t,n);let a=[...e.childNodes],o=zt(a,0);for(;o<a.length;){let e=a[o];if(e.nodeType!==Node.ELEMENT_NODE){o+=1;continue}let i=I(e);if(i===`src`){o+=1;continue}if(i===`tabular`){let i=Bi(e,t,n);i&&r.appendChild(i),o+=1;continue}break}let s=document.createElement(`div`);if(s.className=`rendered-picture-contents-body`,Ei(s,a,o,t,n),s.textContent?.trim()){let e=document.createElement(`details`);e.className=`rendered-picture-contents`;let t=document.createElement(`summary`);t.textContent=`Picture contents`,e.appendChild(t),e.appendChild(s),r.appendChild(e)}return J(e,r,t.get(e))}function Ei(e,t,n,r,i){let a=n;for(;a<t.length;){let n=t[a];if(n.nodeType===Node.ELEMENT_NODE&&ri.has(I(n))){let t=X(n,r,{inline:!1},i);t&&e.appendChild(t)}else Hi(e,n,r,{inline:!1},i);a+=1}}function Di(e,t,n,r){let i=t.some(e=>e.nodeType===Node.ELEMENT_NODE&&ri.has(I(e))),a=document.createElement(i?`div`:`p`);for(let e of t)if(e.nodeType===Node.ELEMENT_NODE&&ri.has(I(e))){let t=X(e,n,{inline:!1},r);t&&a.appendChild(t)}else Hi(a,e,n,{inline:!0},r);let o=document.createElement(`div`);o.className=`rendered-el rendered-text rendered-el-virtual-text`;let s=n.get(e);return s&&o.setAttribute(`data-element-id`,s),ui(e,o),o.appendChild(a),o}function Oi(e){for(let t=0;t<e.length;t+=1){let n=e[t];if(n&&(N(n)&&!P(n)||n.nodeType===Node.ELEMENT_NODE))return!0}return!1}function ki(e){if(P(e))return!0;if(e.nodeType!==Node.ELEMENT_NODE)return!1;let t=I(e);return t===`location`||H.has(t)}function Ai(e){if(!Oi(e))return!1;for(let t of e)if(!ki(t)&&(N(t)||t.nodeType===Node.ELEMENT_NODE&&!Bt(t)))return!0;return!1}function ji(e,t,n,r,i){if(Oi(n)){if(Ai(n)){e.appendChild(Di(t,n,r,i));return}for(let t of n)if(!ki(t)){if(t.nodeType===Node.ELEMENT_NODE&&ri.has(I(t))){let n=X(t,r,{inline:!1},i);n&&e.appendChild(n)}else Hi(e,t,r,{inline:!0},i)}}}function Mi(e,t,n,r){let i=[...t.childNodes],a=Et(i,0);for(;a<i.length;){let t=i[a];if(t.nodeType!==Node.ELEMENT_NODE||I(t)!==`ldiv`){a+=1;continue}let o=t;a+=1;let s=document.createElement(`li`);for(let e of F(o)){let t=I(e);t===`marker`?s.appendChild(_i(e,n,{inline:!0},r)):t===`checkbox`&&s.appendChild(vi(e,n))}let c=a,l=R(i,a);for(l&&(a=l.nextIndex);a<i.length;){let e=i[a];if(e.nodeType===Node.ELEMENT_NODE&&I(e)===`ldiv`)break;a+=1}ji(s,o,i.slice(c,a),n,r),e.appendChild(s)}}function Ni(e,t,n){let r=e.getAttribute(`class`)??`unordered`,i=document.createElement(r===`ordered`?`ol`:`ul`);return Mi(i,e,t,n),J(e,i,t.get(e))}function Pi(e){return e===`ched`||e===`rhed`||e===`corn`||e===`srow`}function Fi(e){let t=[...e.childNodes],n=Rt(t,0),r=[],i=[];for(;n<t.length;){let e=t[n];if(e.nodeType!==Node.ELEMENT_NODE){n+=1;continue}let a=I(e);if(a===`nl`){r.push(i),i=[],n+=1;continue}if(!B(a)){n+=1;continue}if(nn.has(a)){i.push({kind:a,token:e,contentNodes:[]}),n+=1;continue}n+=1;let o=R(t,n);o&&(n=o.nextIndex);let s=n;n=Ot(t,n),i.push({kind:a,token:e,contentNodes:t.slice(s,n)})}return i.length&&r.push(i),r}function Ii(e,t,n){for(let r=t-1;r>=0;--r){let t=e[r]?.[n];if(!(!t||t.covered))return{cell:t,row:r,col:n}}return null}function Li(e,t,n){for(let r=n-1;r>=0;--r){let n=e[t]?.[r];if(!(!n||n.covered))return{cell:n,row:t,col:r}}return null}function Ri(e,t,n){let r=n;for(;e[t]?.[r]?.covered;)r+=1;return r}function zi(e){let t=[];for(let n=0;n<e.length;n+=1){t[n]||(t[n]=[]);let r=0;for(let i of e[n]){if(r=Ri(t,n,r),i.kind===`lcel`){let e=Li(t,n,r);e&&(e.cell.colspan+=1),t[n][r]={kind:`lcel`,token:i.token,contentNodes:[],colspan:0,rowspan:0,covered:!0},r+=1;continue}if(i.kind===`ucel`){let e=Ii(t,n,r);e&&(e.cell.rowspan+=1),t[n][r]={kind:`ucel`,token:i.token,contentNodes:[],colspan:0,rowspan:0,covered:!0},r+=1;continue}if(i.kind===`xcel`){let e=Ii(t,n,r),a=Li(t,n,r);e&&a&&e.cell===a.cell?(e.cell.rowspan+=1,e.cell.colspan+=1):(e&&(e.cell.rowspan+=1),a&&(a.cell.colspan+=1)),t[n][r]={kind:`xcel`,token:i.token,contentNodes:[],colspan:0,rowspan:0,covered:!0},r+=1;continue}t[n][r]={kind:i.kind,token:i.token,contentNodes:i.contentNodes,colspan:1,rowspan:1,covered:!1},r+=1}}return t}function Bi(e,t,n){let r=document.createElement(`table`);r.className=`rendered-table`;let i=mi(e);i&&r.appendChild(hi(i,t,`caption`,n));let a=zi(Fi(e)),o=document.createElement(`tbody`);for(let e of a){let r=document.createElement(`tr`);for(let i of e??[]){if(!i||i.covered)continue;let e=Pi(i.kind)?`th`:`td`,a=document.createElement(e);i.colspan>1&&(a.colSpan=i.colspan),i.rowspan>1&&(a.rowSpan=i.rowspan),ji(a,i.token,i.contentNodes,t,n),r.appendChild(a)}r.childNodes.length&&o.appendChild(r)}return o.childNodes.length&&r.appendChild(o),J(e,r,t.get(e))}function Vi(e,t){let n=document.createElement(`div`);return n.className=`rendered-unsupported`,n.textContent=`<${I(e)}> — not yet rendered`,J(e,n,t.get(e))}function X(e,t,n,r){let i=I(e),a=t.get(e);switch(i){case`text`:{let n=document.createElement(`p`);return Y(n,e,t,{inline:!0},r),J(e,n,a)}case`heading`:{let n=document.createElement(`h${At(e)}`);return Y(n,e,t,{inline:!0},r),J(e,n,a)}case`field_heading`:{let n=document.createElement(`h${At(e)}`);return n.className=`rendered-field-heading`,Y(n,e,t,{inline:!0},r),J(e,n,a)}case`footnote`:{let n=document.createElement(`aside`);return Y(n,e,t,{inline:!1},r),J(e,n,a)}case`page_header`:{let n=document.createElement(`header`);return n.className=`rendered-page-header`,Y(n,e,t,{inline:!0},r),J(e,n,a)}case`page_footer`:{let n=document.createElement(`footer`);return n.className=`rendered-page-footer`,Y(n,e,t,{inline:!0},r),J(e,n,a)}case`list`:return Ni(e,t,r);case`table`:case`index`:case`tabular`:return Bi(e,t,r);case`code`:return Ci(e,t,n,r);case`formula`:return wi(e,t,n,r);case`picture`:return Ti(e,t,r);case`group`:{let n=document.createElement(`figure`);n.className=`rendered-group`,gi(n,e,t,r);let i=mi(e);return i&&n.appendChild(hi(i,t,`figcaption`,r)),J(e,n,a)}case`field_region`:{let n=document.createElement(`div`);return n.className=`rendered-field-region`,gi(n,e,t,r),J(e,n,a)}case`field_item`:{let n=document.createElement(`div`);return n.className=`rendered-field-item`,gi(n,e,t,r),J(e,n,a)}default:return Vi(e,t)}}function Hi(e,t,n,r,i){if(N(t)){let n=t.textContent;if(!n||!n.trim()||r.trimLeading&&(n=n.replace(/^\s+/u,``),r.trimLeading=!1,!n))return;e.appendChild(document.createTextNode(n));return}if(t.nodeType!==Node.ELEMENT_NODE)return;let a=t,o=I(a);if(!H.has(o)){if(ii.has(o)){e.appendChild(Si(a,n,r,i));return}if(o===`code`||o===`formula`){let t=X(a,n,{inline:!0},i);t&&e.appendChild(t);return}if(ri.has(o)){let t=X(a,n,r,i);t&&e.appendChild(t);return}if(o===`marker`){e.appendChild(_i(a,n,r,i));return}if(o===`checkbox`){e.appendChild(vi(a,n));return}if(o===`key`){e.appendChild(yi(a,n,r,i));return}if(o===`value`){e.appendChild(bi(a,n,r,i));return}if(o===`hint`){e.appendChild(xi(a,n,r,i));return}o!==`ldiv`&&(B(o)||o===`src`||o===`tabular`||Y(e,a,n,r,i))}}function Ui(e){if(N(e))return e;if(e.nodeType!==Node.ELEMENT_NODE)return null;for(let t=e.childNodes.length-1;t>=0;--t){let n=Ui(e.childNodes[t]);if(n)return n}return null}function Wi(e){let t=Ui(e);if(!t)return;let n=t.textContent??``;if(n=n.replace(/\s+$/u,``),n.endsWith(`-`)&&(n=n.slice(0,-1)),!n){t.parentNode?.removeChild(t),Wi(e);return}t.textContent=n}function Gi(e,t,n,r){for(let i=0;i<t.length;i+=1)i>0&&Wi(e),Y(e,t[i],n,{inline:!0,trimLeading:i>0},r)}function Ki(e,t,n){let r=e[0],i=I(r),a=t.get(r),o=Ht(r),s;if(i===`text`)s=document.createElement(`p`),Gi(s,e,t,n);else if(i===`list`){let i=r.getAttribute(`class`)??`unordered`;s=document.createElement(i===`ordered`?`ol`:`ul`);for(let r of e)Mi(s,r,t,n)}else{s=document.createElement(`div`),s.className=`rendered-fragment-merged-body`;for(let r of e)gi(s,r,t,n)}let c=J(r,s,a,`rendered-fragment-merged`);return o&&c.setAttribute(`data-thread-id`,o),c}function qi(e){let t=new Map;for(let n of e){if(n.nodeType!==Node.ELEMENT_NODE||I(n)===`page_break`)continue;let e=Ht(n);e&&(t.has(e)||t.set(e,[]),t.get(e).push(n))}for(let[e,n]of t)n.length<2&&t.delete(e);return t}var Z=class extends $n{static styles=c(ni);_showFurniture=!0;_showBackground=!0;_settingsOpen=!1;_visible=!1;_hasMarkup=null;_pendingContent=null;_settingsPanelRef=k();connectedCallback(){super.connectedCallback(),this.classList.add(`pane`,`pane-reading`)}render(){let e={"pane-body":!0,"show-reading-furniture":this._showFurniture,"show-reading-background":this._showBackground};return b`
+      <div class="pane-header">
+        <span class="pane-header-title">Reading view</span>
+        ${this._visible?b`<button
+              type="button"
+              class="pane-settings-toggle"
+              aria-expanded=${this._settingsOpen?`true`:`false`}
+              @click=${this._onSettingsToggle}
+            >
+              Layers
+            </button>`:S}
+      </div>
+      <div class="pane-reading-layout">
+        <div
+          id="rendered-pane"
+          class=${M(e)}
+          @click=${this._onBodyClick}
+        >
+          ${this._hasMarkup===!1?b`<div class="placeholder">${Xn}</div>`:this._hasMarkup===!0?b`<div ${A(this._onContentRef)}></div>`:S}
+        </div>
+        ${this._visible?b`
+              <doclang-settings-panel
+                ${A(this._settingsPanelRef)}
+                label="Layers"
+                @doclang-settings-close=${this._onSettingsClose}
+              >
+                <div class="settings-subgroup">
+                  <label class="settings-option settings-option-sub">
+                    <input
+                      type="checkbox"
+                      class="cb-furniture"
+                      .checked=${this._showFurniture}
+                      @change=${this._onFurnitureChange}
+                    />
+                    <span>Furniture</span>
+                  </label>
+                  <label class="settings-option settings-option-sub">
+                    <input
+                      type="checkbox"
+                      class="cb-background"
+                      .checked=${this._showBackground}
+                      @change=${this._onBackgroundChange}
+                    />
+                    <span>Background</span>
+                  </label>
+                </div>
+              </doclang-settings-panel>
+            `:S}
+      </div>
+    `}_onContentRef=e=>{e&&this._pendingContent&&e.replaceChildren(this._pendingContent)};updated(){if(!this._pendingContent)return;let e=this.shadowRoot?.querySelector(`.pane-body > div`);e&&!e.contains(this._pendingContent)&&e.replaceChildren(this._pendingContent)}get scrollPane(){return this.shadowRoot?.querySelector(`.pane-body`)??null}setVisible(e){this._visible=e,this.hidden=!e,this.requestUpdate()}setSettingsOpen(e){this._settingsOpen=e,this._settingsPanelRef.value?.setOpen(e),this.requestUpdate()}_applySelection(){if(!this.shadowRoot)return;for(let e of this.shadowRoot.querySelectorAll(`.rendered-el.selected`))e.classList.remove(`selected`);if(!this._selectedId)return;let e=this._findRenderedElement(this._selectedId,this._peerIds);e&&(this._revealContext(e),e.classList.add(`selected`),e.scrollIntoView({block:`nearest`,behavior:`smooth`}))}_renderDocument(){let e=this._docState;if(!e){this._pendingContent=null,this._hasMarkup=null;return}let t=e.segments[this._currentPage-1]??[],n=e.elementIds.size?e.elementIds:wn(t);e.elementIds=n,Sn(t)?(this._pendingContent=this._buildRenderedArticle(t,n),this._hasMarkup=!0):(this._pendingContent=null,this._hasMarkup=!1),this.requestUpdate()}_clearDocument(){this._pendingContent=null,this._hasMarkup=null,this.requestUpdate()}_onSettingsToggle=()=>{this._settingsOpen=!this._settingsOpen,this._settingsPanelRef.value?.setOpen(this._settingsOpen),this.requestUpdate()};_onSettingsClose=()=>{this._settingsOpen=!1,this.requestUpdate()};_onFurnitureChange=e=>{this._showFurniture=e.target.checked,this.dispatchEvent(new CustomEvent(`doclang-show-reading-furniture`,{bubbles:!0,composed:!0,detail:{checked:this._showFurniture}}))};_onBackgroundChange=e=>{this._showBackground=e.target.checked,this.dispatchEvent(new CustomEvent(`doclang-show-reading-background`,{bubbles:!0,composed:!0,detail:{checked:this._showBackground}}))};_onBodyClick=e=>{let t=e.target,n=t.closest(`.rendered-el-virtual-text`),r=n?.hasAttribute(`data-element-id`)?n.getAttribute(`data-element-id`):t.closest(`.rendered-el[data-element-id]`)?.getAttribute(`data-element-id`)??null;r&&this.dispatchEvent(new CustomEvent(`doclang-element-select`,{bubbles:!0,composed:!0,detail:{id:r}}))};_buildRenderedArticle(e,t){let n=this._docState?.assetUrls,r=qi(e),i=new Set,a=new Map;for(let[,e]of r){a.set(e[0],e);for(let t=1;t<e.length;t+=1)i.add(e[t])}let o=document.createElement(`article`);o.className=`rendered-doc`;for(let r of e){if(r.nodeType!==Node.ELEMENT_NODE||I(r)===`page_break`||i.has(r))continue;let e=a.get(r),s=e?Ki(e,t,n):X(r,t,{inline:!1},n);s&&o.appendChild(s)}return o}_findRenderedElement(e,t){if(!this.shadowRoot)return null;let n=this.shadowRoot.querySelector(`.rendered-el-virtual-text[data-element-id="${e}"]`)??this.shadowRoot.querySelector(`.rendered-el[data-element-id="${e}"]`);if(n)return n;let r=this._docState?.idToElement?.get(e),i=r?Ht(r):null;if(!i)return null;let a=this.shadowRoot.querySelector(`.rendered-fragment-merged[data-thread-id="${i}"]`);if(!a)return null;let o=a.getAttribute(`data-element-id`);return!o||o===e||t.has(e)?a:null}_revealContext(e){let t=e.closest(`.rendered-picture-contents`);t&&!t.open&&(t.open=!0),this._revealLayer(e)}_revealLayer(e){let t=e.getAttribute(`data-doclang-layer`);!t||t===`body`||(t===`furniture`&&!this._showFurniture?(this._showFurniture=!0,this.dispatchEvent(new CustomEvent(`doclang-show-reading-furniture`,{bubbles:!0,composed:!0,detail:{checked:!0}}))):t===`background`&&!this._showBackground&&(this._showBackground=!0,this.dispatchEvent(new CustomEvent(`doclang-show-reading-background`,{bubbles:!0,composed:!0,detail:{checked:!0}}))))}};j([D()],Z.prototype,`_showFurniture`,void 0),j([D()],Z.prototype,`_showBackground`,void 0),j([D()],Z.prototype,`_settingsOpen`,void 0),j([D()],Z.prototype,`_visible`,void 0),j([D()],Z.prototype,`_hasMarkup`,void 0),Z=j([E(`doclang-reading-pane`)],Z);var Ji=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{display:contents}.empty-state{border:2px dashed var(--border);background:var(--placeholder-bg);text-align:center;min-height:0;color:var(--muted);border-radius:.75rem;flex:1 1 0;justify-content:center;align-items:center;margin:1rem;padding:2rem 1.5rem;display:flex}.empty-state-inner{max-width:28rem}.empty-state-loading{flex-direction:column;align-items:center;display:none}:host(.demo-loading) .empty-state-loading{display:flex}:host(.demo-loading) .empty-state-prompt{display:none}.loading-spinner{border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;width:2rem;height:2rem;margin:0 auto 1rem;animation:.7s linear infinite loading-spin}@keyframes loading-spin{to{transform:rotate(360deg)}}.empty-state-title{color:var(--text);margin:0 0 .75rem;font-size:1.05rem}.empty-state p{margin:.5rem 0}.empty-state-action{margin:0 0 .75rem}.text-link{color:var(--accent);text-decoration:underline}.text-link:hover{opacity:.85}.empty-state-meta{font-size:.875rem}code{font-family:var(--font-mono)}`,Yi=class extends T{static styles=c(Ji);_extensions=[];_demoLoading=!1;render(){return b`
+      <div class="empty-state">
+        <div class="empty-state-inner">
+          <div
+            class="empty-state-loading"
+            role="status"
+            aria-live="polite"
+            aria-label="Loading demo document"
+          >
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p class="empty-state-title">Loading demo&#x2026;</p>
+            <p class="empty-state-meta">Preparing the sample document</p>
+          </div>
+          <div class="empty-state-prompt">
+            <p class="empty-state-title">Drop a DocLang file here</p>
+            <p class="empty-state-meta">
+              Supported file types:
+              <span class="file-types"
+                >${this._extensions.map((e,t)=>b`${t>0?`, `:``}<code>${e}</code>`)}</span
+              >
+            </p>
+            <p class="empty-state-action">
+              or
+              <a
+                href="#"
+                class="text-link"
+                @click=${e=>{e.preventDefault(),this.dispatchEvent(new CustomEvent(`doclang-load-demo`,{bubbles:!0,composed:!0}))}}
+                >load demo</a
+              >
+            </p>
+          </div>
+        </div>
+      </div>
+    `}setFileTypeHints(e){this._extensions=e,this.requestUpdate()}setDemoLoading(e){this._demoLoading=e,this.classList.toggle(`demo-loading`,e)}};Yi=j([E(`doclang-empty-state`)],Yi);var Xi=`important`,Zi=` !important`,Qi=nt(class extends rt{constructor(e){if(super(e),e.type!==tt.ATTRIBUTE||e.name!==`style`||e.strings?.length>2)throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.")}render(e){return Object.keys(e).reduce((t,n)=>{let r=e[n];return r==null?t:t+`${n=n.includes(`-`)?n:n.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g,`-$&`).toLowerCase()}:${r};`},``)}update(e,[t]){let{style:n}=e.element;if(this.ft===void 0)return this.ft=new Set(Object.keys(t)),this.render(t);for(let e of this.ft)t[e]??(this.ft.delete(e),e.includes(`-`)?n.removeProperty(e):n[e]=null);for(let e in t){let r=t[e];if(r!=null){this.ft.add(e);let t=typeof r==`string`&&r.endsWith(Zi);e.includes(`-`)||t?n.setProperty(e,t?r.slice(0,-11):r,t?Xi:``):n[e]=r}}return x}}),$i=`:host{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light dark;--bg:var(--doclang-bg,#f4f4f5);--panel:var(--doclang-panel,#fff);--border:var(--doclang-border,#d4d4d8);--text:var(--doclang-text,#18181b);--muted:var(--doclang-muted,#71717a);--accent:var(--doclang-accent,#2563eb);--placeholder-bg:var(--doclang-placeholder-bg,#fafafa);--font-ui:var(--doclang-font-ui,system-ui, -apple-system, "Segoe UI", sans-serif);--font-mono:var(--doclang-font-mono,ui-monospace, "Cascadia Code", "Source Code Pro", monospace);--markup-bg:var(--doclang-markup-bg,#fff);--markup-fg:var(--doclang-markup-fg,#24292e);--markup-hover:var(--doclang-markup-hover,#2563eb14);--markup-selected:var(--doclang-markup-selected,#2563eb24);--kind-text:var(--doclang-kind-text,#2563eb);--kind-heading:var(--doclang-kind-heading,#7c3aed);--kind-list:var(--doclang-kind-list,#ea580c);--kind-ldiv:var(--doclang-kind-ldiv,#ea580c);--kind-table:var(--doclang-kind-table,#16a34a);--kind-index:var(--doclang-kind-index,#0d9488);--kind-formula:var(--doclang-kind-formula,#0891b2);--kind-code:var(--doclang-kind-code,#475569);--kind-picture:var(--doclang-kind-picture,#db2777);--kind-group:var(--doclang-kind-group,#4f46e5);--kind-footnote:var(--doclang-kind-footnote,#a16207);--kind-page_header:var(--doclang-kind-page_header,#71717a);--kind-page_footer:var(--doclang-kind-page_footer,#71717a);--kind-caption:var(--doclang-kind-caption,#71717a);--kind-field:var(--doclang-kind-field,#d97706);--kind-default:var(--doclang-kind-default,#dc2626)}@media (prefers-color-scheme:dark){:host{--lightningcss-light: ;--lightningcss-dark:initial;--bg:var(--doclang-bg,#09090b);--panel:var(--doclang-panel,#18181b);--border:var(--doclang-border,#3f3f46);--text:var(--doclang-text,#fafafa);--muted:var(--doclang-muted,#a1a1aa);--placeholder-bg:var(--doclang-placeholder-bg,#27272a);--markup-bg:var(--doclang-markup-bg,#1e1e1e);--markup-fg:var(--doclang-markup-fg,#d4d4d4);--markup-hover:var(--doclang-markup-hover,#60a5fa1a);--markup-selected:var(--doclang-markup-selected,#60a5fa2e);--kind-text:var(--doclang-kind-text,#60a5fa);--kind-heading:var(--doclang-kind-heading,#a78bfa);--kind-list:var(--doclang-kind-list,#fb923c);--kind-ldiv:var(--doclang-kind-ldiv,#fb923c);--kind-table:var(--doclang-kind-table,#4ade80);--kind-index:var(--doclang-kind-index,#2dd4bf);--kind-formula:var(--doclang-kind-formula,#22d3ee);--kind-code:var(--doclang-kind-code,#94a3b8);--kind-picture:var(--doclang-kind-picture,#f472b6);--kind-group:var(--doclang-kind-group,#818cf8);--kind-footnote:var(--doclang-kind-footnote,#facc15);--kind-page_header:var(--doclang-kind-page_header,#a1a1aa);--kind-page_footer:var(--doclang-kind-page_footer,#a1a1aa);--kind-caption:var(--doclang-kind-caption,#a1a1aa);--kind-field:var(--doclang-kind-field,#fbbf24);--kind-default:var(--doclang-kind-default,#f87171)}}:host{min-height:100vh;font-family:var(--font-ui);background:var(--bg);color:var(--text);flex-direction:column;display:flex}:host(.drag-over){background:color-mix(in srgb, var(--accent) 6%, var(--bg))}:host(.drag-over) doclang-empty-state{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg))}header{border-bottom:1px solid var(--border);background:var(--panel);grid-template-columns:1fr auto 1fr;align-items:center;gap:1rem;padding:.75rem 1rem;display:grid}.header-brand{grid-column:1;justify-self:start;align-items:center;gap:1rem;min-width:0;display:flex}header h1{margin:0;font-size:1.1rem;font-weight:600}.header-center{text-align:center;grid-column:2;justify-self:center;min-width:0}.doc-label{color:var(--muted);text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:min(40vw,28rem);font-size:.8125rem;font-weight:400;overflow:hidden}.header-logo-link{border-radius:.25rem;flex-shrink:0;line-height:0;text-decoration:none;display:block}.header-logo-link:hover{opacity:.8}.header-logo{width:auto;height:2.25rem;display:block}.header-logo-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.toolbar-wrap{grid-column:3;justify-self:end}.drop-banner{text-align:center;color:var(--muted);background:color-mix(in srgb, var(--accent) 8%, var(--panel));border-bottom:1px solid var(--border);margin:0;padding:.35rem 1rem;font-size:.8125rem;display:none}:host(.loaded.drag-over) .drop-banner{display:block}:host(.loaded) doclang-empty-state{display:none}.main{flex:1 1 0;min-height:0;display:none}:host(.loaded) .main{display:grid}:host(.loaded) .main.layout-stacked{grid-template-columns:1fr!important}:host(.loaded) .main.layout-stacked .pane-splitter{display:none!important}:host(.loaded) .main.layout-stacked .pane{border-right:none;border-bottom:1px solid var(--border)}:host(.loaded) .main:not(.layout-stacked){grid-template-rows:minmax(0,1fr)}:host(.loaded) .main:not(.layout-stacked) .pane{border-right:none}.pane{border-right:1px solid var(--border);flex-direction:column;min-width:0;min-height:0;display:flex}.pane[hidden]{display:none!important}.pane-splitter{box-sizing:content-box;cursor:col-resize;touch-action:none;z-index:2;background:0 0;width:1px;margin:0 -4px;padding:0 4px;position:relative}.pane-splitter:after{content:"";background:var(--border);width:1px;transition:background .15s,width .15s;position:absolute;top:0;bottom:0;left:4px}.pane-splitter:hover:after,.pane-splitter:focus-visible:after,.pane-splitter.is-dragging:after{background:var(--accent);width:3px}.pane-splitter[hidden]{display:none!important}:host(.pane-drag-active){cursor:col-resize;-webkit-user-select:none;user-select:none}:host(.pane-drag-active) .pane-splitter{cursor:col-resize}:host(:not(.loaded)) doclang-page-nav,:host(.markup-only) doclang-page-nav{display:none!important}@media (width<=1200px){:host(.loaded) .main.layout-stacked .pane{border-right:none;border-bottom:1px solid var(--border)}}`;W(),Qn(),yn();var ea=[`.dclx`,`.dclg`],ta=200,na=4,ra=100,ia=`doclang-viewer-pane-layout`,aa=.12,Q=[`file`,`page`,`markup`,`reading`],oa=[1,1,1,1],sa={file:!1,page:!0,markup:!0,reading:!0},ca=1200,$=class extends T{static styles=c($i);example=null;_loaded=!1;_markupOnly=!1;_hasPageView=!1;_dragOver=!1;_paneDragActive=!1;_demoLoading=!1;_docLabel=null;_pageNum=1;_pageCount=1;_stacked=!1;_mainGridStyle={};_paneGridCols=new Map;_paneGridRows=new Map;_splitterCols=[null,null,null];_toolbarOptionsOpen=!1;_userPaneVisible={...sa};_docState=null;_fileCatalog=[];_activeFileIndex=-1;_filePaneUserToggled=!1;_paneRatios=[...oa];_filePaneWidthPx=null;_paneDrag=null;_layoutStackQuery=null;_demoLoadInProgress=!1;_prevReadingOrderGlobal=!1;_wheelPixelAccum=0;_wheelPixelGestureUntil=0;_wheelLastFlipAt=0;_pageNavRef=k();_toolbarRef=k();_filePaneRef=k();_markupPaneRef=k();_pageViewPaneRef=k();_readingPaneRef=k();_emptyStateRef=k();_splitterRefs=[k(),k(),k()];_mainRef=k();connectedCallback(){super.connectedCallback(),this._loadLayoutPrefs(),this._normalizePaneRatios(),this._initLayoutStackListener(),this._initDragDrop(),this._initPageWheelNav(),this.addEventListener(`keydown`,this._onGlobalKeydown),this.example&&(this._demoLoading=!0,this._loadDemo())}disconnectedCallback(){super.disconnectedCallback(),this._layoutStackQuery?.removeEventListener(`change`,this._onLayoutStackChange),window.removeEventListener(`pointermove`,this._onWindowPointerMove),window.removeEventListener(`pointerup`,this._onWindowPointerUp),window.removeEventListener(`pointercancel`,this._onWindowPointerUp),this.removeEventListener(`keydown`,this._onGlobalKeydown)}firstUpdated(){let e=this._emptyStateRef.value;e&&e.setFileTypeHints(ea),this._demoLoading&&e&&e.setDemoLoading(!0),this._syncToolbarPaneCheckboxes()}render(){return b`
+      <header>
+        <div class="header-brand">
+          <a
+            href="#"
+            class="header-logo-link"
+            title="Back to start"
+            @click=${this._onHomeClick}
+          >
+            <img src="assets/doclang_v3_sail.svg" alt="DocLang" class="header-logo" />
+          </a>
+          <h1>DocLang Viewer</h1>
+          <doclang-page-nav
+            ${A(this._pageNavRef)}
+            @doclang-prev-page=${()=>this._docState&&this._goToPage(this._docState.currentPage-1)}
+            @doclang-next-page=${()=>this._docState&&this._goToPage(this._docState.currentPage+1)}
+            @doclang-go-to-page=${e=>this._goToPage(e.detail.page)}
+          ></doclang-page-nav>
+        </div>
+
+        <div class="header-center">
+          ${this._docLabel?b`<span class="doc-label">${this._docLabel}</span>`:S}
+        </div>
+
+        <div class="toolbar-wrap">
+          <doclang-toolbar
+            ${A(this._toolbarRef)}
+            @doclang-load-demo=${this._onLoadDemo}
+            @doclang-open-files=${this._onOpenFiles}
+            @doclang-toggle-pane=${this._onTogglePane}
+            @doclang-reset-pane-layout=${this._onResetPaneLayout}
+          ></doclang-toolbar>
+        </div>
+      </header>
+
+      <p class="drop-banner">Drop to open another file</p>
+
+      <doclang-empty-state
+        ${A(this._emptyStateRef)}
+        @doclang-load-demo=${this._onLoadDemo}
+      ></doclang-empty-state>
+
+      <div
+        class=${M({main:!0,"layout-stacked":this._stacked})}
+        style=${Qi(this._mainGridStyle)}
+        ${A(this._mainRef)}
+      >
+        <doclang-file-pane
+          ${A(this._filePaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible(`file`)}
+          style=${this._paneGridStyle(`file`)}
+          @doclang-file-select=${e=>this._switchToFile(e.detail.index)}
+          @doclang-file-close=${e=>this._closeCatalogFile(e.detail.index)}
+          @doclang-file-pane-close-all=${this._onFilePaneCloseAll}
+        ></doclang-file-pane>
+
+        <div
+          class=${M({"pane-splitter":!0})}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Files and Original page panes"
+          tabindex="0"
+          ?hidden=${this._splitterCols[0]===null}
+          style=${this._splitterGridStyle(0)}
+          ${A(this._splitterRefs[0])}
+          @pointerdown=${e=>this._startPaneDrag(e,0)}
+        ></div>
+
+        <doclang-page-view-pane
+          ${A(this._pageViewPaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible(`page`)}
+          style=${this._paneGridStyle(`page`)}
+          @doclang-element-select=${this._onElementSelect}
+          @doclang-navigate-thread=${this._onNavigateThread}
+          @doclang-clear-selection=${this._onClearSelection}
+          @doclang-page-key-nav=${this._onPageKeyNav}
+          @doclang-zoom-change=${this._onZoomChange}
+          @doclang-overlay-change=${this._onOverlayChange}
+          @doclang-panning-change=${this._onPanningChange}
+        ></doclang-page-view-pane>
+
+        <div
+          class="pane-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Original page and DocLang panes"
+          tabindex="0"
+          ?hidden=${this._splitterCols[1]===null}
+          style=${this._splitterGridStyle(1)}
+          ${A(this._splitterRefs[1])}
+          @pointerdown=${e=>this._startPaneDrag(e,1)}
+        ></div>
+
+        <doclang-markup-pane
+          ${A(this._markupPaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible(`markup`)}
+          style=${this._paneGridStyle(`markup`)}
+          @doclang-element-select=${this._onElementSelect}
+        ></doclang-markup-pane>
+
+        <div
+          class="pane-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize DocLang and Reading view panes"
+          tabindex="0"
+          ?hidden=${this._splitterCols[2]===null}
+          style=${this._splitterGridStyle(2)}
+          ${A(this._splitterRefs[2])}
+          @pointerdown=${e=>this._startPaneDrag(e,2)}
+        ></div>
+
+        <doclang-reading-pane
+          ${A(this._readingPaneRef)}
+          class="pane"
+          ?hidden=${!this._isPaneVisible(`reading`)}
+          style=${this._paneGridStyle(`reading`)}
+          @doclang-element-select=${this._onElementSelect}
+        ></doclang-reading-pane>
+      </div>
+
+    `}updated(){this.classList.toggle(`loaded`,this._loaded),this.classList.toggle(`markup-only`,this._markupOnly),this.classList.toggle(`drag-over`,this._dragOver),this.classList.toggle(`pane-drag-active`,this._paneDragActive)}_paneGridStyle(e){if(this._stacked){let t=this._paneGridRows.get(e);return t===void 0?``:`grid-row:${t}`}let t=this._paneGridCols.get(e);return t===void 0?``:`grid-column:${t}`}_splitterGridStyle(e){let t=this._splitterCols[e];return t===null||this._stacked?``:`grid-column:${t}`}_isPaneAvailable(e){return e===`file`?this._fileCatalog.length>0:e===`page`?!!this._docState?.hasPageView:!!this._docState}_isPaneVisible(e){return this._isPaneAvailable(e)?!!this._userPaneVisible[e]:!1}_visiblePaneKeys(){return[...Q].filter(e=>this._isPaneVisible(e))}_filePaneFitWidthPx(){let e=document.createElement(`div`);e.style.cssText=`position:absolute;visibility:hidden;width:var(--doclang-file-pane-fit-width);`,(this.shadowRoot??document.documentElement).appendChild(e);let t=e.getBoundingClientRect().width;return e.remove(),Math.ceil(t)||108}_resolvedFilePaneWidthPx(){let e=this._filePaneFitWidthPx();return Math.max(e,this._filePaneWidthPx??e)}_contentPaneFrWeights(e){let t=e.filter(e=>e!==`file`),n=t.map(e=>this._paneRatios[this._paneRatioIndex(e)]),r=n.reduce((e,t)=>e+t,0)||t.length;return n.map(e=>e/r)}_paneRatioIndex(e){return Q.indexOf(e)}_normalizePaneRatios(){let e=this._paneRatios.reduce((e,t)=>e+t,0);if(e<=0){this._paneRatios=[...oa];return}this._paneRatios=this._paneRatios.map(t=>t/e)}_paneKeysAdjacent(e,t){return Q.indexOf(e)>=0&&Q.indexOf(t)===Q.indexOf(e)+1}_onlyHiddenPanesBetween(e,t){let n=Q.indexOf(e),r=Q.indexOf(t);if(n<0||r<=n)return!1;for(let e=n+1;e<r;e++)if(this._isPaneVisible(Q[e]))return!1;return!0}_shouldShowSplitter(e,t){return!this._isPaneVisible(e)||!this._isPaneVisible(t)?!1:this._paneKeysAdjacent(e,t)?!0:this._onlyHiddenPanesBetween(e,t)}_visibleNeighborAfter(e){let t=Q.indexOf(e);for(let e=t+1;e<Q.length;e++)if(this._isPaneVisible(Q[e]))return Q[e];return null}_visibleNeighborBefore(e){let t=Q.indexOf(e);for(let e=t-1;e>=0;e--)if(this._isPaneVisible(Q[e]))return Q[e];return null}_applyPaneLayout(){let e=this._loaded&&!!this._layoutStackQuery?.matches;this._stacked=e;let t=this._visiblePaneKeys();t.length||(this._userPaneVisible.markup=!0,t=this._visiblePaneKeys());let n=new Map,r=new Map,i=[null,null,null];if(!this._loaded){this._paneGridCols=n,this._paneGridRows=r,this._splitterCols=i,this._mainGridStyle={},this.requestUpdate();return}if(e){let e=1;for(let n of t)r.set(n,e++);this._paneGridCols=n,this._paneGridRows=r,this._splitterCols=i,this._mainGridStyle={},this._pageViewPaneRef.value?.refreshLayout(),this._readingPaneRef.value?.setVisible(this._isPaneVisible(`reading`)),this.requestUpdate();return}let a=this._contentPaneFrWeights(t),o=[],s=0;t.forEach((e,n)=>{e===`file`?o.push(`${this._resolvedFilePaneWidthPx()}px`):o.push(`minmax(0, ${a[s++].toFixed(6)}fr)`),n<t.length-1&&this._shouldShowSplitter(t[n],t[n+1])&&o.push(`1px`)});let c=1;t.forEach((e,r)=>{if(n.set(e,c++),r<t.length-1){let e=t[r],n=t[r+1];if(!this._shouldShowSplitter(e,n))return;let a=Q.indexOf(e);a>=0&&a<3&&(i[a]=c++)}}),this._paneGridCols=n,this._paneGridRows=r,this._splitterCols=i,this._mainGridStyle={gridTemplateColumns:o.join(` `)},this._pageViewPaneRef.value?.refreshLayout(),this._readingPaneRef.value?.setVisible(this._isPaneVisible(`reading`)),this.requestUpdate()}_setUserPaneVisible(e,t){this._userPaneVisible[e]=t,e===`file`&&(this._filePaneUserToggled=!0),e===`page`&&this._syncPagePaneControls(),e===`reading`&&!t&&this._setReadingSettingsOpen(!1),this._syncToolbarPaneCheckboxes(),this._saveLayoutPrefs(),this._applyPaneLayout()}_syncPagePaneControls(){this._pageViewPaneRef.value?.setVisible(this._isPaneVisible(`page`))}_loadLayoutPrefs(){try{let e=localStorage.getItem(ia);if(!e)return;let t=JSON.parse(e);if(t?.visible&&typeof t.visible==`object`){for(let e of Q)typeof t.visible[e]==`boolean`&&(this._userPaneVisible[e]=t.visible[e]);typeof t.visible.file==`boolean`&&(this._filePaneUserToggled=!0)}if(Array.isArray(t?.ratios)){let e=t.ratios.every(e=>typeof e==`number`&&e>0);e&&t.ratios.length===4?(this._paneRatios=[...t.ratios],this._normalizePaneRatios()):e&&t.ratios.length===3&&(this._paneRatios=[1,...t.ratios],this._normalizePaneRatios())}typeof t?.filePaneWidthPx==`number`&&t.filePaneWidthPx>0&&(this._filePaneWidthPx=t.filePaneWidthPx)}catch{}}_saveLayoutPrefs(){try{localStorage.setItem(ia,JSON.stringify({visible:this._userPaneVisible,ratios:this._paneRatios,filePaneWidthPx:this._filePaneWidthPx}))}catch{}}_resetPaneLayout(){this._filePaneUserToggled=!1,this._userPaneVisible={file:this._defaultFilePaneVisible(),page:!0,markup:!0,reading:!0},this._paneRatios=[...oa],this._normalizePaneRatios(),this._filePaneWidthPx=null,this._setReadingSettingsOpen(!1),this._syncPagePaneControls(),this._syncToolbarPaneCheckboxes(),this._saveLayoutPrefs(),this._applyPaneLayout()}_onLayoutStackChange=()=>{this._applyPaneLayout()};_initLayoutStackListener(){this._layoutStackQuery=window.matchMedia(`(max-width: ${ca}px)`),this._layoutStackQuery.addEventListener(`change`,this._onLayoutStackChange),this._onLayoutStackChange()}_contentPaneAvailableWidthPx(){let e=this._mainRef.value;if(!e)return 1;let t=e.getBoundingClientRect(),n=this._visiblePaneKeys(),r=0;n.includes(`file`)&&(r+=this._resolvedFilePaneWidthPx());for(let e=0;e<n.length-1;e++)this._shouldShowSplitter(n[e],n[e+1])&&(r+=1);return Math.max(t.width-r,1)}_resolvedPhysicalSplitterKeys(e){let t=Q[e],n=Q[e+1];if(!t||!n)return null;let r=this._isPaneVisible(t)?t:this._visibleNeighborBefore(n),i=this._isPaneVisible(n)?n:this._visibleNeighborAfter(t);return!r||!i||r===i||!this._shouldShowSplitter(r,i)||Q.indexOf(r)!==e?null:{leftKey:r,rightKey:i}}_startPaneDrag(e,t){if(e.button!==0||this._stacked||!this._loaded)return;let n=this._resolvedPhysicalSplitterKeys(t);if(!n)return;let{leftKey:r,rightKey:i}=n;this._normalizePaneRatios();let a=this._paneRatioIndex(r),o=this._paneRatioIndex(i),s={physicalSplitterIndex:t,leftKey:r,rightKey:i,startX:e.clientX,leftStart:this._paneRatios[a],rightStart:this._paneRatios[o],pointerId:e.pointerId};r===`file`?s.leftStartPx=this._resolvedFilePaneWidthPx():i===`file`&&(s.rightStartPx=this._resolvedFilePaneWidthPx()),this._paneDrag=s,e.preventDefault(),e.currentTarget.setPointerCapture(e.pointerId),e.currentTarget.classList.add(`is-dragging`),this._paneDragActive=!0,this.requestUpdate()}_onWindowPointerMove=e=>{let t=this._paneDrag;if(!t||e.pointerId!==t.pointerId)return;if(t.leftKey===`file`&&typeof t.leftStartPx==`number`){this._filePaneWidthPx=Math.max(this._filePaneFitWidthPx(),t.leftStartPx+(e.clientX-t.startX)),this._applyPaneLayout();return}if(t.rightKey===`file`&&typeof t.rightStartPx==`number`){this._filePaneWidthPx=Math.max(this._filePaneFitWidthPx(),t.rightStartPx-(e.clientX-t.startX)),this._applyPaneLayout();return}let n=this._visiblePaneKeys(),r=this._contentPaneFrWeights(n),i=n.filter(e=>e!==`file`).indexOf(t.leftKey);if(i<0||i+1>=r.length)return;let a=r[i]+r[i+1];if(!(a>0))return;let o=Math.max(this._contentPaneAvailableWidthPx()*a,1),s=(e.clientX-t.startX)/o,c=this._paneRatioIndex(t.leftKey),l=this._paneRatioIndex(t.rightKey),u=t.leftStart+t.rightStart;if(!(u>0)||c<0||l<0)return;let d=Math.min(aa,u/2),f=Math.min(aa,u/2),p=t.leftStart+s*u;p=Math.min(Math.max(p,d),u-f),this._paneRatios[c]=p,this._paneRatios[l]=u-p,this._applyPaneLayout()};_onWindowPointerUp=e=>{let t=this._paneDrag;if(!t||e.pointerId!==t.pointerId)return;let n=this._splitterRefs[t.physicalSplitterIndex]?.value;n?.classList.remove(`is-dragging`),n?.hasPointerCapture(e.pointerId)&&n.releasePointerCapture(e.pointerId),this._paneDrag=null,this._paneDragActive=!1,this._normalizePaneRatios(),this._saveLayoutPrefs(),this.requestUpdate()};_goToPage(e){let t=this._docState;if(!t)return;this._pageViewPaneRef.value?.closeSettings();let n=Math.min(Math.max(1,e),t.pageCount);t.currentPage=n;let r=this._markupPaneRef.value,i=this._readingPaneRef.value,a=this._pageViewPaneRef.value;r&&(r.page=n),i&&(i.page=n),a&&(a.page=n),this._pageNum=n,this.requestUpdate(),this._pageNavRef.value?.setIndicator(n,t.pageCount)}_findElementIdOnPage(e){if(!this._docState?.elementIds)return null;for(let[t,n]of this._docState.elementIds)if(t===e)return n;return null}_navigateThreadFragment(e,t){let n=this._docState,r=n?.idToElement?.get(e);if(!r)return;let i=n?.threadNavByElement?.get(r);if(!i)return;let a=t===`prev`?i.prev:i.next;if(!a)return;let o=n.elementPageByEl.get(a);if(o){if(o===n.currentPage){let e=this._findElementIdOnPage(a);e&&this._selectElement(e);return}n.pendingSelectElement=a,this._goToPage(o)}}_findListVirtualTextHost(e,t){let n=[...e.childNodes],r=Et(n,0);for(;r<n.length;){let e=n[r];if(e.nodeType!==Node.ELEMENT_NODE||I(e)!==`ldiv`){r++;continue}let i=e;r++;let a=Dt(n,r);if(t===i||n.slice(r,a).some(e=>jt(t,e)))return i;r=a}return null}_findTableVirtualTextHost(e,t){let n=[...e.childNodes],r=Et(n,0);for(;r<n.length;){let e=n[r];if(e.nodeType!==Node.ELEMENT_NODE){r++;continue}let i=I(e);if(i===`nl`||Vt(e)||nn.has(i)||!B(i)){r++;continue}let a=e;r++;let o=Ot(n,r);if(t===a||n.slice(r,o).some(e=>jt(t,e)))return a;r=o}return null}_findVirtualTextHost(e){let t=e;for(;t;){let n=t.parentElement;if(!n)return null;let r=I(n);if(r===`list`){let t=this._findListVirtualTextHost(n,e);if(t)return t}if(U.has(r)){let t=this._findTableVirtualTextHost(n,e);if(t)return t}t=n}return null}_resolveSelectionElement(e){if(!e)return null;if(Bt(e)||Vt(e))return e;let t=e.parentElement;for(;t&&I(t)!==`doclang`;){if(Bt(t)&&!Tt(t))return t;t=t.parentElement}let n=this._findVirtualTextHost(e);if(n)return n;for(t=e.parentElement;t&&I(t)!==`doclang`;){if(Bt(t)||Vt(t))return t;t=t.parentElement}return null}_resolveSelectionElementId(e){let t=this._docState;if(!e||!t?.idToElement||!t.elementIds)return null;let n=t.idToElement.get(e);if(!n)return null;let r=this._resolveSelectionElement(n);return r?t.elementIds.get(r)??null:null}_selectElement(e){if(!e)return;let t=this._markupPaneRef.value,n=this._readingPaneRef.value,r=this._pageViewPaneRef.value;t&&(t.selected=e),n&&(n.selected=e),r&&(r.selected=e)}_clearSelection(){let e=this._markupPaneRef.value,t=this._readingPaneRef.value,n=this._pageViewPaneRef.value;e&&(e.selected=null),t&&(t.selected=null),n&&(n.selected=null)}_closeAllSettings(){this._pageViewPaneRef.value?.closeSettings(),this._readingPaneRef.value?.setSettingsOpen(!1)}_syncToolbarPaneCheckboxes(){this._toolbarRef.value?.syncPaneToggles({file:this._userPaneVisible.file,page:this._userPaneVisible.page,markup:this._userPaneVisible.markup,reading:this._userPaneVisible.reading,fileAvailable:this._isPaneAvailable(`file`),pageAvailable:this._isPaneAvailable(`page`),hasState:!!this._docState})}_setDocumentOpen(e,{markupOnly:t=!1}={}){this._loaded=e,this._markupOnly=e&&t,this._pageNavRef.value?.setVisible(e&&!t),this._syncToolbarPaneCheckboxes(),this._applyPaneLayout(),this.requestUpdate()}_setPageViewVisible(e){this._hasPageView=e,this._syncPagePaneControls(),this._syncToolbarPaneCheckboxes(),e||this._pageViewPaneRef.value?.closeSettings(),this._applyPaneLayout()}_resetViewer(){this._setDemoLoading(!1),this._clearFileCatalog(),this._filePaneUserToggled=!1,this._pageViewPaneRef.value?.resetZoom(),this._docLabel=null,this._setDocumentOpen(!1),this._hasPageView=!1,this._closeAllSettings(),this._toolbarOptionsOpen=!1,this._toolbarRef.value?.setOptionsOpen(!1);let e=this._markupPaneRef.value,t=this._readingPaneRef.value,n=this._pageViewPaneRef.value;e&&(e.document=null),t&&(t.document=null),n&&(n.document=null),this._filePaneRef.value?.renderFiles([]),this._pageNavRef.value?.setIndicator(1,1),this._pageNum=1,this._pageCount=1,this._updateFileView(),this._applyPaneLayout(),this.requestUpdate()}_activateDocument(e,t){this._docState=e,this._closeAllSettings(),this._pageViewPaneRef.value?.activateZoom(t.pageZoom??100),this._docLabel=t.label,this._setDocumentOpen(!0,{markupOnly:e.markupOnly}),this._setPageViewVisible(e.hasPageView),this._pageNum=e.currentPage,this._pageCount=e.pageCount,this._pageNavRef.value?.setIndicator(e.currentPage,e.pageCount);let n=this._markupPaneRef.value,r=this._readingPaneRef.value,i=this._pageViewPaneRef.value;n&&(n.document=e),r&&(r.document=e),i&&(i.document=e),this._updateFileView(),this.requestUpdate()}_pageImageMimeFromExt(e){let t=e.toLowerCase().replace(`jpeg`,`jpg`);return t===`png`?`image/png`:t===`webp`?`image/webp`:`image/jpeg`}_createPageImageObjectUrl(e,t){return URL.createObjectURL(new Blob([e],{type:this._pageImageMimeFromExt(t)}))}_createFirstPageImageUrlFromFiles(e){let t=1/0,n=null;for(let r of e){let e=(r.webkitRelativePath||r.name).split(`/`);if(e.length<2||e[e.length-2]!==`pages`)continue;let i=Yn.exec(r.name);if(!i)continue;let a=Number(i[1]);a<t&&(t=a,n=r)}return n?URL.createObjectURL(n):null}async _createFirstPageImageUrlFromZip(e){let t=await an(e instanceof File?await e.arrayBuffer():e,{shouldExtract:e=>/^pages\/\d+\.(png|jpe?g|webp)$/i.test(e)}),n=1/0,r=null;for(let e of t){let t=e.name.match(/^pages\/(\d+)\.(png|jpe?g|webp)$/i);if(!t)continue;let i=Number(t[1]);i<n&&(n=i,r=e)}return r?this._createPageImageObjectUrl(r.data,r.name.split(`.`).pop()??`png`):null}async _resolveCatalogEntryThumbnail(e){if(e.thumbnailUrl)return e.thumbnailUrl;if(e.kind===`markup`)return null;try{e.kind===`folder`?e.thumbnailUrl=this._createFirstPageImageUrlFromFiles(e.source):e.kind===`archive`&&(e.thumbnailUrl=await this._createFirstPageImageUrlFromZip(e.source))}catch{e.thumbnailUrl=null}return e.thumbnailUrl}_enrichCatalogEntryThumbnail(e){this._resolveCatalogEntryThumbnail(e).then(t=>{if(!this._fileCatalog.includes(e)){t?.startsWith(`blob:`)&&URL.revokeObjectURL(t);return}t&&this._renderFileView()})}_revokeCatalogEntry(e){e?.thumbnailUrl?.startsWith(`blob:`)&&URL.revokeObjectURL(e.thumbnailUrl),e&&(e.thumbnailUrl=null)}_createFileCatalogEntry(e){return{id:crypto.randomUUID(),label:e.name,kind:this._isMarkupFile(e)?`markup`:`archive`,source:e,currentPage:1,pageZoom:100,snapshot:null,thumbnailUrl:null}}_isArchiveFile(e){return/\.dclx$/i.test(e.name)||/\.zip$/i.test(e.name)}_isMarkupFile(e){return/\.(?:dclg(?:\.xml)?|xml)$/i.test(e.name)}async _parseCatalogEntry(e){try{if(e.kind===`markup`)return Wn(e.source instanceof File?await e.source.text():new TextDecoder().decode(e.source),new Map,e.label,new Map,{markupOnly:!0});if(e.kind===`archive`){let{markupXml:t,pageImages:n,assetUrls:r}=await fn(e.source instanceof File?await e.source.arrayBuffer():e.source);return Wn(t,n,e.label,r,{markupOnly:!1})}if(e.kind===`folder`){let{markupXml:t,pageImages:n,assetUrls:r}=await Gn(e.source);return Wn(t,n,e.label,r,{markupOnly:!1})}}catch(t){alert(`Failed to read ${e.label}: ${t.message}`)}return null}_persistActiveFileViewState(){if(this._activeFileIndex<0||!this._docState)return;let e=this._fileCatalog[this._activeFileIndex];e&&(e.currentPage=this._docState.currentPage,e.pageZoom=this._pageViewPaneRef.value?.zoomPercent??100)}_releaseActiveDocument(){if(this._activeFileIndex>=0){let e=this._fileCatalog[this._activeFileIndex];e?.snapshot&&(Kn(e.snapshot),e.snapshot=null)}this._docState&&Kn(this._docState),this._docState=null}_clearFileCatalog(){this._releaseActiveDocument();for(let e of this._fileCatalog)this._revokeCatalogEntry(e);this._fileCatalog=[],this._activeFileIndex=-1}async _switchToFile(e){if(e<0||e>=this._fileCatalog.length)return;this._persistActiveFileViewState(),this._releaseActiveDocument(),this._activeFileIndex=e;let t=this._fileCatalog[e],n=await this._parseCatalogEntry(t);if(!n){this._revokeCatalogEntry(t),this._fileCatalog.splice(e,1),this._activeFileIndex=-1,this._fileCatalog.length?await this._switchToFile(Math.min(e,this._fileCatalog.length-1)):this._resetViewer();return}t.snapshot=n,n.currentPage=t.currentPage??1,this._activateDocument(n,t)}_defaultFilePaneVisible(){return this._fileCatalog.length>1}_syncFilePaneDefault(){if(!this._filePaneUserToggled){let e=this._userPaneVisible.file,t=this._defaultFilePaneVisible();this._userPaneVisible.file=t,!e&&t&&(this._paneRatios=[...oa],this._normalizePaneRatios(),this._filePaneWidthPx=null)}}async _closeCatalogFile(e){if(e<0||e>=this._fileCatalog.length)return;let t=e===this._activeFileIndex,n=this._fileCatalog[e];if(t&&(this._releaseActiveDocument(),this._activeFileIndex=-1),this._revokeCatalogEntry(n),this._fileCatalog.splice(e,1),!this._fileCatalog.length){this._resetViewer();return}if(t){await this._switchToFile(Math.min(e,this._fileCatalog.length-1));return}e<this._activeFileIndex&&--this._activeFileIndex,this._updateFileView()}_renderFileView(){this._filePaneRef.value?.renderFiles(this._fileCatalog.map((e,t)=>({label:e.label,thumbnailUrl:e.thumbnailUrl,isActive:t===this._activeFileIndex})))}_updateFileView(){this._syncFilePaneDefault(),this._renderFileView(),this._syncToolbarPaneCheckboxes(),this._applyPaneLayout()}async _addFilesToCatalog(e,{replace:t=!1}={}){t&&(this._clearFileCatalog(),this._filePaneUserToggled=!1);let n=this._fileCatalog.length;for(let t of e){let e=this._createFileCatalogEntry(t);this._fileCatalog.push(e),this._enrichCatalogEntryThumbnail(e)}this._fileCatalog.length&&await this._switchToFile(t?0:n)}async _appendFolderArchive(e){if(!e.some(e=>e.name===`document.xml`)){alert(`Archive must contain document.xml at its root.`);return}let t=(e[0].webkitRelativePath||e[0].name).split(`/`)[0]||`archive`,n={id:crypto.randomUUID(),label:t,kind:`folder`,source:e,currentPage:1,pageZoom:100,snapshot:null,thumbnailUrl:null};this._fileCatalog.push(n),this._enrichCatalogEntryThumbnail(n),await this._switchToFile(this._fileCatalog.length-1)}async _addArchiveBufferToCatalog(e,t,{replace:n=!1}={}){n&&(this._clearFileCatalog(),this._filePaneUserToggled=!1);let r={id:crypto.randomUUID(),label:t,kind:`archive`,source:e,currentPage:1,pageZoom:100,snapshot:null,thumbnailUrl:null};this._fileCatalog.push(r),this._enrichCatalogEntryThumbnail(r),await this._switchToFile(n?0:this._fileCatalog.length-1)}_setDemoLoading(e){this._demoLoading=e,this._emptyStateRef.value?.setDemoLoading(e),this._toolbarRef.value?.setDemoLoading(e),this.requestUpdate()}async _loadDemo(){if(!this._demoLoadInProgress){this._demoLoadInProgress=!0,this._setDemoLoading(!0);try{let e=this.example;if(!e)throw Error(`example URL not defined`);let t=await fetch(e);if(!t.ok)throw Error(`HTTP ${t.status}`);let n=e.split(`/`).pop()||`demo.dclx`;await this._addArchiveBufferToCatalog(await t.arrayBuffer(),n,{replace:!0})}catch(e){alert(`Failed to load demo: ${e.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`)}finally{this._demoLoadInProgress=!1,this._setDemoLoading(!1)}}}_hasArchiveTransfer(e){return!!(e&&[...e.types].includes(`Files`))}_initDragDrop(){this.addEventListener(`dragenter`,e=>{this._hasArchiveTransfer(e.dataTransfer)&&(e.preventDefault(),this._dragOver=!0,this.requestUpdate())}),this.addEventListener(`dragover`,e=>{this._hasArchiveTransfer(e.dataTransfer)&&(e.preventDefault(),e.dataTransfer&&(e.dataTransfer.dropEffect=`copy`))}),this.addEventListener(`dragleave`,e=>{this._hasArchiveTransfer(e.dataTransfer)&&(e.relatedTarget&&this.contains(e.relatedTarget)||(this._dragOver=!1,this.requestUpdate()))}),this.addEventListener(`drop`,async e=>{this._hasArchiveTransfer(e.dataTransfer)&&(e.preventDefault(),this._dragOver=!1,this.requestUpdate(),e.dataTransfer&&await this._loadFromDrop(e.dataTransfer))})}async _loadFromDrop(e){let t=[...e.files];if(t.some(e=>e.name===`document.xml`)){await this._appendFolderArchive(t);return}let n=t.filter(e=>this._isArchiveFile(e)||this._isMarkupFile(e));n.length&&await this._addFilesToCatalog(n,{replace:!1})}_wheelDir(e){if(e.deltaMode===1)return e.deltaY>0?1:e.deltaY<0?-1:0;if(e.deltaMode===2)return Math.sign(e.deltaY);let t=performance.now();if(t>this._wheelPixelGestureUntil&&(this._wheelPixelAccum=0),this._wheelPixelGestureUntil=t+ra,this._wheelPixelAccum+=e.deltaY,Math.abs(this._wheelPixelAccum)>=na){let e=this._wheelPixelAccum>0?1:-1;return this._wheelPixelAccum=0,e}return 0}_tryFlipPage(e){let t=this._docState;if(!e||!t)return!1;let n=performance.now();if(n-this._wheelLastFlipAt<ta)return!1;let r=t.currentPage;return this._goToPage(t.currentPage+e),t.currentPage!==r&&(this._wheelLastFlipAt=n,!0)}_onScrollPaneWheel(e,t){let n=this._docState;if(!n||n.markupOnly||n.pageCount<=1)return;let r=this._wheelDir(e);if(!r)return;let i=t.scrollTop<=0,a=t.scrollTop+t.clientHeight>=t.scrollHeight-1;!(r<0&&i)&&!(r>0&&a)||(e.preventDefault(),this._tryFlipPage(r)&&requestAnimationFrame(()=>{t.scrollTop=r>0?0:t.scrollHeight}))}_initPageWheelNav(){window.addEventListener(`pointermove`,this._onWindowPointerMove),window.addEventListener(`pointerup`,this._onWindowPointerUp),window.addEventListener(`pointercancel`,this._onWindowPointerUp),this.updateComplete.then(()=>{let e=this._pageViewPaneRef.value;e&&e.addEventListener(`wheel`,t=>{if(!this._docState?.hasPageView)return;let n=e.scrollPane??null;if(!n)return;if(n.scrollHeight>n.clientHeight||n.scrollWidth>n.clientWidth){this._onScrollPaneWheel(t,n);return}t.preventDefault();let r=this._wheelDir(t);r&&this._tryFlipPage(r)},{passive:!1});for(let e of[this._markupPaneRef,this._readingPaneRef]){let t=e.value;t&&t.addEventListener(`wheel`,e=>{let n=t.scrollPane??null;n&&this._onScrollPaneWheel(e,n)},{passive:!1})}})}_onHomeClick=e=>{e.preventDefault(),this._resetViewer()};_onLoadDemo=()=>{this._loadDemo()};_onOpenFiles=e=>{let t=e.detail.files.filter(e=>this._isArchiveFile(e)||this._isMarkupFile(e));t.length&&this._addFilesToCatalog(t,{replace:!0})};_onTogglePane=e=>{let{pane:t,checked:n}=e.detail;if(!this._docState){this._syncToolbarPaneCheckboxes();return}if(![...Q].filter(e=>e===t?n:this._userPaneVisible[e]&&this._isPaneAvailable(e)).length){this._syncToolbarPaneCheckboxes();return}this._setUserPaneVisible(t,n)};_onResetPaneLayout=()=>{this._docState&&this._resetPaneLayout()};_onFilePaneCloseAll=()=>{let e=this._fileCatalog.length;if(!e)return;let t=e===1?`Remove "${this._fileCatalog[0].label}" from the viewer?`:`Remove all ${e} open files from the viewer?`;confirm(t)&&this._resetViewer()};_onElementSelect=e=>{let t=e.detail.id,n=this._resolveSelectionElementId(t)??t;this._selectElement(n)};_onNavigateThread=e=>{let{elementId:t,direction:n}=e.detail;this._navigateThreadFragment(t,n)};_onClearSelection=()=>{this._clearSelection()};_onPageKeyNav=e=>{let{dir:t}=e.detail;this._docState&&this._goToPage(this._docState.currentPage+t)};_onZoomChange=()=>{this._pageViewPaneRef.value?.refreshLayout()};_onOverlayChange=e=>{let t=e.detail;if(t.readingOrderGlobal!==this._prevReadingOrderGlobal){this._prevReadingOrderGlobal=t.readingOrderGlobal;let e=this._docState;if(e){let t=this._markupPaneRef.value,n=this._readingPaneRef.value,r=this._pageViewPaneRef.value;t&&(t.document=e),n&&(n.document=e),r&&(r.document=e)}}};_onPanningChange=()=>{};_onGlobalKeydown=e=>{e.key===`Escape`&&(this._pageViewPaneRef.value?.closeSettings(),this._readingPaneRef.value?.setSettingsOpen(!1),this._toolbarOptionsOpen&&(this._toolbarOptionsOpen=!1,this._toolbarRef.value?.setOptionsOpen(!1)))}};j([Ge({type:String})],$.prototype,`example`,void 0),j([D()],$.prototype,`_loaded`,void 0),j([D()],$.prototype,`_markupOnly`,void 0),j([D()],$.prototype,`_hasPageView`,void 0),j([D()],$.prototype,`_dragOver`,void 0),j([D()],$.prototype,`_paneDragActive`,void 0),j([D()],$.prototype,`_demoLoading`,void 0),j([D()],$.prototype,`_docLabel`,void 0),j([D()],$.prototype,`_pageNum`,void 0),j([D()],$.prototype,`_pageCount`,void 0),j([D()],$.prototype,`_stacked`,void 0),j([D()],$.prototype,`_mainGridStyle`,void 0),j([D()],$.prototype,`_paneGridCols`,void 0),j([D()],$.prototype,`_paneGridRows`,void 0),j([D()],$.prototype,`_splitterCols`,void 0),j([D()],$.prototype,`_userPaneVisible`,void 0),$=j([E(`doclang-viewer`)],$)})();
+//# sourceMappingURL=viewer.js.map

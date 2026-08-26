@@ -1,0 +1,75 @@
+@import '../theme.css';
+
+:host {
+  display: contents;
+}
+
+/* The layer wraps the scrim + panel and is sized by the parent via position:absolute inset:0 */
+.settings-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+.settings-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  appearance: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--bg) 28%, transparent);
+  cursor: default;
+}
+.settings-panel {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  width: 13rem;
+  max-height: calc(100% - 1rem);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.settings-title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.settings-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-close:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+.settings-body {
+  padding: 0.75rem;
+  overflow: auto;
+}
