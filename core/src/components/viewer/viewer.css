@@ -136,26 +136,10 @@ header h1 {
 
 :host(.loaded) .main {
   display: grid;
-}
-
-:host(.loaded) .main.layout-stacked {
-  grid-template-columns: 1fr !important;
-}
-
-:host(.loaded) .main.layout-stacked .pane-splitter {
-  display: none !important;
-}
-
-:host(.loaded) .main.layout-stacked .pane {
-  border-right: none;
-  border-bottom: 1px solid var(--border);
-}
-
-:host(.loaded) .main:not(.layout-stacked) {
   grid-template-rows: minmax(0, 1fr);
 }
 
-:host(.loaded) .main:not(.layout-stacked) .pane {
+:host(.loaded) .main .pane {
   border-right: none;
 }
 
@@ -221,22 +205,23 @@ header h1 {
 }
 
 /* -----------------------------------------------------------------------
-   Page-nav visibility
-   ----------------------------------------------------------------------- */
-
-:host(:not(.loaded)) doclang-page-nav,
-:host(.markup-only) doclang-page-nav {
-  display: none !important;
-}
-
-/* -----------------------------------------------------------------------
    Responsive stacked layout
    ----------------------------------------------------------------------- */
 
 @media (max-width: 1200px) {
-  :host(.loaded) .main.layout-stacked .pane {
+  :host(.loaded) .main {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: unset;
+  }
+
+  :host(.loaded) .main .pane {
+    grid-column: 1 !important;
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+
+  :host(.loaded) .main .pane-splitter {
+    display: none !important;
   }
 }
 

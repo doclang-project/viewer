@@ -29,6 +29,16 @@ export class DoclangSettingsPanel extends LitElement {
   private _open = false;
   private _titleId = `settings-title-${Math.random().toString(36).slice(2)}`;
 
+  override connectedCallback(): void {
+    super.connectedCallback();
+    document.addEventListener('keydown', this._onDocKeydown);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    document.removeEventListener('keydown', this._onDocKeydown);
+  }
+
   override render() {
     if (!this._open) return nothing;
     return html`
@@ -82,6 +92,10 @@ export class DoclangSettingsPanel extends LitElement {
 
   private _onClose = (): void => {
     this.setOpen(false);
+  };
+
+  private _onDocKeydown = (e: KeyboardEvent): void => {
+    if (this._open && e.key === 'Escape') this.setOpen(false);
   };
 }
 

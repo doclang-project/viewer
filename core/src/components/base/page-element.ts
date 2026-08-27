@@ -16,24 +16,19 @@
  * Once a document is available, `_renderDocument()` is called.  Subclasses
  * must implement that method.  They may also override `_clearDocument()` to
  * reset their view when the document is removed.
- *
- * The `page` attribute / property controls which page is rendered.  Setting
- * `page="3"` in HTML or `component.page = 3` in JS both trigger a re-render.
  */
 
-import { LitElement } from 'lit';
+import { LitElement, PropertyValues } from 'lit';
+import { property } from 'lit/decorators.js';
 import { buildDocumentState } from '../../doclang/document';
 import { elementThreadId } from '../../doclang/dom';
 import type { DocumentState } from '../../doclang/types';
 
 export abstract class DoclangPageElement extends LitElement {
-  static override get observedAttributes(): string[] {
-    return [...super.observedAttributes, 'src', 'page', 'selected'];
-  }
+  @property({ type: Number, reflect: true }) declare page: number;
+  @property({ type: String, reflect: true }) declare selected: string | null;
 
   protected _docState: DocumentState | null = null;
-  protected _currentPage = 1;
-  protected _selectedId: string | null = null;
   protected _peerIds: Set<string> = new Set();
 
   // ---------------------------------------------------------------------------
@@ -45,57 +40,21 @@ export abstract class DoclangPageElement extends LitElement {
   }
 
   set document(state: DocumentState | null) {
+    const old = this._docState;
     this._docState = state;
-    this._currentPage = state ? state.currentPage : 1;
-    if (state) {
-      this._renderDocument();
-    } else {
+    // Manually notify Lit so updated() sees '_docState' in `changed`, even
+    // though _docState is not a @property/@state field.  This is the correct
+    // Lit pattern for a plain field that needs to participate in the update
+    // lifecycle without being exposed as a public reflected attribute.
+    this.requestUpdate('_docState', old);
+    if (!state) {
+      this.page = 1;
       this._clearDocument();
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Public selected property (also reflected as the `selected` attribute)
-  // ---------------------------------------------------------------------------
-
-  get selected(): string | null {
-    return this._selectedId;
-  }
-
-  set selected(id: string | null) {
-    if (id === this._selectedId) return;
-    this._selectedId = id;
-    this._peerIds = id ? this._computePeerIds(id) : new Set();
-    // Reflect to attribute so HTML stays in sync, without re-entering the setter.
-    if (id) {
-      this.setAttribute('selected', id);
-    } else {
-      this.removeAttribute('selected');
-    }
-    this._applySelection();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Public page property (also reflected as the `page` attribute)
-  // ---------------------------------------------------------------------------
-
-  get page(): number {
-    return this._currentPage;
-  }
-
-  set page(n: number) {
-    if (!this._docState) return;
-    const p = Math.min(Math.max(1, n), this._docState.pageCount);
-    if (p === this._currentPage) return;
-    this._currentPage = p;
-    this._docState.currentPage = p;
-    // Reflect to attribute so HTML stays in sync, without re-entering the setter.
-    this.setAttribute('page', String(p));
-    this._renderDocument();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle — src / page attributes and inline script
+  // Lit lifecycle
   // ---------------------------------------------------------------------------
 
   override connectedCallback(): void {
@@ -118,13 +77,24 @@ export abstract class DoclangPageElement extends LitElement {
     if (name === 'src' && next) {
       this._loadFromUrl(next);
     }
-    if (name === 'page' && next) {
-      const n = parseInt(next, 10);
-      if (!isNaN(n)) this.page = n;
+  }
+
+  override updated(changed: PropertyValues): void {
+    super.updated(changed);
+
+    if ((changed.has('page') || changed.has('_docState')) && this._docState) {
+      // Clamp page to valid range whenever page or the document changes.
+      const clamped = Math.min(Math.max(1, this.page), this._docState.pageCount);
+      if (clamped !== this.page) {
+        this.page = clamped;
+        return; // updated() will fire again with the clamped value
+      }
+      this._renderDocument();
     }
-    if (name === 'selected') {
-      // next is '' when the attribute is removed
-      this.selected = next || null;
+
+    if (changed.has('selected')) {
+      this._peerIds = this.selected ? this._computePeerIds(this.selected) : new Set();
+      this._applySelection();
     }
   }
 

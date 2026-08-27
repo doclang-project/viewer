@@ -4,6 +4,7 @@ import { html, nothing, render, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { DoclangPageElement } from '../base/page-element';
+import { PageController } from '../base/page-controller';
 import styles from './markup-pane.css?inline';
 import {
   assignElementIds,
@@ -111,6 +112,8 @@ function shouldWrapVirtualText(contentNodes: ChildNode[]): boolean {
 export class DoclangMarkupPane extends DoclangPageElement {
   static override styles = unsafeCSS(styles);
 
+  private _wheel = new PageController(this, () => this.scrollPane);
+
   // null = no document loaded yet; false = document loaded but no markup; true = has markup
   @state() private _hasMarkup: boolean | null = null;
   @state() private _markupTemplate: TemplateResult | TemplateResult[] | null = null;
@@ -135,11 +138,11 @@ export class DoclangMarkupPane extends DoclangPageElement {
     for (const el of this.shadowRoot.querySelectorAll('.markup-el.selected')) {
       el.classList.remove('selected');
     }
-    if (!this._selectedId) return;
+    if (!this.selected) return;
     const target =
       this.shadowRoot.querySelector(
-        `.markup-el-virtual-text[data-element-id="${this._selectedId}"]`
-      ) ?? this.shadowRoot.querySelector(`[data-element-id="${this._selectedId}"]`);
+        `.markup-el-virtual-text[data-element-id="${this.selected}"]`
+      ) ?? this.shadowRoot.querySelector(`[data-element-id="${this.selected}"]`);
     if (target) {
       target.classList.add('selected');
       target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -154,7 +157,7 @@ export class DoclangMarkupPane extends DoclangPageElement {
       return;
     }
 
-    const segment = state.segments[this._currentPage - 1] ?? [];
+    const segment = state.segments[this.page - 1] ?? [];
     const elementIds = assignElementIds(segment);
     state.elementIds = elementIds;
     state.idToElement = invertElementIds(elementIds);

@@ -1,12 +1,13 @@
 /** <doclang-reading-pane> — reading/rendered view with layers settings panel */
 
-import { html, nothing } from 'lit';
+import { html, nothing, type PropertyValues } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 import { ref, createRef } from 'lit/directives/ref.js';
 import type { Ref } from 'lit/directives/ref.js';
 import { DoclangPageElement } from '../base/page-element';
+import { PageController } from '../base/page-controller';
 import styles from './reading-pane.css?inline';
 import '../settings-panel/settings-panel';
 import type { DoclangSettingsPanel } from '../settings-panel/settings-panel';
@@ -1117,6 +1118,8 @@ export class DoclangReadingPane extends DoclangPageElement {
   @state() private _settingsOpen = false;
   @state() private _visible = false;
   // null = no document loaded yet; false = document loaded but no markup; true = has markup
+  private _pageController = new PageController(this, () => this.scrollPane);
+
   @state() private _hasMarkup: boolean | null = null;
   private _pendingContent: HTMLElement | null = null;
   private _settingsPanelRef: Ref<DoclangSettingsPanel> = createRef();
@@ -1199,7 +1202,8 @@ export class DoclangReadingPane extends DoclangPageElement {
     }
   };
 
-  override updated(): void {
+  override updated(changed: PropertyValues): void {
+    super.updated(changed);
     if (!this._pendingContent) return;
     const wrapper = this.shadowRoot?.querySelector(
       '.pane-body > div'
@@ -1221,19 +1225,13 @@ export class DoclangReadingPane extends DoclangPageElement {
     this.requestUpdate();
   }
 
-  setSettingsOpen(open: boolean): void {
-    this._settingsOpen = open;
-    this._settingsPanelRef.value?.setOpen(open);
-    this.requestUpdate();
-  }
-
   protected override _applySelection(): void {
     if (!this.shadowRoot) return;
     for (const el of this.shadowRoot.querySelectorAll('.rendered-el.selected')) {
       el.classList.remove('selected');
     }
-    if (!this._selectedId) return;
-    const renderedEl = this._findRenderedElement(this._selectedId, this._peerIds);
+    if (!this.selected) return;
+    const renderedEl = this._findRenderedElement(this.selected, this._peerIds);
     if (!renderedEl) return;
     this._revealContext(renderedEl);
     renderedEl.classList.add('selected');
@@ -1252,7 +1250,7 @@ export class DoclangReadingPane extends DoclangPageElement {
       return;
     }
 
-    const segment = state.segments[this._currentPage - 1] ?? [];
+    const segment = state.segments[this.page - 1] ?? [];
     // elementIds may already have been assigned by markup-pane; re-use if available
     const elementIds = state.elementIds.size
       ? state.elementIds

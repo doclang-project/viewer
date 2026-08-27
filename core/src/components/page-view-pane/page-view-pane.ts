@@ -7,6 +7,7 @@ import { ref, createRef } from 'lit/directives/ref.js';
 import type { Ref } from 'lit/directives/ref.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { DoclangPageElement } from '../base/page-element';
+import { PageController } from '../base/page-controller';
 import styles from './page-view-pane.css?inline';
 import '../settings-panel/settings-panel';
 import type { DoclangSettingsPanel } from '../settings-panel/settings-panel';
@@ -93,6 +94,8 @@ export class DoclangPageViewPane extends DoclangPageElement {
     showXrefLinks: false,
     showCaptionLinks: false,
   };
+
+  private _pageController = new PageController(this, () => this.scrollPane);
 
   // --- viewport mechanics state ---
   private _panDrag: PagePanDrag | null = null;
@@ -483,13 +486,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
     this._layoutCache = null;
     this.requestUpdate();
     this._resetScroll();
-    this.dispatchEvent(
-      new CustomEvent('doclang-zoom-change', {
-        bubbles: true,
-        composed: true,
-        detail: { pct: this._zoomPct },
-      })
-    );
+    this.refreshLayout();
   }
 
   // ---------------------------------------------------------------------------
@@ -498,10 +495,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
 
   toggleSettings(): void {
     this._applySettingsOpen(!this._settingsOpen);
-  }
-
-  closeSettings(): void {
-    this._applySettingsOpen(false);
   }
 
   private _applySettingsOpen(open: boolean): void {
@@ -520,9 +513,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
     for (const el of body.querySelectorAll('.bbox.selected, .overlay-badge.selected')) {
       el.classList.remove('selected');
     }
-    if (this._selectedId && this._docState?.hasPageView) {
+    if (this.selected && this._docState?.hasPageView) {
       for (const el of body.querySelectorAll(
-        `[data-element-id="${this._selectedId}"]`
+        `[data-element-id="${this.selected}"]`
       )) {
         el.classList.add('selected');
       }
@@ -546,12 +539,12 @@ export class DoclangPageViewPane extends DoclangPageElement {
     const state = this._docState;
     body.innerHTML = '';
     this._layoutCache = null;
-    this._selectedId = null;
+    this.selected = null;
     this._peerIds = new Set();
 
     if (!state?.hasPageView) return;
 
-    const imageUrl = state.pageImages.get(this._currentPage);
+    const imageUrl = state.pageImages.get(this.page);
     if (!imageUrl) {
       body.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
       return;
@@ -562,9 +555,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
     const wrap = document.createElement('div');
     wrap.className = 'page-view';
     const img = document.createElement('img');
-    img.alt = `Page ${this._currentPage}`;
+    img.alt = `Page ${this.page}`;
 
-    const pageNum = this._currentPage;
+    const pageNum = this.page;
     const onImageReady = (): void => {
       if (img.dataset.layoutGeneration === String(pageNum)) return;
       img.dataset.layoutGeneration = String(pageNum);
@@ -689,7 +682,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       setLayoutCache: c => {
         this._layoutCache = c;
       },
-      selectedId: this._selectedId,
+      selectedId: this.selected,
     };
   }
 
@@ -738,7 +731,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       showReadingOrder,
       readingOrderArrows,
     } = this._opts;
-    const selectedId = this._selectedId;
+    const selectedId = this.selected;
     const peerIds = this._peerIds;
 
     for (const el of body.querySelectorAll('.bbox')) {
@@ -890,13 +883,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
     );
     this._layoutCache = null;
     this.requestUpdate();
-    this.dispatchEvent(
-      new CustomEvent('doclang-zoom-change', {
-        bubbles: true,
-        composed: true,
-        detail: { pct: this._zoomPct },
-      })
-    );
+    this.refreshLayout();
   };
 
   // ---------------------------------------------------------------------------
@@ -967,37 +954,11 @@ export class DoclangPageViewPane extends DoclangPageElement {
     body.addEventListener('pointerup', (e: PointerEvent) => endPan(e));
     body.addEventListener('pointercancel', (e: PointerEvent) => endPan(e));
 
-    // Keyboard page navigation
+    // Navigation
     body.setAttribute('role', 'region');
     body.setAttribute('aria-label', 'Original page');
     body.addEventListener('pointerdown', () => {
       if (this._docState?.hasPageView) body.focus({ preventScroll: true });
-    });
-    body.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (!this._docState?.hasPageView) return;
-      let dir = 0;
-      switch (e.key) {
-        case 'ArrowDown':
-        case 'PageDown':
-        case 'ArrowRight':
-          dir = 1;
-          break;
-        case 'ArrowUp':
-        case 'PageUp':
-        case 'ArrowLeft':
-          dir = -1;
-          break;
-      }
-      if (dir) {
-        e.preventDefault();
-        this.dispatchEvent(
-          new CustomEvent('doclang-page-key-nav', {
-            bubbles: true,
-            composed: true,
-            detail: { dir },
-          })
-        );
-      }
     });
   }
 

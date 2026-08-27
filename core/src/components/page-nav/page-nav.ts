@@ -1,23 +1,24 @@
 /** <doclang-page-nav> — page navigation (prev/next buttons + page indicator) */
 
-import { LitElement, html, nothing } from 'lit';
+import { html, PropertyValues } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { ref, createRef } from 'lit/directives/ref.js';
 import type { Ref } from 'lit/directives/ref.js';
 import styles from './page-nav.css?inline';
+import { DoclangPageElement } from '../base/page-element';
 
 @customElement('doclang-page-nav')
-export class DoclangPageNav extends LitElement {
+export class DoclangPageNav extends DoclangPageElement {
   static override styles = unsafeCSS(styles);
 
-  private _currentPage = 1;
-  private _pageCount = 1;
-  private _visible = false;
   private _inputRef: Ref<HTMLInputElement> = createRef();
 
+  private get _pageCount(): number {
+    return this._docState?.pageCount ?? 1;
+  }
+
   override render() {
-    if (!this._visible) return nothing;
     const digits = Math.max(1, String(this._pageCount).length);
     return html`
       <nav id="page-nav" aria-label="Page navigation">
@@ -27,11 +28,8 @@ export class DoclangPageNav extends LitElement {
             class="page-nav-btn btn-prev"
             aria-label="Previous page"
             title="Previous page"
-            ?disabled=${this._currentPage <= 1}
-            @click=${() =>
-              this.dispatchEvent(
-                new CustomEvent('doclang-prev-page', { bubbles: true, composed: true })
-              )}
+            ?disabled=${this.page <= 1}
+            @click=${this._onPrev}
           >
             <svg
               class="page-nav-chevron"
@@ -55,11 +53,8 @@ export class DoclangPageNav extends LitElement {
             class="page-nav-btn btn-next"
             aria-label="Next page"
             title="Next page"
-            ?disabled=${this._currentPage >= this._pageCount}
-            @click=${() =>
-              this.dispatchEvent(
-                new CustomEvent('doclang-next-page', { bubbles: true, composed: true })
-              )}
+            ?disabled=${this.page >= this._pageCount}
+            @click=${this._onNext}
           >
             <svg
               class="page-nav-chevron"
@@ -86,7 +81,7 @@ export class DoclangPageNav extends LitElement {
             type="text"
             inputmode="numeric"
             class="page-number-input"
-            .value=${String(this._currentPage)}
+            .value=${String(this.page)}
             style="--doclang-page-num-digits:${digits}"
             aria-label="Page number"
             @keydown=${this._onInputKeydown}
@@ -99,16 +94,24 @@ export class DoclangPageNav extends LitElement {
     `;
   }
 
-  setVisible(visible: boolean): void {
-    this._visible = visible;
-    this.requestUpdate();
+  override updated(changed: PropertyValues): void {
+    super.updated(changed);
+    // Keep the text input in sync whenever the page property changes from
+    // outside (e.g. a `.page=${n}` binding on the parent template).
+    if (changed.has('page')) {
+      this._resetInput();
+    }
   }
 
-  setIndicator(pageNum: number, pageCount: number): void {
-    this._currentPage = pageNum;
-    this._pageCount = pageCount;
-    this.requestUpdate();
-  }
+  protected override _renderDocument(): void { /* _docState is @state; re-render is automatic */ }
+  protected override _clearDocument(): void { /* _docState is @state; re-render is automatic */ }
+
+  // ---------------------------------------------------------------------------
+  // Private event handlers
+  // ---------------------------------------------------------------------------
+
+  private _onPrev = (): void => this._emitViewPage(this.page - 1);
+  private _onNext = (): void => this._emitViewPage(this.page + 1);
 
   private _onInputKeydown = (e: KeyboardEvent): void => {
     if (e.key === 'Enter') {
@@ -126,7 +129,7 @@ export class DoclangPageNav extends LitElement {
 
   private _resetInput(): void {
     const input = this._inputRef.value;
-    if (input) input.value = String(this._currentPage);
+    if (input) input.value = String(this.page);
   }
 
   private _commitInput(): void {
@@ -137,9 +140,12 @@ export class DoclangPageNav extends LitElement {
       this._resetInput();
       return;
     }
-    const page = Math.min(Math.max(1, n), this._pageCount);
+    this._emitViewPage(Math.min(Math.max(1, n), this._docState?.pageCount ?? 1));
+  }
+
+  private _emitViewPage(page: number): void {
     this.dispatchEvent(
-      new CustomEvent('doclang-go-to-page', {
+      new CustomEvent('view-page', {
         bubbles: true,
         composed: true,
         detail: { page },

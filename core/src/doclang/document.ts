@@ -618,7 +618,6 @@ export function buildDocumentState(
   return {
     pageImages,
     assetUrls,
-    currentPage: 1,
     pageCount,
     segments,
     defaultResolution,

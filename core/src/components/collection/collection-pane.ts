@@ -1,32 +1,22 @@
-/** <doclang-file-pane> — file list sidebar */
+/** <doclang-collection-pane> — file list sidebar */
 
 import { LitElement, html, nothing } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
-import styles from './file-pane.css?inline';
+import styles from './collection-pane.css?inline';
+import type { CollectionEntry } from './collection';
 
 const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 
-export interface FileEntry {
-  label: string;
-  thumbnailUrl: string | null;
-  isActive: boolean;
-}
-
-@customElement('doclang-file-pane')
-export class DoclangFilePane extends LitElement {
+@customElement('doclang-collection-pane')
+export class DoclangCollectionPane extends LitElement {
   static override styles = unsafeCSS(styles);
 
-  private _entries: FileEntry[] = [];
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    this.classList.add('pane', 'pane-file');
-  }
+  @property({ attribute: false }) declare entries: CollectionEntry[];
 
   override render() {
-    const hasEntries = this._entries.length > 0;
+    const hasEntries = (this.entries?.length ?? 0) > 0;
     const closeAllBtn = hasEntries
       ? html`<button
           type="button"
@@ -40,7 +30,7 @@ export class DoclangFilePane extends LitElement {
     const list = hasEntries
       ? html`
           <ul class="file-view-list" role="listbox" aria-label="Open files">
-            ${repeat(this._entries, (_, i) => i, this._renderEntry)}
+            ${repeat(this.entries ?? [], (_, i) => i, this._renderEntry)}
           </ul>
         `
       : nothing;
@@ -53,31 +43,26 @@ export class DoclangFilePane extends LitElement {
     `;
   }
 
-  renderFiles(entries: FileEntry[]): void {
-    this._entries = entries;
-    this.requestUpdate();
-  }
-
   private _onCloseAll = (): void => {
     this.dispatchEvent(
-      new CustomEvent('doclang-file-pane-close-all', { bubbles: true, composed: true })
+      new CustomEvent('doclang-collection-close-all', { bubbles: true, composed: true })
     );
   };
 
-  private _renderEntry = (entry: FileEntry, index: number) => {
+  private _renderEntry = (entry: CollectionEntry, index: number) => {
     const onCardClick = (e: Event): void => {
       if ((e.target as Element).closest('.file-view-close')) return;
-      this._emitFileSelect(index);
+      this._emitSelect(index);
     };
     const onCardKeydown = (e: KeyboardEvent): void => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        this._emitFileSelect(index);
+        this._emitSelect(index);
       }
     };
     const onCloseClick = (e: Event): void => {
       e.stopPropagation();
-      this._emitFileClose(index);
+      this._emitClose(index);
     };
     const thumb = entry.thumbnailUrl
       ? html`<img src=${entry.thumbnailUrl} alt="" />`
@@ -113,9 +98,9 @@ export class DoclangFilePane extends LitElement {
     `;
   };
 
-  private _emitFileSelect(index: number): void {
+  private _emitSelect(index: number): void {
     this.dispatchEvent(
-      new CustomEvent('doclang-file-select', {
+      new CustomEvent('doclang-collection-select', {
         bubbles: true,
         composed: true,
         detail: { index },
@@ -123,9 +108,9 @@ export class DoclangFilePane extends LitElement {
     );
   }
 
-  private _emitFileClose(index: number): void {
+  private _emitClose(index: number): void {
     this.dispatchEvent(
-      new CustomEvent('doclang-file-close', {
+      new CustomEvent('doclang-collection-close', {
         bubbles: true,
         composed: true,
         detail: { index },

@@ -65,7 +65,6 @@ export interface ThreadNav {
 export interface DocumentState {
   pageImages: Map<number, string>;
   assetUrls: Map<string, string>;
-  currentPage: number;
   pageCount: number;
   segments: Element[][];
   defaultResolution: Resolution;

@@ -55,11 +55,13 @@ export class DoclangDropdown extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     document.addEventListener('click', this._onDocClick);
+    document.addEventListener('keydown', this._onDocKeydown);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener('click', this._onDocClick);
+    document.removeEventListener('keydown', this._onDocKeydown);
   }
 
   private _onBtnClick = (e: Event): void => {
@@ -71,6 +73,10 @@ export class DoclangDropdown extends LitElement {
     if (!this._open) return;
     if (e.composedPath().includes(this as unknown as EventTarget)) return;
     this.setOpen(false);
+  };
+
+  private _onDocKeydown = (e: KeyboardEvent): void => {
+    if (this._open && e.key === 'Escape') this.setOpen(false);
   };
 }
 

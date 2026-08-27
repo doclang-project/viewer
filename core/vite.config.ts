@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import path from 'path';
 
 export default defineConfig({
+  esbuild: {
+    useDefineForClassFields: false,
+  },
   build: {
     lib: {
       entry: path.resolve(import.meta.dirname, 'src/main.ts'),

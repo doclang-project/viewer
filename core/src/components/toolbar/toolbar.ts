@@ -176,10 +176,6 @@ export class DoclangToolbar extends LitElement {
     this.requestUpdate();
   }
 
-  setOptionsOpen(open: boolean): void {
-    this._dropdownRef.value?.setOpen(open);
-  }
-
   private _emitTogglePane(pane: string, checked: boolean): void {
     this.dispatchEvent(
       new CustomEvent('doclang-toggle-pane', {
