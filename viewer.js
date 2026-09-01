@@ -316,11 +316,25 @@ const PAGE_ZOOM_DEFAULT = 100;
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
+const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
 const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
 const LAYOUT_STACK_BREAKPOINT_PX = 1200;
+
+const ARROW_STYLE_STORAGE_KEY = "doclang-viewer-arrow-styles";
+/** Arrow-based overlay layers and the plumbing that maps each to its CSS + SVG marker. */
+const ARROW_LAYERS = {
+  readingOrder: { cssKey: "reading-order", colorVar: "--overlay-reading-order", markerId: "reading-order-arrowhead", defaultStyle: "dashed" },
+  fragment: { cssKey: "fragment", colorVar: "--overlay-fragment", markerId: "fragment-arrowhead", defaultStyle: "dashed" },
+  xref: { cssKey: "xref", colorVar: "--kind-footnote", markerId: "xref-arrowhead", defaultStyle: "solid" },
+  caption: { cssKey: "caption", colorVar: "--kind-caption", markerId: "caption-arrowhead", defaultStyle: "solid" },
+};
+const ARROW_STYLE_FIELD_DEFAULTS = { width: 1.5, head: 5 };
+const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
+/** @type {Record<string, { color?: string, width?: number, head?: number, style?: string }>} */
+let arrowStyles = loadArrowStyles();
 
 /** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
 let state = null;
@@ -343,6 +357,19 @@ let showReadingOrderArrows = true;
 let readingOrderGlobalNumbering = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
+/** Overlays-panel toggles that are persisted to the browser. Closures read/write the flags above. */
+const OVERLAY_PREF_ACCESSORS = {
+  showAllBboxes: { get: () => showAllBboxes, set: (v) => { showAllBboxes = v; }, el: () => els.showAllBboxes, def: true },
+  showLayoutBadges: { get: () => showLayoutBadges, set: (v) => { showLayoutBadges = v; }, el: () => els.showLayoutBadges, def: true },
+  showReadingOrder: { get: () => showReadingOrder, set: (v) => { showReadingOrder = v; }, el: () => els.showReadingOrder, def: false },
+  showReadingOrderArrows: { get: () => showReadingOrderArrows, set: (v) => { showReadingOrderArrows = v; }, el: () => els.readingOrderArrows, def: true },
+  readingOrderGlobalNumbering: { get: () => readingOrderGlobalNumbering, set: (v) => { readingOrderGlobalNumbering = v; }, el: () => els.readingOrderGlobal, def: false },
+  showPictureContents: { get: () => showPictureContents, set: (v) => { showPictureContents = v; }, el: () => els.showPictureContents, def: false },
+  showTableContents: { get: () => showTableContents, set: (v) => { showTableContents = v; }, el: () => els.showTableContents, def: false },
+  showFragmentLinks: { get: () => showFragmentLinks, set: (v) => { showFragmentLinks = v; }, el: () => els.showFragmentLinks, def: false },
+  showXrefLinks: { get: () => showXrefLinks, set: (v) => { showXrefLinks = v; }, el: () => els.showXrefLinks, def: false },
+  showCaptionLinks: { get: () => showCaptionLinks, set: (v) => { showCaptionLinks = v; }, el: () => els.showCaptionLinks, def: false },
+};
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
@@ -433,6 +460,8 @@ const els = {
   toggleReadingPane: document.getElementById("toggle-reading-pane"),
   togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
+  pageSettingsPanel: document.getElementById("page-settings"),
+  overlaysReset: document.getElementById("btn-overlays-reset"),
 };
 
 document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
@@ -535,8 +564,14 @@ els.showReadingBackground?.addEventListener("change", () => {
   showReadingBackground = els.showReadingBackground.checked;
   syncReadingLayerVisibility();
 });
+els.pageSettingsPanel?.addEventListener("change", (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.type === "checkbox") persistOverlayPrefs();
+});
 loadLayoutPrefs();
+loadOverlayPrefs();
+syncOverlayPrefControls();
 normalizePaneRatios();
+initArrowStyleControls();
 initToolbarOptions();
 initPaneSplitters();
 initLayoutStackListener();
@@ -1752,6 +1787,8 @@ function syncLayoutSubtoggles() {
     const input = label.querySelector("input");
     if (input) input.disabled = !readingOrderEnabled;
   }
+
+  collapseDisabledArrowFields();
 }
 
 function paneDef(key) {
@@ -1860,6 +1897,47 @@ function saveLayoutPrefs() {
   } catch {
     /* ignore quota / private mode */
   }
+}
+
+function loadOverlayPrefs() {
+  try {
+    const raw = localStorage.getItem(OVERLAY_PREFS_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object") return;
+    for (const [key, acc] of Object.entries(OVERLAY_PREF_ACCESSORS)) {
+      if (typeof data[key] === "boolean") acc.set(data[key]);
+    }
+  } catch {
+    /* ignore invalid stored overlay prefs */
+  }
+}
+
+function persistOverlayPrefs() {
+  try {
+    const data = {};
+    for (const [key, acc] of Object.entries(OVERLAY_PREF_ACCESSORS)) data[key] = acc.get();
+    localStorage.setItem(OVERLAY_PREFS_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+/** Push restored overlay-pref flags onto their checkboxes so the panel matches. */
+function syncOverlayPrefControls() {
+  for (const acc of Object.values(OVERLAY_PREF_ACCESSORS)) {
+    const el = acc.el();
+    if (el) el.checked = acc.get();
+  }
+}
+
+/** Restore every overlay toggle to its built-in default, then persist and re-render. */
+function resetOverlayPrefs() {
+  for (const acc of Object.values(OVERLAY_PREF_ACCESSORS)) acc.set(acc.def);
+  syncOverlayPrefControls();
+  persistOverlayPrefs();
+  syncLayoutSubtoggles();
+  if (state) renderPage(state.currentPage);
 }
 
 function resetPaneLayout() {
@@ -3466,21 +3544,229 @@ function boxCenter(rect) {
   return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
 }
 
-function ensureArrowMarker(defs, markerId) {
-  if (defs.querySelector(`#${markerId}`)) return;
+function ensureArrowMarker(defs, markerId, opts = {}) {
+  const size = opts.size ?? ARROW_STYLE_FIELD_DEFAULTS.head;
+  const color = opts.color || "currentColor";
+  defs.querySelector(`#${markerId}`)?.remove();
   const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
   marker.setAttribute("id", markerId);
   marker.setAttribute("viewBox", "0 0 6 6");
   marker.setAttribute("refX", "6");
   marker.setAttribute("refY", "3");
-  marker.setAttribute("markerWidth", "5");
-  marker.setAttribute("markerHeight", "5");
+  marker.setAttribute("markerWidth", String(size));
+  marker.setAttribute("markerHeight", String(size));
   marker.setAttribute("orient", "auto");
   const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
   arrowPath.setAttribute("d", "M0,0 L6,3 L0,6 Z");
-  arrowPath.setAttribute("fill", "currentColor");
+  arrowPath.setAttribute("fill", color);
   marker.appendChild(arrowPath);
   defs.appendChild(marker);
+}
+
+/** @returns {{ color?: string, width: number, head: number, style: string }} */
+function getArrowStyle(layerKey) {
+  const meta = ARROW_LAYERS[layerKey];
+  const stored = arrowStyles[layerKey] ?? {};
+  return {
+    color: stored.color,
+    width: stored.width ?? ARROW_STYLE_FIELD_DEFAULTS.width,
+    head: stored.head ?? ARROW_STYLE_FIELD_DEFAULTS.head,
+    style: stored.style ?? meta.defaultStyle,
+  };
+}
+
+/** Resolve an arrow colour to a concrete value, falling back to the theme CSS variable. */
+function resolveArrowColor(layerKey) {
+  const stored = arrowStyles[layerKey]?.color;
+  if (stored) return stored;
+  const meta = ARROW_LAYERS[layerKey];
+  const themed = getComputedStyle(document.documentElement)
+    .getPropertyValue(meta.colorVar)
+    .trim();
+  return themed || "currentColor";
+}
+
+/** @returns {{ size: number, color: string }} marker attributes for a layer. */
+function arrowMarkerOptions(layerKey) {
+  return { size: getArrowStyle(layerKey).head, color: resolveArrowColor(layerKey) };
+}
+
+function loadArrowStyles() {
+  try {
+    const raw = localStorage.getItem(ARROW_STYLE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistArrowStyles() {
+  try {
+    localStorage.setItem(ARROW_STYLE_STORAGE_KEY, JSON.stringify(arrowStyles));
+  } catch {
+    /* storage unavailable — keep in-memory only */
+  }
+}
+
+/** Push the current arrow-style overrides onto the document as CSS custom properties. */
+function applyArrowStyleVars() {
+  const root = document.documentElement.style;
+  for (const [layerKey, meta] of Object.entries(ARROW_LAYERS)) {
+    const stored = arrowStyles[layerKey] ?? {};
+    const prefix = `--arrow-${meta.cssKey}`;
+    setCssVar(root, `${prefix}-color`, stored.color);
+    setCssVar(root, `${prefix}-width`, stored.width != null ? String(stored.width) : null);
+    if (stored.style != null) {
+      root.setProperty(`${prefix}-dash`, ARROW_DASH_VALUES[stored.style] ?? "none");
+      root.setProperty(`${prefix}-cap`, stored.style === "dotted" ? "round" : "butt");
+    } else {
+      root.removeProperty(`${prefix}-dash`);
+      root.removeProperty(`${prefix}-cap`);
+    }
+  }
+}
+
+function setCssVar(styleDecl, name, value) {
+  if (value == null || value === "") styleDecl.removeProperty(name);
+  else styleDecl.setProperty(name, value);
+}
+
+/** Rebuild the arrowhead markers of the live overlay so head size / colour changes take effect. */
+function refreshArrowMarkers() {
+  const svg = els.pagePane?.querySelector("svg.overlay");
+  const defs = svg?.querySelector("defs");
+  if (!defs) return;
+  for (const [layerKey, meta] of Object.entries(ARROW_LAYERS)) {
+    if (defs.querySelector(`#${meta.markerId}`)) {
+      ensureArrowMarker(defs, meta.markerId, arrowMarkerOptions(layerKey));
+    }
+  }
+}
+
+function initArrowStyleControls() {
+  applyArrowStyleVars();
+  const panel = els.pageSettingsPanel;
+  if (!panel) return;
+  enhanceArrowRangeInputs();
+  populateArrowStyleControls();
+  panel.addEventListener("input", onArrowStyleInput);
+  panel.addEventListener("change", onArrowStyleInput);
+  panel.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-arrow-style-toggle]");
+    if (btn) toggleArrowStyleFields(btn.dataset.arrowStyleToggle);
+  });
+  els.overlaysReset?.addEventListener("click", resetAllOverlaySettings);
+}
+
+/** "Reset all": overlay selection back to defaults + arrow styling back to theme defaults. */
+function resetAllOverlaySettings() {
+  arrowStyles = {};
+  persistArrowStyles();
+  populateArrowStyleControls();
+  applyArrowStyleVars();
+  refreshArrowMarkers();
+  for (const key of Object.keys(ARROW_LAYERS)) toggleArrowStyleFields(key, false);
+  resetOverlayPrefs();
+}
+
+/** Expand/collapse one arrow layer's inline style controls. */
+function toggleArrowStyleFields(layerKey, force) {
+  if (!ARROW_LAYERS[layerKey]) return;
+  const panel = els.pageSettingsPanel;
+  const btn = panel?.querySelector(`[data-arrow-style-toggle="${layerKey}"]`);
+  const fields = document.getElementById(`arrow-fields-${layerKey}`);
+  if (!btn || !fields) return;
+  const expand = force ?? fields.hidden;
+  fields.hidden = !expand;
+  btn.setAttribute("aria-expanded", String(expand));
+}
+
+/** Collapse style controls for any arrow layer whose row is currently disabled. */
+function collapseDisabledArrowFields() {
+  const panel = els.pageSettingsPanel;
+  if (!panel) return;
+  for (const btn of panel.querySelectorAll("[data-arrow-style-toggle]")) {
+    const row = btn.closest(".arrow-layer-row");
+    if (row?.querySelector(".settings-option-disabled")) {
+      toggleArrowStyleFields(btn.dataset.arrowStyleToggle, false);
+    }
+  }
+}
+
+/** Give each thickness/arrowhead range slider a live numeric readout beside it. */
+function enhanceArrowRangeInputs() {
+  const ranges = els.pageSettingsPanel?.querySelectorAll('input[type="range"][data-arrow-layer]');
+  if (!ranges) return;
+  for (const input of ranges) {
+    if (input.parentElement?.classList.contains("arrow-field-control")) continue;
+    const wrap = document.createElement("span");
+    wrap.className = "arrow-field-control";
+    input.replaceWith(wrap);
+    wrap.append(input);
+    const out = document.createElement("output");
+    out.className = "arrow-field-value";
+    out.setAttribute("aria-hidden", "true");
+    wrap.append(out);
+  }
+}
+
+function updateArrowRangeReadout(input) {
+  const out = input.parentElement?.querySelector("output.arrow-field-value");
+  if (out) out.textContent = input.value;
+  input.title = input.value;
+}
+
+function populateArrowStyleControls() {
+  const inputs = els.pageSettingsPanel?.querySelectorAll("[data-arrow-layer]");
+  if (!inputs) return;
+  for (const input of inputs) {
+    const layerKey = input.dataset.arrowLayer;
+    const field = input.dataset.arrowField;
+    if (!ARROW_LAYERS[layerKey]) continue;
+    if (field === "color") input.value = toHexColor(resolveArrowColor(layerKey));
+    else if (field === "style") input.value = getArrowStyle(layerKey).style;
+    else {
+      input.value = String(getArrowStyle(layerKey)[field]);
+      updateArrowRangeReadout(input);
+    }
+  }
+}
+
+function onArrowStyleInput(e) {
+  const input = e.target.closest("[data-arrow-layer]");
+  if (!input) return;
+  const layerKey = input.dataset.arrowLayer;
+  const field = input.dataset.arrowField;
+  if (!ARROW_LAYERS[layerKey]) return;
+
+  const bucket = arrowStyles[layerKey] ?? (arrowStyles[layerKey] = {});
+  if (field === "color") bucket.color = input.value;
+  else if (field === "style") bucket.style = input.value;
+  else {
+    bucket[field] = Number(input.value);
+    updateArrowRangeReadout(input);
+  }
+
+  persistArrowStyles();
+  applyArrowStyleVars();
+  refreshArrowMarkers();
+}
+
+/** Best-effort conversion of a CSS colour to `#rrggbb` for a native colour input. */
+function toHexColor(value) {
+  const v = (value || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${v.slice(1).split("").map((c) => c + c).join("").toLowerCase()}`;
+  }
+  const m = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  if (m) {
+    const hex = m.slice(1, 4).map((n) => Math.max(0, Math.min(255, Math.round(parseFloat(n)))).toString(16).padStart(2, "0")).join("");
+    return `#${hex}`;
+  }
+  return "#000000";
 }
 
 function alignDashedLineToEnd(line, start, end) {
@@ -3522,11 +3808,11 @@ function ensureOverlayDefs(svg) {
   return defs;
 }
 
-function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, toIdAttr }) {
+function appendOverlayLinks(svg, img, links, { markerId, markerLayer, linkClass, fromIdAttr, toIdAttr }) {
   if (!links.length) return;
 
   const defs = ensureOverlayDefs(svg);
-  ensureArrowMarker(defs, markerId);
+  ensureArrowMarker(defs, markerId, arrowMarkerOptions(markerLayer));
 
   for (const link of links) {
     const from = boxPixelRect(link.fromBox ?? link.captionBox, img);
@@ -3550,6 +3836,7 @@ function appendOverlayLinks(svg, img, links, { markerId, linkClass, fromIdAttr, 
 function appendCaptionLinks(svg, img, captionLinks) {
   appendOverlayLinks(svg, img, captionLinks, {
     markerId: "caption-arrowhead",
+    markerLayer: "caption",
     linkClass: "caption-link",
     fromIdAttr: "data-caption-id",
     toIdAttr: "data-host-id",
@@ -3559,6 +3846,7 @@ function appendCaptionLinks(svg, img, captionLinks) {
 function appendXrefLinks(svg, img, xrefLinks) {
   appendOverlayLinks(svg, img, xrefLinks, {
     markerId: "xref-arrowhead",
+    markerLayer: "xref",
     linkClass: "xref-link",
     fromIdAttr: "data-xref-from-id",
     toIdAttr: "data-xref-to-id",
@@ -3618,7 +3906,7 @@ function appendFragmentLinks(svg, img, links, defaultResolution) {
   if (!links.length) return;
 
   const defs = ensureOverlayDefs(svg);
-  ensureArrowMarker(defs, "fragment-arrowhead");
+  ensureArrowMarker(defs, "fragment-arrowhead", arrowMarkerOptions("fragment"));
   const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
 
   for (const link of links) {
@@ -3742,7 +4030,7 @@ function appendReadingOrderOverlay(svg, img, steps) {
 
   if (steps.length >= 2) {
     const defs = ensureOverlayDefs(svg);
-    ensureArrowMarker(defs, "reading-order-arrowhead");
+    ensureArrowMarker(defs, "reading-order-arrowhead", arrowMarkerOptions("readingOrder"));
 
     for (let i = 0; i < steps.length - 1; i += 1) {
       const from = boxPixelRect(steps[i].box, img);
