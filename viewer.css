@@ -942,6 +942,165 @@ label.file-btn input {
   cursor: pointer;
 }
 
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.75rem 0;
+}
+
+/* Arrow layer row: visibility checkbox on the left, style-disclosure button on the right.
+   Kept the same height as a plain option row so the list rhythm stays even. */
+.arrow-layer-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.375rem;
+}
+
+.arrow-layer-row .settings-option {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.arrow-layer-row .settings-option span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arrow-style-btn {
+  flex: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 0.9rem;
+  margin: 0.1rem 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.arrow-style-btn::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 0.3rem solid currentColor;
+  border-top: 0.3rem solid transparent;
+  border-bottom: 0.3rem solid transparent;
+  transition: transform 0.12s ease;
+}
+
+.arrow-style-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.arrow-style-btn[aria-expanded="true"] {
+  color: var(--text);
+}
+
+.arrow-style-btn[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.arrow-layer-row:has(.settings-option-disabled) .arrow-style-btn {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.arrow-style-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.35rem 0 0.55rem 1.6rem;
+}
+
+/* Reading-order fields already inherit the sub-group's deeper indent. */
+.settings-reading-order-group .arrow-style-fields {
+  padding-left: 0.4rem;
+}
+
+.arrow-style-fields[hidden] {
+  display: none;
+}
+
+.arrow-style-fields label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: default;
+}
+
+/* range slider + its live numeric readout, right-aligned as one control cluster */
+.arrow-field-control {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.arrow-field-value {
+  flex: none;
+  min-width: 1.5rem;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.arrow-style-fields input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 3.5rem;
+  cursor: pointer;
+}
+
+.arrow-style-fields input[type="color"] {
+  width: 2.25rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: none;
+  cursor: pointer;
+}
+
+.arrow-style-fields select {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.25rem;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.overlays-reset {
+  margin-top: 0.6rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+
+.overlays-reset:hover {
+  background: var(--bg);
+}
+
 main.split {
   display: none;
   flex: 1 1 0;
@@ -1522,9 +1681,11 @@ pre.markup {
 .overlay .bbox-caption { fill: color-mix(in srgb, var(--kind-caption) 14%, transparent); stroke: var(--kind-caption); }
 
 .overlay line.caption-link {
-  color: var(--kind-caption);
+  color: var(--arrow-caption-color, var(--kind-caption));
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: var(--arrow-caption-width, 1.5);
+  stroke-dasharray: var(--arrow-caption-dash, none);
+  stroke-linecap: var(--arrow-caption-cap, butt);
   vector-effect: non-scaling-stroke;
   pointer-events: none;
   fill: none;
@@ -1535,9 +1696,11 @@ pre.markup {
 }
 
 .overlay line.xref-link {
-  color: var(--kind-footnote);
+  color: var(--arrow-xref-color, var(--kind-footnote));
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: var(--arrow-xref-width, 1.5);
+  stroke-dasharray: var(--arrow-xref-dash, none);
+  stroke-linecap: var(--arrow-xref-cap, butt);
   vector-effect: non-scaling-stroke;
   pointer-events: none;
   fill: none;
@@ -1556,15 +1719,16 @@ pre.markup {
 }
 
 .overlay .fragment-link-path {
-  color: var(--overlay-fragment);
+  color: var(--arrow-fragment-color, var(--overlay-fragment));
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: var(--arrow-fragment-width, 1.5);
+  stroke-linecap: var(--arrow-fragment-cap, butt);
   vector-effect: non-scaling-stroke;
 }
 
 .overlay .fragment-link-path-dashed {
-  stroke-dasharray: 6 4;
+  stroke-dasharray: var(--arrow-fragment-dash, 6 4);
 }
 
 .overlay .fragment-nav {
@@ -1619,10 +1783,11 @@ pre.markup {
 }
 
 .overlay .reading-order-step {
-  color: var(--overlay-reading-order);
+  color: var(--arrow-reading-order-color, var(--overlay-reading-order));
   stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-dasharray: 5 4;
+  stroke-width: var(--arrow-reading-order-width, 1.5);
+  stroke-dasharray: var(--arrow-reading-order-dash, 5 4);
+  stroke-linecap: var(--arrow-reading-order-cap, butt);
   vector-effect: non-scaling-stroke;
   pointer-events: none;
   fill: none;

@@ -213,10 +213,39 @@
                   <span>Reading order</span>
                 </label>
                 <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
-                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
-                    <input type="checkbox" id="reading-order-arrows" checked>
-                    <span>Arrows</span>
-                  </label>
+                  <div class="arrow-layer-row">
+                    <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
+                      <input type="checkbox" id="reading-order-arrows" checked>
+                      <span>Arrows</span>
+                    </label>
+                    <button
+                      type="button"
+                      class="arrow-style-btn"
+                      data-arrow-style-toggle="readingOrder"
+                      aria-expanded="false"
+                      aria-controls="arrow-fields-readingOrder"
+                      aria-label="Reading-order arrow style"
+                      title="Arrow style"
+                    ></button>
+                  </div>
+                  <div class="arrow-style-fields" id="arrow-fields-readingOrder" hidden>
+                    <label>Color
+                      <input type="color" data-arrow-layer="readingOrder" data-arrow-field="color">
+                    </label>
+                    <label>Thickness
+                      <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="readingOrder" data-arrow-field="width">
+                    </label>
+                    <label>Head
+                      <input type="range" min="3" max="14" step="1" data-arrow-layer="readingOrder" data-arrow-field="head">
+                    </label>
+                    <label>Line
+                      <select data-arrow-layer="readingOrder" data-arrow-field="style">
+                        <option value="solid">Solid</option>
+                        <option value="dashed">Dashed</option>
+                        <option value="dotted">Dotted</option>
+                      </select>
+                    </label>
+                  </div>
                   <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
                     <input type="checkbox" id="reading-order-global">
                     <span>Global numbering</span>
@@ -231,23 +260,117 @@
                   <input type="checkbox" id="show-table-contents">
                   <span>Table contents</span>
                 </label>
-                <label class="settings-option settings-option-sub" id="show-fragment-links-label">
-                  <input type="checkbox" id="show-fragment-links">
-                  <span>Fragments</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-xref-links-label">
-                  <input type="checkbox" id="show-xref-links">
-                  <span>Cross-references</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-caption-links-label">
-                  <input type="checkbox" id="show-caption-links">
-                  <span>Captions</span>
-                </label>
+
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="show-fragment-links-label">
+                    <input type="checkbox" id="show-fragment-links">
+                    <span>Fragments</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="fragment"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-fragment"
+                    aria-label="Fragment arrow style"
+                    title="Arrow style"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-fragment" hidden>
+                  <label>Color
+                    <input type="color" data-arrow-layer="fragment" data-arrow-field="color">
+                  </label>
+                  <label>Thickness
+                    <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="fragment" data-arrow-field="width">
+                  </label>
+                  <label>Head
+                    <input type="range" min="3" max="14" step="1" data-arrow-layer="fragment" data-arrow-field="head">
+                  </label>
+                  <label>Line
+                    <select data-arrow-layer="fragment" data-arrow-field="style">
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="show-xref-links-label">
+                    <input type="checkbox" id="show-xref-links">
+                    <span title="Cross-references">Cross-references</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="xref"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-xref"
+                    aria-label="Cross-reference arrow style"
+                    title="Arrow style"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-xref" hidden>
+                  <label>Color
+                    <input type="color" data-arrow-layer="xref" data-arrow-field="color">
+                  </label>
+                  <label>Thickness
+                    <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="xref" data-arrow-field="width">
+                  </label>
+                  <label>Head
+                    <input type="range" min="3" max="14" step="1" data-arrow-layer="xref" data-arrow-field="head">
+                  </label>
+                  <label>Line
+                    <select data-arrow-layer="xref" data-arrow-field="style">
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="show-caption-links-label">
+                    <input type="checkbox" id="show-caption-links">
+                    <span>Captions</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="caption"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-caption"
+                    aria-label="Caption arrow style"
+                    title="Arrow style"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-caption" hidden>
+                  <label>Color
+                    <input type="color" data-arrow-layer="caption" data-arrow-field="color">
+                  </label>
+                  <label>Thickness
+                    <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="caption" data-arrow-field="width">
+                  </label>
+                  <label>Head
+                    <input type="range" min="3" max="14" step="1" data-arrow-layer="caption" data-arrow-field="head">
+                  </label>
+                  <label>Line
+                    <select data-arrow-layer="caption" data-arrow-field="style">
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
+                  </label>
+                </div>
+
                 <label class="settings-option settings-option-sub" id="show-layout-badges-label">
                   <input type="checkbox" id="show-layout-badges" checked>
                   <span>Badges</span>
                 </label>
               </div>
+
+              <div class="settings-divider" role="separator"></div>
+              <button type="button" class="overlays-reset" id="btn-overlays-reset">Reset all</button>
             </div>
           </aside>
         </div>
