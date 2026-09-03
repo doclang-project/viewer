@@ -626,6 +626,7 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
+          <button type="button" class="pane-header-toggle-btn" id="btn-markup-tokens-toggle" aria-pressed="false">Tokens</button>
           <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
           <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
           <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
@@ -645,6 +646,7 @@
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
       <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
       <div class="pane-body" id="markup-pane"></div>
+      <div class="pane-body markup-tokens-view" id="markup-tokens-view" hidden></div>
       <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
         <div class="validation-panel-header">
           <span class="validation-panel-summary" id="validation-summary"></span>
@@ -744,6 +746,7 @@
 
   <script src="demo-data.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
+  <script src="tokenizer.js"></script>
   <script src="viewer.js"></script>
 </body>
 </html>

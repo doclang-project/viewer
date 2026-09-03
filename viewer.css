@@ -54,6 +54,12 @@
     var(--file-thumb-size) +
     var(--file-thumb-close-overflow)) * 1.5
   );
+  --token-bg0: rgba(234, 179, 8, 0.22);
+  --token-bg1: rgba(34, 197, 94, 0.22);
+  --token-bg2: rgba(59, 130, 246, 0.22);
+  --token-bg3: rgba(236, 72, 153, 0.22);
+  --token-bg4: rgba(139, 92, 246, 0.22);
+  --token-bg5: rgba(249, 115, 22, 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1910,6 +1916,120 @@ button.validation-issue:focus-visible {
 
 #markup-pane .placeholder {
   margin: 1rem;
+}
+
+/* ---- DocLang pane: tokenized view ------------------------------- */
+
+.pane-markup-header {
+  justify-content: space-between;
+}
+
+.pane-header-toggle-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0 0.45rem;
+  height: 1.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.pane-header-toggle-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.pane-header-toggle-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+
+.pane-header-toggle-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.markup-tokens-view {
+  padding: 0;
+  background: var(--markup-bg);
+  color: var(--markup-fg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.markup-tokens-view[hidden] {
+  display: none !important;
+}
+
+.tokens-view-loading {
+  margin: 1rem;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+}
+
+.tokens-stats {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 1.25rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.tokens-stats strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tokens-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.tokens-ruler-text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.token-span {
+  border-radius: 0.15rem;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.token-span:hover {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.token-span-c0 { background: var(--token-bg0); }
+.token-span-c1 { background: var(--token-bg1); }
+.token-span-c2 { background: var(--token-bg2); }
+.token-span-c3 { background: var(--token-bg3); }
+.token-span-c4 { background: var(--token-bg4); }
+.token-span-c5 { background: var(--token-bg5); }
+
+.token-span-special {
+  box-shadow: 0 0 0 1.5px var(--accent);
+  font-weight: 700;
 }
 
 #page-pane {

@@ -509,6 +509,8 @@ const els = {
   emptyStateLoading: document.getElementById("empty-state-loading"),
   emptyStatePrompt: document.getElementById("empty-state-prompt"),
   markupPane: document.getElementById("markup-pane"),
+  markupTokensToggle: document.getElementById("btn-markup-tokens-toggle"),
+  markupTokensView: document.getElementById("markup-tokens-view"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
   paneFile: document.querySelector(".pane-file"),
@@ -680,6 +682,7 @@ els.showReadingOrder?.addEventListener("change", () => {
 });
 els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
 els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
+els.markupTokensToggle?.addEventListener("click", () => setMarkupTokensViewActive(!state?.tokensViewActive));
 els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
 els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
@@ -847,6 +850,7 @@ initFileTypeHints();
 initCursorHints();
 initQuickHints();
 initFormulaRewriteHints();
+initMarkupTokensHover();
 initBboxHints();
 initDragDrop();
 initFilePaneCloseAll();
@@ -2192,6 +2196,252 @@ function initFormulaRewriteHints() {
   els.renderedPane?.addEventListener("mouseleave", hideCursorHint);
 }
 
+/* ---- DocLang pane: tokenized view ------------------------------------ *
+ * Toggles the DocLang source pane to a view of the same markup as tokens
+ * from the custom DocLang tokenizer (tokenizer.js). The markup is first
+ * reduced to its dense form — whitespace that sits purely between two
+ * tags (the newlines and indentation of pretty-printing) is dropped,
+ * while whitespace inside CDATA or inside element text is untouched —
+ * so the token stream reflects how DocLang is actually meant to be used.
+ * ------------------------------------------------------------------- */
+
+const TOKEN_SPAN_COLOR_COUNT = 6;
+// Elements that flow inside a line of text rather than getting their own line.
+const TOKENS_INLINE_TAGS = new Set([...RENDER_FORMAT_TAGS, "marker", "xref", "href"]);
+
+function setMarkupTokensViewActive(active) {
+  if (!state || !els.markupTokensView || !els.markupPane) return;
+  state.tokensViewActive = active;
+  els.markupTokensToggle?.setAttribute("aria-pressed", String(active));
+  els.markupPane.hidden = active;
+  els.markupTokensView.hidden = !active;
+  if (active) renderMarkupTokensView();
+}
+
+/** Split well-formed DocLang XML into a flat list of lexical pieces. */
+function scanMarkupPieces(src) {
+  const pieces = [];
+  const n = src.length;
+  let i = 0;
+  while (i < n) {
+    if (src[i] !== "<") {
+      let j = i + 1;
+      while (j < n && src[j] !== "<") j += 1;
+      pieces.push({ type: "text", raw: src.slice(i, j) });
+      i = j;
+      continue;
+    }
+    let end;
+    let type;
+    if (src.startsWith("<![CDATA[", i)) {
+      const e = src.indexOf("]]>", i);
+      end = e < 0 ? n : e + 3;
+      type = "cdata";
+    } else if (src.startsWith("<!--", i)) {
+      const e = src.indexOf("-->", i);
+      end = e < 0 ? n : e + 3;
+      type = "comment";
+    } else if (src.startsWith("<?", i)) {
+      const e = src.indexOf("?>", i);
+      end = e < 0 ? n : e + 2;
+      type = "pi";
+    } else {
+      const e = src.indexOf(">", i);
+      end = e < 0 ? n : e + 1;
+      const raw = src.slice(i, end);
+      if (raw[1] === "/") {
+        pieces.push({ type: "close", raw, name: raw.slice(2, -1).trim() });
+      } else {
+        const m = raw.match(/^<([^\s/>]+)/);
+        pieces.push({ type: raw.endsWith("/>") ? "selfclose" : "open", raw, name: m ? m[1] : "" });
+      }
+      i = end;
+      continue;
+    }
+    pieces.push({ type, raw: src.slice(i, end) });
+    i = end;
+  }
+  return pieces;
+}
+
+function buildMarkupPieceTree(pieces) {
+  const root = { children: [] };
+  const stack = [root];
+  for (const piece of pieces) {
+    const top = stack[stack.length - 1];
+    if (piece.type === "open") {
+      const node = { piece, name: piece.name, children: [] };
+      top.children.push(node);
+      stack.push(node);
+    } else if (piece.type === "close") {
+      if (stack.length > 1) stack.pop();
+    } else {
+      top.children.push({ piece, children: [] });
+    }
+  }
+  return root;
+}
+
+/** A node gets block layout (children on their own lines) if it holds a non-inline child element. */
+function markupNodeIsBlock(node) {
+  return node.children.some((c) => {
+    const t = c.piece.type;
+    return (t === "open" || t === "selfclose") && !TOKENS_INLINE_TAGS.has(c.piece.name);
+  });
+}
+
+/**
+ * Re-serialize the piece tree the way the DocLang pane lays it out: every element
+ * on its own depth-indented line, text-only elements kept inline. Returns an
+ * ordered list of `{ code }` (real markup, tokenized) and `{ ws }` (synthetic
+ * newline + indentation, shown but not tokenized) parts.
+ */
+function canonicalizeMarkup(root) {
+  const parts = [];
+  const indent = (d) => "  ".repeat(d);
+
+  function emitInline(node, atEdge) {
+    const kids = node.children;
+    for (let idx = 0; idx < kids.length; idx += 1) {
+      const c = kids[idx];
+      if (c.piece.type === "text") {
+        let s = c.piece.raw.replace(/\s+/g, " ");
+        if (atEdge && idx === 0) s = s.replace(/^ /, "");
+        if (idx === kids.length - 1) s = s.replace(/ $/, "");
+        if (s) parts.push({ code: s });
+        continue;
+      }
+      parts.push({ code: c.piece.raw });
+      if (c.piece.type === "open") {
+        emitInline(c, false);
+        parts.push({ code: `</${c.name}>` });
+      }
+    }
+  }
+
+  function walk(node, depth, first) {
+    let atStart = first;
+    for (const c of node.children) {
+      const t = c.piece.type;
+      if (t === "text") {
+        const trimmed = c.piece.raw.replace(/^\s+/u, "").replace(/\s+$/u, "");
+        if (!trimmed) continue;
+        if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
+        parts.push({ code: trimmed });
+        atStart = false;
+        continue;
+      }
+      if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
+      atStart = false;
+      if (t === "open" && markupNodeIsBlock(c)) {
+        parts.push({ code: c.piece.raw });
+        walk(c, depth + 1, false);
+        parts.push({ ws: `\n${indent(depth)}` });
+        parts.push({ code: `</${c.name}>` });
+      } else if (t === "open") {
+        parts.push({ code: c.piece.raw });
+        emitInline(c, true);
+        parts.push({ code: `</${c.name}>` });
+      } else {
+        parts.push({ code: c.piece.raw });
+      }
+    }
+  }
+
+  walk(root, 0, true);
+  return parts;
+}
+
+async function renderMarkupTokensView() {
+  const docState = state;
+  if (!docState || !els.markupTokensView) return;
+
+  if (!docState.tokensViewData) {
+    els.markupTokensView.innerHTML = `<div class="tokens-view-loading">Loading tokenizer&hellip;</div>`;
+    // Let the loading placeholder paint before the (synchronous) tokenize pass runs.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      const { stdExt } = await window.DoclangTokenizers.loadTokenizerAssets();
+      if (state !== docState) return;
+      const srcXml = docState.markupXml.replace(/\r\n/g, "\n");
+      const parts = canonicalizeMarkup(buildMarkupPieceTree(scanMarkupPieces(srcXml)));
+
+      // dense = markup with no pretty-printing whitespace (what we tokenize);
+      // canon = the displayed text, with synthetic indentation woven back in.
+      let dense = "";
+      let canon = "";
+      const canonToDense = [];
+      for (const part of parts) {
+        if (part.ws != null) {
+          for (const ch of part.ws) { canon += ch; canonToDense.push(-1); }
+        } else {
+          const base = dense.length;
+          for (let k = 0; k < part.code.length; k += 1) { canon += part.code[k]; canonToDense.push(base + k); }
+          dense += part.code;
+        }
+      }
+
+      const tokens = stdExt.encode(dense).filter((t) => t.end > t.start);
+      const denseToToken = new Int32Array(dense.length).fill(-1);
+      tokens.forEach((t, ti) => {
+        for (let d = t.start; d < t.end; d += 1) denseToToken[d] = ti;
+      });
+
+      docState.tokensViewData = { canon, canonToDense, denseToToken, tokens };
+    } catch (err) {
+      if (state !== docState) return;
+      console.error("Failed to load/tokenize with the DocLang tokenizer", err);
+      els.markupTokensView.innerHTML = `<div class="tokens-view-loading">Couldn&rsquo;t load the tokenizer.</div>`;
+      return;
+    }
+  }
+  if (state !== docState || !docState.tokensViewActive) return;
+
+  const { canon, canonToDense, denseToToken, tokens } = docState.tokensViewData;
+  const tokenAt = (pos) => {
+    const d = canonToDense[pos];
+    return d < 0 ? -1 : denseToToken[d];
+  };
+  let html = "";
+  let i = 0;
+  while (i < canon.length) {
+    const tk = tokenAt(i);
+    let j = i + 1;
+    while (j < canon.length && tokenAt(j) === tk) j += 1;
+    const piece = escapeHtml(canon.slice(i, j));
+    if (tk === -1) {
+      html += piece;
+    } else {
+      const t = tokens[tk];
+      const cls = `token-span token-span-c${tk % TOKEN_SPAN_COLOR_COUNT}${t.special ? " token-span-special" : ""}`;
+      html += `<span class="${cls}" data-token-id="${t.id}">${piece}</span>`;
+    }
+    i = j;
+  }
+
+  els.markupTokensView.innerHTML = `
+    <div class="tokens-stats">
+      <span>custom DocLang tokenizer</span>
+      <span><strong>${tokens.length.toLocaleString()}</strong> tokens</span>
+      <span>indentation shown for readability, not counted</span>
+    </div>
+    <div class="tokens-body"><pre class="tokens-ruler-text">${html}</pre></div>
+  `;
+}
+
+function initMarkupTokensHover() {
+  els.markupTokensView?.addEventListener("mousemove", (e) => {
+    const span = e.target.closest(".token-span");
+    if (!span) {
+      hideCursorHint();
+      return;
+    }
+    const id = span.getAttribute("data-token-id");
+    showCursorHint(`id ${id} · ${JSON.stringify(span.textContent)}`, e.clientX, e.clientY);
+  });
+  els.markupTokensView?.addEventListener("mouseleave", hideCursorHint);
+}
+
 function initBboxHints() {
   if (!els.pagePane) return;
 
@@ -2399,6 +2649,8 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     readingOrder,
     readingOrderIndexByElement: new Map(readingOrder.map((el, i) => [el, i])),
     pageViewOverlay: null,
+    tokensViewActive: false,
+    tokensViewData: null,
   };
 }
 
@@ -2458,6 +2710,7 @@ function activateDocument(docState, entry) {
 
   stopEditing({ render: false });
   setDocLabel(entry.label);
+  setMarkupTokensViewActive(false);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
   syncReadingLayoutButtons();
@@ -2511,6 +2764,7 @@ function syncEditUi() {
   }
   if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
   if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
+  if (els.markupTokensToggle) els.markupTokensToggle.hidden = editing;
   syncAddButtons();
   // The history/commit buttons keep their place and only toggle enabled, so a click never lands on a moved button.
   const showHistory = !!entry && !editing;
@@ -2530,6 +2784,7 @@ function syncEditUi() {
 
 function startEditing() {
   if (markupEditor || !editableEntry() || !els.markupPane) return;
+  setMarkupTokensViewActive(false); // the editor lives in the source view
   markupEditor = document.createElement("textarea");
   markupEditor.className = "markup-editor";
   markupEditor.spellcheck = false;
@@ -4894,7 +5149,15 @@ function resetViewer() {
   closeAllSettings();
   setToolbarOptionsOpen(false);
   syncValidationForActiveDocument();
-  if (els.markupPane) els.markupPane.innerHTML = "";
+  if (els.markupPane) {
+    els.markupPane.innerHTML = "";
+    els.markupPane.hidden = false;
+  }
+  if (els.markupTokensView) {
+    els.markupTokensView.innerHTML = "";
+    els.markupTokensView.hidden = true;
+  }
+  els.markupTokensToggle?.setAttribute("aria-pressed", "false");
   if (els.renderedPane) els.renderedPane.innerHTML = "";
   if (els.pagePane) els.pagePane.innerHTML = "";
   setPageIndicator(1, 1);
