@@ -579,10 +579,12 @@ initFileTypeHints();
 initCursorHints();
 initBboxHints();
 initDragDrop();
+initFileHandling();
 initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
+let suppressDemoLoad = false;
 
 function setDemoLoading(loading) {
   document.body.classList.toggle("demo-loading", loading);
@@ -590,7 +592,11 @@ function setDemoLoading(loading) {
   if (btnDemo) btnDemo.disabled = loading;
 }
 
-if (document.getElementById("btn-demo")) loadDemo();
+// Deferred a tick so a file-handling launch (see initFileHandling) can set
+// suppressDemoLoad before the demo fetch would otherwise clobber it.
+setTimeout(() => {
+  if (!suppressDemoLoad && document.getElementById("btn-demo")) loadDemo();
+}, 0);
 
 async function loadDemo() {
   if (demoLoadInProgress) return;
@@ -620,6 +626,16 @@ async function loadFromFileList(fileList) {
   }
   const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
   if (supported.length) await addFilesToCatalog(supported, { replace: false });
+}
+
+function initFileHandling() {
+  if (!("launchQueue" in window)) return;
+  window.launchQueue.setConsumer(async (launchParams) => {
+    if (!launchParams.files?.length) return;
+    suppressDemoLoad = true;
+    const files = await Promise.all(launchParams.files.map((handle) => handle.getFile()));
+    await loadFromFileList(files);
+  });
 }
 
 function createFileCatalogEntry(file) {
@@ -737,19 +753,38 @@ function createFileViewThumbnail(entry) {
   return thumb;
 }
 
+function findCatalogIndexForFile(file) {
+  return fileCatalog.findIndex((entry) => {
+    const source = entry.source;
+    return (
+      source instanceof File &&
+      source.name === file.name &&
+      source.size === file.size &&
+      source.lastModified === file.lastModified
+    );
+  });
+}
+
 async function addFilesToCatalog(files, { replace = false } = {}) {
   if (replace) {
     clearFileCatalog();
     filePaneUserToggled = false;
   }
   const startIndex = fileCatalog.length;
+  let switchIndex = null;
   for (const file of files) {
+    const existingIndex = replace ? -1 : findCatalogIndexForFile(file);
+    if (existingIndex !== -1) {
+      if (switchIndex === null) switchIndex = existingIndex;
+      continue;
+    }
     const entry = createFileCatalogEntry(file);
     fileCatalog.push(entry);
     enrichCatalogEntryThumbnail(entry);
+    if (switchIndex === null) switchIndex = fileCatalog.length - 1;
   }
   if (!fileCatalog.length) return;
-  await switchToFile(replace ? 0 : startIndex);
+  await switchToFile(replace ? 0 : switchIndex ?? startIndex);
 }
 
 async function appendFolderArchive(files) {
