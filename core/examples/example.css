@@ -1,0 +1,23 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  font-family: system-ui, sans-serif;
+}
+
+header {
+  padding: 0.5rem 1rem;
+  background: #f7f8fa;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.85rem;
+  color: #57606a;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+header a    { color: #3b82d4; text-decoration: none; }
+header code { background: #e5e7eb; padding: 0.1em 0.35em; border-radius: 3px; }

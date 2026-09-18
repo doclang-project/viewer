@@ -79,7 +79,6 @@ export interface DocumentState {
   pendingSelectElement: Element | null;
   readingOrder: Element[];
   readingOrderDisplayNumbers: Map<Element, number>;
-  pageViewOverlay: PageViewOverlay | null;
 }
 
 export type FileCatalogEntryKind = 'archive' | 'markup' | 'folder';

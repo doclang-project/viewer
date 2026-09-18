@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>doclang-reading-pane — example</title>
+  <link rel="stylesheet" href="example.css">
+  <style>
+    doclang-reading-pane { flex: 1; min-height: 0; }
+  </style>
+  <script type="module" src="../../viewer.js"></script>
+</head>
+<body>
+  <header>
+    <a href="README.md">← examples</a>
+    <span><code>&lt;doclang-reading-pane&gt;</code> — loaded via <code>src</code> attribute from the demo archive</span>
+  </header>
+
+  <!--
+    src        — URL of a .dclx archive or a plain .dclg / .xml markup file.
+    page       — initial page number (default: 1).
+    selected   — element-id to pre-select (optional).
+
+    Serve this directory over HTTP so the fetch can resolve:
+      python3 -m http.server 8080   (from the repo root)
+    then open: http://localhost:8080/core/examples/reading-pane.html
+  -->
+  <doclang-reading-pane
+    src="../../assets/2501.17887.dclx"
+    page="1"
+  ></doclang-reading-pane>
+</body>
+</html>

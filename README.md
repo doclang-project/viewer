@@ -28,6 +28,7 @@ Supported types: `.dclx`, `.dclg`, `.xml`. The demo/example URL is configured vi
 
 ## Files
 
-- `index.html` — shell UI and custom element integration
-- `viewer.js` — parsing, page alignment, bbox overlay
-- `viewer.css` — layout and theme
+- `index.html` — shell page; loads `viewer.js`
+- `viewer.js` — standalone ESM bundle (lit inlined); tracked in git for CDN / script-tag use
+- `core/dist/` — npm library build (lit external, tree-shakeable); gitignored
+- `core/` — TypeScript source; run `npm run build` inside to rebuild

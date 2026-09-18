@@ -27,6 +27,7 @@ import type { DocumentState } from '../../doclang/types';
 export abstract class DoclangPageElement extends LitElement {
   @property({ type: Number, reflect: true }) declare page: number;
   @property({ type: String, reflect: true }) declare selected: string | null;
+  @property({ type: String }) declare src: string | null;
 
   protected _docState: DocumentState | null = null;
   protected _peerIds: Set<string> = new Set();
@@ -59,9 +60,9 @@ export abstract class DoclangPageElement extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
-    // Pick up inline <script type="application/doclang+xml"> if present and
-    // no document has been set programmatically and no src attribute exists.
-    if (!this._docState && !this.hasAttribute('src')) {
+    // src is handled by attributeChangedCallback via the @property decorator.
+    // Only pick up the inline <script type="application/doclang+xml"> fallback.
+    if (!this._docState && !this.getAttribute('src')) {
       const script = this.querySelector('script[type="application/doclang+xml"]');
       if (script?.textContent?.trim()) {
         this._loadXmlString(
@@ -70,6 +71,10 @@ export abstract class DoclangPageElement extends LitElement {
         );
       }
     }
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
   }
 
   override attributeChangedCallback(name: string, _old: string, next: string): void {

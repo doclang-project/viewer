@@ -3,14 +3,13 @@
 import { LitElement, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { unsafeCSS } from 'lit';
-import styles from './empty-state.css?inline';
+import styles from './empty.css?inline';
 
-@customElement('doclang-empty-state')
-export class DoclangEmptyState extends LitElement {
+@customElement('doclang-empty')
+export class DoclangEmpty extends LitElement {
   static override styles = unsafeCSS(styles);
 
   private _extensions: string[] = [];
-  private _demoLoading = false;
 
   override render() {
     return html`
@@ -65,7 +64,6 @@ export class DoclangEmptyState extends LitElement {
   }
 
   setDemoLoading(loading: boolean): void {
-    this._demoLoading = loading;
     this.classList.toggle('demo-loading', loading);
   }
 }

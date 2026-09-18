@@ -1,12 +1,13 @@
 /** <doclang-viewer> — top-level application shell */
 
 import '../page-nav/page-nav';
-import '../toolbar/toolbar';
+import './toolbar';
 import '../collection/collection-pane';
 import '../markup-pane/markup-pane';
-import '../page-view-pane/page-view-pane';
+import '../page-img-pane/page-img-pane';
 import '../reading-pane/reading-pane';
-import '../empty-state/empty-state';
+import './empty';
+import '../container/pane-stack';
 
 import { html, nothing, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -20,12 +21,12 @@ import { DoclangPageElement } from '../base/page-element';
 import { CollectionController } from '../collection/collection';
 
 import type { DoclangPageNav } from '../page-nav/page-nav';
-import type { DoclangToolbar } from '../toolbar/toolbar';
+import type { DoclangToolbar } from './toolbar';
 import type { DoclangCollectionPane } from '../collection/collection-pane';
 import type { DoclangMarkupPane } from '../markup-pane/markup-pane';
-import type { DoclangPageViewPane } from '../page-view-pane/page-view-pane';
+import type { DoclangPageImgPane } from '../page-img-pane/page-img-pane';
 import type { DoclangReadingPane } from '../reading-pane/reading-pane';
-import type { DoclangEmptyState } from '../empty-state/empty-state';
+import type { DoclangEmpty } from './empty';
 
 import type { DocumentState } from '../../doclang/types';
 import {
@@ -41,7 +42,7 @@ import {
   skipUntilCellBoundary,
   isCellToken,
 } from '../../doclang/dom';
-import { PAGE_ZOOM_DEFAULT } from '../page-view-pane/overlay';
+import { PAGE_ZOOM_DEFAULT } from '../page-img-pane/overlay';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,9 +115,9 @@ export class DoclangViewer extends DoclangPageElement {
   private _toolbarRef: Ref<DoclangToolbar> = createRef();
   private _collectionPaneRef: Ref<DoclangCollectionPane> = createRef();
   private _markupPaneRef: Ref<DoclangMarkupPane> = createRef();
-  private _pageViewPaneRef: Ref<DoclangPageViewPane> = createRef();
+  private _pageViewPaneRef: Ref<DoclangPageImgPane> = createRef();
   private _readingPaneRef: Ref<DoclangReadingPane> = createRef();
-  private _emptyStateRef: Ref<DoclangEmptyState> = createRef();
+  private _emptyStateRef: Ref<DoclangEmpty> = createRef();
   private _splitterRefs: Ref<HTMLElement>[] = [createRef(), createRef(), createRef()];
   private _mainRef: Ref<HTMLElement> = createRef();
 
@@ -213,10 +214,10 @@ export class DoclangViewer extends DoclangPageElement {
 
       <p class="drop-banner">Drop to open another file</p>
 
-      <doclang-empty-state
+      <doclang-empty
         ${ref(this._emptyStateRef)}
         @doclang-load-demo=${this._onLoadDemo}
-      ></doclang-empty-state>
+      ></doclang-empty>
 
       <div
         class="main"
@@ -246,64 +247,61 @@ export class DoclangViewer extends DoclangPageElement {
           @pointerdown=${(e: PointerEvent) => this._startPaneDrag(e, 0)}
         ></div>
 
-        <doclang-page-view-pane
-          ${ref(this._pageViewPaneRef)}
-          class="pane"
-          ?hidden=${!this._isPaneVisible('page')}
-          style=${this._paneGridStyle('page')}
+        <doclang-pane-stack
           .document=${this._docState}
           .page=${this.page}
           .selected=${this.selected}
+          @view-page=${this._onViewPage}
           @doclang-element-select=${this._onElementSelect}
           @doclang-navigate-thread=${this._onNavigateThread}
           @doclang-clear-selection=${this._onClearSelection}
-        ></doclang-page-view-pane>
+          style="display:contents"
+        >
+          <doclang-page-img-pane
+            ${ref(this._pageViewPaneRef)}
+            class="pane"
+            ?hidden=${!this._isPaneVisible('page')}
+            style=${this._paneGridStyle('page')}
+          ></doclang-page-img-pane>
 
-        <div
-          class="pane-splitter"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize Original page and DocLang panes"
-          tabindex="0"
-          ?hidden=${this._splitterCols[1] === null}
-          style=${this._splitterGridStyle(1)}
-          ${ref(this._splitterRefs[1]!)}
-          @pointerdown=${(e: PointerEvent) => this._startPaneDrag(e, 1)}
-        ></div>
+          <div
+            class="pane-splitter"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize Original page and DocLang panes"
+            tabindex="0"
+            ?hidden=${this._splitterCols[1] === null}
+            style=${this._splitterGridStyle(1)}
+            ${ref(this._splitterRefs[1]!)}
+            @pointerdown=${(e: PointerEvent) => this._startPaneDrag(e, 1)}
+          ></div>
 
-        <doclang-markup-pane
-          ${ref(this._markupPaneRef)}
-          class="pane"
-          ?hidden=${!this._isPaneVisible('markup')}
-          style=${this._paneGridStyle('markup')}
-          .document=${this._docState}
-          .page=${this.page}
-          .selected=${this.selected}
-          @doclang-element-select=${this._onElementSelect}
-        ></doclang-markup-pane>
+          <doclang-markup-pane
+            ${ref(this._markupPaneRef)}
+            class="pane"
+            ?hidden=${!this._isPaneVisible('markup')}
+            style=${this._paneGridStyle('markup')}
+          ></doclang-markup-pane>
 
-        <div
-          class="pane-splitter"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize DocLang and Reading view panes"
-          tabindex="0"
-          ?hidden=${this._splitterCols[2] === null}
-          style=${this._splitterGridStyle(2)}
-          ${ref(this._splitterRefs[2]!)}
-          @pointerdown=${(e: PointerEvent) => this._startPaneDrag(e, 2)}
-        ></div>
+          <div
+            class="pane-splitter"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize DocLang and Reading view panes"
+            tabindex="0"
+            ?hidden=${this._splitterCols[2] === null}
+            style=${this._splitterGridStyle(2)}
+            ${ref(this._splitterRefs[2]!)}
+            @pointerdown=${(e: PointerEvent) => this._startPaneDrag(e, 2)}
+          ></div>
 
-        <doclang-reading-pane
-          ${ref(this._readingPaneRef)}
-          class="pane"
-          ?hidden=${!this._isPaneVisible('reading')}
-          style=${this._paneGridStyle('reading')}
-          .document=${this._docState}
-          .page=${this.page}
-          .selected=${this.selected}
-          @doclang-element-select=${this._onElementSelect}
-        ></doclang-reading-pane>
+          <doclang-reading-pane
+            ${ref(this._readingPaneRef)}
+            class="pane"
+            ?hidden=${!this._isPaneVisible('reading')}
+            style=${this._paneGridStyle('reading')}
+          ></doclang-reading-pane>
+        </doclang-pane-stack>
       </div>
 
     `;

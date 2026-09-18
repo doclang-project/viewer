@@ -17,7 +17,7 @@
   background: color-mix(in srgb, var(--accent) 6%, var(--bg));
 }
 
-:host(.drag-over) doclang-empty-state {
+:host(.drag-over) doclang-empty {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
 }
@@ -120,7 +120,7 @@ header h1 {
    Empty state
    ----------------------------------------------------------------------- */
 
-:host(.loaded) doclang-empty-state {
+:host(.loaded) doclang-empty {
   display: none;
 }
 

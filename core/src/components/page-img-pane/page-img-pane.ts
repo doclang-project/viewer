@@ -1,4 +1,4 @@
-/** <doclang-page-view-pane> — page image with zoom and overlay settings panel */
+/** <doclang-page-img-pane> — page image with zoom and overlay settings panel */
 
 import { html, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
@@ -8,7 +8,7 @@ import type { Ref } from 'lit/directives/ref.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { DoclangPageElement } from '../base/page-element';
 import { PageController } from '../base/page-controller';
-import styles from './page-view-pane.css?inline';
+import styles from './page-img-pane.css?inline';
 import '../settings-panel/settings-panel';
 import type { DoclangSettingsPanel } from '../settings-panel/settings-panel';
 import {
@@ -19,7 +19,6 @@ import {
   ARROW_LAYERS,
   ARROW_STYLE_FIELD_DEFAULTS,
   ARROW_DASH_VALUES,
-  ensureArrowMarker,
   type ArrowLayerKey,
   type ArrowStyleConfig,
   type OverlayCtx,
@@ -117,8 +116,8 @@ function toHexColor(value: string | undefined): string {
   return '#000000';
 }
 
-@customElement('doclang-page-view-pane')
-export class DoclangPageViewPane extends DoclangPageElement {
+@customElement('doclang-page-img-pane')
+export class DoclangPageImgPane extends DoclangPageElement {
   static override styles = unsafeCSS(styles);
 
   // Imperative body ref — page image + SVG overlay live here
@@ -229,7 +228,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
       <div class="pane-page-layout">
         <div
           class="pane-body"
-          id="page-pane"
+          id="page-img-pane"
           tabindex=${this._visible ? '0' : '-1'}
           ${ref(this._bodyRef)}
         ></div>
@@ -706,8 +705,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
         this._opts.readingOrderGlobal,
         state.readingOrderDisplayNumbers
       );
-      state.pageViewOverlay = { boxes, readingOrderSteps };
-
       if (boxes.length) {
         wrap.appendChild(
           buildOverlay(
@@ -729,7 +726,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
               boxes,
               state.threadNavByElement
             ),
-            state.defaultResolution,
             id =>
               this.dispatchEvent(
                 new CustomEvent('doclang-element-select', {
@@ -816,14 +812,25 @@ export class DoclangPageViewPane extends DoclangPageElement {
 
   private _syncOverlayBadgesForImg(img: HTMLImageElement): void {
     const svg = img.parentElement?.querySelector('svg.overlay') as SVGSVGElement | null;
-    const overlay = this._docState?.pageViewOverlay;
-    if (!svg || !overlay) return;
+    const state = this._docState;
+    if (!svg || !state) return;
+    const pageNum = this.page;
+    const segment = state.segments[pageNum - 1] ?? [];
+    const boxes = collectBoundingBoxes(segment, state.defaultResolution, state.elementIds);
+    const readingOrderSteps = collectReadingOrderSteps(
+      segment,
+      state.elementIds,
+      boxes,
+      state.readingOrder,
+      this._opts.readingOrderGlobal,
+      state.readingOrderDisplayNumbers
+    );
     const { showAllBboxes, showLayoutBadges, showReadingOrder } = this._opts;
     syncOverlayBadges(
       img,
       svg,
-      overlay.boxes,
-      overlay.readingOrderSteps,
+      boxes,
+      readingOrderSteps,
       showAllBboxes,
       showLayoutBadges,
       showReadingOrder,
@@ -1102,20 +1109,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
     }
   }
 
-  private _refreshArrowMarkers(): void {
-    const svg = this._bodyRef.value?.querySelector('svg.overlay') as SVGSVGElement | null;
-    const defs = svg?.querySelector('defs');
-    if (!defs) return;
-    for (const [layerKey, meta] of Object.entries(ARROW_LAYERS) as [
-      ArrowLayerKey,
-      (typeof ARROW_LAYERS)[ArrowLayerKey],
-    ][]) {
-      if (defs.querySelector(`#${meta.markerId}`)) {
-        ensureArrowMarker(defs, meta.markerId, this._arrowMarkerOptions(layerKey));
-      }
-    }
-  }
-
   private _toggleArrowStyleFields(layerKey: ArrowLayerKey): void {
     if (this._expandedArrowFields.has(layerKey)) {
       this._expandedArrowFields.delete(layerKey);
@@ -1137,7 +1130,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
 
     this._persistArrowStyles();
     this._applyArrowStyleVars();
-    this._refreshArrowMarkers();
+    const body = this._bodyRef.value;
+    const img = body?.querySelector('.page-view img') as HTMLImageElement | null;
+    if (img) this._syncOverlayBadgesForImg(img);
     this.requestUpdate();
   }
 
@@ -1145,7 +1140,6 @@ export class DoclangPageViewPane extends DoclangPageElement {
     this._arrowStyles = {};
     this._persistArrowStyles();
     this._applyArrowStyleVars();
-    this._refreshArrowMarkers();
     this._expandedArrowFields.clear();
     this._opts = { ...DEFAULT_OVERLAY_SETTINGS };
     this._persistOverlayPrefs();

@@ -632,7 +632,6 @@ export function buildDocumentState(
     pendingSelectElement: null,
     readingOrder,
     readingOrderDisplayNumbers: computeReadingOrderDisplayNumbers(readingOrder),
-    pageViewOverlay: null,
   };
 }
 

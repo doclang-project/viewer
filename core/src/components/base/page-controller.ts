@@ -27,6 +27,9 @@ export class PageController implements ReactiveController {
   // Per-pane cooldown; the viewer deduplicates via page-clamping.
   private _lastFlipAt = 0;
 
+  // Track last-seen page so hostUpdated can detect a real page change.
+  private _lastPage: number | null = null;
+
   constructor(
     host: DoclangPageElement,
     getScrollPane: () => HTMLElement | null,
@@ -44,6 +47,20 @@ export class PageController implements ReactiveController {
   hostDisconnected(): void {
     this._host.removeEventListener('wheel', this._onWheel);
     this._host.removeEventListener('keydown', this._onKeyDown);
+  }
+
+  hostUpdated(): void {
+    const page = this._host.page;
+    if (this._lastPage !== null && this._lastPage !== page) {
+      // Page actually changed — reset scroll position to the boundary that
+      // makes sense for the direction of travel.
+      const scrollPane = this._getScrollPane();
+      if (scrollPane) {
+        const dir = page > this._lastPage ? 1 : -1;
+        scrollPane.scrollTop = dir > 0 ? 0 : scrollPane.scrollHeight;
+      }
+    }
+    this._lastPage = page;
   }
 
   // ---------------------------------------------------------------------------
@@ -144,13 +161,6 @@ export class PageController implements ReactiveController {
 
     e.preventDefault();
     this._lastFlipAt = now;
-
-    // Reset scroll position to the new boundary after the flip
-    if (scrollPane) {
-      requestAnimationFrame(() => {
-        scrollPane.scrollTop = dir > 0 ? 0 : scrollPane.scrollHeight;
-      });
-    }
 
     host.dispatchEvent(
       new CustomEvent('view-page', {

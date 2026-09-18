@@ -10,7 +10,7 @@ import {
   extractArchiveFromZipBuffer,
   revokeDocumentState,
 } from '../../doclang/document';
-import { PAGE_ZOOM_DEFAULT } from '../page-view-pane/overlay';
+import { PAGE_ZOOM_DEFAULT } from '../page-img-pane/overlay';
 import { unzip } from '../../doclang/zip';
 
 export interface CollectionEntry {

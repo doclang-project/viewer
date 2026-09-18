@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocLang — three panes in sync</title>
+  <link rel="stylesheet" href="example.css">
+  <script type="module" src="../../viewer.js"></script>
+  <style>
+    .page-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      background: #f7f8fa;
+      border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+    }
+    .page-controls button {
+      padding: 0.2rem 0.6rem;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .page-controls button:disabled { opacity: 0.4; cursor: default; }
+    #page-label { color: #57606a; min-width: 6rem; }
+
+    .pane-row {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    .pane-row > * { min-width: 0; border-right: 1px solid #e5e7eb; }
+    .pane-row > *:last-child { border-right: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="README.md">← examples</a>
+    <span>All three panes in sync — click an element in any pane to cross-highlight</span>
+  </header>
+
+  <div class="page-controls">
+    <button id="btn-prev" disabled>← Prev</button>
+    <button id="btn-next">Next →</button>
+    <span id="page-label">Page 1</span>
+  </div>
+
+  <div class="pane-row">
+    <doclang-page-img-pane id="pv" src="../../assets/2501.17887.dclx" page="1"></doclang-page-img-pane>
+    <doclang-markup-pane    id="mp" src="../../assets/2501.17887.dclx" page="1"></doclang-markup-pane>
+    <doclang-reading-pane   id="rp" src="../../assets/2501.17887.dclx" page="1"></doclang-reading-pane>
+  </div>
+
+  <script type="module">
+    const pv = document.getElementById('pv');
+    const mp = document.getElementById('mp');
+    const rp = document.getElementById('rp');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const pageLabel = document.getElementById('page-label');
+
+    let page = 1;
+    let pageCount = 1;
+
+    // Sync page and selection across all three panes.
+    function setPage(n) {
+      page = Math.min(Math.max(1, n), pageCount);
+      [pv, mp, rp].forEach(el => { el.page = page; });
+      btnPrev.disabled = page <= 1;
+      btnNext.disabled = page >= pageCount;
+      pageLabel.textContent = `Page ${page} of ${pageCount}`;
+    }
+
+    function setSelected(id) {
+      [pv, mp, rp].forEach(el => { el.selected = id; });
+    }
+
+    // Once the page-view pane renders its first overlay it emits
+    // doclang-layout-refresh — use that moment to read pageCount.
+    pv.addEventListener('doclang-layout-refresh', () => {
+      pageCount = pv.document?.pageCount ?? 1;
+      setPage(page);
+    }, { once: true });
+
+    // Element selection events bubble up from any pane.
+    document.addEventListener('doclang-element-select', e => setSelected(e.detail.id));
+    document.addEventListener('doclang-clear-selection', () => setSelected(null));
+
+    // Page navigation.
+    btnPrev.addEventListener('click', () => setPage(page - 1));
+    btnNext.addEventListener('click', () => setPage(page + 1));
+
+    // view-page events emitted by page-nav inside each pane (if any).
+    document.addEventListener('view-page', e => setPage(e.detail.page));
+  </script>
+</body>
+</html>
