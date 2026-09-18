@@ -76,29 +76,54 @@
           aria-controls="toolbar-options-panel"
           aria-haspopup="true"
         >
-          Views
+          Settings
         </button>
         <div class="toolbar-options-panel" id="toolbar-options-panel" role="menu" hidden>
-          <label class="toolbar-options-item" id="toggle-file-pane-label">
-            <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
-            <span>Files</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-page-pane-label">
-            <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
-            <span>Original page</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-markup-pane-label">
-            <input type="checkbox" id="toggle-markup-pane" checked role="menuitemcheckbox">
-            <span>DocLang</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-reading-pane-label">
-            <input type="checkbox" id="toggle-reading-pane" checked role="menuitemcheckbox">
-            <span>Reading view</span>
-          </label>
-          <div class="toolbar-options-divider" role="separator"></div>
-          <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
-            Reset views
-          </button>
+          <div class="viewer-settings-header">
+            <h2 class="viewer-settings-title">Settings</h2>
+            <button type="button" class="viewer-settings-close" id="btn-toolbar-options-close" aria-label="Close settings">×</button>
+          </div>
+          <div class="toolbar-options-body">
+            <div class="toolbar-options-heading">Views</div>
+            <div class="toolbar-options-submenu">
+              <label class="toolbar-options-item" id="toggle-file-pane-label">
+                <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
+                <span>Files</span>
+              </label>
+              <label class="toolbar-options-item" id="toggle-page-pane-label">
+                <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
+                <span>Original page</span>
+              </label>
+              <label class="toolbar-options-item" id="toggle-markup-pane-label">
+                <input type="checkbox" id="toggle-markup-pane" checked role="menuitemcheckbox">
+                <span>DocLang</span>
+              </label>
+              <label class="toolbar-options-item" id="toggle-reading-pane-label">
+                <input type="checkbox" id="toggle-reading-pane" checked role="menuitemcheckbox">
+                <span>Reading view</span>
+              </label>
+              <div class="toolbar-options-divider" role="separator"></div>
+              <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
+                Reset views
+              </button>
+            </div>
+            <div class="toolbar-options-divider" role="separator"></div>
+            <div class="toolbar-options-row">
+              <label class="toolbar-options-item toolbar-options-item-flex" id="toggle-hotkeys-label">
+                <input type="checkbox" id="toggle-hotkeys" role="menuitemcheckbox">
+                <span>Hotkeys</span>
+              </label>
+              <button
+                type="button"
+                class="toolbar-options-info-btn"
+                id="btn-hotkeys-info"
+                aria-label="Show keyboard shortcuts"
+                aria-haspopup="dialog"
+                aria-controls="help-overlay"
+                title="Keyboard shortcuts"
+              >i</button>
+            </div>
+          </div>
         </div>
       </div>
       <span class="header-divider" aria-hidden="true"></span>
@@ -323,9 +348,7 @@
           >
             <div class="viewer-settings-header">
               <h2 class="viewer-settings-title" id="page-settings-title">Overlays</h2>
-              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close overlays">
-                ×
-              </button>
+              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close overlays">×</button>
             </div>
             <div class="viewer-settings-body">
               <label class="settings-option settings-option-primary" id="show-all-bboxes-label">
@@ -575,9 +598,7 @@
           >
             <div class="viewer-settings-header">
               <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
-              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">
-                ×
-              </button>
+              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">×</button>
             </div>
             <div class="viewer-settings-body">
               <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-settings-title">

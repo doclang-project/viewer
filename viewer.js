@@ -317,6 +317,7 @@ const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
+const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -388,6 +389,7 @@ let paneRatios = [...DEFAULT_PANE_RATIOS];
 /** @type {number | null} */
 let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
+let hotkeysEnabled = false;
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
@@ -465,6 +467,7 @@ const els = {
   ],
   toolbarOptionsBtn: document.getElementById("btn-toolbar-options"),
   toolbarOptionsPanel: document.getElementById("toolbar-options-panel"),
+  toolbarOptionsClose: document.getElementById("btn-toolbar-options-close"),
   toggleFilePane: document.getElementById("toggle-file-pane"),
   toggleFilePaneLabel: document.getElementById("toggle-file-pane-label"),
   togglePagePane: document.getElementById("toggle-page-pane"),
@@ -472,6 +475,8 @@ const els = {
   toggleReadingPane: document.getElementById("toggle-reading-pane"),
   togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
+  toggleHotkeys: document.getElementById("toggle-hotkeys"),
+  hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
 };
@@ -593,6 +598,7 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "?") return;
+  if (!hotkeysEnabled) return;
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
   e.preventDefault();
   setHelpOverlayOpen(true);
@@ -600,6 +606,7 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
   if (key !== "j" && key !== "k") return;
+  if (!hotkeysEnabled) return;
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
   e.preventDefault();
   navigateFile(key === "j" ? "next" : "prev");
@@ -622,6 +629,7 @@ function toggleOverlayCheckbox(checkbox) {
   checkbox.dispatchEvent(new Event("change", { bubbles: true }));
 }
 document.addEventListener("keydown", (e) => {
+  if (!hotkeysEnabled) return;
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
   if (!state?.hasPageView) return;
   const key = e.key.toLowerCase();
@@ -649,6 +657,7 @@ els.pageSettingsPanel?.addEventListener("change", (e) => {
 });
 loadLayoutPrefs();
 loadOverlayPrefs();
+loadHotkeysPref();
 syncOverlayPrefControls();
 normalizePaneRatios();
 initArrowStyleControls();
@@ -1254,12 +1263,12 @@ function initPageWheelNav() {
     if (!state?.hasPageView) return;
     if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
 
-    if (e.key === "n" || e.key === "N") {
+    if (hotkeysEnabled && (e.key === "n" || e.key === "N")) {
       e.preventDefault();
       navigateBbox("next");
       return;
     }
-    if (e.key === "p" || e.key === "P") {
+    if (hotkeysEnabled && (e.key === "p" || e.key === "P")) {
       e.preventDefault();
       navigateBbox("prev");
       return;
@@ -2078,6 +2087,23 @@ function resetOverlayPrefs() {
   if (state) renderPage(state.currentPage);
 }
 
+function loadHotkeysPref() {
+  try {
+    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) === "true";
+  } catch {
+    /* ignore invalid stored hotkeys pref */
+  }
+  if (els.toggleHotkeys) els.toggleHotkeys.checked = hotkeysEnabled;
+}
+
+function persistHotkeysPref() {
+  try {
+    localStorage.setItem(HOTKEYS_STORAGE_KEY, String(hotkeysEnabled));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 function resetPaneLayout() {
   filePaneUserToggled = false;
   userPaneVisible = {
@@ -2337,6 +2363,7 @@ function initToolbarOptions() {
     e.stopPropagation();
     setToolbarOptionsOpen(!toolbarOptionsOpen);
   });
+  els.toolbarOptionsClose?.addEventListener("click", () => setToolbarOptionsOpen(false));
 
   document.addEventListener("click", (e) => {
     if (!toolbarOptionsOpen) return;
@@ -2364,6 +2391,14 @@ function initToolbarOptions() {
   els.resetPaneLayoutBtn?.addEventListener("click", () => {
     if (!state) return;
     resetPaneLayout();
+  });
+  els.toggleHotkeys?.addEventListener("change", () => {
+    hotkeysEnabled = els.toggleHotkeys.checked;
+    persistHotkeysPref();
+  });
+  els.hotkeysInfoBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setHelpOverlayOpen(true);
   });
   syncToolbarPaneCheckboxes();
 }
