@@ -336,7 +336,7 @@ const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
 /** @type {Record<string, { color?: string, width?: number, head?: number, style?: string }>} */
 let arrowStyles = loadArrowStyles();
 
-/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
+/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderIndexByElement: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
 let state = null;
 let fileCatalog = [];
 let activeFileIndex = -1;
@@ -374,6 +374,7 @@ const OVERLAY_PREF_ACCESSORS = {
 };
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
+let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
 let pagePanDrag = null;
@@ -401,6 +402,9 @@ const els = {
   pageIndicator: document.getElementById("page-indicator"),
   pageNumberInput: document.getElementById("page-number-input"),
   pageCountIndicator: document.getElementById("page-count-indicator"),
+  layoutNav: document.getElementById("layout-nav"),
+  btnBboxPrev: document.getElementById("btn-bbox-prev"),
+  btnBboxNext: document.getElementById("btn-bbox-next"),
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
@@ -414,6 +418,9 @@ const els = {
   readingSettingsLayer: document.getElementById("reading-settings-layer"),
   readingSettingsScrim: document.getElementById("reading-settings-scrim"),
   readingSettingsClose: document.getElementById("btn-reading-settings-close"),
+  helpOverlayLayer: document.getElementById("help-overlay-layer"),
+  helpOverlayScrim: document.getElementById("help-overlay-scrim"),
+  helpOverlayClose: document.getElementById("btn-help-overlay-close"),
   showReadingFurniture: document.getElementById("show-reading-furniture"),
   showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
   showReadingBackground: document.getElementById("show-reading-background"),
@@ -486,6 +493,8 @@ document.getElementById("input-archive")?.addEventListener("change", async (e) =
 });
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
+els.btnBboxPrev?.addEventListener("click", () => navigateBbox("prev"));
+els.btnBboxNext?.addEventListener("click", () => navigateBbox("next"));
 els.pageNumberInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -559,11 +568,73 @@ els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
 els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
 els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
+els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
+els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
+/** True when a keydown should be left alone because it's headed for a form control, not a shortcut. */
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+/** True when a modifier is held that turns a plain key into a browser/OS shortcut (e.g. Cmd+R to reload). */
+function hasShortcutModifier(e) {
+  return e.ctrlKey || e.metaKey || e.altKey;
+}
+function setHelpOverlayOpen(open) {
+  helpOverlayOpen = open;
+  if (els.helpOverlayLayer) els.helpOverlayLayer.hidden = !open;
+}
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
+  if (helpOverlayOpen) setHelpOverlayOpen(false);
+  else if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "?") return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  setHelpOverlayOpen(true);
+});
+document.addEventListener("keydown", (e) => {
+  const key = e.key.toLowerCase();
+  if (key !== "j" && key !== "k") return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  navigateFile(key === "j" ? "next" : "prev");
+});
+const OVERLAY_TOGGLE_SHORTCUT_KEYS = {
+  d: "showLayoutBody",
+  u: "showLayoutFurniture",
+  g: "showLayoutBackground",
+  r: "showReadingOrder",
+  i: "showPictureContents",
+  t: "showTableContents",
+  f: "showFragmentLinks",
+  x: "showXrefLinks",
+  c: "showCaptionLinks",
+  b: "showLayoutBadges",
+};
+function toggleOverlayCheckbox(checkbox) {
+  if (!checkbox || checkbox.disabled) return;
+  checkbox.checked = !checkbox.checked;
+  checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+}
+document.addEventListener("keydown", (e) => {
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  if (!state?.hasPageView) return;
+  const key = e.key.toLowerCase();
+  if (key === "l") {
+    e.preventDefault();
+    toggleOverlayCheckbox(els.showAllBboxes);
+    return;
+  }
+  const elsKey = OVERLAY_TOGGLE_SHORTCUT_KEYS[key];
+  if (!elsKey) return;
+  if (!showAllBboxes) return;
+  e.preventDefault();
+  toggleOverlayCheckbox(els[elsKey]);
 });
 els.showReadingFurniture?.addEventListener("change", () => {
   showReadingFurniture = els.showReadingFurniture.checked;
@@ -936,6 +1007,16 @@ async function switchToFile(index) {
   activateDocument(docState, entry);
 }
 
+function navigateFile(direction) {
+  if (!fileCatalog.length) return;
+  const step = direction === "prev" ? -1 : 1;
+  const nextIndex = activeFileIndex < 0
+    ? (direction === "prev" ? fileCatalog.length - 1 : 0)
+    : activeFileIndex + step;
+  if (nextIndex < 0 || nextIndex >= fileCatalog.length || nextIndex === activeFileIndex) return;
+  switchToFile(nextIndex);
+}
+
 function defaultFilePaneVisible() {
   return fileCatalog.length > 1;
 }
@@ -1169,8 +1250,20 @@ function initPageWheelNav() {
     if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
   });
 
-  els.pagePane.addEventListener("keydown", (e) => {
+  document.addEventListener("keydown", (e) => {
     if (!state?.hasPageView) return;
+    if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+
+    if (e.key === "n" || e.key === "N") {
+      e.preventDefault();
+      navigateBbox("next");
+      return;
+    }
+    if (e.key === "p" || e.key === "P") {
+      e.preventDefault();
+      navigateBbox("prev");
+      return;
+    }
 
     let dir = 0;
     switch (e.key) {
@@ -1670,6 +1763,7 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     threadNavByElement: buildThreadNavByElement(root),
     pendingSelectElement: null,
     readingOrder,
+    readingOrderIndexByElement: new Map(readingOrder.map((el, i) => [el, i])),
     pageViewOverlay: null,
   };
 }
@@ -1713,6 +1807,8 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
   if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
+  if (els.layoutNav) els.layoutNav.hidden = !open || !state?.hasPageView;
+  updateBboxNavButtons();
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
 }
@@ -2424,6 +2520,7 @@ function renderPage(pageNum) {
   setPageIndicator(pageNum, pageCount);
   if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
   if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
+  updateBboxNavButtons();
 
   if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
 
@@ -3158,6 +3255,45 @@ function navigateThreadFragment(elementId, direction) {
   }
   state.pendingSelectElement = target;
   goToPage(page);
+}
+
+/**
+ * Finds the nearest element with a navigable bbox before/after the current selection,
+ * walking the document-wide reading order (so it can cross page boundaries).
+ * @returns {Element | null}
+ */
+function bboxNavTarget(direction) {
+  const order = state?.readingOrder;
+  if (!order || !order.length) return null;
+  const step = direction === "prev" ? -1 : 1;
+
+  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : null;
+  const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
+  const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
+
+  for (let i = startIndex + step; i >= 0 && i < order.length; i += step) {
+    if (isReadingOrderOverlayUnit(order[i])) return order[i];
+  }
+  return null;
+}
+
+function navigateBbox(direction) {
+  const target = bboxNavTarget(direction);
+  if (!target) return;
+  const page = state.elementPageByEl.get(target);
+  if (!page) return;
+  if (page === state.currentPage) {
+    const id = findElementIdOnPage(target);
+    if (id) selectElement(id);
+    return;
+  }
+  state.pendingSelectElement = target;
+  goToPage(page);
+}
+
+function updateBboxNavButtons() {
+  if (els.btnBboxPrev) els.btnBboxPrev.disabled = !state?.hasPageView || !bboxNavTarget("prev");
+  if (els.btnBboxNext) els.btnBboxNext.disabled = !state?.hasPageView || !bboxNavTarget("next");
 }
 
 /** @returns {Element[]} */
@@ -4301,6 +4437,7 @@ function revealReadingLayerForSelection(renderedEl) {
 }
 
 function applySelection() {
+  updateBboxNavButtons();
   els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
