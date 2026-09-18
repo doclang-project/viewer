@@ -1162,6 +1162,24 @@ function initFilePaneCloseAll() {
   });
 }
 
+/**
+ * True when DocLang or Reading view is the pane the user is interacting with, so
+ * up/down/page-up/page-down should scroll it instead of flipping pages. Neither pane
+ * has a focusable container (unlike Original page), so plain :focus never lands there
+ * on click — the browser instead scrolls whichever of them the pointer is over, so we
+ * key off :hover (which also matches while hovering a descendant); :focus-within is
+ * kept as a fallback for keyboard-only navigation onto a link inside either pane.
+ */
+function isScrollablePaneFocused() {
+  const active = document.activeElement;
+  return Boolean(
+    els.markupPane?.contains(active)
+    || els.renderedPane?.contains(active)
+    || els.markupPane?.matches(":hover")
+    || els.renderedPane?.matches(":hover"),
+  );
+}
+
 function initPageWheelNav() {
   if (!els.pagePane) return;
 
@@ -1276,14 +1294,20 @@ function initPageWheelNav() {
 
     let dir = 0;
     switch (e.key) {
+      case "ArrowRight":
+        dir = 1;
+        break;
+      case "ArrowLeft":
+        dir = -1;
+        break;
       case "ArrowDown":
       case "PageDown":
-      case "ArrowRight":
+        if (isScrollablePaneFocused()) return;
         dir = 1;
         break;
       case "ArrowUp":
       case "PageUp":
-      case "ArrowLeft":
+        if (isScrollablePaneFocused()) return;
         dir = -1;
         break;
       default:
