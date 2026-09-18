@@ -209,47 +209,66 @@
                 <span>Layout</span>
               </label>
               <div class="settings-subgroup" id="layout-subtoggles">
-                <label class="settings-option settings-option-sub" id="show-reading-order-label">
-                  <input type="checkbox" id="show-reading-order">
-                  <span>Reading order</span>
-                </label>
-                <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
-                  <div class="arrow-layer-row">
-                    <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
-                      <input type="checkbox" id="reading-order-arrows" checked>
-                      <span>Arrows</span>
-                    </label>
-                    <button
-                      type="button"
-                      class="arrow-style-btn"
-                      data-arrow-style-toggle="readingOrder"
-                      aria-expanded="false"
-                      aria-controls="arrow-fields-readingOrder"
-                      aria-label="Reading-order arrow style"
-                      title="Arrow style"
-                    ></button>
+                <div class="arrow-layer-row">
+                  <div class="settings-option settings-option-sub settings-option-heading" id="layout-layers-label">
+                    <span>Layers</span>
                   </div>
-                  <div class="arrow-style-fields" id="arrow-fields-readingOrder" hidden>
-                    <label>Color
-                      <input type="color" data-arrow-layer="readingOrder" data-arrow-field="color">
-                    </label>
-                    <label>Thickness
-                      <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="readingOrder" data-arrow-field="width">
-                    </label>
-                    <label>Head
-                      <input type="range" min="3" max="14" step="1" data-arrow-layer="readingOrder" data-arrow-field="head">
-                    </label>
-                    <label>Line
-                      <select data-arrow-layer="readingOrder" data-arrow-field="style">
-                        <option value="solid">Solid</option>
-                        <option value="dashed">Dashed</option>
-                        <option value="dotted">Dotted</option>
-                      </select>
-                    </label>
-                  </div>
-                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
-                    <input type="checkbox" id="reading-order-global">
-                    <span>Global numbering</span>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="layers"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-layers"
+                    aria-label="Layer visibility options"
+                    title="Layers"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-layers" hidden>
+                  <label class="settings-option settings-option-sub" id="show-layout-body-label">
+                    <input type="checkbox" id="show-layout-body" checked>
+                    <span>Body</span>
+                  </label>
+                  <label class="settings-option settings-option-sub" id="show-layout-furniture-label">
+                    <input type="checkbox" id="show-layout-furniture" checked>
+                    <span>Furniture</span>
+                  </label>
+                  <label class="settings-option settings-option-sub" id="show-layout-background-label">
+                    <input type="checkbox" id="show-layout-background" checked>
+                    <span>Background</span>
+                  </label>
+                </div>
+
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="show-reading-order-label">
+                    <input type="checkbox" id="show-reading-order">
+                    <span>Reading order</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="readingOrder"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-readingOrder"
+                    aria-label="Reading-order arrow style"
+                    title="Arrow style"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-readingOrder" hidden>
+                  <label>Color
+                    <input type="color" data-arrow-layer="readingOrder" data-arrow-field="color">
+                  </label>
+                  <label>Thickness
+                    <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="readingOrder" data-arrow-field="width">
+                  </label>
+                  <label>Head
+                    <input type="range" min="3" max="14" step="1" data-arrow-layer="readingOrder" data-arrow-field="head">
+                  </label>
+                  <label>Line
+                    <select data-arrow-layer="readingOrder" data-arrow-field="style">
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
                   </label>
                 </div>
 

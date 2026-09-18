@@ -29,7 +29,7 @@
   --kind-caption: #71717a;
   --kind-field: #d97706;
   --kind-default: #dc2626;
-  --overlay-reading-order: #71717a;
+  --overlay-reading-order: #ff0000;
   --overlay-fragment: #9333ea;
   --xml-tag: #116329;
   --xml-bracket: #24292e;
@@ -63,7 +63,7 @@
     --markup-hover: rgba(96, 165, 250, 0.1);
     --markup-selected: rgba(96, 165, 250, 0.18);
     --kind-text: #60a5fa;
-    --overlay-reading-order: #a1a1aa;
+    --overlay-reading-order: #ff0000;
     --overlay-fragment: #c084fc;
     --kind-heading: #a78bfa;
     --kind-list: #fb923c;
@@ -913,14 +913,6 @@ label.file-btn input {
   padding-left: 0.85rem;
 }
 
-.settings-reading-order-group {
-  gap: 0.35rem;
-  padding-left: 1.6rem;
-}
-
-.settings-option-nested {
-  padding-left: 0;
-}
 
 .settings-option-sub {
   font-size: 0.8125rem;
@@ -1020,11 +1012,6 @@ label.file-btn input {
   padding: 0.35rem 0 0.55rem 1.6rem;
 }
 
-/* Reading-order fields already inherit the sub-group's deeper indent. */
-.settings-reading-order-group .arrow-style-fields {
-  padding-left: 0.4rem;
-}
-
 .arrow-style-fields[hidden] {
   display: none;
 }
@@ -1037,6 +1024,12 @@ label.file-btn input {
   font-size: 0.75rem;
   color: var(--muted);
   cursor: default;
+}
+
+/* Boolean suboptions (e.g. Body/Furniture/Background) are checkbox rows, not a
+   label+control pair, so keep their text left-aligned like higher-level options. */
+.arrow-style-fields label.settings-option {
+  justify-content: flex-start;
 }
 
 /* range slider + its live numeric readout, right-aligned as one control cluster */
@@ -1786,15 +1779,14 @@ pre.markup {
   color: var(--arrow-reading-order-color, var(--overlay-reading-order));
   stroke: currentColor;
   stroke-width: var(--arrow-reading-order-width, 1.5);
-  stroke-dasharray: var(--arrow-reading-order-dash, 5 4);
+  stroke-dasharray: var(--arrow-reading-order-dash, none);
   stroke-linecap: var(--arrow-reading-order-cap, butt);
   vector-effect: non-scaling-stroke;
   pointer-events: none;
   fill: none;
 }
 
-.overlay .reading-order-step.bbox-hidden,
-.overlay .reading-order-badge.bbox-hidden {
+.overlay .reading-order-step.bbox-hidden {
   display: none;
 }
 
@@ -1805,10 +1797,6 @@ pre.markup {
 .overlay .overlay-badge-bg {
   fill-opacity: 1;
   stroke: none;
-}
-
-.reading-order-badge .overlay-badge-bg {
-  fill: var(--overlay-reading-order);
 }
 
 .overlay .element-badge {

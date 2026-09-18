@@ -326,7 +326,7 @@ const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 const ARROW_STYLE_STORAGE_KEY = "doclang-viewer-arrow-styles";
 /** Arrow-based overlay layers and the plumbing that maps each to its CSS + SVG marker. */
 const ARROW_LAYERS = {
-  readingOrder: { cssKey: "reading-order", colorVar: "--overlay-reading-order", markerId: "reading-order-arrowhead", defaultStyle: "dashed" },
+  readingOrder: { cssKey: "reading-order", colorVar: "--overlay-reading-order", markerId: "reading-order-arrowhead", defaultStyle: "solid" },
   fragment: { cssKey: "fragment", colorVar: "--overlay-fragment", markerId: "fragment-arrowhead", defaultStyle: "dashed" },
   xref: { cssKey: "xref", colorVar: "--kind-footnote", markerId: "xref-arrowhead", defaultStyle: "solid" },
   caption: { cssKey: "caption", colorVar: "--kind-caption", markerId: "caption-arrowhead", defaultStyle: "solid" },
@@ -336,7 +336,7 @@ const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
 /** @type {Record<string, { color?: string, width?: number, head?: number, style?: string }>} */
 let arrowStyles = loadArrowStyles();
 
-/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
+/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
 let state = null;
 let fileCatalog = [];
 let activeFileIndex = -1;
@@ -353,17 +353,19 @@ let showTableContents = false;
 let showFragmentLinks = false;
 let showXrefLinks = false;
 let showReadingOrder = false;
-let showReadingOrderArrows = true;
-let readingOrderGlobalNumbering = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
+let showLayoutBody = true;
+let showLayoutFurniture = true;
+let showLayoutBackground = true;
 /** Overlays-panel toggles that are persisted to the browser. Closures read/write the flags above. */
 const OVERLAY_PREF_ACCESSORS = {
   showAllBboxes: { get: () => showAllBboxes, set: (v) => { showAllBboxes = v; }, el: () => els.showAllBboxes, def: true },
   showLayoutBadges: { get: () => showLayoutBadges, set: (v) => { showLayoutBadges = v; }, el: () => els.showLayoutBadges, def: true },
+  showLayoutBody: { get: () => showLayoutBody, set: (v) => { showLayoutBody = v; }, el: () => els.showLayoutBody, def: true },
+  showLayoutFurniture: { get: () => showLayoutFurniture, set: (v) => { showLayoutFurniture = v; }, el: () => els.showLayoutFurniture, def: true },
+  showLayoutBackground: { get: () => showLayoutBackground, set: (v) => { showLayoutBackground = v; }, el: () => els.showLayoutBackground, def: true },
   showReadingOrder: { get: () => showReadingOrder, set: (v) => { showReadingOrder = v; }, el: () => els.showReadingOrder, def: false },
-  showReadingOrderArrows: { get: () => showReadingOrderArrows, set: (v) => { showReadingOrderArrows = v; }, el: () => els.readingOrderArrows, def: true },
-  readingOrderGlobalNumbering: { get: () => readingOrderGlobalNumbering, set: (v) => { readingOrderGlobalNumbering = v; }, el: () => els.readingOrderGlobal, def: false },
   showPictureContents: { get: () => showPictureContents, set: (v) => { showPictureContents = v; }, el: () => els.showPictureContents, def: false },
   showTableContents: { get: () => showTableContents, set: (v) => { showTableContents = v; }, el: () => els.showTableContents, def: false },
   showFragmentLinks: { get: () => showFragmentLinks, set: (v) => { showFragmentLinks = v; }, el: () => els.showFragmentLinks, def: false },
@@ -418,6 +420,13 @@ const els = {
   showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
+  layoutLayersLabel: document.getElementById("layout-layers-label"),
+  showLayoutBody: document.getElementById("show-layout-body"),
+  showLayoutBodyLabel: document.getElementById("show-layout-body-label"),
+  showLayoutFurniture: document.getElementById("show-layout-furniture"),
+  showLayoutFurnitureLabel: document.getElementById("show-layout-furniture-label"),
+  showLayoutBackground: document.getElementById("show-layout-background"),
+  showLayoutBackgroundLabel: document.getElementById("show-layout-background-label"),
   showPictureContents: document.getElementById("show-picture-contents"),
   showPictureContentsLabel: document.getElementById("show-picture-contents-label"),
   showTableContents: document.getElementById("show-table-contents"),
@@ -428,10 +437,6 @@ const els = {
   showXrefLinksLabel: document.getElementById("show-xref-links-label"),
   showReadingOrder: document.getElementById("show-reading-order"),
   showReadingOrderLabel: document.getElementById("show-reading-order-label"),
-  readingOrderArrows: document.getElementById("reading-order-arrows"),
-  readingOrderArrowsLabel: document.getElementById("reading-order-arrows-label"),
-  readingOrderGlobal: document.getElementById("reading-order-global"),
-  readingOrderGlobalLabel: document.getElementById("reading-order-global-label"),
   pageZoom: document.getElementById("page-zoom"),
   pageZoomLabel: document.getElementById("page-zoom-label"),
   pageZoomReset: document.getElementById("page-zoom-reset"),
@@ -513,6 +518,18 @@ els.showCaptionLinks?.addEventListener("change", () => {
   showCaptionLinks = els.showCaptionLinks.checked;
   applyBboxVisibility();
 });
+els.showLayoutBody?.addEventListener("change", () => {
+  showLayoutBody = els.showLayoutBody.checked;
+  applyBboxVisibility();
+});
+els.showLayoutFurniture?.addEventListener("change", () => {
+  showLayoutFurniture = els.showLayoutFurniture.checked;
+  applyBboxVisibility();
+});
+els.showLayoutBackground?.addEventListener("change", () => {
+  showLayoutBackground = els.showLayoutBackground.checked;
+  applyBboxVisibility();
+});
 els.showPictureContents?.addEventListener("change", () => {
   showPictureContents = els.showPictureContents.checked;
   applyBboxVisibility();
@@ -535,14 +552,6 @@ els.showReadingOrder?.addEventListener("change", () => {
   const img = els.pagePane?.querySelector(".page-view img");
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
-});
-els.readingOrderArrows?.addEventListener("change", () => {
-  showReadingOrderArrows = els.readingOrderArrows.checked;
-  applyBboxVisibility();
-});
-els.readingOrderGlobal?.addEventListener("change", () => {
-  readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
-  if (state) renderPage(state.currentPage);
 });
 els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
 els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
@@ -984,6 +993,7 @@ function renderFileView() {
   list.setAttribute("role", "listbox");
   list.setAttribute("aria-label", "Open files");
 
+  let activeCard = null;
   fileCatalog.forEach((entry, index) => {
     const item = document.createElement("li");
     const card = document.createElement("div");
@@ -994,6 +1004,7 @@ function renderFileView() {
     if (index === activeFileIndex) {
       card.classList.add("is-active");
       card.setAttribute("aria-selected", "true");
+      activeCard = card;
     } else {
       card.setAttribute("aria-selected", "false");
     }
@@ -1034,6 +1045,7 @@ function renderFileView() {
   });
 
   els.filePane.appendChild(list);
+  activeCard?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
 
 function updateFileView() {
@@ -1658,7 +1670,6 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     threadNavByElement: buildThreadNavByElement(root),
     pendingSelectElement: null,
     readingOrder,
-    readingOrderDisplayNumbers: computeReadingOrderDisplayNumbers(readingOrder),
     pageViewOverlay: null,
   };
 }
@@ -1802,6 +1813,10 @@ function syncLayoutSubtoggles() {
   const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
   for (const label of [
     els.showLayoutBadgesLabel,
+    els.layoutLayersLabel,
+    els.showLayoutBodyLabel,
+    els.showLayoutFurnitureLabel,
+    els.showLayoutBackgroundLabel,
     els.showPictureContentsLabel,
     els.showTableContentsLabel,
     els.showFragmentLinksLabel,
@@ -1813,14 +1828,6 @@ function syncLayoutSubtoggles() {
     label.classList.toggle("settings-option-disabled", !layoutEnabled);
     const input = label.querySelector("input");
     if (input) input.disabled = !layoutEnabled;
-  }
-
-  const readingOrderEnabled = layoutEnabled && showReadingOrder;
-  for (const label of [els.readingOrderArrowsLabel, els.readingOrderGlobalLabel]) {
-    if (!label) continue;
-    label.classList.toggle("settings-option-disabled", !readingOrderEnabled);
-    const input = label.querySelector("input");
-    if (input) input.disabled = !readingOrderEnabled;
   }
 
   collapseDisabledArrowFields();
@@ -2454,14 +2461,7 @@ function renderPage(pageNum) {
         const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
         const existing = wrap.querySelector("svg.overlay");
         if (existing) existing.remove();
-        const readingOrderSteps = collectReadingOrderSteps(
-          segment,
-          elementIds,
-          boxes,
-          state.readingOrder,
-          readingOrderGlobalNumbering,
-          state.readingOrderDisplayNumbers,
-        );
+        const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder);
         state.pageViewOverlay = { boxes, readingOrderSteps };
         if (boxes.length) {
           wrap.appendChild(
@@ -2683,42 +2683,17 @@ function syncOverlayBadges(img) {
   const meta = state?.pageViewOverlay;
   if (!svg || !img.naturalWidth || !meta) return;
 
-  svg.querySelectorAll(".element-badge, .reading-order-badge").forEach((badge) => badge.remove());
-
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-  const badgeGap = overlayUserLength(2);
-  const readingOrderByElementId = new Map();
-  if (showAllBboxes && showReadingOrder) {
-    for (const step of meta.readingOrderSteps ?? []) {
-      readingOrderByElementId.set(step.elementId, step);
-    }
-  }
+  svg.querySelectorAll(".element-badge").forEach((badge) => badge.remove());
+  if (!showAllBboxes || !showLayoutBadges) return;
 
   const boxes = sortedOverlayBoxes(meta.boxes ?? []);
 
   for (const b of boxes) {
     const { x, y } = boxPixelRect(b, img);
-    let tagLayout = { width: 0 };
-    if (showAllBboxes && showLayoutBadges) {
-      tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
-      appendOverlayBadge(svg, x, y, b.tag, {
-        extraClass: `element-badge ${kindClassForTag(b.kind)}`,
-        elementId: b.elementId,
-      });
-    }
-
-    const step = readingOrderByElementId.get(b.elementId);
-    if (step) {
-      const orderText = String(step.order);
-      const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
-      const orderAnchorX = showAllBboxes && showLayoutBadges
-        ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2
-        : x;
-      appendOverlayBadge(svg, orderAnchorX, y, orderText, {
-        extraClass: "reading-order-badge",
-        elementId: b.elementId,
-      });
-    }
+    appendOverlayBadge(svg, x, y, b.tag, {
+      extraClass: `element-badge ${kindClassForTag(b.kind)}`,
+      elementId: b.elementId,
+    });
   }
 }
 
@@ -3289,31 +3264,11 @@ function isReadingOrderOverlayUnit(el) {
   return isVirtualTextOverlayUnit(el);
 }
 
-/** @returns {Map<Element, number>} */
-function computeReadingOrderDisplayNumbers(readingOrder) {
-  const numbers = new Map();
-  let n = 0;
-  for (const el of readingOrder) {
-    if (!isReadingOrderOverlayUnit(el)) continue;
-    n += 1;
-    numbers.set(el, n);
-  }
-  return numbers;
-}
-
-/** @returns {{ order: number, box: object, elementId: string }[]} */
-function collectReadingOrderSteps(
-  segment,
-  elementIds,
-  boxes,
-  readingOrder,
-  globalNumbering = true,
-  displayNumbers = null,
-) {
+/** @returns {{ box: object, elementId: string }[]} */
+function collectReadingOrderSteps(segment, elementIds, boxes, readingOrder) {
   const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {{ order: number, box: object, elementId: string }[]} */
+  /** @type {{ box: object, elementId: string }[]} */
   const steps = [];
-  let pageOrder = 0;
 
   readingOrder.forEach((el) => {
     if (isPictureOrTableContentElement(el)) return;
@@ -3321,12 +3276,7 @@ function collectReadingOrderSteps(
     if (!elementId) return;
     const box = boxById.get(elementId);
     if (!box) return;
-    pageOrder += 1;
-    steps.push({
-      order: globalNumbering ? (displayNumbers?.get(el) ?? pageOrder) : pageOrder,
-      box,
-      elementId,
-    });
+    steps.push({ box, elementId });
   });
 
   return steps;
@@ -3703,12 +3653,12 @@ function resetAllOverlaySettings() {
   applyArrowStyleVars();
   refreshArrowMarkers();
   for (const key of Object.keys(ARROW_LAYERS)) toggleArrowStyleFields(key, false);
+  toggleArrowStyleFields("layers", false);
   resetOverlayPrefs();
 }
 
-/** Expand/collapse one arrow layer's inline style controls. */
+/** Expand/collapse one collapsible settings panel (arrow-layer style fields, or any other row using the same disclosure pattern). */
 function toggleArrowStyleFields(layerKey, force) {
-  if (!ARROW_LAYERS[layerKey]) return;
   const panel = els.pageSettingsPanel;
   const btn = panel?.querySelector(`[data-arrow-style-toggle="${layerKey}"]`);
   const fields = document.getElementById(`arrow-fields-${layerKey}`);
@@ -4200,10 +4150,18 @@ function isTableContentOverlayElement(elementId) {
   return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
 }
 
+function isLayoutLayerHidden(layer) {
+  if (layer === "furniture") return !showLayoutFurniture;
+  if (layer === "background") return !showLayoutBackground;
+  return !showLayoutBody;
+}
+
 function isContentsOptionHidden(elementId, clickVisible) {
   if (clickVisible) return false;
   if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
   if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
+  const el = state?.idToElement?.get(elementId);
+  if (el && isLayoutLayerHidden(elementLayer(el))) return true;
   return false;
 }
 
@@ -4280,26 +4238,8 @@ function applyBboxVisibility() {
     el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
   }
 
-  for (const el of els.pagePane.querySelectorAll(".reading-order-badge")) {
-    const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showReadingOrder) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    if (
-      isPictureContentOverlayElement(elementId)
-      || isTableContentOverlayElement(elementId)
-      || isContentsOptionHidden(elementId, clickVisible)
-    ) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
-  }
-
   for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
-    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
+    if (!showAllBboxes || !showReadingOrder) {
       el.classList.add("bbox-hidden");
       continue;
     }
