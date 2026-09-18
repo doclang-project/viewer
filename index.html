@@ -47,6 +47,21 @@
           <span class="page-indicator-suffix" id="page-count-indicator">&nbsp;of 1</span>
         </div>
       </nav>
+      <nav class="page-nav layout-nav" id="layout-nav" hidden>
+        <div class="page-nav-btns">
+          <button type="button" id="btn-bbox-prev" class="page-nav-btn" disabled aria-label="Select previous layout element" title="Select previous element (P)">
+            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path d="M10.5 3.5 5.5 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+          <button type="button" id="btn-bbox-next" class="page-nav-btn" disabled aria-label="Select next layout element" title="Select next element (N)">
+            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path d="M5.5 3.5 10.5 8l-5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+        </div>
+        <span class="layout-nav-label">Layout</span>
+      </nav>
     </div>
     <div class="header-center">
       <span class="doc-label" id="doc-label" hidden></span>
@@ -61,29 +76,54 @@
           aria-controls="toolbar-options-panel"
           aria-haspopup="true"
         >
-          Views
+          Settings
         </button>
         <div class="toolbar-options-panel" id="toolbar-options-panel" role="menu" hidden>
-          <label class="toolbar-options-item" id="toggle-file-pane-label">
-            <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
-            <span>Files</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-page-pane-label">
-            <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
-            <span>Original page</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-markup-pane-label">
-            <input type="checkbox" id="toggle-markup-pane" checked role="menuitemcheckbox">
-            <span>DocLang</span>
-          </label>
-          <label class="toolbar-options-item" id="toggle-reading-pane-label">
-            <input type="checkbox" id="toggle-reading-pane" checked role="menuitemcheckbox">
-            <span>Reading view</span>
-          </label>
-          <div class="toolbar-options-divider" role="separator"></div>
-          <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
-            Reset views
-          </button>
+          <div class="viewer-settings-header">
+            <h2 class="viewer-settings-title">Settings</h2>
+            <button type="button" class="viewer-settings-close" id="btn-toolbar-options-close" aria-label="Close settings">×</button>
+          </div>
+          <div class="toolbar-options-body">
+            <div class="toolbar-options-heading">Views</div>
+            <div class="toolbar-options-submenu">
+              <label class="toolbar-options-item" id="toggle-file-pane-label">
+                <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
+                <span>Files</span>
+              </label>
+              <label class="toolbar-options-item" id="toggle-page-pane-label">
+                <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
+                <span>Original page</span>
+              </label>
+              <label class="toolbar-options-item" id="toggle-markup-pane-label">
+                <input type="checkbox" id="toggle-markup-pane" checked role="menuitemcheckbox">
+                <span>DocLang</span>
+              </label>
+              <label class="toolbar-options-item" id="toggle-reading-pane-label">
+                <input type="checkbox" id="toggle-reading-pane" checked role="menuitemcheckbox">
+                <span>Reading view</span>
+              </label>
+              <div class="toolbar-options-divider" role="separator"></div>
+              <button type="button" class="toolbar-options-reset" id="btn-reset-pane-layout" role="menuitem">
+                Reset views
+              </button>
+            </div>
+            <div class="toolbar-options-divider" role="separator"></div>
+            <div class="toolbar-options-row">
+              <label class="toolbar-options-item toolbar-options-item-flex" id="toggle-hotkeys-label">
+                <input type="checkbox" id="toggle-hotkeys" role="menuitemcheckbox">
+                <span>Hotkeys</span>
+              </label>
+              <button
+                type="button"
+                class="toolbar-options-info-btn"
+                id="btn-hotkeys-info"
+                aria-label="Show keyboard shortcuts"
+                aria-haspopup="dialog"
+                aria-controls="help-overlay"
+                title="Keyboard shortcuts"
+              >i</button>
+            </div>
+          </div>
         </div>
       </div>
       <span class="header-divider" aria-hidden="true"></span>
@@ -98,6 +138,115 @@
       <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
     </div>
   </header>
+
+  <div class="help-overlay-layer" id="help-overlay-layer" hidden>
+    <button
+      type="button"
+      class="help-overlay-scrim"
+      id="help-overlay-scrim"
+      tabindex="-1"
+      aria-label="Close keyboard shortcuts"
+    ></button>
+    <aside class="help-overlay" id="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-overlay-title">
+      <div class="help-overlay-header">
+        <h2 class="help-overlay-title" id="help-overlay-title">Keyboard shortcuts</h2>
+        <button type="button" class="help-overlay-close" id="btn-help-overlay-close" aria-label="Close">×</button>
+      </div>
+      <div class="help-overlay-body">
+        <section class="help-shortcut-group">
+          <h3>General</h3>
+          <div class="help-shortcut-list">
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>?</kbd></span>
+              <span class="help-shortcut-desc">Show this help</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>Esc</kbd></span>
+              <span class="help-shortcut-desc">Close this help</span>
+            </div>
+          </div>
+        </section>
+        <section class="help-shortcut-group">
+          <h3>Navigation</h3>
+          <div class="help-shortcut-list">
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>K</kbd></span>
+              <span class="help-shortcut-desc">Previous file</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>J</kbd></span>
+              <span class="help-shortcut-desc">Next file</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>&larr;</kbd></span>
+              <span class="help-shortcut-desc">Previous page</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>&rarr;</kbd></span>
+              <span class="help-shortcut-desc">Next page</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>P</kbd></span>
+              <span class="help-shortcut-desc">Previous layout element</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>N</kbd></span>
+              <span class="help-shortcut-desc">Next layout element</span>
+            </div>
+          </div>
+        </section>
+        <section class="help-shortcut-group">
+          <h3>Overlays</h3>
+          <div class="help-shortcut-list">
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>L</kbd></span>
+              <span class="help-shortcut-desc">Whole layout</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>D</kbd></span>
+              <span class="help-shortcut-desc">Body layer</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>U</kbd></span>
+              <span class="help-shortcut-desc">Furniture layer</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>G</kbd></span>
+              <span class="help-shortcut-desc">Background layer</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>R</kbd></span>
+              <span class="help-shortcut-desc">Reading order</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>I</kbd></span>
+              <span class="help-shortcut-desc">Picture contents</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>T</kbd></span>
+              <span class="help-shortcut-desc">Table contents</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>F</kbd></span>
+              <span class="help-shortcut-desc">Fragments</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>X</kbd></span>
+              <span class="help-shortcut-desc">Cross-references</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>C</kbd></span>
+              <span class="help-shortcut-desc">Captions</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>B</kbd></span>
+              <span class="help-shortcut-desc">Badges</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
 
   <p class="drop-banner" id="drop-banner">Drop to open another file</p>
 
@@ -199,9 +348,7 @@
           >
             <div class="viewer-settings-header">
               <h2 class="viewer-settings-title" id="page-settings-title">Overlays</h2>
-              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close overlays">
-                ×
-              </button>
+              <button type="button" class="viewer-settings-close" id="btn-page-settings-close" aria-label="Close overlays">×</button>
             </div>
             <div class="viewer-settings-body">
               <label class="settings-option settings-option-primary" id="show-all-bboxes-label">
@@ -209,47 +356,66 @@
                 <span>Layout</span>
               </label>
               <div class="settings-subgroup" id="layout-subtoggles">
-                <label class="settings-option settings-option-sub" id="show-reading-order-label">
-                  <input type="checkbox" id="show-reading-order">
-                  <span>Reading order</span>
-                </label>
-                <div class="settings-subgroup settings-reading-order-group" id="reading-order-subtoggles">
-                  <div class="arrow-layer-row">
-                    <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-arrows-label">
-                      <input type="checkbox" id="reading-order-arrows" checked>
-                      <span>Arrows</span>
-                    </label>
-                    <button
-                      type="button"
-                      class="arrow-style-btn"
-                      data-arrow-style-toggle="readingOrder"
-                      aria-expanded="false"
-                      aria-controls="arrow-fields-readingOrder"
-                      aria-label="Reading-order arrow style"
-                      title="Arrow style"
-                    ></button>
+                <div class="arrow-layer-row">
+                  <div class="settings-option settings-option-sub settings-option-heading" id="layout-layers-label">
+                    <span>Layers</span>
                   </div>
-                  <div class="arrow-style-fields" id="arrow-fields-readingOrder" hidden>
-                    <label>Color
-                      <input type="color" data-arrow-layer="readingOrder" data-arrow-field="color">
-                    </label>
-                    <label>Thickness
-                      <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="readingOrder" data-arrow-field="width">
-                    </label>
-                    <label>Head
-                      <input type="range" min="3" max="14" step="1" data-arrow-layer="readingOrder" data-arrow-field="head">
-                    </label>
-                    <label>Line
-                      <select data-arrow-layer="readingOrder" data-arrow-field="style">
-                        <option value="solid">Solid</option>
-                        <option value="dashed">Dashed</option>
-                        <option value="dotted">Dotted</option>
-                      </select>
-                    </label>
-                  </div>
-                  <label class="settings-option settings-option-sub settings-option-nested" id="reading-order-global-label">
-                    <input type="checkbox" id="reading-order-global">
-                    <span>Global numbering</span>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="layers"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-layers"
+                    aria-label="Layer visibility options"
+                    title="Layers"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-layers" hidden>
+                  <label class="settings-option settings-option-sub" id="show-layout-body-label">
+                    <input type="checkbox" id="show-layout-body" checked>
+                    <span>Body</span>
+                  </label>
+                  <label class="settings-option settings-option-sub" id="show-layout-furniture-label">
+                    <input type="checkbox" id="show-layout-furniture" checked>
+                    <span>Furniture</span>
+                  </label>
+                  <label class="settings-option settings-option-sub" id="show-layout-background-label">
+                    <input type="checkbox" id="show-layout-background" checked>
+                    <span>Background</span>
+                  </label>
+                </div>
+
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="show-reading-order-label">
+                    <input type="checkbox" id="show-reading-order">
+                    <span>Reading order</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="readingOrder"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-readingOrder"
+                    aria-label="Reading-order arrow style"
+                    title="Arrow style"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-readingOrder" hidden>
+                  <label>Color
+                    <input type="color" data-arrow-layer="readingOrder" data-arrow-field="color">
+                  </label>
+                  <label>Thickness
+                    <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="readingOrder" data-arrow-field="width">
+                  </label>
+                  <label>Head
+                    <input type="range" min="3" max="14" step="1" data-arrow-layer="readingOrder" data-arrow-field="head">
+                  </label>
+                  <label>Line
+                    <select data-arrow-layer="readingOrder" data-arrow-field="style">
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
                   </label>
                 </div>
 
@@ -432,9 +598,7 @@
           >
             <div class="viewer-settings-header">
               <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
-              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">
-                ×
-              </button>
+              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">×</button>
             </div>
             <div class="viewer-settings-body">
               <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-settings-title">

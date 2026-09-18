@@ -317,6 +317,7 @@ const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
+const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -326,7 +327,7 @@ const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 const ARROW_STYLE_STORAGE_KEY = "doclang-viewer-arrow-styles";
 /** Arrow-based overlay layers and the plumbing that maps each to its CSS + SVG marker. */
 const ARROW_LAYERS = {
-  readingOrder: { cssKey: "reading-order", colorVar: "--overlay-reading-order", markerId: "reading-order-arrowhead", defaultStyle: "dashed" },
+  readingOrder: { cssKey: "reading-order", colorVar: "--overlay-reading-order", markerId: "reading-order-arrowhead", defaultStyle: "solid" },
   fragment: { cssKey: "fragment", colorVar: "--overlay-fragment", markerId: "fragment-arrowhead", defaultStyle: "dashed" },
   xref: { cssKey: "xref", colorVar: "--kind-footnote", markerId: "xref-arrowhead", defaultStyle: "solid" },
   caption: { cssKey: "caption", colorVar: "--kind-caption", markerId: "caption-arrowhead", defaultStyle: "solid" },
@@ -336,7 +337,7 @@ const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
 /** @type {Record<string, { color?: string, width?: number, head?: number, style?: string }>} */
 let arrowStyles = loadArrowStyles();
 
-/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderDisplayNumbers: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { order: number, box: object, elementId: string }[] } | null } | null} */
+/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderIndexByElement: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
 let state = null;
 let fileCatalog = [];
 let activeFileIndex = -1;
@@ -353,17 +354,19 @@ let showTableContents = false;
 let showFragmentLinks = false;
 let showXrefLinks = false;
 let showReadingOrder = false;
-let showReadingOrderArrows = true;
-let readingOrderGlobalNumbering = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
+let showLayoutBody = true;
+let showLayoutFurniture = true;
+let showLayoutBackground = true;
 /** Overlays-panel toggles that are persisted to the browser. Closures read/write the flags above. */
 const OVERLAY_PREF_ACCESSORS = {
   showAllBboxes: { get: () => showAllBboxes, set: (v) => { showAllBboxes = v; }, el: () => els.showAllBboxes, def: true },
   showLayoutBadges: { get: () => showLayoutBadges, set: (v) => { showLayoutBadges = v; }, el: () => els.showLayoutBadges, def: true },
+  showLayoutBody: { get: () => showLayoutBody, set: (v) => { showLayoutBody = v; }, el: () => els.showLayoutBody, def: true },
+  showLayoutFurniture: { get: () => showLayoutFurniture, set: (v) => { showLayoutFurniture = v; }, el: () => els.showLayoutFurniture, def: true },
+  showLayoutBackground: { get: () => showLayoutBackground, set: (v) => { showLayoutBackground = v; }, el: () => els.showLayoutBackground, def: true },
   showReadingOrder: { get: () => showReadingOrder, set: (v) => { showReadingOrder = v; }, el: () => els.showReadingOrder, def: false },
-  showReadingOrderArrows: { get: () => showReadingOrderArrows, set: (v) => { showReadingOrderArrows = v; }, el: () => els.readingOrderArrows, def: true },
-  readingOrderGlobalNumbering: { get: () => readingOrderGlobalNumbering, set: (v) => { readingOrderGlobalNumbering = v; }, el: () => els.readingOrderGlobal, def: false },
   showPictureContents: { get: () => showPictureContents, set: (v) => { showPictureContents = v; }, el: () => els.showPictureContents, def: false },
   showTableContents: { get: () => showTableContents, set: (v) => { showTableContents = v; }, el: () => els.showTableContents, def: false },
   showFragmentLinks: { get: () => showFragmentLinks, set: (v) => { showFragmentLinks = v; }, el: () => els.showFragmentLinks, def: false },
@@ -372,6 +375,7 @@ const OVERLAY_PREF_ACCESSORS = {
 };
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
+let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
 let pagePanDrag = null;
@@ -385,6 +389,7 @@ let paneRatios = [...DEFAULT_PANE_RATIOS];
 /** @type {number | null} */
 let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
+let hotkeysEnabled = false;
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
@@ -399,6 +404,9 @@ const els = {
   pageIndicator: document.getElementById("page-indicator"),
   pageNumberInput: document.getElementById("page-number-input"),
   pageCountIndicator: document.getElementById("page-count-indicator"),
+  layoutNav: document.getElementById("layout-nav"),
+  btnBboxPrev: document.getElementById("btn-bbox-prev"),
+  btnBboxNext: document.getElementById("btn-bbox-next"),
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
@@ -412,12 +420,22 @@ const els = {
   readingSettingsLayer: document.getElementById("reading-settings-layer"),
   readingSettingsScrim: document.getElementById("reading-settings-scrim"),
   readingSettingsClose: document.getElementById("btn-reading-settings-close"),
+  helpOverlayLayer: document.getElementById("help-overlay-layer"),
+  helpOverlayScrim: document.getElementById("help-overlay-scrim"),
+  helpOverlayClose: document.getElementById("btn-help-overlay-close"),
   showReadingFurniture: document.getElementById("show-reading-furniture"),
   showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
   showReadingBackground: document.getElementById("show-reading-background"),
   showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
+  layoutLayersLabel: document.getElementById("layout-layers-label"),
+  showLayoutBody: document.getElementById("show-layout-body"),
+  showLayoutBodyLabel: document.getElementById("show-layout-body-label"),
+  showLayoutFurniture: document.getElementById("show-layout-furniture"),
+  showLayoutFurnitureLabel: document.getElementById("show-layout-furniture-label"),
+  showLayoutBackground: document.getElementById("show-layout-background"),
+  showLayoutBackgroundLabel: document.getElementById("show-layout-background-label"),
   showPictureContents: document.getElementById("show-picture-contents"),
   showPictureContentsLabel: document.getElementById("show-picture-contents-label"),
   showTableContents: document.getElementById("show-table-contents"),
@@ -428,10 +446,6 @@ const els = {
   showXrefLinksLabel: document.getElementById("show-xref-links-label"),
   showReadingOrder: document.getElementById("show-reading-order"),
   showReadingOrderLabel: document.getElementById("show-reading-order-label"),
-  readingOrderArrows: document.getElementById("reading-order-arrows"),
-  readingOrderArrowsLabel: document.getElementById("reading-order-arrows-label"),
-  readingOrderGlobal: document.getElementById("reading-order-global"),
-  readingOrderGlobalLabel: document.getElementById("reading-order-global-label"),
   pageZoom: document.getElementById("page-zoom"),
   pageZoomLabel: document.getElementById("page-zoom-label"),
   pageZoomReset: document.getElementById("page-zoom-reset"),
@@ -453,6 +467,7 @@ const els = {
   ],
   toolbarOptionsBtn: document.getElementById("btn-toolbar-options"),
   toolbarOptionsPanel: document.getElementById("toolbar-options-panel"),
+  toolbarOptionsClose: document.getElementById("btn-toolbar-options-close"),
   toggleFilePane: document.getElementById("toggle-file-pane"),
   toggleFilePaneLabel: document.getElementById("toggle-file-pane-label"),
   togglePagePane: document.getElementById("toggle-page-pane"),
@@ -460,6 +475,8 @@ const els = {
   toggleReadingPane: document.getElementById("toggle-reading-pane"),
   togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
+  toggleHotkeys: document.getElementById("toggle-hotkeys"),
+  hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
 };
@@ -481,6 +498,8 @@ document.getElementById("input-archive")?.addEventListener("change", async (e) =
 });
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
+els.btnBboxPrev?.addEventListener("click", () => navigateBbox("prev"));
+els.btnBboxNext?.addEventListener("click", () => navigateBbox("next"));
 els.pageNumberInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -513,6 +532,18 @@ els.showCaptionLinks?.addEventListener("change", () => {
   showCaptionLinks = els.showCaptionLinks.checked;
   applyBboxVisibility();
 });
+els.showLayoutBody?.addEventListener("change", () => {
+  showLayoutBody = els.showLayoutBody.checked;
+  applyBboxVisibility();
+});
+els.showLayoutFurniture?.addEventListener("change", () => {
+  showLayoutFurniture = els.showLayoutFurniture.checked;
+  applyBboxVisibility();
+});
+els.showLayoutBackground?.addEventListener("change", () => {
+  showLayoutBackground = els.showLayoutBackground.checked;
+  applyBboxVisibility();
+});
 els.showPictureContents?.addEventListener("change", () => {
   showPictureContents = els.showPictureContents.checked;
   applyBboxVisibility();
@@ -536,25 +567,82 @@ els.showReadingOrder?.addEventListener("change", () => {
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
-els.readingOrderArrows?.addEventListener("change", () => {
-  showReadingOrderArrows = els.readingOrderArrows.checked;
-  applyBboxVisibility();
-});
-els.readingOrderGlobal?.addEventListener("change", () => {
-  readingOrderGlobalNumbering = els.readingOrderGlobal.checked;
-  if (state) renderPage(state.currentPage);
-});
 els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
 els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
 els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
 els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
 els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
+els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
+els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
+/** True when a keydown should be left alone because it's headed for a form control, not a shortcut. */
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+/** True when a modifier is held that turns a plain key into a browser/OS shortcut (e.g. Cmd+R to reload). */
+function hasShortcutModifier(e) {
+  return e.ctrlKey || e.metaKey || e.altKey;
+}
+function setHelpOverlayOpen(open) {
+  helpOverlayOpen = open;
+  if (els.helpOverlayLayer) els.helpOverlayLayer.hidden = !open;
+}
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
+  if (helpOverlayOpen) setHelpOverlayOpen(false);
+  else if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "?") return;
+  if (!hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  setHelpOverlayOpen(true);
+});
+document.addEventListener("keydown", (e) => {
+  const key = e.key.toLowerCase();
+  if (key !== "j" && key !== "k") return;
+  if (!hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  navigateFile(key === "j" ? "next" : "prev");
+});
+const OVERLAY_TOGGLE_SHORTCUT_KEYS = {
+  d: "showLayoutBody",
+  u: "showLayoutFurniture",
+  g: "showLayoutBackground",
+  r: "showReadingOrder",
+  i: "showPictureContents",
+  t: "showTableContents",
+  f: "showFragmentLinks",
+  x: "showXrefLinks",
+  c: "showCaptionLinks",
+  b: "showLayoutBadges",
+};
+function toggleOverlayCheckbox(checkbox) {
+  if (!checkbox || checkbox.disabled) return;
+  checkbox.checked = !checkbox.checked;
+  checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+}
+document.addEventListener("keydown", (e) => {
+  if (!hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  if (!state?.hasPageView) return;
+  const key = e.key.toLowerCase();
+  if (key === "l") {
+    e.preventDefault();
+    toggleOverlayCheckbox(els.showAllBboxes);
+    return;
+  }
+  const elsKey = OVERLAY_TOGGLE_SHORTCUT_KEYS[key];
+  if (!elsKey) return;
+  if (!showAllBboxes) return;
+  e.preventDefault();
+  toggleOverlayCheckbox(els[elsKey]);
 });
 els.showReadingFurniture?.addEventListener("change", () => {
   showReadingFurniture = els.showReadingFurniture.checked;
@@ -569,6 +657,7 @@ els.pageSettingsPanel?.addEventListener("change", (e) => {
 });
 loadLayoutPrefs();
 loadOverlayPrefs();
+loadHotkeysPref();
 syncOverlayPrefControls();
 normalizePaneRatios();
 initArrowStyleControls();
@@ -927,6 +1016,16 @@ async function switchToFile(index) {
   activateDocument(docState, entry);
 }
 
+function navigateFile(direction) {
+  if (!fileCatalog.length) return;
+  const step = direction === "prev" ? -1 : 1;
+  const nextIndex = activeFileIndex < 0
+    ? (direction === "prev" ? fileCatalog.length - 1 : 0)
+    : activeFileIndex + step;
+  if (nextIndex < 0 || nextIndex >= fileCatalog.length || nextIndex === activeFileIndex) return;
+  switchToFile(nextIndex);
+}
+
 function defaultFilePaneVisible() {
   return fileCatalog.length > 1;
 }
@@ -984,6 +1083,7 @@ function renderFileView() {
   list.setAttribute("role", "listbox");
   list.setAttribute("aria-label", "Open files");
 
+  let activeCard = null;
   fileCatalog.forEach((entry, index) => {
     const item = document.createElement("li");
     const card = document.createElement("div");
@@ -994,6 +1094,7 @@ function renderFileView() {
     if (index === activeFileIndex) {
       card.classList.add("is-active");
       card.setAttribute("aria-selected", "true");
+      activeCard = card;
     } else {
       card.setAttribute("aria-selected", "false");
     }
@@ -1034,6 +1135,7 @@ function renderFileView() {
   });
 
   els.filePane.appendChild(list);
+  activeCard?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
 
 function updateFileView() {
@@ -1058,6 +1160,24 @@ function initFilePaneCloseAll() {
       : `Remove all ${count} open files from the viewer?`;
     if (confirm(message)) resetViewer();
   });
+}
+
+/**
+ * True when DocLang or Reading view is the pane the user is interacting with, so
+ * up/down/page-up/page-down should scroll it instead of flipping pages. Neither pane
+ * has a focusable container (unlike Original page), so plain :focus never lands there
+ * on click — the browser instead scrolls whichever of them the pointer is over, so we
+ * key off :hover (which also matches while hovering a descendant); :focus-within is
+ * kept as a fallback for keyboard-only navigation onto a link inside either pane.
+ */
+function isScrollablePaneFocused() {
+  const active = document.activeElement;
+  return Boolean(
+    els.markupPane?.contains(active)
+    || els.renderedPane?.contains(active)
+    || els.markupPane?.matches(":hover")
+    || els.renderedPane?.matches(":hover"),
+  );
 }
 
 function initPageWheelNav() {
@@ -1157,19 +1277,37 @@ function initPageWheelNav() {
     if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
   });
 
-  els.pagePane.addEventListener("keydown", (e) => {
+  document.addEventListener("keydown", (e) => {
     if (!state?.hasPageView) return;
+    if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+
+    if (hotkeysEnabled && (e.key === "n" || e.key === "N")) {
+      e.preventDefault();
+      navigateBbox("next");
+      return;
+    }
+    if (hotkeysEnabled && (e.key === "p" || e.key === "P")) {
+      e.preventDefault();
+      navigateBbox("prev");
+      return;
+    }
 
     let dir = 0;
     switch (e.key) {
+      case "ArrowRight":
+        dir = 1;
+        break;
+      case "ArrowLeft":
+        dir = -1;
+        break;
       case "ArrowDown":
       case "PageDown":
-      case "ArrowRight":
+        if (isScrollablePaneFocused()) return;
         dir = 1;
         break;
       case "ArrowUp":
       case "PageUp":
-      case "ArrowLeft":
+        if (isScrollablePaneFocused()) return;
         dir = -1;
         break;
       default:
@@ -1658,7 +1796,7 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     threadNavByElement: buildThreadNavByElement(root),
     pendingSelectElement: null,
     readingOrder,
-    readingOrderDisplayNumbers: computeReadingOrderDisplayNumbers(readingOrder),
+    readingOrderIndexByElement: new Map(readingOrder.map((el, i) => [el, i])),
     pageViewOverlay: null,
   };
 }
@@ -1702,6 +1840,8 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
   if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
+  if (els.layoutNav) els.layoutNav.hidden = !open || !state?.hasPageView;
+  updateBboxNavButtons();
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
 }
@@ -1802,6 +1942,10 @@ function syncLayoutSubtoggles() {
   const layoutEnabled = Boolean(state?.hasPageView && showAllBboxes);
   for (const label of [
     els.showLayoutBadgesLabel,
+    els.layoutLayersLabel,
+    els.showLayoutBodyLabel,
+    els.showLayoutFurnitureLabel,
+    els.showLayoutBackgroundLabel,
     els.showPictureContentsLabel,
     els.showTableContentsLabel,
     els.showFragmentLinksLabel,
@@ -1813,14 +1957,6 @@ function syncLayoutSubtoggles() {
     label.classList.toggle("settings-option-disabled", !layoutEnabled);
     const input = label.querySelector("input");
     if (input) input.disabled = !layoutEnabled;
-  }
-
-  const readingOrderEnabled = layoutEnabled && showReadingOrder;
-  for (const label of [els.readingOrderArrowsLabel, els.readingOrderGlobalLabel]) {
-    if (!label) continue;
-    label.classList.toggle("settings-option-disabled", !readingOrderEnabled);
-    const input = label.querySelector("input");
-    if (input) input.disabled = !readingOrderEnabled;
   }
 
   collapseDisabledArrowFields();
@@ -1973,6 +2109,23 @@ function resetOverlayPrefs() {
   persistOverlayPrefs();
   syncLayoutSubtoggles();
   if (state) renderPage(state.currentPage);
+}
+
+function loadHotkeysPref() {
+  try {
+    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) === "true";
+  } catch {
+    /* ignore invalid stored hotkeys pref */
+  }
+  if (els.toggleHotkeys) els.toggleHotkeys.checked = hotkeysEnabled;
+}
+
+function persistHotkeysPref() {
+  try {
+    localStorage.setItem(HOTKEYS_STORAGE_KEY, String(hotkeysEnabled));
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 function resetPaneLayout() {
@@ -2234,6 +2387,7 @@ function initToolbarOptions() {
     e.stopPropagation();
     setToolbarOptionsOpen(!toolbarOptionsOpen);
   });
+  els.toolbarOptionsClose?.addEventListener("click", () => setToolbarOptionsOpen(false));
 
   document.addEventListener("click", (e) => {
     if (!toolbarOptionsOpen) return;
@@ -2261,6 +2415,14 @@ function initToolbarOptions() {
   els.resetPaneLayoutBtn?.addEventListener("click", () => {
     if (!state) return;
     resetPaneLayout();
+  });
+  els.toggleHotkeys?.addEventListener("change", () => {
+    hotkeysEnabled = els.toggleHotkeys.checked;
+    persistHotkeysPref();
+  });
+  els.hotkeysInfoBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setHelpOverlayOpen(true);
   });
   syncToolbarPaneCheckboxes();
 }
@@ -2417,6 +2579,7 @@ function renderPage(pageNum) {
   setPageIndicator(pageNum, pageCount);
   if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
   if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
+  updateBboxNavButtons();
 
   if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
 
@@ -2454,14 +2617,7 @@ function renderPage(pageNum) {
         const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
         const existing = wrap.querySelector("svg.overlay");
         if (existing) existing.remove();
-        const readingOrderSteps = collectReadingOrderSteps(
-          segment,
-          elementIds,
-          boxes,
-          state.readingOrder,
-          readingOrderGlobalNumbering,
-          state.readingOrderDisplayNumbers,
-        );
+        const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder);
         state.pageViewOverlay = { boxes, readingOrderSteps };
         if (boxes.length) {
           wrap.appendChild(
@@ -2683,42 +2839,17 @@ function syncOverlayBadges(img) {
   const meta = state?.pageViewOverlay;
   if (!svg || !img.naturalWidth || !meta) return;
 
-  svg.querySelectorAll(".element-badge, .reading-order-badge").forEach((badge) => badge.remove());
-
-  const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
-  const badgeGap = overlayUserLength(2);
-  const readingOrderByElementId = new Map();
-  if (showAllBboxes && showReadingOrder) {
-    for (const step of meta.readingOrderSteps ?? []) {
-      readingOrderByElementId.set(step.elementId, step);
-    }
-  }
+  svg.querySelectorAll(".element-badge").forEach((badge) => badge.remove());
+  if (!showAllBboxes || !showLayoutBadges) return;
 
   const boxes = sortedOverlayBoxes(meta.boxes ?? []);
 
   for (const b of boxes) {
     const { x, y } = boxPixelRect(b, img);
-    let tagLayout = { width: 0 };
-    if (showAllBboxes && showLayoutBadges) {
-      tagLayout = overlayBadgeLayout(svg, b.tag, fontSize);
-      appendOverlayBadge(svg, x, y, b.tag, {
-        extraClass: `element-badge ${kindClassForTag(b.kind)}`,
-        elementId: b.elementId,
-      });
-    }
-
-    const step = readingOrderByElementId.get(b.elementId);
-    if (step) {
-      const orderText = String(step.order);
-      const orderLayout = overlayBadgeLayout(svg, orderText, fontSize);
-      const orderAnchorX = showAllBboxes && showLayoutBadges
-        ? x + tagLayout.width / 2 + badgeGap + orderLayout.width / 2
-        : x;
-      appendOverlayBadge(svg, orderAnchorX, y, orderText, {
-        extraClass: "reading-order-badge",
-        elementId: b.elementId,
-      });
-    }
+    appendOverlayBadge(svg, x, y, b.tag, {
+      extraClass: `element-badge ${kindClassForTag(b.kind)}`,
+      elementId: b.elementId,
+    });
   }
 }
 
@@ -3185,6 +3316,45 @@ function navigateThreadFragment(elementId, direction) {
   goToPage(page);
 }
 
+/**
+ * Finds the nearest element with a navigable bbox before/after the current selection,
+ * walking the document-wide reading order (so it can cross page boundaries).
+ * @returns {Element | null}
+ */
+function bboxNavTarget(direction) {
+  const order = state?.readingOrder;
+  if (!order || !order.length) return null;
+  const step = direction === "prev" ? -1 : 1;
+
+  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : null;
+  const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
+  const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
+
+  for (let i = startIndex + step; i >= 0 && i < order.length; i += step) {
+    if (isReadingOrderOverlayUnit(order[i])) return order[i];
+  }
+  return null;
+}
+
+function navigateBbox(direction) {
+  const target = bboxNavTarget(direction);
+  if (!target) return;
+  const page = state.elementPageByEl.get(target);
+  if (!page) return;
+  if (page === state.currentPage) {
+    const id = findElementIdOnPage(target);
+    if (id) selectElement(id);
+    return;
+  }
+  state.pendingSelectElement = target;
+  goToPage(page);
+}
+
+function updateBboxNavButtons() {
+  if (els.btnBboxPrev) els.btnBboxPrev.disabled = !state?.hasPageView || !bboxNavTarget("prev");
+  if (els.btnBboxNext) els.btnBboxNext.disabled = !state?.hasPageView || !bboxNavTarget("next");
+}
+
 /** @returns {Element[]} */
 function computeReadingOrder(docRoot) {
   const bodyChildren = childElements(docRoot).filter((el) => localName(el) !== "head");
@@ -3289,31 +3459,11 @@ function isReadingOrderOverlayUnit(el) {
   return isVirtualTextOverlayUnit(el);
 }
 
-/** @returns {Map<Element, number>} */
-function computeReadingOrderDisplayNumbers(readingOrder) {
-  const numbers = new Map();
-  let n = 0;
-  for (const el of readingOrder) {
-    if (!isReadingOrderOverlayUnit(el)) continue;
-    n += 1;
-    numbers.set(el, n);
-  }
-  return numbers;
-}
-
-/** @returns {{ order: number, box: object, elementId: string }[]} */
-function collectReadingOrderSteps(
-  segment,
-  elementIds,
-  boxes,
-  readingOrder,
-  globalNumbering = true,
-  displayNumbers = null,
-) {
+/** @returns {{ box: object, elementId: string }[]} */
+function collectReadingOrderSteps(segment, elementIds, boxes, readingOrder) {
   const boxById = new Map(boxes.map((b) => [b.elementId, b]));
-  /** @type {{ order: number, box: object, elementId: string }[]} */
+  /** @type {{ box: object, elementId: string }[]} */
   const steps = [];
-  let pageOrder = 0;
 
   readingOrder.forEach((el) => {
     if (isPictureOrTableContentElement(el)) return;
@@ -3321,12 +3471,7 @@ function collectReadingOrderSteps(
     if (!elementId) return;
     const box = boxById.get(elementId);
     if (!box) return;
-    pageOrder += 1;
-    steps.push({
-      order: globalNumbering ? (displayNumbers?.get(el) ?? pageOrder) : pageOrder,
-      box,
-      elementId,
-    });
+    steps.push({ box, elementId });
   });
 
   return steps;
@@ -3703,12 +3848,12 @@ function resetAllOverlaySettings() {
   applyArrowStyleVars();
   refreshArrowMarkers();
   for (const key of Object.keys(ARROW_LAYERS)) toggleArrowStyleFields(key, false);
+  toggleArrowStyleFields("layers", false);
   resetOverlayPrefs();
 }
 
-/** Expand/collapse one arrow layer's inline style controls. */
+/** Expand/collapse one collapsible settings panel (arrow-layer style fields, or any other row using the same disclosure pattern). */
 function toggleArrowStyleFields(layerKey, force) {
-  if (!ARROW_LAYERS[layerKey]) return;
   const panel = els.pageSettingsPanel;
   const btn = panel?.querySelector(`[data-arrow-style-toggle="${layerKey}"]`);
   const fields = document.getElementById(`arrow-fields-${layerKey}`);
@@ -4200,10 +4345,18 @@ function isTableContentOverlayElement(elementId) {
   return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
 }
 
+function isLayoutLayerHidden(layer) {
+  if (layer === "furniture") return !showLayoutFurniture;
+  if (layer === "background") return !showLayoutBackground;
+  return !showLayoutBody;
+}
+
 function isContentsOptionHidden(elementId, clickVisible) {
   if (clickVisible) return false;
   if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
   if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
+  const el = state?.idToElement?.get(elementId);
+  if (el && isLayoutLayerHidden(elementLayer(el))) return true;
   return false;
 }
 
@@ -4280,26 +4433,8 @@ function applyBboxVisibility() {
     el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
   }
 
-  for (const el of els.pagePane.querySelectorAll(".reading-order-badge")) {
-    const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
-    if (!showAllBboxes || !showReadingOrder) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    if (
-      isPictureContentOverlayElement(elementId)
-      || isTableContentOverlayElement(elementId)
-      || isContentsOptionHidden(elementId, clickVisible)
-    ) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
-  }
-
   for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
-    if (!showAllBboxes || !showReadingOrder || !showReadingOrderArrows) {
+    if (!showAllBboxes || !showReadingOrder) {
       el.classList.add("bbox-hidden");
       continue;
     }
@@ -4361,6 +4496,7 @@ function revealReadingLayerForSelection(renderedEl) {
 }
 
 function applySelection() {
+  updateBboxNavButtons();
   els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
