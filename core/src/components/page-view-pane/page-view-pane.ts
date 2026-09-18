@@ -16,6 +16,12 @@ import {
   buildOverlay,
   syncOverlayBadges,
   PAGE_ZOOM_DEFAULT,
+  ARROW_LAYERS,
+  ARROW_STYLE_FIELD_DEFAULTS,
+  ARROW_DASH_VALUES,
+  ensureArrowMarker,
+  type ArrowLayerKey,
+  type ArrowStyleConfig,
   type OverlayCtx,
   type PageLayoutCache,
 } from './overlay';
@@ -56,6 +62,8 @@ interface HeadInfo {
 
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const NO_IMAGE = '(No page image available.)';
+const OVERLAY_PREFS_STORAGE_KEY = 'doclang-viewer-overlay-prefs';
+const ARROW_STYLE_STORAGE_KEY = 'doclang-viewer-arrow-styles';
 
 export interface OverlaySettings {
   showAllBboxes: boolean;
@@ -70,6 +78,45 @@ export interface OverlaySettings {
   showCaptionLinks: boolean;
 }
 
+const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
+  showAllBboxes: true,
+  showLayoutBadges: true,
+  showReadingOrder: false,
+  readingOrderArrows: true,
+  readingOrderGlobal: false,
+  showPictureContents: false,
+  showTableContents: false,
+  showFragmentLinks: false,
+  showXrefLinks: false,
+  showCaptionLinks: false,
+};
+
+function toHexColor(value: string | undefined): string {
+  const v = (value || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${v
+      .slice(1)
+      .split('')
+      .map(c => c + c)
+      .join('')
+      .toLowerCase()}`;
+  }
+  const m = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  if (m) {
+    const hex = m
+      .slice(1, 4)
+      .map(n =>
+        Math.max(0, Math.min(255, Math.round(parseFloat(n))))
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('');
+    return `#${hex}`;
+  }
+  return '#000000';
+}
+
 @customElement('doclang-page-view-pane')
 export class DoclangPageViewPane extends DoclangPageElement {
   static override styles = unsafeCSS(styles);
@@ -82,18 +129,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
   private _settingsOpen = false;
   private _visible = false;
   private _zoomPct = PAGE_ZOOM_DEFAULT;
-  private _opts: OverlaySettings = {
-    showAllBboxes: true,
-    showLayoutBadges: true,
-    showReadingOrder: false,
-    readingOrderArrows: true,
-    readingOrderGlobal: false,
-    showPictureContents: false,
-    showTableContents: false,
-    showFragmentLinks: false,
-    showXrefLinks: false,
-    showCaptionLinks: false,
-  };
+  private _opts: OverlaySettings = { ...DEFAULT_OVERLAY_SETTINGS };
+  private _arrowStyles: Record<string, ArrowStyleConfig> = {};
+  private _expandedArrowFields: Set<ArrowLayerKey> = new Set();
 
   private _pageController = new PageController(this, () => this.scrollPane);
 
@@ -107,6 +145,9 @@ export class DoclangPageViewPane extends DoclangPageElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.classList.add('pane', 'pane-page-view');
+    this._loadOverlayPrefs();
+    this._loadArrowStyles();
+    this._applyArrowStyleVars();
     this.addEventListener(
       'doclang-panning-change',
       this._onPanningChange as EventListener
@@ -234,27 +275,46 @@ export class DoclangPageViewPane extends DoclangPageElement {
                     <span>Reading order</span>
                   </label>
                   <div class="settings-subgroup settings-reading-order-group">
-                    <label
+                    <div
                       class=${classMap({
-                        'settings-option': true,
-                        'settings-option-sub': true,
-                        'settings-option-nested': true,
-                        'settings-option-disabled': !readingOrderEnabled,
+                        'arrow-layer-row': true,
+                        'is-disabled': !readingOrderEnabled,
                       })}
                     >
-                      <input
-                        type="checkbox"
-                        class="cb-reading-order-arrows"
-                        .checked=${this._opts.readingOrderArrows}
-                        ?disabled=${!readingOrderEnabled}
-                        @change=${(e: Event) =>
-                          this._onOptChange(
-                            'readingOrderArrows',
-                            (e.target as HTMLInputElement).checked
-                          )}
-                      />
-                      <span>Arrows</span>
-                    </label>
+                      <label
+                        class=${classMap({
+                          'settings-option': true,
+                          'settings-option-sub': true,
+                          'settings-option-nested': true,
+                          'settings-option-disabled': !readingOrderEnabled,
+                        })}
+                      >
+                        <input
+                          type="checkbox"
+                          class="cb-reading-order-arrows"
+                          .checked=${this._opts.readingOrderArrows}
+                          ?disabled=${!readingOrderEnabled}
+                          @change=${(e: Event) =>
+                            this._onOptChange(
+                              'readingOrderArrows',
+                              (e.target as HTMLInputElement).checked
+                            )}
+                        />
+                        <span>Arrows</span>
+                      </label>
+                      <button
+                        type="button"
+                        class="arrow-style-btn"
+                        aria-expanded=${String(
+                          this._expandedArrowFields.has('readingOrder') &&
+                            readingOrderEnabled
+                        )}
+                        aria-label="Reading-order arrow style"
+                        title="Arrow style"
+                        @click=${() => this._toggleArrowStyleFields('readingOrder')}
+                      ></button>
+                    </div>
+                    ${this._renderArrowStyleFields('readingOrder', readingOrderEnabled)}
                     <label
                       class=${classMap({
                         'settings-option': true,
@@ -317,66 +377,124 @@ export class DoclangPageViewPane extends DoclangPageElement {
                     />
                     <span>Table contents</span>
                   </label>
-                  <label
+
+                  <div
                     class=${classMap({
-                      'settings-option': true,
-                      'settings-option-sub': true,
-                      'settings-option-disabled': !layoutEnabled,
+                      'arrow-layer-row': true,
+                      'is-disabled': !layoutEnabled,
                     })}
                   >
-                    <input
-                      type="checkbox"
-                      class="cb-fragment-links"
-                      .checked=${this._opts.showFragmentLinks}
-                      ?disabled=${!layoutEnabled}
-                      @change=${(e: Event) =>
-                        this._onOptChange(
-                          'showFragmentLinks',
-                          (e.target as HTMLInputElement).checked
-                        )}
-                    />
-                    <span>Fragments</span>
-                  </label>
-                  <label
+                    <label
+                      class=${classMap({
+                        'settings-option': true,
+                        'settings-option-sub': true,
+                        'settings-option-disabled': !layoutEnabled,
+                      })}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-fragment-links"
+                        .checked=${this._opts.showFragmentLinks}
+                        ?disabled=${!layoutEnabled}
+                        @change=${(e: Event) =>
+                          this._onOptChange(
+                            'showFragmentLinks',
+                            (e.target as HTMLInputElement).checked
+                          )}
+                      />
+                      <span>Fragments</span>
+                    </label>
+                    <button
+                      type="button"
+                      class="arrow-style-btn"
+                      aria-expanded=${String(
+                        this._expandedArrowFields.has('fragment') && layoutEnabled
+                      )}
+                      aria-label="Fragment arrow style"
+                      title="Arrow style"
+                      @click=${() => this._toggleArrowStyleFields('fragment')}
+                    ></button>
+                  </div>
+                  ${this._renderArrowStyleFields('fragment', layoutEnabled)}
+
+                  <div
                     class=${classMap({
-                      'settings-option': true,
-                      'settings-option-sub': true,
-                      'settings-option-disabled': !layoutEnabled,
+                      'arrow-layer-row': true,
+                      'is-disabled': !layoutEnabled,
                     })}
                   >
-                    <input
-                      type="checkbox"
-                      class="cb-xref-links"
-                      .checked=${this._opts.showXrefLinks}
-                      ?disabled=${!layoutEnabled}
-                      @change=${(e: Event) =>
-                        this._onOptChange(
-                          'showXrefLinks',
-                          (e.target as HTMLInputElement).checked
-                        )}
-                    />
-                    <span>Cross-references</span>
-                  </label>
-                  <label
+                    <label
+                      class=${classMap({
+                        'settings-option': true,
+                        'settings-option-sub': true,
+                        'settings-option-disabled': !layoutEnabled,
+                      })}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-xref-links"
+                        .checked=${this._opts.showXrefLinks}
+                        ?disabled=${!layoutEnabled}
+                        @change=${(e: Event) =>
+                          this._onOptChange(
+                            'showXrefLinks',
+                            (e.target as HTMLInputElement).checked
+                          )}
+                      />
+                      <span title="Cross-references">Cross-references</span>
+                    </label>
+                    <button
+                      type="button"
+                      class="arrow-style-btn"
+                      aria-expanded=${String(
+                        this._expandedArrowFields.has('xref') && layoutEnabled
+                      )}
+                      aria-label="Cross-reference arrow style"
+                      title="Arrow style"
+                      @click=${() => this._toggleArrowStyleFields('xref')}
+                    ></button>
+                  </div>
+                  ${this._renderArrowStyleFields('xref', layoutEnabled)}
+
+                  <div
                     class=${classMap({
-                      'settings-option': true,
-                      'settings-option-sub': true,
-                      'settings-option-disabled': !layoutEnabled,
+                      'arrow-layer-row': true,
+                      'is-disabled': !layoutEnabled,
                     })}
                   >
-                    <input
-                      type="checkbox"
-                      class="cb-caption-links"
-                      .checked=${this._opts.showCaptionLinks}
-                      ?disabled=${!layoutEnabled}
-                      @change=${(e: Event) =>
-                        this._onOptChange(
-                          'showCaptionLinks',
-                          (e.target as HTMLInputElement).checked
-                        )}
-                    />
-                    <span>Captions</span>
-                  </label>
+                    <label
+                      class=${classMap({
+                        'settings-option': true,
+                        'settings-option-sub': true,
+                        'settings-option-disabled': !layoutEnabled,
+                      })}
+                    >
+                      <input
+                        type="checkbox"
+                        class="cb-caption-links"
+                        .checked=${this._opts.showCaptionLinks}
+                        ?disabled=${!layoutEnabled}
+                        @change=${(e: Event) =>
+                          this._onOptChange(
+                            'showCaptionLinks',
+                            (e.target as HTMLInputElement).checked
+                          )}
+                      />
+                      <span>Captions</span>
+                    </label>
+                    <button
+                      type="button"
+                      class="arrow-style-btn"
+                      aria-expanded=${String(
+                        this._expandedArrowFields.has('caption') && layoutEnabled
+                      )}
+                      aria-label="Caption arrow style"
+                      title="Arrow style"
+                      @click=${() => this._toggleArrowStyleFields('caption')}
+                    ></button>
+                  </div>
+                  ${this._renderArrowStyleFields('caption', layoutEnabled)}
+
                   <label
                     class=${classMap({
                       'settings-option': true,
@@ -398,6 +516,15 @@ export class DoclangPageViewPane extends DoclangPageElement {
                     <span>Badges</span>
                   </label>
                 </div>
+
+                <div class="settings-divider" role="separator"></div>
+                <button
+                  type="button"
+                  class="overlays-reset"
+                  @click=${this._resetAllOverlaySettings}
+                >
+                  Reset all
+                </button>
               </doclang-settings-panel>
             `
           : nothing}
@@ -683,6 +810,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
         this._layoutCache = c;
       },
       selectedId: this.selected,
+      arrowMarkerOptions: (layerKey: ArrowLayerKey) => this._arrowMarkerOptions(layerKey),
     };
   }
 
@@ -854,6 +982,7 @@ export class DoclangPageViewPane extends DoclangPageElement {
 
   private _onOptChange(key: keyof OverlaySettings, value: boolean): void {
     (this._opts as unknown as Record<string, boolean>)[key] = value;
+    this._persistOverlayPrefs();
     // Re-render page if global numbering changed (affects step labels)
     if (key === 'readingOrderGlobal' && this._docState) {
       this._renderDocument();
@@ -864,6 +993,246 @@ export class DoclangPageViewPane extends DoclangPageElement {
     this._applyBboxVisibility();
     this._emitOverlayChange();
     this.requestUpdate();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Arrow styling & overlay preferences persistence
+  // ---------------------------------------------------------------------------
+
+  private _loadOverlayPrefs(): void {
+    try {
+      const raw = localStorage.getItem(OVERLAY_PREFS_STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') return;
+      for (const key of Object.keys(DEFAULT_OVERLAY_SETTINGS) as (keyof OverlaySettings)[]) {
+        if (typeof data[key] === 'boolean') {
+          (this._opts as unknown as Record<string, boolean>)[key] = data[key];
+        }
+      }
+    } catch {
+      /* ignore invalid stored overlay prefs */
+    }
+  }
+
+  private _persistOverlayPrefs(): void {
+    try {
+      localStorage.setItem(OVERLAY_PREFS_STORAGE_KEY, JSON.stringify(this._opts));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+
+  private _loadArrowStyles(): void {
+    try {
+      const raw = localStorage.getItem(ARROW_STYLE_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        this._arrowStyles = parsed;
+      }
+    } catch {
+      this._arrowStyles = {};
+    }
+  }
+
+  private _persistArrowStyles(): void {
+    try {
+      localStorage.setItem(ARROW_STYLE_STORAGE_KEY, JSON.stringify(this._arrowStyles));
+    } catch {
+      /* storage unavailable — keep in-memory only */
+    }
+  }
+
+  private _getArrowStyle(layerKey: ArrowLayerKey): {
+    color?: string;
+    width: number;
+    head: number;
+    style: 'solid' | 'dashed' | 'dotted';
+  } {
+    const meta = ARROW_LAYERS[layerKey];
+    const stored = this._arrowStyles[layerKey] ?? {};
+    return {
+      color: stored.color,
+      width: stored.width ?? ARROW_STYLE_FIELD_DEFAULTS.width,
+      head: stored.head ?? ARROW_STYLE_FIELD_DEFAULTS.head,
+      style: stored.style ?? meta.defaultStyle,
+    };
+  }
+
+  private _resolveArrowColor(layerKey: ArrowLayerKey): string {
+    const stored = this._arrowStyles[layerKey]?.color;
+    if (stored) return stored;
+    const meta = ARROW_LAYERS[layerKey];
+    const themed = getComputedStyle(this)
+      .getPropertyValue(meta.colorVar)
+      .trim();
+    return themed || 'currentColor';
+  }
+
+  private _arrowMarkerOptions(layerKey: ArrowLayerKey): { size: number; color: string } {
+    return {
+      size: this._getArrowStyle(layerKey).head,
+      color: this._resolveArrowColor(layerKey),
+    };
+  }
+
+  private _applyArrowStyleVars(): void {
+    const hostStyle = this.style;
+    for (const [layerKey, meta] of Object.entries(ARROW_LAYERS) as [
+      ArrowLayerKey,
+      (typeof ARROW_LAYERS)[ArrowLayerKey],
+    ][]) {
+      const stored = this._arrowStyles[layerKey] ?? {};
+      const prefix = `--arrow-${meta.cssKey}`;
+      if (stored.color) hostStyle.setProperty(`${prefix}-color`, stored.color);
+      else hostStyle.removeProperty(`${prefix}-color`);
+
+      if (stored.width != null)
+        hostStyle.setProperty(`${prefix}-width`, String(stored.width));
+      else hostStyle.removeProperty(`${prefix}-width`);
+
+      if (stored.style != null) {
+        hostStyle.setProperty(`${prefix}-dash`, ARROW_DASH_VALUES[stored.style] ?? 'none');
+        hostStyle.setProperty(`${prefix}-cap`, stored.style === 'dotted' ? 'round' : 'butt');
+      } else {
+        hostStyle.removeProperty(`${prefix}-dash`);
+        hostStyle.removeProperty(`${prefix}-cap`);
+      }
+    }
+  }
+
+  private _refreshArrowMarkers(): void {
+    const svg = this._bodyRef.value?.querySelector('svg.overlay') as SVGSVGElement | null;
+    const defs = svg?.querySelector('defs');
+    if (!defs) return;
+    for (const [layerKey, meta] of Object.entries(ARROW_LAYERS) as [
+      ArrowLayerKey,
+      (typeof ARROW_LAYERS)[ArrowLayerKey],
+    ][]) {
+      if (defs.querySelector(`#${meta.markerId}`)) {
+        ensureArrowMarker(defs, meta.markerId, this._arrowMarkerOptions(layerKey));
+      }
+    }
+  }
+
+  private _toggleArrowStyleFields(layerKey: ArrowLayerKey): void {
+    if (this._expandedArrowFields.has(layerKey)) {
+      this._expandedArrowFields.delete(layerKey);
+    } else {
+      this._expandedArrowFields.add(layerKey);
+    }
+    this.requestUpdate();
+  }
+
+  private _onArrowStyleFieldChange(
+    layerKey: ArrowLayerKey,
+    field: keyof ArrowStyleConfig,
+    value: string | number
+  ): void {
+    const bucket = this._arrowStyles[layerKey] ?? (this._arrowStyles[layerKey] = {});
+    if (field === 'color') bucket.color = String(value);
+    else if (field === 'style') bucket.style = value as 'solid' | 'dashed' | 'dotted';
+    else if (field === 'width' || field === 'head') bucket[field] = Number(value);
+
+    this._persistArrowStyles();
+    this._applyArrowStyleVars();
+    this._refreshArrowMarkers();
+    this.requestUpdate();
+  }
+
+  private _resetAllOverlaySettings = (): void => {
+    this._arrowStyles = {};
+    this._persistArrowStyles();
+    this._applyArrowStyleVars();
+    this._refreshArrowMarkers();
+    this._expandedArrowFields.clear();
+    this._opts = { ...DEFAULT_OVERLAY_SETTINGS };
+    this._persistOverlayPrefs();
+    this._applyBboxVisibility();
+    this._emitOverlayChange();
+    if (this._docState) this._renderDocument();
+    this.requestUpdate();
+  };
+
+  private _renderArrowStyleFields(layerKey: ArrowLayerKey, enabled: boolean) {
+    if (!this._expandedArrowFields.has(layerKey) || !enabled) return nothing;
+    const style = this._getArrowStyle(layerKey);
+    const colorVal = toHexColor(this._resolveArrowColor(layerKey));
+
+    return html`
+      <div class="arrow-style-fields" id="arrow-fields-${layerKey}">
+        <label>
+          Color
+          <input
+            type="color"
+            .value=${colorVal}
+            @input=${(e: Event) =>
+              this._onArrowStyleFieldChange(
+                layerKey,
+                'color',
+                (e.target as HTMLInputElement).value
+              )}
+          />
+        </label>
+        <label>
+          Thickness
+          <span class="arrow-field-control">
+            <input
+              type="range"
+              min="0.5"
+              max="6"
+              step="0.5"
+              .value=${String(style.width)}
+              title=${String(style.width)}
+              @input=${(e: Event) =>
+                this._onArrowStyleFieldChange(
+                  layerKey,
+                  'width',
+                  Number((e.target as HTMLInputElement).value)
+                )}
+            />
+            <output class="arrow-field-value" aria-hidden="true">${style.width}</output>
+          </span>
+        </label>
+        <label>
+          Head
+          <span class="arrow-field-control">
+            <input
+              type="range"
+              min="3"
+              max="14"
+              step="1"
+              .value=${String(style.head)}
+              title=${String(style.head)}
+              @input=${(e: Event) =>
+                this._onArrowStyleFieldChange(
+                  layerKey,
+                  'head',
+                  Number((e.target as HTMLInputElement).value)
+                )}
+            />
+            <output class="arrow-field-value" aria-hidden="true">${style.head}</output>
+          </span>
+        </label>
+        <label>
+          Line
+          <select
+            .value=${style.style}
+            @change=${(e: Event) =>
+              this._onArrowStyleFieldChange(
+                layerKey,
+                'style',
+                (e.target as HTMLSelectElement).value
+              )}
+          >
+            <option value="solid" ?selected=${style.style === 'solid'}>Solid</option>
+            <option value="dashed" ?selected=${style.style === 'dashed'}>Dashed</option>
+            <option value="dotted" ?selected=${style.style === 'dotted'}>Dotted</option>
+          </select>
+        </label>
+      </div>
+    `;
   }
 
   private _emitOverlayChange(): void {

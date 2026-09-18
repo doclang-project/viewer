@@ -58,16 +58,35 @@ export class CollectionController implements ReactiveController {
     return this._catalog.length > 1;
   }
 
+  findCatalogIndexForFile(file: File): number {
+    return this._catalog.findIndex(entry => {
+      const source = entry.source;
+      return (
+        source instanceof File &&
+        source.name === file.name &&
+        source.size === file.size &&
+        source.lastModified === file.lastModified
+      );
+    });
+  }
+
   async addFiles(files: File[], { replace = false } = {}): Promise<DocumentState | null> {
     if (replace) this._clearAll();
     const startIndex = this._catalog.length;
+    let switchIndex: number | null = null;
     for (const file of files) {
+      const existingIndex = replace ? -1 : this.findCatalogIndexForFile(file);
+      if (existingIndex !== -1) {
+        if (switchIndex === null) switchIndex = existingIndex;
+        continue;
+      }
       const entry = this._createEntry(file);
       this._catalog.push(entry);
       this._enrichThumbnail(entry);
+      if (switchIndex === null) switchIndex = this._catalog.length - 1;
     }
     if (!this._catalog.length) return null;
-    return this._switchTo(replace ? 0 : startIndex);
+    return this._switchTo(replace ? 0 : switchIndex ?? startIndex);
   }
 
   async addArchiveBuffer(

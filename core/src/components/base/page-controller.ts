@@ -9,7 +9,7 @@
  * descendant has focus.
  */
 
-import type { ReactiveController, ReactiveControllerHost } from 'lit';
+import type { ReactiveController } from 'lit';
 import type { DoclangPageElement } from './page-element';
 
 const COOLDOWN_MS = 200;

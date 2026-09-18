@@ -108,6 +108,7 @@ export class DoclangViewer extends DoclangPageElement {
   private _filePaneWidthPx: number | null = null;
   private _paneDrag: PaneDragState | null = null;
   private _demoLoadInProgress = false;
+  private _suppressDemoLoad = false;
   // Refs to child components
   private _pageNavRef: Ref<DoclangPageNav> = createRef();
   private _toolbarRef: Ref<DoclangToolbar> = createRef();
@@ -128,12 +129,15 @@ export class DoclangViewer extends DoclangPageElement {
     this._loadLayoutPrefs();
     this._normalizePaneRatios();
     this._initDragDrop();
+    this._initFileHandling();
     this._initPaneDragListeners();
     this.addEventListener('view-page', this._onViewPage);
 
     if (this.example) {
       this._demoLoading = true;
-      this._loadDemo();
+      setTimeout(() => {
+        if (!this._suppressDemoLoad) this._loadDemo();
+      }, 0);
     }
   }
 
@@ -1009,8 +1013,7 @@ export class DoclangViewer extends DoclangPageElement {
     });
   }
 
-  private async _loadFromDrop(dataTransfer: DataTransfer): Promise<void> {
-    const files = [...dataTransfer.files];
+  private async _loadFromFileList(files: File[]): Promise<void> {
     if (files.some(f => f.name === 'document.xml')) {
       await this._appendFolderArchive(files);
       return;
@@ -1019,6 +1022,27 @@ export class DoclangViewer extends DoclangPageElement {
       f => this._collection.isArchiveFile(f) || this._collection.isMarkupFile(f)
     );
     if (supported.length) await this._addFilesToCatalog(supported, { replace: false });
+  }
+
+  private async _loadFromDrop(dataTransfer: DataTransfer): Promise<void> {
+    await this._loadFromFileList([...dataTransfer.files]);
+  }
+
+  private _initFileHandling(): void {
+    interface LaunchParams {
+      files?: FileSystemFileHandle[];
+    }
+    interface LaunchQueue {
+      setConsumer(consumer: (launchParams: LaunchParams) => Promise<void> | void): void;
+    }
+    const windowWithLaunchQueue = window as unknown as { launchQueue?: LaunchQueue };
+    if (!('launchQueue' in window) || !windowWithLaunchQueue.launchQueue) return;
+    windowWithLaunchQueue.launchQueue.setConsumer(async (launchParams: LaunchParams) => {
+      if (!launchParams.files?.length) return;
+      this._suppressDemoLoad = true;
+      const files = await Promise.all(launchParams.files.map(handle => handle.getFile()));
+      await this._loadFromFileList(files);
+    });
   }
 
   private _initPaneDragListeners(): void {

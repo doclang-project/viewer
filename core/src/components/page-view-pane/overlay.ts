@@ -16,8 +16,25 @@ export interface PixelRect {
   area: number;
 }
 
+export type ArrowLayerKey = 'readingOrder' | 'fragment' | 'xref' | 'caption';
+
+export interface ArrowLayerMeta {
+  cssKey: string;
+  colorVar: string;
+  markerId: string;
+  defaultStyle: 'solid' | 'dashed' | 'dotted';
+}
+
+export interface ArrowStyleConfig {
+  color?: string;
+  width?: number;
+  head?: number;
+  style?: 'solid' | 'dashed' | 'dotted';
+}
+
 export interface OverlayLinkOptions {
   markerId: string;
+  markerLayer?: ArrowLayerKey;
   linkClass: string;
   fromIdAttr: string;
   toIdAttr: string;
@@ -44,6 +61,40 @@ export const FRAGMENT_NAV_HINT_PREV = 'Previous fragment';
 export const FRAGMENT_NAV_HINT_NEXT = 'Next fragment';
 const FRAGMENT_LINK_LABEL_CROSS_PAGE = 'cross-page content';
 const FRAGMENT_LINK_LABEL_SAME_PAGE = 'fragmented content';
+
+export const ARROW_LAYERS: Record<ArrowLayerKey, ArrowLayerMeta> = {
+  readingOrder: {
+    cssKey: 'reading-order',
+    colorVar: '--overlay-reading-order',
+    markerId: 'reading-order-arrowhead',
+    defaultStyle: 'dashed',
+  },
+  fragment: {
+    cssKey: 'fragment',
+    colorVar: '--overlay-fragment',
+    markerId: 'fragment-arrowhead',
+    defaultStyle: 'dashed',
+  },
+  xref: {
+    cssKey: 'xref',
+    colorVar: '--kind-footnote',
+    markerId: 'xref-arrowhead',
+    defaultStyle: 'solid',
+  },
+  caption: {
+    cssKey: 'caption',
+    colorVar: '--kind-caption',
+    markerId: 'caption-arrowhead',
+    defaultStyle: 'solid',
+  },
+};
+
+export const ARROW_STYLE_FIELD_DEFAULTS = { width: 1.5, head: 5 };
+export const ARROW_DASH_VALUES: Record<string, string> = {
+  solid: 'none',
+  dashed: '6 4',
+  dotted: '1.5 3.5',
+};
 
 // ---------------------------------------------------------------------------
 // Overlay box CSS class helpers
@@ -94,6 +145,7 @@ export interface OverlayCtx {
   layoutCache: PageLayoutCache | null;
   setLayoutCache: (c: PageLayoutCache) => void;
   selectedId: string | null;
+  arrowMarkerOptions?: (layerKey: ArrowLayerKey) => { size: number; color: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -259,19 +311,25 @@ export function sortedOverlayBoxes(
 // SVG helper functions
 // ---------------------------------------------------------------------------
 
-function ensureArrowMarker(defs: SVGDefsElement, markerId: string): void {
-  if (defs.querySelector(`#${markerId}`)) return;
+export function ensureArrowMarker(
+  defs: SVGDefsElement,
+  markerId: string,
+  opts: { size?: number; color?: string } = {}
+): void {
+  const size = opts.size ?? ARROW_STYLE_FIELD_DEFAULTS.head;
+  const color = opts.color || 'currentColor';
+  defs.querySelector(`#${markerId}`)?.remove();
   const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
   marker.setAttribute('id', markerId);
   marker.setAttribute('viewBox', '0 0 6 6');
   marker.setAttribute('refX', '6');
   marker.setAttribute('refY', '3');
-  marker.setAttribute('markerWidth', '5');
-  marker.setAttribute('markerHeight', '5');
+  marker.setAttribute('markerWidth', String(size));
+  marker.setAttribute('markerHeight', String(size));
   marker.setAttribute('orient', 'auto');
   const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   arrowPath.setAttribute('d', 'M0,0 L6,3 L0,6 Z');
-  arrowPath.setAttribute('fill', 'currentColor');
+  arrowPath.setAttribute('fill', color);
   marker.appendChild(arrowPath);
   defs.appendChild(marker);
 }
@@ -476,11 +534,13 @@ function appendOverlayLinks(
   svg: SVGSVGElement,
   img: HTMLImageElement,
   links: (CaptionLink | XrefLink)[],
-  { markerId, linkClass, fromIdAttr, toIdAttr }: OverlayLinkOptions
+  { markerId, markerLayer, linkClass, fromIdAttr, toIdAttr }: OverlayLinkOptions,
+  ctx?: OverlayCtx
 ): void {
   if (!links.length) return;
   const defs = ensureOverlayDefs(svg);
-  ensureArrowMarker(defs, markerId);
+  const markerOpts = markerLayer && ctx?.arrowMarkerOptions ? ctx.arrowMarkerOptions(markerLayer) : {};
+  ensureArrowMarker(defs, markerId, markerOpts);
 
   for (const link of links) {
     const fromBox = (link as CaptionLink).captionBox ?? (link as XrefLink).fromBox;
@@ -509,27 +569,43 @@ function appendOverlayLinks(
 export function appendCaptionLinks(
   svg: SVGSVGElement,
   img: HTMLImageElement,
-  captionLinks: CaptionLink[]
+  captionLinks: CaptionLink[],
+  ctx?: OverlayCtx
 ): void {
-  appendOverlayLinks(svg, img, captionLinks, {
-    markerId: 'caption-arrowhead',
-    linkClass: 'caption-link',
-    fromIdAttr: 'data-caption-id',
-    toIdAttr: 'data-host-id',
-  });
+  appendOverlayLinks(
+    svg,
+    img,
+    captionLinks,
+    {
+      markerId: 'caption-arrowhead',
+      markerLayer: 'caption',
+      linkClass: 'caption-link',
+      fromIdAttr: 'data-caption-id',
+      toIdAttr: 'data-host-id',
+    },
+    ctx
+  );
 }
 
 export function appendXrefLinks(
   svg: SVGSVGElement,
   img: HTMLImageElement,
-  xrefLinks: XrefLink[]
+  xrefLinks: XrefLink[],
+  ctx?: OverlayCtx
 ): void {
-  appendOverlayLinks(svg, img, xrefLinks, {
-    markerId: 'xref-arrowhead',
-    linkClass: 'xref-link',
-    fromIdAttr: 'data-xref-from-id',
-    toIdAttr: 'data-xref-to-id',
-  });
+  appendOverlayLinks(
+    svg,
+    img,
+    xrefLinks,
+    {
+      markerId: 'xref-arrowhead',
+      markerLayer: 'xref',
+      linkClass: 'xref-link',
+      fromIdAttr: 'data-xref-from-id',
+      toIdAttr: 'data-xref-to-id',
+    },
+    ctx
+  );
 }
 
 function docPointToPixel(
@@ -576,7 +652,8 @@ export function appendFragmentLinks(
 ): void {
   if (!links.length) return;
   const defs = ensureOverlayDefs(svg);
-  ensureArrowMarker(defs, 'fragment-arrowhead');
+  const markerOpts = ctx.arrowMarkerOptions ? ctx.arrowMarkerOptions('fragment') : {};
+  ensureArrowMarker(defs, 'fragment-arrowhead', markerOpts);
   const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE, ctx);
 
   for (const link of links) {
@@ -739,12 +816,14 @@ function appendFragmentNavButton(
 export function appendReadingOrderOverlay(
   svg: SVGSVGElement,
   img: HTMLImageElement,
-  steps: { box: BoundingBox }[]
+  steps: { box: BoundingBox }[],
+  ctx?: OverlayCtx
 ): void {
   if (!steps.length) return;
   if (steps.length >= 2) {
     const defs = ensureOverlayDefs(svg);
-    ensureArrowMarker(defs, 'reading-order-arrowhead');
+    const markerOpts = ctx?.arrowMarkerOptions ? ctx.arrowMarkerOptions('readingOrder') : {};
+    ensureArrowMarker(defs, 'reading-order-arrowhead', markerOpts);
     for (let i = 0; i < steps.length - 1; i += 1) {
       const from = boxPixelRect(steps[i]!.box, img);
       const to = boxPixelRect(steps[i + 1]!.box, img);
@@ -783,10 +862,10 @@ export function buildOverlay(
   svg.setAttribute('viewBox', `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
   svg.setAttribute('overflow', 'hidden');
 
-  appendCaptionLinks(svg, img, captionLinks);
-  appendXrefLinks(svg, img, xrefLinks);
+  appendCaptionLinks(svg, img, captionLinks, ctx);
+  appendXrefLinks(svg, img, xrefLinks, ctx);
   appendFragmentLinks(svg, img, fragmentLinks, defaultResolution, ctx);
-  appendReadingOrderOverlay(svg, img, readingOrderSteps);
+  appendReadingOrderOverlay(svg, img, readingOrderSteps, ctx);
 
   const defs = ensureOverlayDefs(svg);
   ensureLayerHatchPatterns(defs);
