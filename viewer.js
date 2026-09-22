@@ -318,6 +318,7 @@ const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
+const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -344,6 +345,8 @@ let activeFileIndex = -1;
 let filePaneUserToggled = false;
 /** @type {ResizeObserver | null} */
 let pagePaneResizeObserver = null;
+/** @type {ResizeObserver | null} */
+let pagedPaneResizeObserver = null;
 /** @type {string | null} */
 let selectedElementId = null;
 let showAllBboxes = true;
@@ -356,6 +359,8 @@ let showXrefLinks = false;
 let showReadingOrder = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
+/** @type {"pageless" | "paged"} */
+let readingLayoutMode = "pageless";
 let showLayoutBody = true;
 let showLayoutFurniture = true;
 let showLayoutBackground = true;
@@ -474,6 +479,8 @@ const els = {
   toggleMarkupPane: document.getElementById("toggle-markup-pane"),
   toggleReadingPane: document.getElementById("toggle-reading-pane"),
   togglePagePaneLabel: document.getElementById("toggle-page-pane-label"),
+  readingLayoutPagelessBtn: document.getElementById("btn-reading-layout-pageless"),
+  readingLayoutPagedBtn: document.getElementById("btn-reading-layout-paged"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
   toggleHotkeys: document.getElementById("toggle-hotkeys"),
   hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
@@ -652,12 +659,16 @@ els.showReadingBackground?.addEventListener("change", () => {
   showReadingBackground = els.showReadingBackground.checked;
   syncReadingLayerVisibility();
 });
+els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMode("pageless"));
+els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
 els.pageSettingsPanel?.addEventListener("change", (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === "checkbox") persistOverlayPrefs();
 });
 loadLayoutPrefs();
 loadOverlayPrefs();
 loadHotkeysPref();
+loadReadingLayoutMode();
+syncReadingLayoutButtons();
 syncOverlayPrefControls();
 normalizePaneRatios();
 initArrowStyleControls();
@@ -1852,7 +1863,7 @@ function applyReadingLayerClasses(root) {
 }
 
 function syncReadingLayerVisibility() {
-  const root = els.renderedPane?.querySelector(".rendered-doc");
+  const root = els.renderedPane?.querySelector(".rendered-doc, .paged-canvas");
   if (root) applyReadingLayerClasses(root);
 }
 
@@ -2125,6 +2136,39 @@ function persistHotkeysPref() {
     localStorage.setItem(HOTKEYS_STORAGE_KEY, String(hotkeysEnabled));
   } catch {
     /* ignore quota / private mode */
+  }
+}
+
+function loadReadingLayoutMode() {
+  try {
+    const stored = localStorage.getItem(READING_LAYOUT_MODE_STORAGE_KEY);
+    if (stored === "paged" || stored === "pageless") readingLayoutMode = stored;
+  } catch {
+    /* ignore invalid stored reading-layout-mode pref */
+  }
+}
+
+function persistReadingLayoutMode() {
+  try {
+    localStorage.setItem(READING_LAYOUT_MODE_STORAGE_KEY, readingLayoutMode);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function syncReadingLayoutButtons() {
+  const paged = readingLayoutMode === "paged";
+  if (els.readingLayoutPagelessBtn) els.readingLayoutPagelessBtn.setAttribute("aria-pressed", String(!paged));
+  if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.setAttribute("aria-pressed", String(paged));
+}
+
+function setReadingLayoutMode(mode) {
+  if (mode === readingLayoutMode) return;
+  readingLayoutMode = mode;
+  persistReadingLayoutMode();
+  syncReadingLayoutButtons();
+  if (state?.currentSegment) {
+    renderReadingPane(state.currentSegment, state.elementIds, state.currentBoxes, state.defaultResolution);
   }
 }
 
@@ -2587,15 +2631,17 @@ function renderPage(pageNum) {
   const elementIds = assignElementIds(segment);
   state.elementIds = elementIds;
   state.idToElement = invertElementIds(elementIds);
+  const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
+  state.currentSegment = segment;
+  state.currentBoxes = boxes;
 
   if (segmentHasMarkup(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
-    els.renderedPane.innerHTML = "";
-    els.renderedPane.appendChild(buildRenderedView(segment, elementIds));
   } else {
     els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
-    els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
   }
+
+  renderReadingPane(segment, elementIds, boxes, defaultResolution);
 
   els.pagePane.innerHTML = "";
   if (state.hasPageView) {
@@ -2614,7 +2660,14 @@ function renderPage(pageNum) {
 
         applyPageImageSize(img, els.pagePane);
 
-        const boxes = collectBoundingBoxes(segment, defaultResolution, elementIds);
+        const pagedCanvas = els.renderedPane?.querySelector(".paged-canvas");
+        if (pagedCanvas && img.naturalWidth && img.naturalHeight) {
+          pagedCanvas.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+          pagedCanvas.dataset.aspectW = String(img.naturalWidth);
+          pagedCanvas.dataset.aspectH = String(img.naturalHeight);
+          fitPagedCanvas();
+        }
+
         const existing = wrap.querySelector("svg.overlay");
         if (existing) existing.remove();
         const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder);
@@ -2658,6 +2711,42 @@ function renderPage(pageNum) {
     } else {
       els.pagePane.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
     }
+  }
+}
+
+function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
+  if (!els.renderedPane) return;
+  els.renderedPane.innerHTML = "";
+
+  if (!segmentHasMarkup(segment)) {
+    els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+    els.renderedPane.classList.remove("reading-mode-paged");
+    return;
+  }
+
+  if (readingLayoutMode === "paged") {
+    els.renderedPane.classList.add("reading-mode-paged");
+    const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
+    // The page image (in the separate "Original page" pane) may have already
+    // finished loading before this canvas existed to receive onImageReady's
+    // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
+    // or before the mode was ever switched to paged) — sync from it now rather
+    // than being stuck with the defaultResolution fallback until next page load.
+    const existingImg = els.pagePane?.querySelector(".page-view img");
+    if (existingImg?.naturalWidth && existingImg?.naturalHeight) {
+      canvas.style.aspectRatio = `${existingImg.naturalWidth} / ${existingImg.naturalHeight}`;
+      canvas.dataset.aspectW = String(existingImg.naturalWidth);
+      canvas.dataset.aspectH = String(existingImg.naturalHeight);
+    }
+    els.renderedPane.appendChild(canvas);
+    fitPagedCanvas();
+    if (!pagedPaneResizeObserver) {
+      pagedPaneResizeObserver = new ResizeObserver(() => fitPagedCanvas());
+      pagedPaneResizeObserver.observe(els.renderedPane);
+    }
+  } else {
+    els.renderedPane.classList.remove("reading-mode-paged");
+    els.renderedPane.appendChild(buildRenderedView(segment, elementIds));
   }
 }
 
@@ -2706,6 +2795,31 @@ function paneContentSize(pane) {
     w: pane.clientWidth - padX,
     h: pane.clientHeight - padY,
   };
+}
+
+function fitPagedCanvas() {
+  if (!els.renderedPane) return;
+  const canvas = els.renderedPane.querySelector(".paged-canvas");
+  if (!canvas) return;
+  const aspectW = Number(canvas.dataset.aspectW) || 1;
+  const aspectH = Number(canvas.dataset.aspectH) || 1;
+  const { w: paneW, h: paneH } = paneContentSize(els.renderedPane);
+  if (!(paneW > 0 && paneH > 0)) return;
+  let cw = paneW;
+  let ch = cw * (aspectH / aspectW);
+  if (ch > paneH) {
+    ch = paneH;
+    cw = ch * (aspectW / aspectH);
+  }
+  canvas.style.width = `${cw}px`;
+  canvas.style.height = `${ch}px`;
+
+  // Re-fit slot content every time the canvas is (re)sized: slot pixel sizes change
+  // with it, and this also corrects any earlier fit done against a provisional aspect
+  // ratio (e.g. before the real page image loaded and replaced the fallback guess).
+  for (const slot of canvas.querySelectorAll(".paged-el-slot")) {
+    fitSlotContent(slot);
+  }
 }
 
 function getCachedFitScale(img, pane) {
@@ -4452,9 +4566,13 @@ function findMarkupElementForSelection(elementId) {
 
 function findRenderedElementForSelection(elementId) {
   if (!els.renderedPane) return null;
+  // Scoped to `.rendered-doc` (the pageless-view root) so this never matches a
+  // `.rendered-el` inside the paged view's `.paged-canvas`, which shares the same
+  // container and the same data-element-id values but has its own selection
+  // handling (`.paged-el-slot.selected`, below).
   const direct =
-    els.renderedPane.querySelector(`.rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.renderedPane.querySelector(`.rendered-el[data-element-id="${elementId}"]`);
+    els.renderedPane.querySelector(`.rendered-doc .rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
+    els.renderedPane.querySelector(`.rendered-doc .rendered-el[data-element-id="${elementId}"]`);
   if (direct) return direct;
 
   const xmlEl = state?.idToElement?.get(elementId);
@@ -4462,7 +4580,7 @@ function findRenderedElementForSelection(elementId) {
   if (!threadId) return null;
 
   const merged = els.renderedPane.querySelector(
-    `.rendered-fragment-merged[data-thread-id="${threadId}"]`,
+    `.rendered-doc .rendered-fragment-merged[data-thread-id="${threadId}"]`,
   );
   if (!merged) return null;
 
@@ -4503,6 +4621,9 @@ function applySelection() {
   els.renderedPane?.querySelectorAll(".rendered-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
+  els.renderedPane?.querySelectorAll(".paged-el-slot.selected").forEach((el) => {
+    el.classList.remove("selected");
+  });
   if (!els.pagePane) return;
   els.pagePane.querySelectorAll(".bbox.selected, .overlay-badge.selected").forEach((el) => {
     el.classList.remove("selected");
@@ -4527,6 +4648,9 @@ function applySelection() {
     renderedEl.classList.add("selected");
     renderedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
+
+  const pagedSlot = els.renderedPane?.querySelector(`.paged-el-slot[data-element-id="${selectedElementId}"]`);
+  if (pagedSlot) pagedSlot.classList.add("selected");
 
   if (state?.hasPageView) {
     for (const el of els.pagePane.querySelectorAll(`[data-element-id="${selectedElementId}"]`)) {
@@ -4925,6 +5049,157 @@ function buildRenderedView(segment, elementIds) {
   return root;
 }
 
+function buildPagedView(segment, elementIds, boxes, defaultResolution) {
+  if (!segmentHasMarkup(segment)) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "placeholder";
+    placeholder.innerHTML = NO_MARKUP;
+    return placeholder;
+  }
+
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+
+  const canvas = document.createElement("div");
+  canvas.className = "paged-canvas";
+  const resW = defaultResolution?.width || 1;
+  const resH = defaultResolution?.height || 1;
+  canvas.style.aspectRatio = `${resW} / ${resH}`;
+  canvas.dataset.aspectW = String(resW);
+  canvas.dataset.aspectH = String(resH);
+
+  const makeSlot = (elementId, box, node) => {
+    const slot = document.createElement("div");
+    slot.className = "paged-el-slot";
+    slot.setAttribute("data-element-id", elementId);
+    slot.style.left = `${(box.x0 / box.resW) * 100}%`;
+    slot.style.top = `${(box.y0 / box.resH) * 100}%`;
+    slot.style.width = `${((box.x1 - box.x0) / box.resW) * 100}%`;
+    slot.style.height = `${((box.y1 - box.y0) / box.resH) * 100}%`;
+    const layer = node?.getAttribute?.("data-doclang-layer");
+    // Mirror the layer onto the slot itself (not just the element it wraps) so the
+    // show/hide-furniture/background CSS below can hide the whole slot — including its
+    // dashed bbox outline — rather than leaving an empty outlined box behind.
+    if (layer) slot.setAttribute("data-doclang-layer", layer);
+    // Slots stack in DOM order by default, which lets a large `background`-layer
+    // picture (e.g. a full-page illustration) paint over body text that merely
+    // happens to come earlier in document order. Sink background slots below
+    // everything else regardless of order; leave body/furniture stacking as-is.
+    slot.style.zIndex = layer === "background" ? "0" : "1";
+    slot.appendChild(node);
+    canvas.appendChild(slot);
+  };
+
+  // Unlike the linear reading view, thread-linked fragments (elements sharing a
+  // <thread> id) are NOT merged into one block here — each fragment keeps its own
+  // bbox on the page, so it's rendered and positioned independently.
+  for (const el of segment) {
+    if (el.nodeType !== Node.ELEMENT_NODE) continue;
+    if (localName(el) === "page_break") continue;
+
+    // Each list item (<ldiv>) has its own bbox distinct from the list's overall
+    // bbox — render every item into its own slot instead of one slot for the
+    // whole list, mirroring the earlier caption/fragment bbox-per-element approach.
+    if (localName(el) === "list") {
+      const ordered = (el.getAttribute("class") ?? "unordered") === "ordered";
+      collectListItems(el, elementIds).forEach(({ ldiv, li }, index) => {
+        const itemId = elementIds.get(ldiv);
+        const itemBox = itemId ? boxById.get(itemId) : null;
+        if (!itemId || !itemBox) return;
+        const singleItemList = document.createElement(ordered ? "ol" : "ul");
+        if (ordered) singleItemList.start = index + 1;
+        singleItemList.appendChild(li);
+        makeSlot(itemId, itemBox, wrapRendered(ldiv, singleItemList, itemId));
+      });
+      continue;
+    }
+
+    // A <field_region> and its <field_item> children carry no bbox of their own
+    // (only <key>/<value>/<hint> leaves do) — the generic path below would silently
+    // drop the whole region, since `boxById.get(elementId)` finds nothing for it.
+    // Render each leaf into its own slot instead, same as list items above.
+    if (localName(el) === "field_region") {
+      for (const item of childElements(el)) {
+        if (localName(item) !== "field_item") continue;
+        for (const child of childElements(item)) {
+          const tag = localName(child);
+          const node =
+            tag === "key" ? renderFieldKeyElement(child, elementIds, {}) :
+            tag === "value" ? renderFieldValueElement(child, elementIds, {}) :
+            tag === "hint" ? renderFieldHintElement(child, elementIds, {}) :
+            null;
+          if (!node) continue;
+          const childId = elementIds.get(child);
+          const childBox = childId ? boxById.get(childId) : null;
+          if (childId && childBox) makeSlot(childId, childBox, node);
+        }
+      }
+      continue;
+    }
+
+    const rendered = renderBlockElement(el, elementIds, { inline: false, paged: true });
+    if (!rendered) continue;
+
+    const elementId = elementIds.get(el);
+    const box = boxById.get(elementId);
+    if (box) makeSlot(elementId, box, rendered);
+
+    // Captions are rendered by their host (picture/table/group) with `ctx.paged`
+    // set, which suppresses that embedding — render them here instead, in their
+    // own bbox, since captions have their own independent location in the source.
+    const captionEl = readCaptionElement(el);
+    if (captionEl) {
+      const captionId = elementIds.get(captionEl);
+      const captionBox = captionId ? boxById.get(captionId) : null;
+      if (captionId && captionBox) {
+        makeSlot(captionId, captionBox, renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
+      }
+    }
+  }
+
+  canvas.addEventListener("click", (e) => {
+    const elementId = resolveRenderedClickTarget(e.target);
+    if (elementId) selectElement(elementId);
+  });
+  applyReadingLayerClasses(canvas);
+
+  // Initial fit happens synchronously via fitPagedCanvas(), called by renderPage()
+  // right after this canvas is appended to the DOM (and again whenever the canvas
+  // is resized or its aspect ratio is corrected once the real page image loads).
+
+  return canvas;
+}
+
+/**
+ * Sizes a paged-view slot's content to use the maximum space its bbox allows, by
+ * binary-searching a CSS `zoom` factor (not `transform: scale`) so text re-wraps at
+ * each candidate size instead of being scaled after wrapping at a fixed size — this
+ * both shrinks content that overflows and grows content that has room to spare, up
+ * to whatever the box's width and height allow without overflowing either.
+ */
+function fitSlotContent(slot) {
+  const content = slot.firstElementChild;
+  if (!content) return;
+  const slotRect = slot.getBoundingClientRect();
+  const targetW = slotRect.width;
+  const targetH = slotRect.height;
+  if (!(targetW > 0 && targetH > 0)) return;
+
+  const fitsAt = (zoom) => {
+    content.style.zoom = String(zoom);
+    const rect = content.getBoundingClientRect();
+    return rect.width <= targetW + 0.5 && rect.height <= targetH + 0.5;
+  };
+
+  let lo = 0.02;
+  let hi = 8;
+  for (let i = 0; i < 16; i++) {
+    const mid = (lo + hi) / 2;
+    if (fitsAt(mid)) lo = mid;
+    else hi = mid;
+  }
+  fitsAt(lo);
+}
+
 function wrapRendered(el, node, elementId, extraClass) {
   const tag = localName(el);
   const wrap = document.createElement("div");
@@ -4978,19 +5253,19 @@ function renderBlockElement(el, elementIds, ctx) {
     case "table":
     case "index":
     case "tabular":
-      return renderOtslContainer(el, elementIds);
+      return renderOtslContainer(el, elementIds, ctx);
     case "code":
       return renderCode(el, elementIds, ctx);
     case "formula":
       return renderFormula(el, elementIds, ctx);
     case "picture":
-      return renderPicture(el, elementIds);
+      return renderPicture(el, elementIds, ctx);
     case "group": {
       const figure = document.createElement("figure");
       figure.className = "rendered-group";
       appendRenderedBodyBlocks(figure, el, elementIds);
       const captionEl = readCaptionElement(el);
-      if (captionEl) {
+      if (captionEl && !ctx?.paged) {
         figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
       }
       return wrapRendered(el, figure, elementId);
@@ -5286,7 +5561,7 @@ function renderFormula(el, elementIds, ctx) {
   }
 
   const captionEl = readCaptionElement(el);
-  if (!captionEl) return wrapRendered(el, span, elementIds.get(el));
+  if (!captionEl || ctx?.paged) return wrapRendered(el, span, elementIds.get(el));
 
   const figure = document.createElement("figure");
   figure.className = "rendered-formula-figure";
@@ -5301,7 +5576,78 @@ function markPictureUnavailable(img) {
   img.setAttribute("aria-label", PICTURE_UNAVAILABLE_ALT);
 }
 
-function appendPictureFigureImage(figure, uri, captionEl, elementIds) {
+/** @type {Map<string, Promise<HTMLImageElement | null>>} */
+const pageImageElementCache = new Map();
+
+function loadPageImageElement(url) {
+  if (!url) return Promise.resolve(null);
+  let promise = pageImageElementCache.get(url);
+  if (!promise) {
+    promise = new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+    pageImageElementCache.set(url, promise);
+  }
+  return promise;
+}
+
+/** Crops the region `box` (in its own resW\u00D7resH document space) out of the full page image. */
+function cropPageRegionToDataUrl(pageImg, box) {
+  const resW = box.resW || pageImg.naturalWidth;
+  const resH = box.resH || pageImg.naturalHeight;
+  const scaleX = pageImg.naturalWidth / resW;
+  const scaleY = pageImg.naturalHeight / resH;
+  const sx = Math.max(0, box.x0 * scaleX);
+  const sy = Math.max(0, box.y0 * scaleY);
+  const sw = Math.min(pageImg.naturalWidth, box.x1 * scaleX) - sx;
+  const sh = Math.min(pageImg.naturalHeight, box.y1 * scaleY) - sy;
+  if (!(sw > 0) || !(sh > 0)) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sw));
+  canvas.height = Math.max(1, Math.round(sh));
+  const ctx2d = canvas.getContext("2d");
+  ctx2d.drawImage(pageImg, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
+}
+
+/**
+ * Fallback for a picture with no usable embedded asset: crop its region straight out of
+ * the current page's scanned image (using the same element bbox the page-view overlay
+ * draws), rather than showing the "unavailable" placeholder. Falls back to that
+ * placeholder itself when no page image or bbox is available for this element.
+ */
+async function applyPictureCropFallback(img, el, elementIds) {
+  const elementId = el ? elementIds.get(el) : null;
+  const box = elementId ? state?.currentBoxes?.find((b) => b.elementId === elementId) : null;
+  const pageUrl = box ? state?.pageImages?.get(state.currentPage) : null;
+  const pageImg = pageUrl ? await loadPageImageElement(pageUrl) : null;
+  const dataUrl = pageImg && box ? cropPageRegionToDataUrl(pageImg, box) : null;
+
+  if (!dataUrl) {
+    markPictureUnavailable(img);
+    img.src = INVALID_PICTURE_SRC;
+    return;
+  }
+
+  img.classList.remove("rendered-picture-unavailable");
+  img.removeAttribute("aria-label");
+  img.alt = "";
+  img.src = dataUrl;
+  img.addEventListener(
+    "load",
+    () => {
+      const slot = img.closest(".paged-el-slot");
+      if (slot) fitSlotContent(slot);
+    },
+    { once: true },
+  );
+}
+
+function appendPictureFigureImage(figure, uri, captionEl, elementIds, ctx, el) {
   const img = document.createElement("img");
   figure.appendChild(img);
 
@@ -5309,24 +5655,23 @@ function appendPictureFigureImage(figure, uri, captionEl, elementIds) {
   if (resolved) {
     img.alt = "";
     img.src = resolved;
-    img.addEventListener("error", () => markPictureUnavailable(img), { once: true });
+    img.addEventListener("error", () => applyPictureCropFallback(img, el, elementIds), { once: true });
   } else {
-    markPictureUnavailable(img);
-    img.src = INVALID_PICTURE_SRC;
+    applyPictureCropFallback(img, el, elementIds);
   }
 
-  if (captionEl) {
+  if (captionEl && !ctx?.paged) {
     figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
   }
 }
 
-function renderPicture(el, elementIds) {
+function renderPicture(el, elementIds, ctx) {
   const figure = document.createElement("figure");
   const captionEl = readCaptionElement(el);
   const srcEl = childElements(el).find((c) => localName(c) === "src") ?? null;
   const uri = srcEl?.getAttribute("uri")?.trim() || null;
 
-  appendPictureFigureImage(figure, uri, captionEl, elementIds);
+  appendPictureFigureImage(figure, uri, captionEl, elementIds, ctx, el);
 
   const nodes = [...el.childNodes];
   let i = skipElementHeadNodes(nodes, 0);
@@ -5342,7 +5687,7 @@ function renderPicture(el, elementIds) {
       continue;
     }
     if (tag === "tabular") {
-      const rendered = renderOtslContainer(node, elementIds);
+      const rendered = renderOtslContainer(node, elementIds, ctx);
       if (rendered) figure.appendChild(rendered);
       i += 1;
       continue;
@@ -5350,17 +5695,19 @@ function renderPicture(el, elementIds) {
     break;
   }
 
-  const bodyInner = document.createElement("div");
-  bodyInner.className = "rendered-picture-contents-body";
-  appendPictureBodyContent(bodyInner, nodes, i, elementIds);
-  if (bodyInner.textContent.trim()) {
-    const details = document.createElement("details");
-    details.className = "rendered-picture-contents";
-    const summary = document.createElement("summary");
-    summary.textContent = "Picture contents";
-    details.appendChild(summary);
-    details.appendChild(bodyInner);
-    figure.appendChild(details);
+  if (!ctx?.paged) {
+    const bodyInner = document.createElement("div");
+    bodyInner.className = "rendered-picture-contents-body";
+    appendPictureBodyContent(bodyInner, nodes, i, elementIds);
+    if (bodyInner.textContent.trim()) {
+      const details = document.createElement("details");
+      details.className = "rendered-picture-contents";
+      const summary = document.createElement("summary");
+      summary.textContent = "Picture contents";
+      details.appendChild(summary);
+      details.appendChild(bodyInner);
+      figure.appendChild(details);
+    }
   }
 
   return wrapRendered(el, figure, elementIds.get(el));
@@ -5402,9 +5749,12 @@ function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
   return wrap;
 }
 
-function appendListItemsFromElement(list, el, elementIds) {
+/** @returns {{ ldiv: Element, li: HTMLLIElement }[]} */
+function collectListItems(el, elementIds) {
   const nodes = [...el.childNodes];
   let i = skipContainerLevelHead(nodes, 0);
+  /** @type {{ ldiv: Element, li: HTMLLIElement }[]} */
+  const items = [];
 
   while (i < nodes.length) {
     const node = nodes[i];
@@ -5439,6 +5789,14 @@ function appendListItemsFromElement(list, el, elementIds) {
     const contentNodes = nodes.slice(contentStart, i);
     appendRenderedSliceContent(li, ldiv, contentNodes, elementIds);
 
+    items.push({ ldiv, li });
+  }
+
+  return items;
+}
+
+function appendListItemsFromElement(list, el, elementIds) {
+  for (const { li } of collectListItems(el, elementIds)) {
     list.appendChild(li);
   }
 }
@@ -5604,12 +5962,12 @@ function appendTableCellContent(container, nodes, elementIds, cellToken) {
   appendRenderedSliceContent(container, cellToken, nodes, elementIds);
 }
 
-function renderOtslContainer(el, elementIds) {
+function renderOtslContainer(el, elementIds, ctx) {
   const table = document.createElement("table");
   table.className = "rendered-table";
 
   const captionEl = readCaptionElement(el);
-  if (captionEl) {
+  if (captionEl && !ctx?.paged) {
     table.appendChild(renderEmbeddedCaption(captionEl, elementIds, "caption"));
   }
 
@@ -5732,6 +6090,7 @@ function resolveArchiveUri(uri) {
 function revokeDocumentState(docState) {
   if (!docState) return;
   for (const url of docState.pageImages.values()) {
+    pageImageElementCache.delete(url);
     if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   }
   for (const url of docState.assetUrls.values()) {

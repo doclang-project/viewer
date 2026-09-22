@@ -569,16 +569,32 @@
     <section class="pane pane-reading">
       <div class="pane-header pane-reading-header">
         <span class="pane-header-title">Reading view</span>
-        <button
-          type="button"
-          class="pane-settings-toggle"
-          id="btn-reading-settings-toggle"
-          hidden
-          aria-expanded="false"
-            aria-controls="reading-settings"
-          >
-            Layers
-          </button>
+        <div class="pane-header-actions">
+          <div class="reading-layout-toggle" role="group" aria-label="Reading layout">
+            <button
+              type="button"
+              class="reading-layout-btn"
+              id="btn-reading-layout-pageless"
+              aria-pressed="true"
+            >Pageless</button>
+            <button
+              type="button"
+              class="reading-layout-btn"
+              id="btn-reading-layout-paged"
+              aria-pressed="false"
+            >Paged <span class="reading-layout-beta">(Beta)</span></button>
+          </div>
+          <button
+            type="button"
+            class="pane-settings-toggle"
+            id="btn-reading-settings-toggle"
+            hidden
+            aria-expanded="false"
+              aria-controls="reading-settings"
+            >
+              Layers
+            </button>
+        </div>
       </div>
       <div class="pane-reading-layout">
         <div class="pane-body" id="rendered-pane"></div>

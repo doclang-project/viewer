@@ -771,11 +771,56 @@ label.file-btn input {
   justify-content: space-between;
 }
 
-.pane-page-controls {
+.pane-page-controls,
+.pane-header-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.reading-layout-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.reading-layout-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.reading-layout-btn + .reading-layout-btn {
+  border-left: 1px solid var(--border);
+}
+
+.reading-layout-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.reading-layout-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.reading-layout-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.reading-layout-beta {
+  opacity: 0.6;
+  font-weight: 500;
 }
 
 .page-zoom-control {
@@ -1401,6 +1446,144 @@ body.pane-drag-active .pane-splitter {
 .pane-markup,
 .pane-reading {
   min-width: 0;
+}
+
+#rendered-pane.reading-mode-paged {
+  display: flex;
+  overflow: hidden;
+}
+
+.paged-canvas {
+  position: relative;
+  flex-shrink: 0;
+  margin: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+
+.paged-el-slot {
+  position: absolute;
+  overflow: hidden;
+  transform-origin: top left;
+  outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -1px;
+}
+
+.paged-el-slot.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.paged-el-slot .rendered-el {
+  margin: 0;
+  /* Contain descendants' margins (e.g. a heading's margin-top) so they count towards
+     this element's own measured height instead of collapsing through it — otherwise
+     fitSlotContent() underestimates the space needed and the content clips. */
+  display: flow-root;
+}
+
+/*
+ * .paged-canvas is NOT a .rendered-doc (that class carries a reading-flow max-width,
+ * centering, and margins between blocks) — bbox positioning replaces all of that here,
+ * so every element that normally gets its spacing from `.rendered-doc <tag>` rules
+ * would otherwise fall back to raw browser default margins/padding (e.g. a bare <h2>
+ * defaults to ~0.83em margin, <figure> to 1em block + 40px inline margin), which
+ * fitSlotContent() then has to squeeze the actual text into alongside — wasting most
+ * of the box on invisible spacing instead of readable text size.
+ */
+.paged-canvas p,
+.paged-canvas h1,
+.paged-canvas h2,
+.paged-canvas h3,
+.paged-canvas h4,
+.paged-canvas h5,
+.paged-canvas h6,
+.paged-canvas ul,
+.paged-canvas ol,
+.paged-canvas li,
+.paged-canvas pre,
+.paged-canvas figure,
+.paged-canvas figcaption {
+  margin: 0;
+}
+
+.paged-canvas {
+  line-height: 1.6;
+}
+
+.paged-canvas h1,
+.paged-canvas h2,
+.paged-canvas h3,
+.paged-canvas h4,
+.paged-canvas h5,
+.paged-canvas h6 {
+  line-height: 1.25;
+}
+
+.paged-canvas ul,
+.paged-canvas ol {
+  padding-left: 1.5rem;
+}
+
+.paged-canvas figure img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.paged-canvas figcaption {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.paged-canvas pre {
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  background: var(--placeholder-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+}
+
+.paged-canvas code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.paged-canvas pre code {
+  font-size: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* The furniture/background diagonal-stripe hatch is a reading-flow affordance; the
+   paged view already marks every element's bbox with its own dashed outline, and the
+   hatch just eats into the limited box space, so skip it here. */
+.paged-canvas .rendered-el[data-doclang-layer="furniture"]::before,
+.paged-canvas .rendered-el[data-doclang-layer="background"]::before {
+  display: none;
+}
+
+/* `.rendered-formula`'s own margin/padding, plus vendored KaTeX's `.katex-display`
+   (1em top+bottom margin, meant for reading-flow spacing between formulas) both eat
+   into the bbox before fitSlotContent ever gets to size the actual glyphs. Zero both
+   — .paged-canvas's extra class beats each rule's specificity regardless of the
+   katex.min.css / viewer.css load order. */
+.paged-canvas .rendered-formula {
+  margin: 0;
+  padding: 0;
+}
+
+.paged-canvas .katex-display {
+  margin: 0;
+}
+
+.paged-canvas .rendered-table,
+.paged-canvas .rendered-table .rendered-table {
+  margin: 0;
 }
 
 .pane-header {
@@ -2176,6 +2359,13 @@ body.demo-loading .empty-state-prompt {
   outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+/* A `background`-layer picture is often a full-bleed illustration spanning most of the
+   page; the ordinary hover ring on such a large element reads as a distracting frame
+   around nearly the whole reading view, not a normal small-element hover affordance. */
+.rendered-el[data-doclang-layer="background"]:hover {
+  outline: none;
+}
+
 .rendered-el.selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2414,6 +2604,14 @@ body.demo-loading .empty-state-prompt {
 }
 
 .rendered-doc:not(.show-reading-background) .rendered-el[data-doclang-layer="background"] {
+  display: none;
+}
+
+.paged-canvas:not(.show-reading-furniture) .paged-el-slot[data-doclang-layer="furniture"] {
+  display: none;
+}
+
+.paged-canvas:not(.show-reading-background) .paged-el-slot[data-doclang-layer="background"] {
   display: none;
 }
 
