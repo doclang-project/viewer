@@ -5250,17 +5250,49 @@ function renderCode(el, elementIds, ctx) {
   return wrapRendered(el, pre, elementIds.get(el));
 }
 
+function formulaSourceText(el) {
+  const nodes = [...el.childNodes];
+  let text = "";
+  for (let i = skipElementHeadNodes(nodes, 0); i < nodes.length; i += 1) {
+    text += nodes[i].textContent ?? "";
+  }
+  return text.trim();
+}
+
+function renderFormulaContent(target, el, displayMode) {
+  const source = formulaSourceText(el);
+  if (source && window.katex?.render) {
+    try {
+      window.katex.render(source, target, { displayMode, throwOnError: false });
+      return;
+    } catch {
+      // Fall through to the raw-source fallback below.
+    }
+  }
+  target.textContent = source;
+  target.classList.add("rendered-formula-fallback");
+}
+
 function renderFormula(el, elementIds, ctx) {
   const span = document.createElement("span");
   span.className = ctx.inline ? "rendered-formula-inline" : "rendered-formula";
-  appendRenderedBody(span, el, elementIds, { inline: true });
+  renderFormulaContent(span, el, !ctx.inline);
+
   if (ctx.inline) {
     span.classList.add("rendered-el");
     const id = elementIds.get(el);
     if (id) span.setAttribute("data-element-id", id);
     return span;
   }
-  return wrapRendered(el, span, elementIds.get(el));
+
+  const captionEl = readCaptionElement(el);
+  if (!captionEl) return wrapRendered(el, span, elementIds.get(el));
+
+  const figure = document.createElement("figure");
+  figure.className = "rendered-formula-figure";
+  figure.appendChild(span);
+  figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
+  return wrapRendered(el, figure, elementIds.get(el));
 }
 
 function markPictureUnavailable(img) {

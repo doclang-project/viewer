@@ -2268,8 +2268,6 @@ body.demo-loading .empty-state-prompt {
   display: block;
   margin: 0 0 0.75rem;
   padding: 0.5rem 0.75rem;
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
   background: var(--placeholder-bg);
   border-left: 3px solid var(--border);
   overflow-x: auto;
@@ -2277,8 +2275,20 @@ body.demo-loading .empty-state-prompt {
 
 .rendered-formula-inline {
   display: inline;
+}
+
+.rendered-formula-figure {
+  margin: 0 0 0.75rem;
+}
+
+.rendered-formula-figure .rendered-formula {
+  margin-bottom: 0;
+}
+
+.rendered-formula-fallback {
   font-family: var(--font-mono);
   font-size: 0.875em;
+  white-space: pre-wrap;
 }
 
 .rendered-doc figure {

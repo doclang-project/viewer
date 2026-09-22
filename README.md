@@ -32,3 +32,4 @@ Supported types: `.dclx`, `.dclg`, `.xml`. The demo URL is configured in [`demo-
 - `index.html` — shell UI
 - `viewer.js` — parsing, page alignment, bbox overlay
 - `viewer.css` — layout and theme
+- `vendor/katex/` — vendored [KaTeX](https://katex.org/) (MIT, see [`vendor/katex/LICENSE`](vendor/katex/LICENSE)), used to render `<formula>` LaTeX in the reading view
