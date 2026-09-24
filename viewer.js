@@ -332,6 +332,7 @@ const ARROW_LAYERS = {
   fragment: { cssKey: "fragment", colorVar: "--overlay-fragment", markerId: "fragment-arrowhead", defaultStyle: "dashed" },
   xref: { cssKey: "xref", colorVar: "--kind-footnote", markerId: "xref-arrowhead", defaultStyle: "solid" },
   caption: { cssKey: "caption", colorVar: "--kind-caption", markerId: "caption-arrowhead", defaultStyle: "solid" },
+  keyValue: { cssKey: "key-value", colorVar: "--overlay-key-value", markerId: "key-value-arrowhead", defaultStyle: "solid" },
 };
 const ARROW_STYLE_FIELD_DEFAULTS = { width: 1.5, head: 5 };
 const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
@@ -356,6 +357,7 @@ let showPictureContents = false;
 let showTableContents = false;
 let showFragmentLinks = false;
 let showXrefLinks = false;
+let showKeyValueLinks = false;
 let showReadingOrder = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
@@ -377,6 +379,7 @@ const OVERLAY_PREF_ACCESSORS = {
   showFragmentLinks: { get: () => showFragmentLinks, set: (v) => { showFragmentLinks = v; }, el: () => els.showFragmentLinks, def: false },
   showXrefLinks: { get: () => showXrefLinks, set: (v) => { showXrefLinks = v; }, el: () => els.showXrefLinks, def: false },
   showCaptionLinks: { get: () => showCaptionLinks, set: (v) => { showCaptionLinks = v; }, el: () => els.showCaptionLinks, def: false },
+  showKeyValueLinks: { get: () => showKeyValueLinks, set: (v) => { showKeyValueLinks = v; }, el: () => els.showKeyValueLinks, def: false },
 };
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
@@ -449,6 +452,8 @@ const els = {
   showFragmentLinksLabel: document.getElementById("show-fragment-links-label"),
   showXrefLinks: document.getElementById("show-xref-links"),
   showXrefLinksLabel: document.getElementById("show-xref-links-label"),
+  showKeyValueLinks: document.getElementById("show-key-value-links"),
+  showKeyValueLinksLabel: document.getElementById("show-key-value-links-label"),
   showReadingOrder: document.getElementById("show-reading-order"),
   showReadingOrderLabel: document.getElementById("show-reading-order-label"),
   pageZoom: document.getElementById("page-zoom"),
@@ -572,6 +577,10 @@ els.showXrefLinks?.addEventListener("change", () => {
   showXrefLinks = els.showXrefLinks.checked;
   applyBboxVisibility();
 });
+els.showKeyValueLinks?.addEventListener("change", () => {
+  showKeyValueLinks = els.showKeyValueLinks.checked;
+  applyBboxVisibility();
+});
 els.showReadingOrder?.addEventListener("change", () => {
   showReadingOrder = els.showReadingOrder.checked;
   syncLayoutSubtoggles();
@@ -635,6 +644,7 @@ const OVERLAY_TOGGLE_SHORTCUT_KEYS = {
   f: "showFragmentLinks",
   x: "showXrefLinks",
   c: "showCaptionLinks",
+  v: "showKeyValueLinks",
   b: "showLayoutBadges",
 };
 function toggleOverlayCheckbox(checkbox) {
@@ -2197,6 +2207,7 @@ function syncLayoutSubtoggles() {
     els.showFragmentLinksLabel,
     els.showCaptionLinksLabel,
     els.showXrefLinksLabel,
+    els.showKeyValueLinksLabel,
     els.showReadingOrderLabel,
   ]) {
     if (!label) continue;
@@ -2915,6 +2926,7 @@ function renderPage(pageNum) {
               collectCaptionLinks(segment, elementIds, boxes),
               collectXrefLinks(segment, elementIds, boxes),
               readingOrderSteps,
+              collectKeyValueLinks(segment, elementIds, boxes),
               collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById),
               collectFragmentNavItems(segment, elementIds, boxes),
               defaultResolution,
@@ -3489,6 +3501,38 @@ function collectXrefLinks(segment, elementIds, boxes) {
           toElementId: toId,
         });
       }
+    }
+  });
+  return links;
+}
+
+/**
+ * Key → value arrows within each <field_item>. Each <value> pairs with its nearest
+ * preceding <key> (values ahead of the first key pair with that first key); pairs
+ * where either side lacks a bbox are skipped.
+ * @returns {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]}
+ */
+function collectKeyValueLinks(segment, elementIds, boxes) {
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]} */
+  const links = [];
+  walkElements(segment, (el) => {
+    if (localName(el) !== "field_item") return;
+    const children = childElements(el);
+    let key = children.find((c) => localName(c) === "key") ?? null;
+    for (const child of children) {
+      const tag = localName(child);
+      if (tag === "key") {
+        key = child;
+        continue;
+      }
+      if (tag !== "value" || !key) continue;
+      const keyId = elementIds.get(key);
+      const valueId = elementIds.get(child);
+      const keyBox = keyId ? boxById.get(keyId) : null;
+      const valueBox = valueId ? boxById.get(valueId) : null;
+      if (!keyBox || !valueBox) continue;
+      links.push({ fromBox: keyBox, toBox: valueBox, fromElementId: keyId, toElementId: valueId });
     }
   });
   return links;
@@ -4382,6 +4426,16 @@ function appendXrefLinks(svg, img, xrefLinks) {
   });
 }
 
+function appendKeyValueLinks(svg, img, keyValueLinks) {
+  appendOverlayLinks(svg, img, keyValueLinks, {
+    markerId: "key-value-arrowhead",
+    markerLayer: "keyValue",
+    linkClass: "key-value-link",
+    fromIdAttr: "data-key-id",
+    toIdAttr: "data-value-id",
+  });
+}
+
 function docPointToPixel(xDoc, yDoc, resW, resH, img) {
   return {
     x: (xDoc / resW) * img.naturalWidth,
@@ -4602,7 +4656,7 @@ function hitTestBoxes(boxes, img, x, y) {
   return best;
 }
 
-function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
+function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], keyValueLinks = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("overlay");
   svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
@@ -4610,6 +4664,7 @@ function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrde
 
   appendCaptionLinks(svg, img, captionLinks);
   appendXrefLinks(svg, img, xrefLinks);
+  appendKeyValueLinks(svg, img, keyValueLinks);
   appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
   appendReadingOrderOverlay(svg, img, readingOrderSteps);
 
@@ -4767,6 +4822,10 @@ function applyBboxVisibility() {
       continue;
     }
     el.classList.remove("bbox-hidden");
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".key-value-link")) {
+    el.classList.toggle("bbox-hidden", !showAllBboxes || !showKeyValueLinks);
   }
 
   for (const el of els.pagePane.querySelectorAll(".fragment-link")) {

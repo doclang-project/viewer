@@ -31,6 +31,7 @@
   --kind-default: #dc2626;
   --overlay-reading-order: #ff0000;
   --overlay-fragment: #9333ea;
+  --overlay-key-value: #65a30d;
   --xml-tag: #116329;
   --xml-bracket: #24292e;
   --xml-attr-name: #0550ae;
@@ -68,6 +69,7 @@
     --kind-text: #60a5fa;
     --overlay-reading-order: #ff0000;
     --overlay-fragment: #c084fc;
+    --overlay-key-value: #65a30d;
     --kind-heading: #a78bfa;
     --kind-list: #fb923c;
     --kind-ldiv: #fb923c;
@@ -2232,6 +2234,21 @@ pre.markup {
 }
 
 .overlay line.xref-link.bbox-hidden {
+  display: none;
+}
+
+.overlay line.key-value-link {
+  color: var(--arrow-key-value-color, var(--overlay-key-value));
+  stroke: currentColor;
+  stroke-width: var(--arrow-key-value-width, 1.5);
+  stroke-dasharray: var(--arrow-key-value-dash, none);
+  stroke-linecap: var(--arrow-key-value-cap, butt);
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  fill: none;
+}
+
+.overlay line.key-value-link.bbox-hidden {
   display: none;
 }
 
