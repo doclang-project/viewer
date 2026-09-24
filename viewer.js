@@ -338,7 +338,7 @@ const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
 /** @type {Record<string, { color?: string, width?: number, head?: number, style?: string }>} */
 let arrowStyles = loadArrowStyles();
 
-/** @type {{ pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderIndexByElement: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
+/** @type {{ markupXml: string, pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderIndexByElement: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
 let state = null;
 let fileCatalog = [];
 let activeFileIndex = -1;
@@ -486,6 +486,11 @@ const els = {
   hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
+  validateBtn: document.getElementById("btn-validate"),
+  validationPanel: document.getElementById("validation-panel"),
+  validationSummary: document.getElementById("validation-summary"),
+  validationIssues: document.getElementById("validation-issues"),
+  validationClose: document.getElementById("btn-validation-close"),
 };
 
 document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
@@ -582,6 +587,8 @@ els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen
 els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
+els.validateBtn?.addEventListener("click", onValidateClick);
+els.validationClose?.addEventListener("click", () => setValidationPanelOpen(false));
 /** True when a keydown should be left alone because it's headed for a form control, not a shortcut. */
 function isTypingTarget(el) {
   if (!el) return false;
@@ -1793,6 +1800,7 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
   const elementPageByEl = buildElementPageMap(segments);
 
   return {
+    markupXml,
     pageImages,
     assetUrls,
     currentPage: 1,
@@ -1834,6 +1842,7 @@ function activateDocument(docState, entry) {
   setPageViewVisible(state.hasPageView);
   renderPage(state.currentPage);
   updateFileView();
+  syncValidationForActiveDocument();
 }
 
 function setDocLabel(label) {
@@ -1845,6 +1854,195 @@ function setDocLabel(label) {
     els.docLabel.textContent = "";
     els.docLabel.hidden = true;
   }
+}
+
+// --- XSD validation (libxml2 compiled to WASM, run in validator-worker.mjs) ---
+
+const DOCLANG_NS_CLARK = `{${DOCLANG_NS}}`;
+/** @type {Worker | null} */
+let validatorWorker = null;
+let validatorRequestSeq = 0;
+/** @type {Map<number, (result: object) => void>} */
+const validatorPending = new Map();
+
+function failPendingValidations(message) {
+  for (const resolve of validatorPending.values()) resolve({ ok: false, error: message });
+  validatorPending.clear();
+}
+
+/** @returns {Promise<{ ok: true, issues: object[], schemaVersion: string | null } | { ok: false, error: string }>} */
+function requestValidation(markup) {
+  if (!validatorWorker) {
+    validatorWorker = new Worker("validator-worker.mjs", { type: "module" });
+    validatorWorker.addEventListener("message", (e) => {
+      const { id, ...result } = e.data;
+      validatorPending.get(id)?.(result);
+      validatorPending.delete(id);
+    });
+    validatorWorker.addEventListener("error", (e) => {
+      e.preventDefault();
+      validatorWorker?.terminate();
+      validatorWorker = null;
+      failPendingValidations(e.message || "The validator could not be loaded.");
+    });
+  }
+  const id = ++validatorRequestSeq;
+  return new Promise((resolve) => {
+    validatorPending.set(id, resolve);
+    validatorWorker.postMessage({ id, markup });
+  });
+}
+
+async function validateActiveDocument() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry || !state) return;
+  entry.validation = { status: "running" };
+  renderValidationUi(entry);
+  const result = await requestValidation(state.markupXml);
+  entry.validation = result.ok
+    ? { status: result.issues.length ? "invalid" : "valid", issues: result.issues, schemaVersion: result.schemaVersion }
+    : { status: "error", error: result.error };
+  if (fileCatalog[activeFileIndex] === entry) renderValidationUi(entry);
+}
+
+async function onValidateClick() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry) return;
+  const status = entry.validation?.status ?? "idle";
+  if (status === "running") return;
+  if (status === "idle" || status === "error") {
+    await validateActiveDocument();
+    if (fileCatalog[activeFileIndex] === entry) setValidationPanelOpen(true);
+    return;
+  }
+  setValidationPanelOpen(els.validationPanel?.hidden ?? false);
+}
+
+/** Called whenever the active document changes; each document is validated once, on first open. */
+function syncValidationForActiveDocument() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry || !state) {
+    setValidationPanelOpen(false);
+    renderValidationUi(null);
+    return;
+  }
+  renderValidationUi(entry);
+  if (!entry.validation) validateActiveDocument();
+}
+
+/** Opens/closes the results panel at the user's request; remembered per file. */
+function setValidationPanelOpen(open) {
+  const entry = fileCatalog[activeFileIndex];
+  if (entry) entry.validationPanelOpen = open;
+  applyValidationPanelOpen(open);
+}
+
+function applyValidationPanelOpen(open) {
+  if (!els.validationPanel || !els.validateBtn) return;
+  els.validationPanel.hidden = !open;
+  els.validateBtn.setAttribute("aria-expanded", String(open));
+}
+
+const VALIDATE_BTN_LABELS = {
+  idle: "Validate XSD",
+  running: "Validating…",
+  valid: "Valid XSD",
+  error: "Validation failed",
+};
+
+function renderValidationUi(entry) {
+  const btn = els.validateBtn;
+  if (!btn) return;
+  const v = entry?.validation ?? { status: "idle" };
+  btn.dataset.status = v.status;
+  btn.disabled = v.status === "running";
+  btn.textContent = v.status === "invalid"
+    ? `${v.issues.length} XSD ${v.issues.length === 1 ? "issue" : "issues"}`
+    : VALIDATE_BTN_LABELS[v.status];
+  btn.title = v.status === "idle" || v.status === "error"
+    ? "Validate against the DocLang XSD"
+    : "Show validation results";
+
+  if (!els.validationSummary || !els.validationIssues) return;
+  const schema = v.schemaVersion ? `DocLang XSD ${v.schemaVersion}` : "DocLang XSD";
+  if (v.status === "valid") {
+    els.validationSummary.textContent = `Valid against ${schema}`;
+  } else if (v.status === "invalid") {
+    const n = v.issues.length;
+    els.validationSummary.textContent = `${n} ${n === 1 ? "issue" : "issues"} against ${schema}`;
+  } else if (v.status === "error") {
+    els.validationSummary.textContent = `Could not validate: ${v.error}`;
+  } else {
+    els.validationSummary.textContent = "";
+  }
+  els.validationIssues.replaceChildren(...(v.status === "invalid" ? v.issues.map(buildValidationIssueItem) : []));
+  els.validationPanel?.setAttribute("data-status", v.status);
+  // Issues are shown expanded unless the user closed them for this file.
+  const hasResult = v.status === "valid" || v.status === "invalid" || v.status === "error";
+  applyValidationPanelOpen(hasResult && (entry.validationPanelOpen ?? v.status === "invalid"));
+}
+
+function buildValidationIssueItem(issue) {
+  const li = document.createElement("li");
+  const target = issue.xpath ? resolveNodePath(state?.docRoot?.ownerDocument, issue.xpath) : null;
+  const navigable = target && pageHostElement(target);
+  const row = document.createElement(navigable ? "button" : "div");
+  row.className = "validation-issue";
+  if (navigable) {
+    row.type = "button";
+    row.title = "Show in document";
+    row.addEventListener("click", () => revealElement(target));
+  }
+  const loc = document.createElement("span");
+  loc.className = "validation-issue-loc";
+  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "policy" ? "Document" : "—";
+  const msg = document.createElement("span");
+  msg.className = "validation-issue-msg";
+  msg.textContent = issue.message.replaceAll(DOCLANG_NS_CLARK, "");
+  row.append(loc, msg);
+  li.appendChild(row);
+  return li;
+}
+
+/**
+ * Resolves a libxml2 node path (xmlGetNodePath, e.g. "/*\/*[5]/*[2]" or "/*\/p:foo") against a DOM.
+ * Steps use XPath positional semantics; unresolvable steps stop at the deepest ancestor found.
+ * @returns {Element | null}
+ */
+function resolveNodePath(doc, path) {
+  if (!doc) return null;
+  /** @type {Document | Element} */
+  let node = doc;
+  for (const step of path.split("/").slice(1)) {
+    const m = /^([^[\]@()]+)(?:\[(\d+)\])?$/.exec(step);
+    if (!m) break;
+    const [, name, index] = m;
+    const candidates = [...node.children].filter((el) => name === "*" || el.nodeName === name);
+    const next = candidates[(index ? Number(index) : 1) - 1];
+    if (!next) break;
+    node = next;
+  }
+  return node.nodeType === Node.ELEMENT_NODE ? node : null;
+}
+
+/** Nearest ancestor-or-self that is rendered on some page (content in <head> is not). */
+function pageHostElement(el) {
+  let cur = el;
+  while (cur && !state?.elementPageByEl.has(cur)) cur = cur.parentElement;
+  return cur;
+}
+
+function revealElement(el) {
+  const target = pageHostElement(el);
+  if (!target) return;
+  const page = state.elementPageByEl.get(target);
+  if (page !== state.currentPage) {
+    // Page view re-applies this once its image (and overlay) is ready.
+    if (state.hasPageView) state.pendingSelectElement = target;
+    goToPage(page);
+  }
+  const id = findElementIdOnPage(target);
+  if (id) selectElement(id);
 }
 
 function setDocumentOpen(open, { markupOnly = false } = {}) {
@@ -1909,6 +2107,7 @@ function resetViewer() {
   document.body.classList.remove("has-page-view");
   closeAllSettings();
   setToolbarOptionsOpen(false);
+  syncValidationForActiveDocument();
   if (els.markupPane) els.markupPane.innerHTML = "";
   if (els.renderedPane) els.renderedPane.innerHTML = "";
   if (els.pagePane) els.pagePane.innerHTML = "";

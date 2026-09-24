@@ -554,7 +554,27 @@
       hidden
     ></div>
     <section class="pane pane-markup">
-      <div class="pane-header">DocLang</div>
+      <div class="pane-header pane-markup-header">
+        <span class="pane-header-title">DocLang</span>
+        <div class="pane-header-actions">
+          <button
+            type="button"
+            class="validate-btn"
+            id="btn-validate"
+            data-status="idle"
+            aria-expanded="false"
+            aria-controls="validation-panel"
+            title="Validate against the DocLang XSD"
+          >Validate XSD</button>
+        </div>
+      </div>
+      <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
+        <div class="validation-panel-header">
+          <span class="validation-panel-summary" id="validation-summary"></span>
+          <button type="button" class="validation-panel-close" id="btn-validation-close" aria-label="Close validation results">×</button>
+        </div>
+        <ol class="validation-issues" id="validation-issues"></ol>
+      </div>
       <div class="pane-body" id="markup-pane"></div>
     </section>
     <div

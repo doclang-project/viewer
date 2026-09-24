@@ -33,3 +33,6 @@ Supported types: `.dclx`, `.dclg`, `.xml`. The demo URL is configured in [`demo-
 - `viewer.js` — parsing, page alignment, bbox overlay
 - `viewer.css` — layout and theme
 - `vendor/katex/` — vendored [KaTeX](https://katex.org/) (MIT, see [`vendor/katex/LICENSE`](vendor/katex/LICENSE)), used to render `<formula>` LaTeX in the reading view
+- `validator-worker.mjs` — XSD validation in a Web Worker, equivalent to `doclang validate --xsd-only -n`
+- `schema/doclang.xsd` — copy of the DocLang XSD from the [doclang](https://github.com/doclang-project/doclang) repo (`doclang/doclang.xsd`, version 0.7.3)
+- `vendor/libxml2-wasm/` — vendored [libxml2-wasm](https://github.com/jameslan/libxml2-wasm) (MIT, see [`vendor/libxml2-wasm/LICENSE`](vendor/libxml2-wasm/LICENSE)), libxml2 compiled to WebAssembly, used for validation
