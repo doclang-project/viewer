@@ -1281,6 +1281,24 @@ kbd {
   justify-content: flex-start;
 }
 
+/* Many element types: lay their checkboxes out in columns when the panel is wide enough. */
+.arrow-style-fields-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.4rem 0.75rem;
+}
+
+/* A type plus its optional "contents" toggle occupy one grid cell, stacked. */
+.overlay-type-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.arrow-style-fields label.settings-option-contents {
+  padding-left: 1.25rem;
+}
+
 /* range slider + its live numeric readout, right-aligned as one control cluster */
 .arrow-field-control {
   display: flex;
