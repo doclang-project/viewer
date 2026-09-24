@@ -686,12 +686,12 @@ initFileTypeHints();
 initCursorHints();
 initBboxHints();
 initDragDrop();
-initFileHandling();
 initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
 let suppressDemoLoad = false;
+initFileHandling();
 initOpenerHandoff();
 
 function setDemoLoading(loading) {
@@ -700,9 +700,8 @@ function setDemoLoading(loading) {
   if (btnDemo) btnDemo.disabled = loading;
 }
 
-// Deferred a tick so a file-handling launch (see initFileHandling) can set
-// suppressDemoLoad before the demo fetch would otherwise clobber it. An
-// opener handoff (see initOpenerHandoff) sets it synchronously.
+// A file-handling launch (see initFileHandling) or an opener handoff (see
+// initOpenerHandoff) sets suppressDemoLoad synchronously, before this runs.
 setTimeout(() => {
   if (!suppressDemoLoad && document.getElementById("btn-demo")) loadDemo();
 }, 0);
@@ -714,8 +713,11 @@ async function loadDemo() {
   try {
     const res = await fetch(DEMO_ARCHIVE_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    // A document may have arrived while the demo was downloading; don't replace it.
+    if (suppressDemoLoad) return;
     const label = DEMO_ARCHIVE_URL.split("/").pop() || "demo.dclx";
-    await addArchiveBufferToCatalog(await res.arrayBuffer(), label, { replace: true });
+    await addArchiveBufferToCatalog(buffer, label, { replace: true });
   } catch (err) {
     alert(
       `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
@@ -737,8 +739,16 @@ async function loadFromFileList(fileList) {
   if (supported.length) await addFilesToCatalog(supported, { replace: false });
 }
 
+/**
+ * Receive files opened with the installed PWA (manifest `file_handlers`).
+ *
+ * The OS launch opens the handler's action URL (`?source=file-handler`), which
+ * suppresses the demo up front: launchQueue delivers the files asynchronously,
+ * often after the demo load would already have started.
+ */
 function initFileHandling() {
   if (!("launchQueue" in window)) return;
+  if (new URLSearchParams(location.search).get("source") === "file-handler") suppressDemoLoad = true;
   window.launchQueue.setConsumer(async (launchParams) => {
     if (!launchParams.files?.length) return;
     suppressDemoLoad = true;
