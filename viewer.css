@@ -31,6 +31,7 @@
   --kind-default: #dc2626;
   --overlay-reading-order: #ff0000;
   --overlay-fragment: #9333ea;
+  --overlay-key-value: #65a30d;
   --xml-tag: #116329;
   --xml-bracket: #24292e;
   --xml-attr-name: #0550ae;
@@ -68,6 +69,7 @@
     --kind-text: #60a5fa;
     --overlay-reading-order: #ff0000;
     --overlay-fragment: #c084fc;
+    --overlay-key-value: #65a30d;
     --kind-heading: #a78bfa;
     --kind-list: #fb923c;
     --kind-ldiv: #fb923c;
@@ -1279,6 +1281,24 @@ kbd {
   justify-content: flex-start;
 }
 
+/* Many element types: lay their checkboxes out in columns when the panel is wide enough. */
+.arrow-style-fields-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.4rem 0.75rem;
+}
+
+/* A type plus its optional "contents" toggle occupy one grid cell, stacked. */
+.overlay-type-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.arrow-style-fields label.settings-option-contents {
+  padding-left: 1.25rem;
+}
+
 /* range slider + its live numeric readout, right-aligned as one control cluster */
 .arrow-field-control {
   display: flex;
@@ -2232,6 +2252,21 @@ pre.markup {
 }
 
 .overlay line.xref-link.bbox-hidden {
+  display: none;
+}
+
+.overlay line.key-value-link {
+  color: var(--arrow-key-value-color, var(--overlay-key-value));
+  stroke: currentColor;
+  stroke-width: var(--arrow-key-value-width, 1.5);
+  stroke-dasharray: var(--arrow-key-value-dash, none);
+  stroke-linecap: var(--arrow-key-value-cap, butt);
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  fill: none;
+}
+
+.overlay line.key-value-link.bbox-hidden {
   display: none;
 }
 

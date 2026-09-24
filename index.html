@@ -240,6 +240,10 @@
               <span class="help-shortcut-desc">Captions</span>
             </div>
             <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>V</kbd></span>
+              <span class="help-shortcut-desc">Key-value pairs</span>
+            </div>
+            <div class="help-shortcut-row">
               <span class="help-shortcut-keys"><kbd>B</kbd></span>
               <span class="help-shortcut-desc">Badges</span>
             </div>
@@ -358,9 +362,10 @@
               </label>
               <div class="settings-subgroup" id="layout-subtoggles">
                 <div class="arrow-layer-row">
-                  <div class="settings-option settings-option-sub settings-option-heading" id="layout-layers-label">
+                  <label class="settings-option settings-option-sub" id="layout-layers-label" title="Select or deselect all layers">
+                    <input type="checkbox" data-select-all="layers">
                     <span>Layers</span>
-                  </div>
+                  </label>
                   <button
                     type="button"
                     class="arrow-style-btn"
@@ -385,6 +390,22 @@
                     <span>Background</span>
                   </label>
                 </div>
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="layout-types-label" title="Select or deselect all types">
+                    <input type="checkbox" data-select-all="types">
+                    <span>Types</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="types"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-types"
+                    aria-label="Element type visibility options"
+                    title="Types"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields arrow-style-fields-types" id="arrow-fields-types" hidden></div>
 
                 <div class="arrow-layer-row">
                   <label class="settings-option settings-option-sub" id="show-reading-order-label">
@@ -419,15 +440,6 @@
                     </select>
                   </label>
                 </div>
-
-                <label class="settings-option settings-option-sub" id="show-picture-contents-label">
-                  <input type="checkbox" id="show-picture-contents">
-                  <span>Picture contents</span>
-                </label>
-                <label class="settings-option settings-option-sub" id="show-table-contents-label">
-                  <input type="checkbox" id="show-table-contents">
-                  <span>Table contents</span>
-                </label>
 
                 <div class="arrow-layer-row">
                   <label class="settings-option settings-option-sub" id="show-fragment-links-label">
@@ -524,6 +536,40 @@
                   </label>
                   <label>Line
                     <select data-arrow-layer="caption" data-arrow-field="style">
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="arrow-layer-row">
+                  <label class="settings-option settings-option-sub" id="show-key-value-links-label">
+                    <input type="checkbox" id="show-key-value-links">
+                    <span>Key-value pairs</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="arrow-style-btn"
+                    data-arrow-style-toggle="keyValue"
+                    aria-expanded="false"
+                    aria-controls="arrow-fields-keyValue"
+                    aria-label="Key-value pair arrow style"
+                    title="Arrow style"
+                  ></button>
+                </div>
+                <div class="arrow-style-fields" id="arrow-fields-keyValue" hidden>
+                  <label>Color
+                    <input type="color" data-arrow-layer="keyValue" data-arrow-field="color">
+                  </label>
+                  <label>Thickness
+                    <input type="range" min="0.5" max="6" step="0.5" data-arrow-layer="keyValue" data-arrow-field="width">
+                  </label>
+                  <label>Head
+                    <input type="range" min="3" max="14" step="1" data-arrow-layer="keyValue" data-arrow-field="head">
+                  </label>
+                  <label>Line
+                    <select data-arrow-layer="keyValue" data-arrow-field="style">
                       <option value="solid">Solid</option>
                       <option value="dashed">Dashed</option>
                       <option value="dotted">Dotted</option>

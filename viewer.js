@@ -35,6 +35,8 @@ const CELL_TOKENS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow", "lc
 const CELL_CONTENT_TAGS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow"]);
 const CELL_SPAN_TAGS = new Set(["lcel", "ucel", "xcel"]);
 const OTSL_CONTAINER_TAGS = new Set(["table", "index", "tabular"]);
+const TABLE_CONTENT_CONTAINER_TAGS = new Set(["table", "tabular"]);
+const INDEX_CONTENT_CONTAINER_TAGS = new Set(["index"]);
 const RENDER_BLOCK_TAGS = new Set([
   "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "list", "code", "formula", "picture", "group",
   "field_region", "field_item",
@@ -332,6 +334,7 @@ const ARROW_LAYERS = {
   fragment: { cssKey: "fragment", colorVar: "--overlay-fragment", markerId: "fragment-arrowhead", defaultStyle: "dashed" },
   xref: { cssKey: "xref", colorVar: "--kind-footnote", markerId: "xref-arrowhead", defaultStyle: "solid" },
   caption: { cssKey: "caption", colorVar: "--kind-caption", markerId: "caption-arrowhead", defaultStyle: "solid" },
+  keyValue: { cssKey: "key-value", colorVar: "--overlay-key-value", markerId: "key-value-arrowhead", defaultStyle: "solid" },
 };
 const ARROW_STYLE_FIELD_DEFAULTS = { width: 1.5, head: 5 };
 const ARROW_DASH_VALUES = { solid: "none", dashed: "6 4", dotted: "1.5 3.5" };
@@ -354,8 +357,10 @@ let showLayoutBadges = true;
 let showCaptionLinks = false;
 let showPictureContents = false;
 let showTableContents = false;
+let showIndexContents = false;
 let showFragmentLinks = false;
 let showXrefLinks = false;
+let showKeyValueLinks = false;
 let showReadingOrder = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
@@ -364,6 +369,16 @@ let readingLayoutMode = "pageless";
 let showLayoutBody = true;
 let showLayoutFurniture = true;
 let showLayoutBackground = true;
+/** Element types (tag names) offered in the Overlays → Types filter, in panel order. */
+const OVERLAY_TYPE_FILTERS = [
+  "text", "heading", "caption", "footnote", "page_header", "page_footer", "list", "table", "index",
+  "formula", "code", "picture", "marker", "group", "field_region", "field_heading", "field_item",
+  "key", "value", "hint",
+];
+/** Types whose nested contents get their own toggle in the Types panel. */
+const OVERLAY_TYPES_WITH_CONTENTS = new Set(["picture", "table", "index"]);
+/** @type {Set<string>} element types whose bboxes are filtered out of the page overlay */
+let hiddenOverlayTypes = new Set();
 /** Overlays-panel toggles that are persisted to the browser. Closures read/write the flags above. */
 const OVERLAY_PREF_ACCESSORS = {
   showAllBboxes: { get: () => showAllBboxes, set: (v) => { showAllBboxes = v; }, el: () => els.showAllBboxes, def: true },
@@ -374,9 +389,11 @@ const OVERLAY_PREF_ACCESSORS = {
   showReadingOrder: { get: () => showReadingOrder, set: (v) => { showReadingOrder = v; }, el: () => els.showReadingOrder, def: false },
   showPictureContents: { get: () => showPictureContents, set: (v) => { showPictureContents = v; }, el: () => els.showPictureContents, def: false },
   showTableContents: { get: () => showTableContents, set: (v) => { showTableContents = v; }, el: () => els.showTableContents, def: false },
+  showIndexContents: { get: () => showIndexContents, set: (v) => { showIndexContents = v; }, el: () => els.showIndexContents, def: false },
   showFragmentLinks: { get: () => showFragmentLinks, set: (v) => { showFragmentLinks = v; }, el: () => els.showFragmentLinks, def: false },
   showXrefLinks: { get: () => showXrefLinks, set: (v) => { showXrefLinks = v; }, el: () => els.showXrefLinks, def: false },
   showCaptionLinks: { get: () => showCaptionLinks, set: (v) => { showCaptionLinks = v; }, el: () => els.showCaptionLinks, def: false },
+  showKeyValueLinks: { get: () => showKeyValueLinks, set: (v) => { showKeyValueLinks = v; }, el: () => els.showKeyValueLinks, def: false },
 };
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
@@ -399,6 +416,8 @@ let hotkeysEnabled = false;
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
 let layoutStackQuery = null;
+// Generated before `els` so the per-type "contents" checkboxes it creates resolve below.
+buildOverlayTypeControls(document.getElementById("arrow-fields-types"));
 const els = {
   openFileBtn: document.getElementById("open-file-btn"),
   emptyStateFileTypes: document.getElementById("empty-state-file-types"),
@@ -435,6 +454,8 @@ const els = {
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   layoutLayersLabel: document.getElementById("layout-layers-label"),
+  layoutTypesLabel: document.getElementById("layout-types-label"),
+  layoutTypesFields: document.getElementById("arrow-fields-types"),
   showLayoutBody: document.getElementById("show-layout-body"),
   showLayoutBodyLabel: document.getElementById("show-layout-body-label"),
   showLayoutFurniture: document.getElementById("show-layout-furniture"),
@@ -442,13 +463,14 @@ const els = {
   showLayoutBackground: document.getElementById("show-layout-background"),
   showLayoutBackgroundLabel: document.getElementById("show-layout-background-label"),
   showPictureContents: document.getElementById("show-picture-contents"),
-  showPictureContentsLabel: document.getElementById("show-picture-contents-label"),
   showTableContents: document.getElementById("show-table-contents"),
-  showTableContentsLabel: document.getElementById("show-table-contents-label"),
+  showIndexContents: document.getElementById("show-index-contents"),
   showFragmentLinks: document.getElementById("show-fragment-links"),
   showFragmentLinksLabel: document.getElementById("show-fragment-links-label"),
   showXrefLinks: document.getElementById("show-xref-links"),
   showXrefLinksLabel: document.getElementById("show-xref-links-label"),
+  showKeyValueLinks: document.getElementById("show-key-value-links"),
+  showKeyValueLinksLabel: document.getElementById("show-key-value-links-label"),
   showReadingOrder: document.getElementById("show-reading-order"),
   showReadingOrderLabel: document.getElementById("show-reading-order-label"),
   pageZoom: document.getElementById("page-zoom"),
@@ -564,12 +586,20 @@ els.showTableContents?.addEventListener("change", () => {
   showTableContents = els.showTableContents.checked;
   applyBboxVisibility();
 });
+els.showIndexContents?.addEventListener("change", () => {
+  showIndexContents = els.showIndexContents.checked;
+  applyBboxVisibility();
+});
 els.showFragmentLinks?.addEventListener("change", () => {
   showFragmentLinks = els.showFragmentLinks.checked;
   applyBboxVisibility();
 });
 els.showXrefLinks?.addEventListener("change", () => {
   showXrefLinks = els.showXrefLinks.checked;
+  applyBboxVisibility();
+});
+els.showKeyValueLinks?.addEventListener("change", () => {
+  showKeyValueLinks = els.showKeyValueLinks.checked;
   applyBboxVisibility();
 });
 els.showReadingOrder?.addEventListener("change", () => {
@@ -635,6 +665,7 @@ const OVERLAY_TOGGLE_SHORTCUT_KEYS = {
   f: "showFragmentLinks",
   x: "showXrefLinks",
   c: "showCaptionLinks",
+  v: "showKeyValueLinks",
   b: "showLayoutBadges",
 };
 function toggleOverlayCheckbox(checkbox) {
@@ -669,7 +700,18 @@ els.showReadingBackground?.addEventListener("change", () => {
 els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMode("pageless"));
 els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
 els.pageSettingsPanel?.addEventListener("change", (e) => {
-  if (e.target instanceof HTMLInputElement && e.target.type === "checkbox") persistOverlayPrefs();
+  if (!(e.target instanceof HTMLInputElement) || e.target.type !== "checkbox") return;
+  const group = e.target.dataset.selectAll;
+  if (group) setSelectAllGroup(group, e.target.checked);
+  syncSelectAllToggles();
+  persistOverlayPrefs();
+});
+els.layoutTypesFields?.addEventListener("change", (e) => {
+  const type = e.target instanceof HTMLInputElement ? e.target.dataset.overlayType : null;
+  if (!type) return;
+  if (e.target.checked) hiddenOverlayTypes.delete(type);
+  else hiddenOverlayTypes.add(type);
+  applyBboxVisibility();
 });
 loadLayoutPrefs();
 loadOverlayPrefs();
@@ -2189,14 +2231,15 @@ function syncLayoutSubtoggles() {
   for (const label of [
     els.showLayoutBadgesLabel,
     els.layoutLayersLabel,
+    els.layoutTypesLabel,
+    ...(els.layoutTypesFields?.querySelectorAll("label.settings-option") ?? []),
     els.showLayoutBodyLabel,
     els.showLayoutFurnitureLabel,
     els.showLayoutBackgroundLabel,
-    els.showPictureContentsLabel,
-    els.showTableContentsLabel,
     els.showFragmentLinksLabel,
     els.showCaptionLinksLabel,
     els.showXrefLinksLabel,
+    els.showKeyValueLinksLabel,
     els.showReadingOrderLabel,
   ]) {
     if (!label) continue;
@@ -2325,6 +2368,9 @@ function loadOverlayPrefs() {
     for (const [key, acc] of Object.entries(OVERLAY_PREF_ACCESSORS)) {
       if (typeof data[key] === "boolean") acc.set(data[key]);
     }
+    if (Array.isArray(data.hiddenTypes)) {
+      hiddenOverlayTypes = new Set(data.hiddenTypes.filter((t) => OVERLAY_TYPE_FILTERS.includes(t)));
+    }
   } catch {
     /* ignore invalid stored overlay prefs */
   }
@@ -2334,6 +2380,7 @@ function persistOverlayPrefs() {
   try {
     const data = {};
     for (const [key, acc] of Object.entries(OVERLAY_PREF_ACCESSORS)) data[key] = acc.get();
+    data.hiddenTypes = [...hiddenOverlayTypes];
     localStorage.setItem(OVERLAY_PREFS_STORAGE_KEY, JSON.stringify(data));
   } catch {
     /* ignore quota / private mode */
@@ -2346,11 +2393,87 @@ function syncOverlayPrefControls() {
     const el = acc.el();
     if (el) el.checked = acc.get();
   }
+  for (const input of els.layoutTypesFields?.querySelectorAll("input[data-overlay-type]") ?? []) {
+    input.checked = !hiddenOverlayTypes.has(input.dataset.overlayType);
+  }
+  syncSelectAllToggles();
+}
+
+/** Checkboxes governed by a select-all toggle: everything inside that group's `arrow-fields-<group>` panel. */
+function selectAllGroupInputs(group) {
+  return [...(document.getElementById(`arrow-fields-${group}`)?.querySelectorAll('input[type="checkbox"]') ?? [])];
+}
+
+/** Check or uncheck every member of a select-all group, firing each member's own change handling. */
+function setSelectAllGroup(group, checked) {
+  for (const input of selectAllGroupInputs(group)) {
+    if (input.checked === checked) continue;
+    input.checked = checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
+
+/** Reflect each group's members on its select-all toggle: checked (all), unchecked (none) or indeterminate. */
+function syncSelectAllToggles() {
+  for (const toggle of els.pageSettingsPanel?.querySelectorAll("input[data-select-all]") ?? []) {
+    const inputs = selectAllGroupInputs(toggle.dataset.selectAll);
+    const checkedCount = inputs.filter((i) => i.checked).length;
+    toggle.checked = inputs.length > 0 && checkedCount === inputs.length;
+    toggle.indeterminate = checkedCount > 0 && checkedCount < inputs.length;
+  }
+}
+
+/**
+ * Populate the Overlays → Types panel with one checkbox per filterable element type.
+ * Container types (picture, table, index) also get an indented "Contents" checkbox
+ * (`#show-<type>-contents`) toggling the boxes nested inside them, independent of the
+ * container's own box.
+ */
+function buildOverlayTypeControls(fields) {
+  if (!fields) return;
+  const makeOption = (className, text, configure) => {
+    const label = document.createElement("label");
+    label.className = className;
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    configure(input, label);
+    const span = document.createElement("span");
+    span.textContent = text;
+    label.append(input, span);
+    return label;
+  };
+  for (const type of OVERLAY_TYPE_FILTERS) {
+    const cell = document.createElement("div");
+    cell.className = "overlay-type-cell";
+    const name = type.replace(/_/g, " ");
+    cell.appendChild(
+      makeOption("settings-option settings-option-sub", name.charAt(0).toUpperCase() + name.slice(1), (input) => {
+        input.checked = true;
+        input.dataset.overlayType = type;
+      }),
+    );
+    if (OVERLAY_TYPES_WITH_CONTENTS.has(type)) {
+      cell.appendChild(
+        makeOption("settings-option settings-option-sub settings-option-contents", "Contents", (input) => {
+          input.id = `show-${type}-contents`;
+        }),
+      );
+    }
+    fields.appendChild(cell);
+  }
+}
+
+/** Overlay type filter key for an element: virtual-text units count as "text", tabular as "table". */
+function overlayTypeOf(el) {
+  if (isVirtualTextOverlayUnit(el)) return "text";
+  const tag = localName(el);
+  return tag === "tabular" ? "table" : tag;
 }
 
 /** Restore every overlay toggle to its built-in default, then persist and re-render. */
 function resetOverlayPrefs() {
   for (const acc of Object.values(OVERLAY_PREF_ACCESSORS)) acc.set(acc.def);
+  hiddenOverlayTypes = new Set();
   syncOverlayPrefControls();
   persistOverlayPrefs();
   syncLayoutSubtoggles();
@@ -2915,6 +3038,7 @@ function renderPage(pageNum) {
               collectCaptionLinks(segment, elementIds, boxes),
               collectXrefLinks(segment, elementIds, boxes),
               readingOrderSteps,
+              collectKeyValueLinks(segment, elementIds, boxes),
               collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById),
               collectFragmentNavItems(segment, elementIds, boxes),
               defaultResolution,
@@ -3494,6 +3618,38 @@ function collectXrefLinks(segment, elementIds, boxes) {
   return links;
 }
 
+/**
+ * Key → value arrows within each <field_item>. Each <value> pairs with its nearest
+ * preceding <key> (values ahead of the first key pair with that first key); pairs
+ * where either side lacks a bbox are skipped.
+ * @returns {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]}
+ */
+function collectKeyValueLinks(segment, elementIds, boxes) {
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  /** @type {{ fromBox: object, toBox: object, fromElementId: string, toElementId: string }[]} */
+  const links = [];
+  walkElements(segment, (el) => {
+    if (localName(el) !== "field_item") return;
+    const children = childElements(el);
+    let key = children.find((c) => localName(c) === "key") ?? null;
+    for (const child of children) {
+      const tag = localName(child);
+      if (tag === "key") {
+        key = child;
+        continue;
+      }
+      if (tag !== "value" || !key) continue;
+      const keyId = elementIds.get(key);
+      const valueId = elementIds.get(child);
+      const keyBox = keyId ? boxById.get(keyId) : null;
+      const valueBox = valueId ? boxById.get(valueId) : null;
+      if (!keyBox || !valueBox) continue;
+      links.push({ fromBox: keyBox, toBox: valueBox, fromElementId: keyId, toElementId: valueId });
+    }
+  });
+  return links;
+}
+
 /** @returns {{ fromBox: object, toBox: object | null, fromElementId: string, toElementId: string | null, threadId: string, targetCorner?: "tl" | "br" }[]} */
 function collectFragmentLinks(segment, elementIds, boxes, pageNum, threadPagesById) {
   const boxById = new Map(boxes.map((b) => [b.elementId, b]));
@@ -3792,6 +3948,28 @@ function isTableContentElement(el) {
   let node = el.parentElement;
   while (node) {
     if (OTSL_CONTAINER_TAGS.has(localName(node))) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+/** Contents of a table (or tabular) — the table-contents overlay toggle; index contents are separate. */
+function isTableOnlyContentElement(el) {
+  return isOtslContentElementOf(el, TABLE_CONTENT_CONTAINER_TAGS);
+}
+
+/** Contents of an index — the index-contents overlay toggle. */
+function isIndexContentElement(el) {
+  return isOtslContentElementOf(el, INDEX_CONTENT_CONTAINER_TAGS);
+}
+
+function isOtslContentElementOf(el, containerTags) {
+  if (!el) return false;
+  const tag = localName(el);
+  if (OTSL_CONTAINER_TAGS.has(tag) || tag === "caption") return false;
+  let node = el.parentElement;
+  while (node) {
+    if (containerTags.has(localName(node))) return true;
     node = node.parentElement;
   }
   return false;
@@ -4198,6 +4376,7 @@ function resetAllOverlaySettings() {
   refreshArrowMarkers();
   for (const key of Object.keys(ARROW_LAYERS)) toggleArrowStyleFields(key, false);
   toggleArrowStyleFields("layers", false);
+  toggleArrowStyleFields("types", false);
   resetOverlayPrefs();
 }
 
@@ -4379,6 +4558,16 @@ function appendXrefLinks(svg, img, xrefLinks) {
     linkClass: "xref-link",
     fromIdAttr: "data-xref-from-id",
     toIdAttr: "data-xref-to-id",
+  });
+}
+
+function appendKeyValueLinks(svg, img, keyValueLinks) {
+  appendOverlayLinks(svg, img, keyValueLinks, {
+    markerId: "key-value-arrowhead",
+    markerLayer: "keyValue",
+    linkClass: "key-value-link",
+    fromIdAttr: "data-key-id",
+    toIdAttr: "data-value-id",
   });
 }
 
@@ -4602,7 +4791,7 @@ function hitTestBoxes(boxes, img, x, y) {
   return best;
 }
 
-function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
+function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], keyValueLinks = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("overlay");
   svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
@@ -4610,6 +4799,7 @@ function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrde
 
   appendCaptionLinks(svg, img, captionLinks);
   appendXrefLinks(svg, img, xrefLinks);
+  appendKeyValueLinks(svg, img, keyValueLinks);
   appendFragmentLinks(svg, img, fragmentLinks, defaultResolution);
   appendReadingOrderOverlay(svg, img, readingOrderSteps);
 
@@ -4691,7 +4881,11 @@ function isPictureContentOverlayElement(elementId) {
 }
 
 function isTableContentOverlayElement(elementId) {
-  return isTableContentElement(state?.idToElement?.get(elementId) ?? null);
+  return isTableOnlyContentElement(state?.idToElement?.get(elementId) ?? null);
+}
+
+function isIndexContentOverlayElement(elementId) {
+  return isIndexContentElement(state?.idToElement?.get(elementId) ?? null);
 }
 
 function isLayoutLayerHidden(layer) {
@@ -4704,8 +4898,10 @@ function isContentsOptionHidden(elementId, clickVisible) {
   if (clickVisible) return false;
   if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
   if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
+  if (!showIndexContents && isIndexContentOverlayElement(elementId)) return true;
   const el = state?.idToElement?.get(elementId);
   if (el && isLayoutLayerHidden(elementLayer(el))) return true;
+  if (el && hiddenOverlayTypes.has(overlayTypeOf(el))) return true;
   return false;
 }
 
@@ -4767,6 +4963,10 @@ function applyBboxVisibility() {
       continue;
     }
     el.classList.remove("bbox-hidden");
+  }
+
+  for (const el of els.pagePane.querySelectorAll(".key-value-link")) {
+    el.classList.toggle("bbox-hidden", !showAllBboxes || !showKeyValueLinks);
   }
 
   for (const el of els.pagePane.querySelectorAll(".fragment-link")) {
