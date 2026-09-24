@@ -23,8 +23,30 @@ Open [http://localhost:8080/](http://localhost:8080/) and click **Load demo**.
 | **Load demo** | Fetches [`assets/2501.17887.dclx`](assets/2501.17887.dclx) (requires HTTP). |
 | **Open file** | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file. |
 | **Drag and drop** | Drop any supported file onto the page. |
+| **From another page** | A page that opens the viewer can hand it a file; see [Opening from another page](#opening-from-another-page). |
 
 Supported types: `.dclx`, `.dclg`, `.xml`. The demo URL is configured in [`demo-data.js`](demo-data.js).
+
+### Opening from another page
+
+Tools that produce DocLang in the browser, such as the [docling-serve](https://github.com/docling-project/docling-serve) UI, can open the viewer with a document already loaded. The file is passed with `postMessage`, so it never needs a public URL:
+
+1. Open the viewer in a new window with `?source=opener` (the demo is then not loaded), keeping the returned window handle.
+2. Post `{type: "doclang-viewer:ping"}` to it, repeating until the viewer answers `{type: "doclang-viewer:ready"}`.
+3. Post `{type: "doclang-viewer:open", name, buffer}`, where `buffer` is the file as an `ArrayBuffer` and `name` its file name (for example `report.dclx`).
+
+```js
+const viewer = window.open("https://doclang.ai/viewer/?source=opener", "_blank");
+const origin = "https://doclang.ai";
+const ping = setInterval(() => viewer.postMessage({ type: "doclang-viewer:ping" }, origin), 250);
+window.addEventListener("message", (event) => {
+  if (event.source !== viewer || event.data?.type !== "doclang-viewer:ready") return;
+  clearInterval(ping);
+  viewer.postMessage({ type: "doclang-viewer:open", name: "report.dclx", buffer }, origin, [buffer]);
+});
+```
+
+The viewer only accepts these messages from the window that opened it.
 
 ## Files
 

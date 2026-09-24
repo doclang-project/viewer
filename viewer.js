@@ -685,6 +685,7 @@ initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
 let suppressDemoLoad = false;
+initOpenerHandoff();
 
 function setDemoLoading(loading) {
   document.body.classList.toggle("demo-loading", loading);
@@ -693,7 +694,8 @@ function setDemoLoading(loading) {
 }
 
 // Deferred a tick so a file-handling launch (see initFileHandling) can set
-// suppressDemoLoad before the demo fetch would otherwise clobber it.
+// suppressDemoLoad before the demo fetch would otherwise clobber it. An
+// opener handoff (see initOpenerHandoff) sets it synchronously.
 setTimeout(() => {
   if (!suppressDemoLoad && document.getElementById("btn-demo")) loadDemo();
 }, 0);
@@ -735,6 +737,30 @@ function initFileHandling() {
     suppressDemoLoad = true;
     const files = await Promise.all(launchParams.files.map((handle) => handle.getFile()));
     await loadFromFileList(files);
+  });
+}
+
+/**
+ * Receive a document from the page that opened the viewer, e.g. the
+ * docling-serve UI, which cannot pass its in-memory conversion result by URL.
+ *
+ * The opener opens the viewer with `?source=opener` and posts
+ * `{type: "doclang-viewer:ping"}` until the viewer answers
+ * `{type: "doclang-viewer:ready"}`; it then posts
+ * `{type: "doclang-viewer:open", name, buffer}` with the file as an ArrayBuffer.
+ * Only messages from `window.opener` are accepted.
+ */
+function initOpenerHandoff() {
+  if (!window.opener || new URLSearchParams(location.search).get("source") !== "opener") return;
+  suppressDemoLoad = true;
+  window.addEventListener("message", async (event) => {
+    if (event.source !== window.opener) return;
+    const { type, name, buffer } = event.data ?? {};
+    if (type === "doclang-viewer:ping") {
+      window.opener.postMessage({ type: "doclang-viewer:ready" }, event.origin);
+    } else if (type === "doclang-viewer:open" && buffer instanceof ArrayBuffer) {
+      await loadFromFileList([new File([buffer], name || "document.dclx")]);
+    }
   });
 }
 
