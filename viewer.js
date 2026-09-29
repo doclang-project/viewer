@@ -344,6 +344,16 @@ let arrowStyles = loadArrowStyles();
 /** @type {{ markupXml: string, pageImages: Map<number, string>, assetUrls: Map<string, string>, currentPage: number, pageCount: number, segments: Element[][], defaultResolution: { width: number, height: number }, elementIds: Map<Element, string>, idToElement: Map<string, Element>, hasPageView: boolean, markupOnly: boolean, docRoot: Element, threadPagesById: Map<string, Set<number>>, elementPageByEl: Map<Element, number>, threadNavByElement: Map<Element, { prev: Element | null, next: Element | null }>, pendingSelectElement: Element | null, readingOrder: Element[], readingOrderIndexByElement: Map<Element, number>, pageViewOverlay: { boxes: object[], readingOrderSteps: { box: object, elementId: string }[] } | null } | null} */
 let state = null;
 let fileCatalog = [];
+
+const changeBanner = {
+  root: document.getElementById("file-change-banner"),
+  text: document.getElementById("file-change-text"),
+  reload: document.getElementById("btn-file-reload"),
+  dismiss: document.getElementById("btn-file-change-dismiss"),
+};
+/** The entry the banner currently refers to, and the version already dismissed. */
+let changeBannerEntry = null;
+let dismissedChange = null;
 let activeFileIndex = -1;
 let filePaneUserToggled = false;
 /** @type {ResizeObserver | null} */
@@ -523,6 +533,30 @@ document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
 document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   resetViewer();
+});
+document.getElementById("input-archive")?.addEventListener("click", async (e) => {
+  if (!window.showOpenFilePicker) return;
+  e.preventDefault();
+  try {
+    const handles = await window.showOpenFilePicker({
+      multiple: true,
+      types: [{
+        description: "Doclang documents",
+        accept: {
+          "application/zip": [".dclx", ".zip"],
+          "application/xml": [".dclg", ".xml"],
+        },
+      }],
+    });
+    const files = await Promise.all(handles.map(async (handle) => {
+      const file = await handle.getFile();
+      fileHandles.set(file, handle);
+      return file;
+    }));
+    await addFilesToCatalog(files.filter((f) => isArchiveFile(f) || isMarkupFile(f)), { replace: true });
+  } catch (err) {
+    if (err?.name !== "AbortError") alert(`Failed to open file: ${err.message}`);
+  }
 });
 document.getElementById("input-archive")?.addEventListener("change", async (e) => {
   const files = [...e.target.files].filter((f) => isArchiveFile(f) || isMarkupFile(f));
@@ -794,7 +828,11 @@ function initFileHandling() {
   window.launchQueue.setConsumer(async (launchParams) => {
     if (!launchParams.files?.length) return;
     suppressDemoLoad = true;
-    const files = await Promise.all(launchParams.files.map((handle) => handle.getFile()));
+    const files = await Promise.all(launchParams.files.map(async (handle) => {
+      const file = await handle.getFile();
+      if (handle.kind === "file") fileHandles.set(file, handle);
+      return file;
+    }));
     await loadFromFileList(files);
   });
 }
@@ -823,12 +861,25 @@ function initOpenerHandoff() {
   });
 }
 
-function createFileCatalogEntry(file) {
+/** File System Access handles for files that came with one, keyed by their `File`. */
+const fileHandles = new WeakMap();
+
+function fileFingerprint(file) {
+  return { name: file.name, size: file.size, lastModified: file.lastModified };
+}
+
+/**
+ * The bytes are read up front: a `File` is only a reference to the file on disk
+ * and becomes unreadable as soon as that file is modified or replaced.
+ */
+async function createFileCatalogEntry(file) {
   return {
     id: crypto.randomUUID(),
     label: file.name,
     kind: isMarkupFile(file) ? "markup" : "archive",
-    source: file,
+    source: await file.arrayBuffer(),
+    fingerprint: fileFingerprint(file),
+    handle: fileHandles.get(file) ?? null,
     currentPage: 1,
     pageZoom: PAGE_ZOOM_DEFAULT,
     snapshot: null,
@@ -939,15 +990,7 @@ function createFileViewThumbnail(entry) {
 }
 
 function findCatalogIndexForFile(file) {
-  return fileCatalog.findIndex((entry) => {
-    const source = entry.source;
-    return (
-      source instanceof File &&
-      source.name === file.name &&
-      source.size === file.size &&
-      source.lastModified === file.lastModified
-    );
-  });
+  return fileCatalog.findIndex((entry) => entry.fingerprint?.name === file.name);
 }
 
 async function addFilesToCatalog(files, { replace = false } = {}) {
@@ -957,19 +1000,112 @@ async function addFilesToCatalog(files, { replace = false } = {}) {
   }
   const startIndex = fileCatalog.length;
   let switchIndex = null;
+  let refreshActive = false;
   for (const file of files) {
     const existingIndex = replace ? -1 : findCatalogIndexForFile(file);
     if (existingIndex !== -1) {
+      const existing = fileCatalog[existingIndex];
+      const { size, lastModified } = existing.fingerprint;
+      if (size !== file.size || lastModified !== file.lastModified) {
+        // Same file re-opened after it changed on disk: show the latest content.
+        if (!(await refreshCatalogEntry(existing, file))) continue;
+        if (existingIndex === activeFileIndex) refreshActive = true;
+      }
       if (switchIndex === null) switchIndex = existingIndex;
       continue;
     }
-    const entry = createFileCatalogEntry(file);
+    let entry;
+    try {
+      entry = await createFileCatalogEntry(file);
+    } catch (err) {
+      alert(`Failed to read ${file.name}: ${err.message}`);
+      continue;
+    }
     fileCatalog.push(entry);
     enrichCatalogEntryThumbnail(entry);
     if (switchIndex === null) switchIndex = fileCatalog.length - 1;
   }
   if (!fileCatalog.length) return;
-  await switchToFile(replace ? 0 : switchIndex ?? startIndex);
+  const target = replace ? 0 : switchIndex ?? startIndex;
+  if (target === activeFileIndex && !refreshActive) return;
+  await switchToFile(target);
+}
+
+
+function hideChangeBanner() {
+  changeBannerEntry = null;
+  if (changeBanner.root) changeBanner.root.hidden = true;
+}
+
+/** Look for edits to the active file on disk and offer to reload it. */
+async function checkActiveFileChanged() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry?.handle || !changeBanner.root) {
+    hideChangeBanner();
+    return;
+  }
+  let file;
+  try {
+    file = await entry.handle.getFile();
+  } catch {
+    return; // deleted, moved or permission lost: keep showing what we have
+  }
+  if (fileCatalog[activeFileIndex] !== entry) return;
+  const { size, lastModified } = entry.fingerprint;
+  if (file.size === size && file.lastModified === lastModified) {
+    hideChangeBanner();
+    return;
+  }
+  if (dismissedChange?.entry === entry && dismissedChange.lastModified === file.lastModified) return;
+  fileHandles.set(file, entry.handle);
+  changeBannerEntry = { entry, file };
+  changeBanner.text.textContent = `${entry.label} changed on disk.`;
+  changeBanner.root.hidden = false;
+}
+
+changeBanner.reload?.addEventListener("click", async () => {
+  const pending = changeBannerEntry;
+  hideChangeBanner();
+  if (!pending || fileCatalog[activeFileIndex] !== pending.entry) return;
+  if (await refreshCatalogEntry(pending.entry, pending.file)) await switchToFile(activeFileIndex);
+});
+changeBanner.dismiss?.addEventListener("click", () => {
+  if (changeBannerEntry) {
+    dismissedChange = { entry: changeBannerEntry.entry, lastModified: changeBannerEntry.file.lastModified };
+  }
+  hideChangeBanner();
+});
+// Enter reloads without aiming, unless it is meant for a field or a focused control.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.defaultPrevented || e.isComposing || changeBanner.root.hidden) return;
+  if (e.target instanceof Element && e.target.closest("input, textarea, select, button, a, [contenteditable]")) return;
+  e.preventDefault();
+  changeBanner.reload.click();
+});
+window.addEventListener("focus", checkActiveFileChanged);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) checkActiveFileChanged();
+});
+
+async function refreshCatalogEntry(entry, file) {
+  let buffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch (err) {
+    alert(`Failed to read ${file.name}: ${err.message}`);
+    return false;
+  }
+  entry.source = buffer;
+  entry.fingerprint = fileFingerprint(file);
+  entry.handle = fileHandles.get(file) ?? entry.handle;
+  if (dismissedChange?.entry === entry) hideChangeBanner();
+  if (entry.snapshot && fileCatalog[activeFileIndex] !== entry) {
+    revokeDocumentState(entry.snapshot);
+  }
+  entry.snapshot = null;
+  revokeCatalogEntry(entry);
+  enrichCatalogEntryThumbnail(entry);
+  return true;
 }
 
 async function appendFolderArchive(files) {
@@ -1091,6 +1227,7 @@ async function switchToFile(index) {
 
   persistActiveFileViewState();
   releaseActiveDocument();
+  hideChangeBanner();
 
   activeFileIndex = index;
   const entry = fileCatalog[index];
@@ -1110,6 +1247,7 @@ async function switchToFile(index) {
   entry.snapshot = docState;
   docState.currentPage = entry.currentPage ?? 1;
   activateDocument(docState, entry);
+  checkActiveFileChanged();
 }
 
 function navigateFile(direction) {
@@ -1845,12 +1983,25 @@ function isMarkupFile(file) {
 
 async function loadFromDrop(dataTransfer) {
   const files = [...dataTransfer.files];
+  await attachDroppedHandles(dataTransfer, files);
   if (files.some((f) => f.name === "document.xml")) {
     await appendFolderArchive(files);
     return;
   }
   const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
   if (supported.length) await addFilesToCatalog(supported, { replace: false });
+}
+
+/** Chromium exposes a handle per dropped file, which lets us notice later edits. */
+async function attachDroppedHandles(dataTransfer, files) {
+  const items = [...dataTransfer.items].filter((item) => item.kind === "file");
+  if (!items.length || !items[0].getAsFileSystemHandle) return;
+  // Handles must be requested synchronously within the drop event.
+  const pending = items.map((item) => item.getAsFileSystemHandle().catch(() => null));
+  const handles = await Promise.all(pending);
+  handles.forEach((handle, i) => {
+    if (handle?.kind === "file" && files[i]?.name === handle.name) fileHandles.set(files[i], handle);
+  });
 }
 
 function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnly }) {
