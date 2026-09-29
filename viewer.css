@@ -42,6 +42,7 @@
   --status-ok: #15803d;
   --status-error: #b91c1c;
   --status-error-bg: #fff1f3;
+  --status-dirty: #f59e0b;
   --file-thumb-size: 3.75rem;
   --file-thumb-close-overflow: 0.25rem;
   --file-item-pad-x: 0.35rem;
@@ -301,6 +302,24 @@ header h1 {
   cursor: pointer;
   box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
   z-index: 1;
+}
+
+.file-view-dirty {
+  position: absolute;
+  top: -0.25rem;
+  left: -0.25rem;
+  display: none;
+  width: 0.6875rem;
+  height: 0.6875rem;
+  border-radius: 50%;
+  background: var(--status-dirty);
+  border: 2px solid var(--bg);
+  box-sizing: content-box;
+  z-index: 1;
+}
+
+.file-view-item.is-dirty .file-view-dirty {
+  display: block;
 }
 
 .file-view-close:hover {
@@ -1707,7 +1726,7 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
-.pane-action-btn[data-dirty="true"] {
+.pane-action-btn.primary {
   color: var(--accent);
   border-color: var(--accent);
 }

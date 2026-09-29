@@ -523,6 +523,7 @@ const els = {
   editApplyBtn: document.getElementById("btn-edit-apply"),
   editCancelBtn: document.getElementById("btn-edit-cancel"),
   saveBtn: document.getElementById("btn-save"),
+  revertBtn: document.getElementById("btn-revert"),
   editError: document.getElementById("edit-error"),
   validationPanel: document.getElementById("validation-panel"),
   validationSummary: document.getElementById("validation-summary"),
@@ -661,6 +662,7 @@ els.editBtn?.addEventListener("click", startEditing);
 els.editApplyBtn?.addEventListener("click", applyEdit);
 els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
 els.saveBtn?.addEventListener("click", saveActiveFile);
+els.revertBtn?.addEventListener("click", revertActiveFile);
 window.addEventListener("beforeunload", (e) => {
   if (fileCatalog.some((entry) => entry.dirty)) e.preventDefault();
 });
@@ -1082,6 +1084,7 @@ changeBanner.reload?.addEventListener("click", async () => {
   hideChangeBanner();
   stopEditing({ render: false });
   pending.entry.dirty = false;
+  pending.entry.savedSource = null;
   pending.entry.validation = null;
   if (await refreshCatalogEntry(pending.entry, pending.file)) await switchToFile(activeFileIndex);
 });
@@ -1365,7 +1368,12 @@ function renderFileView() {
       closeCatalogFile(index);
     });
 
-    thumbWrap.append(createFileViewThumbnail(entry), closeBtn);
+    const dirtyDot = document.createElement("span");
+    dirtyDot.className = "file-view-dirty";
+    dirtyDot.title = "Unsaved changes";
+    card.classList.toggle("is-dirty", !!entry.dirty);
+
+    thumbWrap.append(createFileViewThumbnail(entry), closeBtn, dirtyDot);
 
     const label = document.createElement("span");
     label.className = "file-view-label";
@@ -2144,9 +2152,10 @@ function syncEditUi() {
   if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
   if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
   if (els.saveBtn) {
-    els.saveBtn.hidden = !entry?.dirty;
-    els.saveBtn.dataset.dirty = String(!!entry?.dirty);
+    els.saveBtn.hidden = !entry?.dirty || editing;
   }
+  if (els.revertBtn) els.revertBtn.hidden = !entry?.dirty || editing;
+  els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
   if (!editing) setEditError(null);
 }
 
@@ -2206,6 +2215,7 @@ async function applyEdit() {
   }
 
   const bytes = new TextEncoder().encode(text);
+  const previousSource = entry.source;
   try {
     entry.source = entry.kind === "archive"
       ? await replaceArchiveDocument(entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source, bytes)
@@ -2214,6 +2224,7 @@ async function applyEdit() {
     setEditError(`Could not apply: ${err.message}`);
     return;
   }
+  if (!entry.dirty) entry.savedSource = previousSource;
   entry.dirty = true;
   entry.validation = null;
   markupEditor = null; // the discard prompt in switchToFile must not fire for applied text
@@ -2260,7 +2271,22 @@ async function saveActiveFile() {
     return;
   }
   entry.dirty = false;
+  entry.savedSource = null;
   syncEditUi();
+}
+
+/** Drops every applied change and goes back to the last saved (or opened) bytes. */
+async function revertActiveFile() {
+  const entry = editableEntry();
+  if (!entry?.dirty || !entry.savedSource) return;
+  if (!confirm(`Revert ${entry.label} to its last saved version? Your unsaved changes will be lost.`)) return;
+  entry.source = entry.savedSource;
+  entry.savedSource = null;
+  entry.dirty = false;
+  entry.validation = null;
+  markupEditor = null;
+  els.markupPane?.classList.remove("editing");
+  await switchToFile(activeFileIndex);
 }
 
 // --- XSD validation (libxml2 compiled to WASM, run in validator-worker.mjs) ---
