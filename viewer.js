@@ -3987,7 +3987,7 @@ function bboxNavTarget(direction) {
   const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
 
   for (let i = startIndex + step; i >= 0 && i < order.length; i += step) {
-    if (isReadingOrderOverlayUnit(order[i])) return order[i];
+    if (hasOverlayBox(order[i]) && !isElementOverlayHidden(order[i])) return order[i];
   }
   return null;
 }
@@ -4126,13 +4126,9 @@ function isOtslContentElementOf(el, containerTags) {
   return false;
 }
 
-function isPictureOrTableContentElement(el) {
-  return isPictureContentElement(el) || isTableContentElement(el);
-}
-
-function isReadingOrderOverlayUnit(el) {
+/** True when the element is drawn as a bbox on the page view (contents included; see isElementOverlayHidden). */
+function hasOverlayBox(el) {
   if (!isReadingOrderUnit(el)) return false;
-  if (isPictureOrTableContentElement(el)) return false;
   if (headLocations(el).length === 4) return true;
   return isVirtualTextOverlayUnit(el);
 }
@@ -4144,7 +4140,6 @@ function collectReadingOrderSteps(segment, elementIds, boxes, readingOrder) {
   const steps = [];
 
   readingOrder.forEach((el) => {
-    if (isPictureOrTableContentElement(el)) return;
     const elementId = elementIds.get(el);
     if (!elementId) return;
     const box = boxById.get(elementId);
@@ -4895,15 +4890,26 @@ function appendFragmentNavButton(group, x, y, size, radius, fontSize, direction,
 }
 
 function appendReadingOrderOverlay(svg, img, steps) {
-  if (!steps.length) return;
+  if (steps.length < 2) return;
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("class", "reading-order-layer");
+  svg.appendChild(group);
+  redrawReadingOrderArrows(svg, img, steps);
+}
 
-  if (steps.length >= 2) {
+/** Draws the arrow chain through the boxes the layer/type/contents selections leave visible. */
+function redrawReadingOrderArrows(svg, img, steps) {
+  const group = svg.querySelector(".reading-order-layer");
+  if (!group) return;
+  group.replaceChildren();
+  const visible = steps.filter((step) => !isContentsOptionHidden(step.elementId, false));
+  if (visible.length >= 2) {
     const defs = ensureOverlayDefs(svg);
     ensureArrowMarker(defs, "reading-order-arrowhead", arrowMarkerOptions("readingOrder"));
 
-    for (let i = 0; i < steps.length - 1; i += 1) {
-      const from = boxPixelRect(steps[i].box, img);
-      const to = boxPixelRect(steps[i + 1].box, img);
+    for (let i = 0; i < visible.length - 1; i += 1) {
+      const from = boxPixelRect(visible[i].box, img);
+      const to = boxPixelRect(visible[i + 1].box, img);
       const start = boxCenter(from);
       const end = boxCenter(to);
 
@@ -4914,7 +4920,7 @@ function appendReadingOrderOverlay(svg, img, steps) {
       line.setAttribute("x2", String(end.x));
       line.setAttribute("y2", String(end.y));
       line.setAttribute("marker-end", "url(#reading-order-arrowhead)");
-      svg.appendChild(line);
+      group.appendChild(line);
     }
   }
 }
@@ -5027,33 +5033,25 @@ function clearSelection() {
   applySelection();
 }
 
-function isPictureContentOverlayElement(elementId) {
-  return isPictureContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-
-function isTableContentOverlayElement(elementId) {
-  return isTableOnlyContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-
-function isIndexContentOverlayElement(elementId) {
-  return isIndexContentElement(state?.idToElement?.get(elementId) ?? null);
-}
-
 function isLayoutLayerHidden(layer) {
   if (layer === "furniture") return !showLayoutFurniture;
   if (layer === "background") return !showLayoutBackground;
   return !showLayoutBody;
 }
 
+/** True when the layer, type and contents selections in the Overlays panel hide this element's bbox. */
+function isElementOverlayHidden(el) {
+  if (!showPictureContents && isPictureContentElement(el)) return true;
+  if (!showTableContents && isTableOnlyContentElement(el)) return true;
+  if (!showIndexContents && isIndexContentElement(el)) return true;
+  if (isLayoutLayerHidden(elementLayer(el))) return true;
+  return hiddenOverlayTypes.has(overlayTypeOf(el));
+}
+
 function isContentsOptionHidden(elementId, clickVisible) {
   if (clickVisible) return false;
-  if (!showPictureContents && isPictureContentOverlayElement(elementId)) return true;
-  if (!showTableContents && isTableContentOverlayElement(elementId)) return true;
-  if (!showIndexContents && isIndexContentOverlayElement(elementId)) return true;
   const el = state?.idToElement?.get(elementId);
-  if (el && isLayoutLayerHidden(elementLayer(el))) return true;
-  if (el && hiddenOverlayTypes.has(overlayTypeOf(el))) return true;
-  return false;
+  return Boolean(el) && isElementOverlayHidden(el);
 }
 
 function applyBboxVisibility() {
@@ -5132,6 +5130,13 @@ function applyBboxVisibility() {
     const optionVisible = showAllBboxes && showFragmentLinks;
     el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
   }
+
+  const overlaySvg = els.pagePane.querySelector("svg.overlay");
+  const overlayImg = els.pagePane.querySelector(".page-view img");
+  if (overlaySvg && overlayImg) {
+    redrawReadingOrderArrows(overlaySvg, overlayImg, state.pageViewOverlay?.readingOrderSteps ?? []);
+  }
+  updateBboxNavButtons();
 
   for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
     if (!showAllBboxes || !showReadingOrder) {
