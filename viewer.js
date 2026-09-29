@@ -2129,6 +2129,14 @@ function setEditError(message) {
   els.editError.hidden = !message;
 }
 
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "e" || e.defaultPrevented || e.repeat || !hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  if (markupEditor || !editableEntry()) return;
+  e.preventDefault();
+  startEditing();
+});
+
 function syncEditUi() {
   const entry = editableEntry();
   const editing = !!markupEditor;
@@ -2160,6 +2168,8 @@ function startEditing() {
   els.markupPane.classList.add("editing");
   els.markupPane.replaceChildren(markupEditor);
   markupEditor.focus();
+  markupEditor.setSelectionRange(0, 0); // setting the value parks the caret (and the scroll) at the end
+  markupEditor.scrollTop = 0;
   syncEditUi();
 }
 
