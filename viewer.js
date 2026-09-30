@@ -6810,7 +6810,8 @@ function renderOtslContainer(el, elementIds, ctx) {
       appendTableCellContent(td, cell.contentNodes, elementIds, cell.token);
       tr.appendChild(td);
     }
-    if (tr.childNodes.length) tbody.appendChild(tr);
+    // Keep fully covered rows: rowspans above still count them.
+    tbody.appendChild(tr);
   }
 
   if (tbody.childNodes.length) table.appendChild(tbody);
