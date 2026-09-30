@@ -4218,6 +4218,29 @@ function updateBboxNavButtons() {
   if (els.btnBboxNext) els.btnBboxNext.disabled = !state?.hasPageView || !bboxNavTarget("next");
 }
 
+/** @returns {{ l: number, t: number, r: number, b: number } | null} bbox normalized by location resolution */
+function normalizedHeadBBox(el) {
+  const locs = headLocations(el);
+  if (locs.length !== 4) return null;
+  const [l, t, r, b] = locs.map((loc) => {
+    const res = parseInt(loc.getAttribute("resolution") ?? "", 10);
+    return parseInt(loc.getAttribute("value") ?? "0", 10) / (res > 0 ? res : 1);
+  });
+  return { l, t, r, b };
+}
+
+/** True when the caption's bbox lies above, or (vertically overlapping) left of, its host's bbox. */
+function captionPrecedesHost(caption, host) {
+  const c = normalizedHeadBBox(caption);
+  const h = normalizedHeadBBox(host);
+  if (!c || !h) return false;
+  if (c.b <= h.t) return true;
+  if (c.t >= h.b) return false;
+  if (c.r <= h.l) return true;
+  if (c.l >= h.r) return false;
+  return (c.t + c.b) / 2 < (h.t + h.b) / 2;
+}
+
 /** @returns {Element[]} */
 function computeReadingOrder(docRoot) {
   const bodyChildren = childElements(docRoot).filter((el) => localName(el) !== "head");
@@ -4239,9 +4262,10 @@ function computeReadingOrder(docRoot) {
     }
   }
 
-  function walkChildren(parent) {
+  function walkChildren(parent, skip = null) {
     for (const child of parent.childNodes) {
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      if (skip?.has(child)) continue;
       const tag = localName(child);
       if (tag === "xref") {
         const threadId = child.getAttribute("thread_id");
@@ -4254,8 +4278,11 @@ function computeReadingOrder(docRoot) {
   }
 
   function visitElement(el) {
+    // A caption placed above or left of its host is read before it, otherwise after it.
+    const before = childElements(el).filter((c) => localName(c) === "caption" && captionPrecedesHost(c, el));
+    before.forEach(visitElement);
     record(el);
-    walkChildren(el);
+    walkChildren(el, new Set(before));
   }
 
   for (const el of bodyChildren) {
