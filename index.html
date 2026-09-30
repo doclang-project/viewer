@@ -249,6 +249,15 @@
             </div>
           </div>
         </section>
+        <section class="help-shortcut-group">
+          <h3>Actions</h3>
+          <div class="help-shortcut-list">
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>E</kbd></span>
+              <span class="help-shortcut-desc">Edit source</span>
+            </div>
+          </div>
+        </section>
       </div>
     </aside>
   </div>
@@ -609,6 +618,11 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
+          <button type="button" class="pane-action-btn" id="btn-edit" title="Edit the DocLang source" hidden>Edit</button>
+          <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
+          <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
+          <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and restore the last saved version" hidden>Revert</button>
+          <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the applied changes to the file" hidden>Save</button>
           <button
             type="button"
             class="validate-btn"
@@ -627,6 +641,7 @@
         </div>
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
+      <div class="edit-error" id="edit-error" role="alert" hidden></div>
       <div class="pane-body" id="markup-pane"></div>
     </section>
     <div

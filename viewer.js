@@ -519,6 +519,12 @@ const els = {
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
   validateBtn: document.getElementById("btn-validate"),
+  editBtn: document.getElementById("btn-edit"),
+  editApplyBtn: document.getElementById("btn-edit-apply"),
+  editCancelBtn: document.getElementById("btn-edit-cancel"),
+  saveBtn: document.getElementById("btn-save"),
+  revertBtn: document.getElementById("btn-revert"),
+  editError: document.getElementById("edit-error"),
   validationPanel: document.getElementById("validation-panel"),
   validationSummary: document.getElementById("validation-summary"),
   validationIssues: document.getElementById("validation-issues"),
@@ -652,6 +658,14 @@ els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
+els.editBtn?.addEventListener("click", startEditing);
+els.editApplyBtn?.addEventListener("click", applyEdit);
+els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
+els.saveBtn?.addEventListener("click", saveActiveFile);
+els.revertBtn?.addEventListener("click", revertActiveFile);
+window.addEventListener("beforeunload", (e) => {
+  if (fileCatalog.some((entry) => entry.dirty)) e.preventDefault();
+});
 els.validationClose?.addEventListener("click", () => setValidationPanelOpen(false));
 /** True when a keydown should be left alone because it's headed for a form control, not a shortcut. */
 function isTypingTarget(el) {
@@ -1065,8 +1079,13 @@ async function checkActiveFileChanged() {
 
 changeBanner.reload?.addEventListener("click", async () => {
   const pending = changeBannerEntry;
+  if (!pending || fileCatalog[activeFileIndex] !== pending.entry) return hideChangeBanner();
+  if (pending.entry.dirty && !confirm("Reloading discards your unsaved changes. Continue?")) return;
   hideChangeBanner();
-  if (!pending || fileCatalog[activeFileIndex] !== pending.entry) return;
+  stopEditing({ render: false });
+  pending.entry.dirty = false;
+  pending.entry.savedSource = null;
+  pending.entry.validation = null;
   if (await refreshCatalogEntry(pending.entry, pending.file)) await switchToFile(activeFileIndex);
 });
 changeBanner.dismiss?.addEventListener("click", () => {
@@ -1224,6 +1243,7 @@ function clearFileCatalog() {
 
 async function switchToFile(index) {
   if (index < 0 || index >= fileCatalog.length) return;
+  if (!confirmDiscardEditor()) return;
 
   persistActiveFileViewState();
   releaseActiveDocument();
@@ -1282,6 +1302,8 @@ async function closeCatalogFile(index) {
 
   const wasActive = index === activeFileIndex;
   const entry = fileCatalog[index];
+  if (entry.dirty && !confirm(`${entry.label} has unsaved changes. Close it anyway?`)) return;
+  if (wasActive) stopEditing({ render: false });
 
   if (wasActive) {
     releaseActiveDocument();
@@ -1346,7 +1368,12 @@ function renderFileView() {
       closeCatalogFile(index);
     });
 
-    thumbWrap.append(createFileViewThumbnail(entry), closeBtn);
+    const dirtyDot = document.createElement("span");
+    dirtyDot.className = "file-view-dirty";
+    dirtyDot.title = "Unsaved changes";
+    card.classList.toggle("is-dirty", !!entry.dirty);
+
+    thumbWrap.append(createFileViewThumbnail(entry), closeBtn, dirtyDot);
 
     const label = document.createElement("span");
     label.className = "file-view-label";
@@ -1500,7 +1527,14 @@ function initPageWheelNav() {
 
   for (const pane of [els.markupPane, els.renderedPane]) {
     if (!pane) continue;
-    pane.addEventListener("wheel", (e) => onScrollPaneWheel(e, pane), { passive: false });
+    pane.addEventListener(
+      "wheel",
+      (e) => {
+        if (markupEditor && pane === els.markupPane) return; // the editor scrolls itself
+        onScrollPaneWheel(e, pane);
+      },
+      { passive: false },
+    );
   }
 
   els.pagePane.tabIndex = 0;
@@ -2066,12 +2100,14 @@ function activateDocument(docState, entry) {
     port.scrollTop = 0;
   }
 
+  stopEditing({ render: false });
   setDocLabel(entry.label);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
   renderPage(state.currentPage);
   updateFileView();
   syncValidationForActiveDocument();
+  syncEditUi();
 }
 
 function setDocLabel(label) {
@@ -2083,6 +2119,174 @@ function setDocLabel(label) {
     els.docLabel.textContent = "";
     els.docLabel.hidden = true;
   }
+}
+
+// --- Editing: raw source -> Apply (re-parse, refresh views) -> Save (write file) ---
+
+/** @type {HTMLTextAreaElement | null} */
+let markupEditor = null;
+
+function editableEntry() {
+  const entry = fileCatalog[activeFileIndex];
+  return entry && state && (entry.kind === "markup" || entry.kind === "archive") ? entry : null;
+}
+
+function setEditError(message) {
+  if (!els.editError) return;
+  els.editError.textContent = message ?? "";
+  els.editError.hidden = !message;
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "e" || e.defaultPrevented || e.repeat || !hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  if (markupEditor || !editableEntry()) return;
+  e.preventDefault();
+  startEditing();
+});
+
+function syncEditUi() {
+  const entry = editableEntry();
+  const editing = !!markupEditor;
+  if (els.editBtn) els.editBtn.hidden = !entry || editing;
+  if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
+  if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
+  if (els.saveBtn) {
+    els.saveBtn.hidden = !entry?.dirty || editing;
+  }
+  if (els.revertBtn) els.revertBtn.hidden = !entry?.dirty || editing;
+  els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
+  if (!editing) setEditError(null);
+}
+
+function startEditing() {
+  if (markupEditor || !editableEntry() || !els.markupPane) return;
+  markupEditor = document.createElement("textarea");
+  markupEditor.className = "markup-editor";
+  markupEditor.spellcheck = false;
+  markupEditor.value = state.markupXml;
+  markupEditor.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      stopEditing({ render: true });
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      applyEdit();
+    }
+  });
+  els.markupPane.classList.add("editing");
+  els.markupPane.replaceChildren(markupEditor);
+  markupEditor.focus();
+  markupEditor.setSelectionRange(0, 0); // setting the value parks the caret (and the scroll) at the end
+  markupEditor.scrollTop = 0;
+  syncEditUi();
+}
+
+function stopEditing({ render }) {
+  if (!markupEditor) return;
+  markupEditor = null;
+  els.markupPane?.classList.remove("editing");
+  if (render && state) renderPage(state.currentPage);
+  syncEditUi();
+}
+
+/** True unless the user keeps unapplied editor text they would otherwise lose. */
+function confirmDiscardEditor() {
+  if (!markupEditor || !state || markupEditor.value === state.markupXml) return true;
+  return confirm("Discard the unapplied edits in the editor?");
+}
+
+/** Re-parses the editor text and, when it is well-formed, rebuilds every derived view from it. */
+async function applyEdit() {
+  const entry = editableEntry();
+  if (!markupEditor || !entry) return;
+  const text = markupEditor.value;
+  if (text === state.markupXml) return stopEditing({ render: true });
+
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) {
+    setEditError(`Not well-formed XML: ${parseError.textContent.trim().split("\n")[0]}`);
+    return;
+  }
+  if (localName(doc.documentElement) !== "doclang") {
+    setEditError("The root element must be <doclang>.");
+    return;
+  }
+
+  const bytes = new TextEncoder().encode(text);
+  const previousSource = entry.source;
+  try {
+    entry.source = entry.kind === "archive"
+      ? await replaceArchiveDocument(entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source, bytes)
+      : bytes.buffer;
+  } catch (err) {
+    setEditError(`Could not apply: ${err.message}`);
+    return;
+  }
+  if (!entry.dirty) entry.savedSource = previousSource;
+  entry.dirty = true;
+  entry.validation = null;
+  markupEditor = null; // the discard prompt in switchToFile must not fire for applied text
+  els.markupPane?.classList.remove("editing");
+  await switchToFile(activeFileIndex);
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Writes the applied bytes back through the file's handle, or downloads them when there is none. */
+async function saveActiveFile() {
+  const entry = editableEntry();
+  if (!entry?.dirty) return;
+  const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
+  const handle = entry.handle;
+  try {
+    if (handle?.createWritable) {
+      const opts = { mode: "readwrite" };
+      if ((await handle.queryPermission?.(opts)) !== "granted" && (await handle.requestPermission?.(opts)) !== "granted") {
+        throw new Error("Write permission was not granted.");
+      }
+      const writable = await handle.createWritable();
+      try {
+        await writable.write(buffer);
+      } finally {
+        await writable.close();
+      }
+      entry.fingerprint = fileFingerprint(await handle.getFile());
+    } else {
+      downloadBlob(new Blob([buffer]), entry.label);
+    }
+  } catch (err) {
+    if (err?.name === "AbortError") return;
+    alert(`Failed to save ${entry.label}: ${err.message}`);
+    return;
+  }
+  entry.dirty = false;
+  entry.savedSource = null;
+  syncEditUi();
+}
+
+/** Drops every applied change and goes back to the last saved (or opened) bytes. */
+async function revertActiveFile() {
+  const entry = editableEntry();
+  if (!entry?.dirty || !entry.savedSource) return;
+  if (!confirm(`Revert ${entry.label} to its last saved version? Your unsaved changes will be lost.`)) return;
+  entry.source = entry.savedSource;
+  entry.savedSource = null;
+  entry.dirty = false;
+  entry.validation = null;
+  markupEditor = null;
+  els.markupPane?.classList.remove("editing");
+  await switchToFile(activeFileIndex);
 }
 
 // --- XSD validation (libxml2 compiled to WASM, run in validator-worker.mjs) ---
@@ -2322,6 +2526,7 @@ function updatePageZoomResetButton() {
 
 function resetViewer() {
   setDemoLoading(false);
+  stopEditing({ render: false });
   clearFileCatalog();
   filePaneUserToggled = false;
   selectedElementId = null;
@@ -3136,7 +3341,7 @@ function renderPage(pageNum) {
 
   if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
 
-  els.markupPane.innerHTML = "";
+  if (!markupEditor) els.markupPane.innerHTML = "";
   const elementIds = assignElementIds(segment);
   state.elementIds = elementIds;
   state.idToElement = invertElementIds(elementIds);
@@ -3144,7 +3349,9 @@ function renderPage(pageNum) {
   state.currentSegment = segment;
   state.currentBoxes = boxes;
 
-  if (segmentHasMarkup(segment)) {
+  if (markupEditor) {
+    // The editor holds the whole document and stays put while paging.
+  } else if (segmentHasMarkup(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
   } else {
     els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
@@ -6884,4 +7091,98 @@ function findArchiveEntry(entries, fileName) {
 function isIgnoredArchiveEntry(name) {
   if (name === ".DS_Store" || name.endsWith("/.DS_Store")) return true;
   return name.split("/").some((part) => part.startsWith("._") || part === "__MACOSX");
+}
+
+// --- ZIP writing (the counterpart of unzip, just enough to swap document.xml) ---
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+async function deflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+const ZIP_TEXT_ENTRY = /\.(xml|rels|svg|json|txt|html|css)$/i;
+
+/** @param {{ name: string, data: Uint8Array }[]} entries @returns {Promise<Uint8Array>} */
+async function zipEntries(entries) {
+  const encoder = new TextEncoder();
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const canDeflate = typeof CompressionStream !== "undefined";
+
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  for (const { name, data } of entries) {
+    const nameBytes = encoder.encode(name);
+    const deflated = canDeflate && ZIP_TEXT_ENTRY.test(name) ? await deflateRaw(data) : null;
+    const useDeflate = deflated && deflated.length < data.length;
+    const body = useDeflate ? deflated : data;
+    const method = useDeflate ? 8 : 0;
+    const crc = crc32(data);
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, 0x0800, true); // UTF-8 names
+    local.setUint16(8, method, true);
+    local.setUint16(10, dosTime, true);
+    local.setUint16(12, dosDate, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, body.length, true);
+    local.setUint32(22, data.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    chunks.push(new Uint8Array(local.buffer), nameBytes, body);
+
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true);
+    cd.setUint16(4, 20, true);
+    cd.setUint16(6, 20, true);
+    cd.setUint16(8, 0x0800, true);
+    cd.setUint16(10, method, true);
+    cd.setUint16(12, dosTime, true);
+    cd.setUint16(14, dosDate, true);
+    cd.setUint32(16, crc, true);
+    cd.setUint32(20, body.length, true);
+    cd.setUint32(24, data.length, true);
+    cd.setUint16(28, nameBytes.length, true);
+    cd.setUint32(42, offset, true);
+    central.push(new Uint8Array(cd.buffer), nameBytes);
+
+    offset += 30 + nameBytes.length + body.length;
+  }
+  const centralSize = central.reduce((n, c) => n + c.length, 0);
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true);
+  eocd.setUint16(10, entries.length, true);
+  eocd.setUint32(12, centralSize, true);
+  eocd.setUint32(16, offset, true);
+  chunks.push(...central, new Uint8Array(eocd.buffer));
+  return concatUint8Arrays(chunks, offset + centralSize + 22);
+}
+
+/** Rebuilds an archive with `document.xml` replaced; every other entry is carried over as is. */
+async function replaceArchiveDocument(buffer, xmlBytes) {
+  const entries = await unzip(buffer);
+  const idx = entries.findIndex((e) => e.name === "document.xml");
+  if (idx < 0) throw new Error("Archive must contain document.xml");
+  entries[idx] = { name: "document.xml", data: xmlBytes };
+  return (await zipEntries(entries)).buffer;
 }
