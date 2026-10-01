@@ -5917,9 +5917,9 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
   // Unlike the linear reading view, thread-linked fragments (elements sharing a
   // <thread> id) are NOT merged into one block here — each fragment keeps its own
   // bbox on the page, so it's rendered and positioned independently.
-  for (const el of segment) {
-    if (el.nodeType !== Node.ELEMENT_NODE) continue;
-    if (localName(el) === "page_break") continue;
+  const placeElement = (el) => {
+    if (el.nodeType !== Node.ELEMENT_NODE) return;
+    if (localName(el) === "page_break") return;
 
     // Each list item (<ldiv>) has its own bbox distinct from the list's overall
     // bbox — render every item into its own slot instead of one slot for the
@@ -5935,7 +5935,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
         singleItemList.appendChild(li);
         makeSlot(itemId, itemBox, wrapRendered(ldiv, singleItemList, itemId));
       });
-      continue;
+      return;
     }
 
     // A <field_region> and its <field_item> children carry no bbox of their own
@@ -5958,11 +5958,18 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
           if (childId && childBox) makeSlot(childId, childBox, node);
         }
       }
-      continue;
+      return;
+    }
+
+    // A <group> usually has no bbox of its own (only its members do), so the generic path
+    // below would drop it along with everything inside. Place each member in its own slot.
+    if (localName(el) === "group" && !boxById.has(elementIds.get(el))) {
+      for (const child of childElements(el)) placeElement(child);
+      return;
     }
 
     const rendered = renderBlockElement(el, elementIds, { inline: false, paged: true });
-    if (!rendered) continue;
+    if (!rendered) return;
 
     const elementId = elementIds.get(el);
     const box = boxById.get(elementId);
@@ -5979,7 +5986,8 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
         makeSlot(captionId, captionBox, renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
       }
     }
-  }
+  };
+  for (const el of segment) placeElement(el);
 
   canvas.addEventListener("click", (e) => {
     const elementId = resolveRenderedClickTarget(e.target);
