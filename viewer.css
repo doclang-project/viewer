@@ -2854,6 +2854,16 @@ body.demo-loading .empty-state-prompt {
   margin: 0.25rem 0 0;
 }
 
+/* A percentage max-width contributes zero to an auto-layout cell's min-content width,
+   collapsing the column (and the image) to its padding. Cap in absolute units instead. */
+.rendered-table figure {
+  margin: 0;
+}
+
+.rendered-table figure img {
+  max-width: 20rem;
+}
+
 .rendered-page-header,
 .rendered-page-footer {
   font-size: 0.875rem;
