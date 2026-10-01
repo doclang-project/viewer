@@ -1536,7 +1536,9 @@ body.pane-drag-active .pane-splitter {
   outline-offset: -2px;
 }
 
-.paged-el-slot .rendered-el {
+/* Inline wrappers (formula/code/marker nested in running text) must stay inline, as in
+   the pageless view; forcing flow-root on them would break the line around them. */
+.paged-el-slot .rendered-el:not(.rendered-formula-inline, code, .rendered-marker) {
   margin: 0;
   /* Contain descendants' margins (e.g. a heading's margin-top) so they count towards
      this element's own measured height instead of collapsing through it — otherwise
