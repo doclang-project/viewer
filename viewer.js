@@ -5929,7 +5929,19 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
       collectListItems(el, elementIds).forEach(({ ldiv, li }, index) => {
         const itemId = elementIds.get(ldiv);
         const itemBox = itemId ? boxById.get(itemId) : null;
-        if (!itemId || !itemBox) return;
+        if (!itemId || !itemBox) {
+          // Complex item: the <ldiv> carries no bbox and its content (headings, text,
+          // …) are sibling blocks with their own locations — slot each one directly.
+          for (const block of listItemBlockElements(el, ldiv)) {
+            const blockId = elementIds.get(block);
+            const blockBox = blockId ? boxById.get(blockId) : null;
+            const rendered = blockBox
+              ? renderBlockElement(block, elementIds, { inline: false, paged: true })
+              : null;
+            if (rendered) makeSlot(blockId, blockBox, rendered);
+          }
+          return;
+        }
         const singleItemList = document.createElement(ordered ? "ol" : "ul");
         if (ordered) singleItemList.start = index + 1;
         singleItemList.appendChild(li);
@@ -6626,6 +6638,18 @@ function collectListItems(el, elementIds) {
   }
 
   return items;
+}
+
+/** Block elements following `ldiv` in `list`, up to the next `ldiv`. */
+function listItemBlockElements(list, ldiv) {
+  const blocks = [];
+  for (let n = ldiv.nextSibling; n && n.parentNode === list; n = n.nextSibling) {
+    if (n.nodeType !== Node.ELEMENT_NODE) continue;
+    const tag = localName(n);
+    if (tag === "ldiv") break;
+    if (RENDER_BLOCK_TAGS.has(tag)) blocks.push(n);
+  }
+  return blocks;
 }
 
 function appendListItemsFromElement(list, el, elementIds) {
