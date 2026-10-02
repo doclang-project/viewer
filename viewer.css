@@ -861,11 +861,6 @@ label.file-btn input {
   outline-offset: -2px;
 }
 
-.reading-layout-beta {
-  opacity: 0.6;
-  font-weight: 500;
-}
-
 .page-zoom-control {
   display: flex;
   align-items: center;
