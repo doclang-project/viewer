@@ -2884,6 +2884,16 @@ body.demo-loading .empty-state-prompt {
   border-top: 1px solid var(--border);
 }
 
+/* Paged view is positioned by bbox: no rule line or spacing around header/footer. */
+.paged-canvas .rendered-page-header,
+.paged-canvas .rendered-page-footer {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: block;
+}
+
 .rendered-doc:not(.show-reading-furniture) .rendered-el[data-doclang-layer="furniture"] {
   display: none;
 }
