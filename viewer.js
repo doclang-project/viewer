@@ -6092,13 +6092,15 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
         if (!itemId || !itemBox) {
           // Complex item: the <ldiv> carries no bbox and its content (headings, text,
           // …) are sibling blocks with their own locations — slot each one directly.
-          for (const block of listItemBlockElements(el, ldiv)) {
-            const blockId = elementIds.get(block);
-            const blockBox = blockId ? boxById.get(blockId) : null;
-            const rendered = blockBox
-              ? renderBlockElement(block, elementIds, { inline: false, paged: true })
-              : null;
-            if (rendered) makeSlot(blockId, blockBox, rendered);
+          const markerEl = childElements(ldiv).find((c) => localName(c) === "marker");
+          const before = canvas.children.length;
+          for (const block of listItemBlockElements(el, ldiv)) placeElement(block);
+          // The marker has no bbox of its own: show it at the start of the item's first slot.
+          const firstSlot = canvas.children[before];
+          if (markerEl && firstSlot) {
+            // Inside the first text block (not before it) so the marker stays on its line.
+            const host = firstSlot.querySelector("p, h1, h2, h3, h4, h5, h6") ?? firstSlot.firstChild;
+            host?.prepend(renderMarkerElement(markerEl, elementIds, { inline: true }));
           }
           return;
         }
@@ -6140,6 +6142,17 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
       return;
     }
 
+    // A bbox-less wrapper (e.g. a <heading> around a <field_region>, or a <text> made of
+    // several located <text>/<picture>/<value> parts) can't be positioned itself: place
+    // each located child in its own slot instead of dropping the lot.
+    if (!boxById.has(elementIds.get(el))) {
+      const parts = childElements(el).filter((c) => RENDER_BLOCK_TAGS.has(localName(c)) || localName(c) === "field_region");
+      if (parts.length) {
+        parts.forEach(placeElement);
+        return;
+      }
+    }
+
     const rendered = renderBlockElement(el, elementIds, { inline: false, paged: true });
     if (!rendered) return;
 
@@ -6161,8 +6174,41 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
   };
   for (const el of segment) placeElement(el);
 
+  // Safety net: every bbox in the source should show up. Anything the structural
+  // cases above didn't place (and that isn't already rendered inside another slot,
+  // e.g. a table cell) gets its own slot at its own bbox.
+  const elById = new Map([...elementIds].map(([el, id]) => [id, el]));
+  const isPlaced = (id) => id && canvas.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
+  for (const box of boxes) {
+    if (isPlaced(box.elementId)) continue;
+    const el = elById.get(box.elementId);
+    if (!el) continue;
+    // A container whose parts were placed individually (e.g. a <list> and its items,
+    // both with bboxes) is already shown — rendering it again would duplicate content.
+    // Give it an empty slot for its own bbox instead, beneath its parts so they stay clickable.
+    if ([...el.getElementsByTagName("*")].some((d) => isPlaced(elementIds.get(d)))) {
+      makeSlot(box.elementId, box, document.createElement("div"));
+      canvas.insertBefore(canvas.lastChild, canvas.firstChild);
+      continue;
+    }
+    const tag = localName(el);
+    let node =
+      tag === "key" ? renderFieldKeyElement(el, elementIds, {}) :
+      tag === "value" ? renderFieldValueElement(el, elementIds, {}) :
+      tag === "hint" ? renderFieldHintElement(el, elementIds, {}) :
+      renderBlockElement(el, elementIds, { inline: false, paged: true });
+    if (!node) {
+      node = document.createElement("span");
+      node.className = "rendered-el";
+      appendRenderedBody(node, el, elementIds, { inline: true, paged: true });
+    }
+    makeSlot(box.elementId, box, node);
+  }
+
   canvas.addEventListener("click", (e) => {
-    const elementId = resolveRenderedClickTarget(e.target);
+    // Fall back to the slot itself for boxes with no rendered content (empty text, container bboxes).
+    const elementId = resolveRenderedClickTarget(e.target)
+      ?? e.target.closest(".paged-el-slot")?.getAttribute("data-element-id");
     if (elementId) selectElement(elementId);
   });
   applyReadingLayerClasses(canvas);
@@ -6419,6 +6465,10 @@ function renderFieldHintElement(el, elementIds, ctx) {
   return node;
 }
 
+const INLINE_NESTABLE_TAGS = new Set([
+  "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "field_region", "field_item",
+]);
+
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
     let text = node.textContent;
@@ -6444,6 +6494,29 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
   if (tag === "code" || tag === "formula") {
     const rendered = renderBlockElement(node, elementIds, { inline: true });
     if (rendered) parent.appendChild(rendered);
+    return;
+  }
+
+  // Text-like elements and field regions nested in running text (a footer, caption, text…)
+  // are part of that text: render them inline, like code and formulas.
+  if (ctx.inline && INLINE_NESTABLE_TAGS.has(tag)) {
+    const span = document.createElement("span");
+    span.className = `rendered-el rendered-inline rendered-${tag}`;
+    const elementId = elementIds.get(node);
+    if (elementId) span.setAttribute("data-element-id", elementId);
+    applyElementLayerAttr(node, span);
+    appendRenderedBody(span, node, elementIds, ctx);
+    parent.appendChild(span);
+    return;
+  }
+
+  // A picture nested in running text sits in the line like an inline image.
+  if (ctx.inline && tag === "picture") {
+    const rendered = renderBlockElement(node, elementIds, ctx);
+    if (rendered) {
+      rendered.classList.add("rendered-inline-picture");
+      parent.appendChild(rendered);
+    }
     return;
   }
 
@@ -6778,6 +6851,9 @@ function collectListItems(el, elementIds) {
     for (const child of childElements(ldiv)) {
       const childTag = localName(child);
       if (childTag === "marker") {
+        // An explicit marker replaces the browser's own list numbering/bullet.
+        li.classList.add("has-marker");
+        li.style.listStyle = "none";
         li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
       } else if (childTag === "checkbox") {
         li.appendChild(renderCheckboxElement(child, elementIds));
