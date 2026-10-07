@@ -5980,6 +5980,16 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
       return;
     }
 
+    // A block (e.g. a <heading>) can wrap a <field_region> and carry no bbox itself —
+    // the key/value leaves hold the locations. Place those instead of dropping the block.
+    if (!boxById.has(elementIds.get(el))) {
+      const regions = [...el.getElementsByTagName("*")].filter((n) => localName(n) === "field_region");
+      if (regions.length) {
+        regions.forEach(placeElement);
+        return;
+      }
+    }
+
     const rendered = renderBlockElement(el, elementIds, { inline: false, paged: true });
     if (!rendered) return;
 
@@ -6001,8 +6011,41 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
   };
   for (const el of segment) placeElement(el);
 
+  // Safety net: every bbox in the source should show up. Anything the structural
+  // cases above didn't place (and that isn't already rendered inside another slot,
+  // e.g. a table cell) gets its own slot at its own bbox.
+  const elById = new Map([...elementIds].map(([el, id]) => [id, el]));
+  const isPlaced = (id) => id && canvas.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
+  for (const box of boxes) {
+    if (isPlaced(box.elementId)) continue;
+    const el = elById.get(box.elementId);
+    if (!el) continue;
+    // A container whose parts were placed individually (e.g. a <list> and its items,
+    // both with bboxes) is already shown — rendering it again would duplicate content.
+    // Give it an empty slot for its own bbox instead, beneath its parts so they stay clickable.
+    if ([...el.getElementsByTagName("*")].some((d) => isPlaced(elementIds.get(d)))) {
+      makeSlot(box.elementId, box, document.createElement("div"));
+      canvas.insertBefore(canvas.lastChild, canvas.firstChild);
+      continue;
+    }
+    const tag = localName(el);
+    let node =
+      tag === "key" ? renderFieldKeyElement(el, elementIds, {}) :
+      tag === "value" ? renderFieldValueElement(el, elementIds, {}) :
+      tag === "hint" ? renderFieldHintElement(el, elementIds, {}) :
+      renderBlockElement(el, elementIds, { inline: false, paged: true });
+    if (!node) {
+      node = document.createElement("span");
+      node.className = "rendered-el";
+      appendRenderedBody(node, el, elementIds, { inline: true, paged: true });
+    }
+    makeSlot(box.elementId, box, node);
+  }
+
   canvas.addEventListener("click", (e) => {
-    const elementId = resolveRenderedClickTarget(e.target);
+    // Fall back to the slot itself for boxes with no rendered content (empty text, container bboxes).
+    const elementId = resolveRenderedClickTarget(e.target)
+      ?? e.target.closest(".paged-el-slot")?.getAttribute("data-element-id");
     if (elementId) selectElement(elementId);
   });
   applyReadingLayerClasses(canvas);
