@@ -6738,33 +6738,18 @@ function parseOtslRows(container) {
   return rows;
 }
 
-function findVerticalCellOrigin(grid, row, col) {
-  for (let r = row - 1; r >= 0; r -= 1) {
-    const cell = grid[r]?.[col];
-    if (!cell || cell.covered) continue;
-    return { cell, row: r, col };
-  }
-  return null;
+/**
+ * The cell that actually occupies (row, col): the cell itself, or — for a covered
+ * lcel/ucel/xcel position — the origin cell that spans over it.
+ */
+function otslOwnerAt(grid, row, col) {
+  const cell = grid[row]?.[col];
+  if (!cell) return null;
+  return cell.covered ? cell.owner : { cell, row, col };
 }
 
-function findHorizontalCellOrigin(grid, row, col) {
-  for (let c = col - 1; c >= 0; c -= 1) {
-    const cell = grid[row]?.[c];
-    if (!cell || cell.covered) continue;
-    return { cell, row, col: c };
-  }
-  return null;
-}
-
-function nextFreeColumn(grid, row, col) {
-  let c = col;
-  while (grid[row]?.[c]?.covered) c += 1;
-  return c;
-}
-
-/** @returns {{ kind: string, token: Element, contentNodes: Node[], colspan: number, rowspan: number, covered?: boolean }[][]} */
+/** @returns {{ kind: string, token: Element, contentNodes: Node[], colspan: number, rowspan: number, covered?: boolean, owner?: object }[][]} */
 function buildOtslGrid(rows) {
-  /** @type {{ kind: string, token: Element, contentNodes: Node[], colspan: number, rowspan: number, covered?: boolean }[][]} */
   const grid = [];
 
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx += 1) {
@@ -6772,41 +6757,26 @@ function buildOtslGrid(rows) {
     let col = 0;
 
     for (const parsed of rows[rowIdx]) {
-      col = nextFreeColumn(grid, rowIdx, col);
-
-      if (parsed.kind === "lcel") {
-        const origin = findHorizontalCellOrigin(grid, rowIdx, col);
-        if (origin) origin.cell.colspan += 1;
-        grid[rowIdx][col] = { kind: "lcel", token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true };
-        col += 1;
-        continue;
-      }
-
-      if (parsed.kind === "ucel") {
-        const origin = findVerticalCellOrigin(grid, rowIdx, col);
-        if (origin) origin.cell.rowspan += 1;
-        grid[rowIdx][col] = { kind: "ucel", token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true };
-        col += 1;
-        continue;
-      }
-
-      if (parsed.kind === "xcel") {
-        const vOrigin = findVerticalCellOrigin(grid, rowIdx, col);
-        const hOrigin = findHorizontalCellOrigin(grid, rowIdx, col);
-        if (vOrigin && hOrigin && vOrigin.cell === hOrigin.cell) {
-          vOrigin.cell.rowspan += 1;
-          vOrigin.cell.colspan += 1;
-        } else {
-          if (vOrigin) vOrigin.cell.rowspan += 1;
-          if (hOrigin) hOrigin.cell.colspan += 1;
+      const kind = parsed.kind;
+      if (kind === "lcel" || kind === "ucel" || kind === "xcel") {
+        // A span token continues whichever cell covers its left (lcel) or upper (ucel)
+        // neighbour; xcel continues both. Following the neighbour's *owner* (not just
+        // the nearest uncovered cell) keeps a span from leaking into unrelated cells
+        // above when a merged cell is itself covered by a rowspan/colspan.
+        const owner = kind === "ucel"
+          ? otslOwnerAt(grid, rowIdx - 1, col)
+          : otslOwnerAt(grid, rowIdx, col - 1) ?? otslOwnerAt(grid, rowIdx - 1, col);
+        if (owner) {
+          owner.cell.colspan = Math.max(owner.cell.colspan, col - owner.col + 1);
+          owner.cell.rowspan = Math.max(owner.cell.rowspan, rowIdx - owner.row + 1);
         }
-        grid[rowIdx][col] = { kind: "xcel", token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true };
+        grid[rowIdx][col] = { kind, token: parsed.token, contentNodes: [], colspan: 0, rowspan: 0, covered: true, owner };
         col += 1;
         continue;
       }
 
       grid[rowIdx][col] = {
-        kind: parsed.kind,
+        kind,
         token: parsed.token,
         contentNodes: parsed.contentNodes,
         colspan: 1,
