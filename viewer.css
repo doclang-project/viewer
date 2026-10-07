@@ -687,6 +687,7 @@ body.viewer-loaded.drag-over .drop-banner {
 .toolbar-file-group {
   display: inline-flex;
   align-items: center;
+  gap: 0.5rem;
 }
 
 .header-site-link:hover {
@@ -713,12 +714,13 @@ label.file-btn {
   cursor: pointer;
 }
 
-button:hover,
+button:hover:not([aria-disabled="true"]),
 label.file-btn:hover {
   border-color: var(--accent);
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -3012,4 +3014,21 @@ body.demo-loading .empty-state-prompt {
   body.viewer-loaded #main.layout-stacked .pane-layout-last {
     border-bottom: none;
   }
+}
+
+/* Alternative representations in the source view: options are clickable; clicking a replaced host restores it. */
+.markup-alt-option {
+  cursor: pointer;
+}
+
+.markup-alt-option:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.markup-alt-option.markup-alt-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+[data-alt-restore] {
+  cursor: pointer;
 }
