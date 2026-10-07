@@ -5932,13 +5932,13 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
         if (!itemId || !itemBox) {
           // Complex item: the <ldiv> carries no bbox and its content (headings, text,
           // …) are sibling blocks with their own locations — slot each one directly.
-          for (const block of listItemBlockElements(el, ldiv)) {
-            const blockId = elementIds.get(block);
-            const blockBox = blockId ? boxById.get(blockId) : null;
-            const rendered = blockBox
-              ? renderBlockElement(block, elementIds, { inline: false, paged: true })
-              : null;
-            if (rendered) makeSlot(blockId, blockBox, rendered);
+          const markerEl = childElements(ldiv).find((c) => localName(c) === "marker");
+          const before = canvas.children.length;
+          for (const block of listItemBlockElements(el, ldiv)) placeElement(block);
+          // The marker has no bbox of its own: show it at the start of the item's first slot.
+          const firstSlot = canvas.children[before];
+          if (markerEl && firstSlot) {
+            firstSlot.firstChild?.prepend(renderMarkerElement(markerEl, elementIds, { inline: true }));
           }
           return;
         }
@@ -6658,6 +6658,9 @@ function collectListItems(el, elementIds) {
     for (const child of childElements(ldiv)) {
       const childTag = localName(child);
       if (childTag === "marker") {
+        // An explicit marker replaces the browser's own list numbering/bullet.
+        li.classList.add("has-marker");
+        li.style.listStyle = "none";
         li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
       } else if (childTag === "checkbox") {
         li.appendChild(renderCheckboxElement(child, elementIds));

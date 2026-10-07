@@ -2686,6 +2686,16 @@ body.demo-loading .empty-state-prompt {
   margin-right: 0.35rem;
 }
 
+li.has-marker {
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+}
+
+li.has-marker > .rendered-marker {
+  flex: none;
+}
+
 .rendered-handwriting {
   font-family: "Segoe Print", "Bradley Hand", cursive;
 }
