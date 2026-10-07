@@ -1570,6 +1570,11 @@ body.pane-drag-active .pane-splitter {
   line-height: 1.6;
 }
 
+/* Newlines inside <content> are meaningful in the paged view; spaces still collapse. */
+.paged-canvas .rendered-content {
+  white-space: pre-line;
+}
+
 .paged-canvas h1,
 .paged-canvas h2,
 .paged-canvas h3,

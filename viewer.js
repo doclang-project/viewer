@@ -295,6 +295,8 @@ function formatMarkupTextNode(node) {
   if (node.nodeType === Node.CDATA_SECTION_NODE) {
     return `<![CDATA[${node.textContent ?? ""}]]>`;
   }
+  // <content> has xml:space="preserve" semantics: its whitespace is significant.
+  if (node.parentElement && localName(node.parentElement) === "content") return node.textContent;
   return node.textContent.trim();
 }
 
@@ -5790,6 +5792,8 @@ function findLastTextNode(node) {
 function trimParentTrailingForFragmentJoin(parent) {
   const lastText = findLastTextNode(parent);
   if (!lastText) return;
+  // Preserved <content> text keeps its trailing whitespace (and any hyphen) across the join.
+  if (lastText.parentElement?.closest(".rendered-content")) return;
   let value = lastText.textContent ?? "";
   value = value.replace(/\s+$/u, "");
   if (value.endsWith("-")) value = value.slice(0, -1);
@@ -6326,6 +6330,7 @@ function renderFormatElement(el, elementIds, ctx) {
   const tag = localName(el);
   if (tag === "content") {
     const span = document.createElement("span");
+    span.className = "rendered-content";
     span.textContent = el.textContent ?? "";
     return span;
   }
