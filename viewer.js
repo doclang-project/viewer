@@ -1149,6 +1149,7 @@ async function refreshCatalogEntry(entry, file) {
   }
   entry.source = buffer;
   entry.fingerprint = fileFingerprint(file);
+  entry.altChoices = null;
   entry.handle = fileHandles.get(file) ?? entry.handle;
   if (dismissedChange?.entry === entry) hideChangeBanner();
   if (entry.snapshot && fileCatalog[activeFileIndex] !== entry) {
@@ -1226,18 +1227,18 @@ async function parseCatalogEntry(entry) {
       const text = entry.source instanceof File
         ? await entry.source.text()
         : new TextDecoder().decode(entry.source);
-      return buildDocumentState(text, new Map(), entry.label, new Map(), { markupOnly: true });
+      return buildDocumentState(text, new Map(), entry.label, new Map(), { markupOnly: true, altChoices: entry.altChoices });
     }
     if (entry.kind === "archive") {
       const buffer = entry.source instanceof File
         ? await entry.source.arrayBuffer()
         : entry.source;
       const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
-      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false, altChoices: entry.altChoices });
     }
     if (entry.kind === "folder") {
       const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
-      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false });
+      return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false, altChoices: entry.altChoices });
     }
   } catch (err) {
     alert(`Failed to read ${entry.label}: ${err.message}`);
@@ -2080,7 +2081,72 @@ async function attachDroppedHandles(dataTransfer, files) {
   });
 }
 
-function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnly }) {
+/**
+ * Alternative representations: a host element may carry
+ * `<custom><docling__alt_repr><docling__alt_opt>…</docling__alt_opt>…</docling__alt_repr></custom>`,
+ * where each option holds replacement elements (as CDATA or as child elements).
+ * `choices` maps an alt_repr index (document order) to the chosen option index. A chosen
+ * option replaces its host in the document: the host is moved into an inert `<custom>`
+ * wrapper (skipped by rendering) and the option's elements follow it as siblings. The
+ * source view hides that bookkeeping and shows the document as it was written.
+ * @returns {{ options: Map<Element, { host: number, opt: number, active: boolean }>, inactive: Map<Element, { host: number, replacement: Element[] }>, replacements: Set<Element> }}
+ */
+function applyAlternatives(doc, choices) {
+  const options = new Map();
+  const inactive = new Map();
+  const replacements = new Set();
+  const reprs = [...doc.getElementsByTagName("*")].filter((el) => localName(el) === "docling__alt_repr");
+  reprs.forEach((repr, hostIdx) => {
+    const opts = childElements(repr).filter((el) => localName(el) === "docling__alt_opt");
+    const chosen = choices?.get(hostIdx);
+    opts.forEach((opt, optIdx) => options.set(opt, { host: hostIdx, opt: optIdx, active: chosen === optIdx }));
+
+    const host = repr.parentElement?.parentElement;
+    if (chosen === undefined || !opts[chosen] || !host?.parentNode) return;
+    const replacement = parseAlternativeElements(doc, opts[chosen]);
+    if (!replacement.length) return;
+    const wrapper = doc.createElementNS(host.namespaceURI, "custom");
+    host.parentNode.insertBefore(wrapper, host);
+    wrapper.appendChild(host);
+    let anchor = wrapper;
+    for (const el of replacement) {
+      anchor.parentNode.insertBefore(el, anchor.nextSibling);
+      anchor = el;
+      replacements.add(el);
+    }
+    inactive.set(wrapper, { host: hostIdx, replacement });
+  });
+  return { options, inactive, replacements };
+}
+
+function parseAlternativeElements(doc, opt) {
+  const kids = childElements(opt);
+  if (kids.length) return kids.map((k) => doc.importNode(k, true));
+  const text = opt.textContent?.trim();
+  if (!text) return [];
+  const ns = doc.documentElement.namespaceURI;
+  const frag = new DOMParser().parseFromString(`<r${ns ? ` xmlns="${ns}"` : ""}>${text}</r>`, "application/xml");
+  if (frag.querySelector("parsererror")) return [];
+  return childElements(frag.documentElement).map((k) => doc.importNode(k, true));
+}
+
+/**
+ * Make `optIdx` of alternative set `hostIdx` effective. Choosing the option that is already
+ * effective, or passing `optIdx` null, restores the original host.
+ */
+async function chooseAlternative(hostIdx, optIdx) {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry) return;
+  const choices = entry.altChoices ?? new Map();
+  if (optIdx === null || choices.get(hostIdx) === optIdx) choices.delete(hostIdx);
+  else choices.set(hostIdx, optIdx);
+  entry.altChoices = choices.size ? choices : null;
+  const scroll = els.markupPane?.scrollTop ?? 0;
+  await switchToFile(activeFileIndex);
+  if (els.markupPane) els.markupPane.scrollTop = scroll;
+}
+
+function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnly, altChoices = null }) {
   const doc = new DOMParser().parseFromString(markupXml, "application/xml");
   const parseError = doc.querySelector("parsererror");
   if (parseError) {
@@ -2092,6 +2158,8 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     alert(`${label}: root element must be <doclang>`);
     return null;
   }
+
+  const alt = applyAlternatives(doc, altChoices);
 
   const head = childElements(root).find((el) => localName(el) === "head") ?? null;
   const defaultResolution = readDefaultResolution(head);
@@ -2106,6 +2174,9 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
 
   return {
     markupXml,
+    altOptions: alt.options,
+    altInactive: alt.inactive,
+    altReplacements: alt.replacements,
     pageImages,
     assetUrls,
     currentPage: 1,
@@ -4333,7 +4404,7 @@ function computeReadingOrder(docRoot) {
   }
 
   for (const el of bodyChildren) {
-    if (localName(el) === "page_break") continue;
+    if (localName(el) === "page_break" || localName(el) === "custom") continue;
     if (consumedViaXref.has(el)) continue;
     visitElement(el);
   }
@@ -5563,6 +5634,19 @@ function buildMarkupView(segment, elementIds) {
       }
       return;
     }
+    // Clicking an alternative renders it; clicking the replaced host restores the original.
+    const altOption = e.target.closest(".markup-alt-option");
+    if (altOption) {
+      e.stopPropagation();
+      chooseAlternative(Number(altOption.dataset.altHost), Number(altOption.dataset.altOpt));
+      return;
+    }
+    const altRestore = e.target.closest("[data-alt-restore]");
+    if (altRestore) {
+      e.stopPropagation();
+      chooseAlternative(Number(altRestore.dataset.altRestore), null);
+      return;
+    }
     const elementId = resolveMarkupClickTarget(e.target);
     if (elementId) selectElement(elementId);
   });
@@ -5760,8 +5844,32 @@ function buildMarkupOtslContainer(el, depth, elementIds) {
   });
 }
 
+function markAlternativeBlock(block, el) {
+  const altOption = state?.altOptions?.get(el);
+  if (!altOption) return;
+  block.classList.add("markup-alt-option");
+  block.classList.toggle("markup-alt-active", altOption.active);
+  block.dataset.altHost = String(altOption.host);
+  block.dataset.altOpt = String(altOption.opt);
+  block.title = altOption.active ? "Click to restore the original" : "Click to render this alternative";
+}
+
 function buildMarkupElement(el, depth, elementIds) {
   const tag = localName(el);
+  // A chosen alternative swaps elements in the parsed document; the source view keeps
+  // showing the document as written: the replaced host in place, its replacements hidden.
+  if (state?.altReplacements?.has(el)) return document.createDocumentFragment();
+  const replaced = state?.altInactive?.get(el);
+  if (replaced) {
+    const hostEl = childElements(el)[0];
+    if (!hostEl) return document.createDocumentFragment();
+    const hostBlock = buildMarkupElement(hostEl, depth, elementIds);
+    const firstId = elementIds.get(replaced.replacement[0]);
+    if (firstId) hostBlock.setAttribute("data-element-id", firstId);
+    hostBlock.dataset.altRestore = String(replaced.host);
+    hostBlock.title = "Click to restore the original";
+    return hostBlock;
+  }
   if (tag === "list") return buildMarkupList(el, depth, elementIds);
   if (OTSL_CONTAINER_TAGS.has(tag)) return buildMarkupOtslContainer(el, depth, elementIds);
 
@@ -5769,6 +5877,7 @@ function buildMarkupElement(el, depth, elementIds) {
   block.className = "markup-el";
   const elementId = elementIds.get(el);
   if (elementId) block.setAttribute("data-element-id", elementId);
+  markAlternativeBlock(block, el);
 
   const attributes = markupAttributes(el);
 
@@ -6144,6 +6253,8 @@ function renderBlockElement(el, elementIds, ctx) {
       appendRenderedBody(footer, el, elementIds, { inline: true });
       return wrapRendered(el, footer, elementId);
     }
+    case "custom":
+      return null;
     case "list":
       return renderList(el, elementIds);
     case "table":

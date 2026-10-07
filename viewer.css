@@ -3015,3 +3015,20 @@ body.demo-loading .empty-state-prompt {
     border-bottom: none;
   }
 }
+
+/* Alternative representations in the source view: options are clickable; clicking a replaced host restores it. */
+.markup-alt-option {
+  cursor: pointer;
+}
+
+.markup-alt-option:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.markup-alt-option.markup-alt-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+[data-alt-restore] {
+  cursor: pointer;
+}
