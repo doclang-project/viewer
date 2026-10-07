@@ -4281,10 +4281,15 @@ function computeReadingOrder(docRoot) {
 
   function visitElement(el) {
     // A caption placed above or left of its host is read before it, otherwise after it.
-    const before = childElements(el).filter((c) => localName(c) === "caption" && captionPrecedesHost(c, el));
+    // The host's contents (e.g. a picture's text) belong to the host's own traversal, so they
+    // come right after it and the caption — wherever it sits in the source — goes around that.
+    const captions = childElements(el).filter((c) => localName(c) === "caption");
+    const before = captions.filter((c) => captionPrecedesHost(c, el));
+    const after = captions.filter((c) => !before.includes(c));
     before.forEach(visitElement);
     record(el);
-    walkChildren(el, new Set(before));
+    walkChildren(el, new Set(captions));
+    after.forEach(visitElement);
   }
 
   for (const el of bodyChildren) {
