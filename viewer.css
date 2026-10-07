@@ -1533,7 +1533,7 @@ body.pane-drag-active .pane-splitter {
 
 /* Inline wrappers (formula/code/marker nested in running text) must stay inline, as in
    the pageless view; forcing flow-root on them would break the line around them. */
-.paged-el-slot .rendered-el:not(.rendered-formula-inline, code, .rendered-marker) {
+.paged-el-slot .rendered-el:not(.rendered-formula-inline, code, .rendered-marker, .rendered-inline, .rendered-inline *) {
   margin: 0;
   /* Contain descendants' margins (e.g. a heading's margin-top) so they count towards
      this element's own measured height instead of collapsing through it — otherwise
@@ -2978,6 +2978,20 @@ li.has-marker > .rendered-marker {
 .rendered-field-item > .rendered-el.rendered-field-key + .rendered-el,
 .rendered-field-item > .rendered-el.rendered-field-key + .rendered-el-virtual-text {
   margin-top: 0.15rem;
+}
+
+.rendered-el.rendered-inline-picture {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.rendered-inline-picture > figure {
+  display: inline-block;
+  margin: 0;
+}
+
+.rendered-inline .rendered-field-key {
+  margin-right: 0.25em;
 }
 
 .rendered-field-value-fillable .rendered-field-fillable-slot {

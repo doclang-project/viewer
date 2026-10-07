@@ -5938,7 +5938,9 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
           // The marker has no bbox of its own: show it at the start of the item's first slot.
           const firstSlot = canvas.children[before];
           if (markerEl && firstSlot) {
-            firstSlot.firstChild?.prepend(renderMarkerElement(markerEl, elementIds, { inline: true }));
+            // Inside the first text block (not before it) so the marker stays on its line.
+            const host = firstSlot.querySelector("p, h1, h2, h3, h4, h5, h6") ?? firstSlot.firstChild;
+            host?.prepend(renderMarkerElement(markerEl, elementIds, { inline: true }));
           }
           return;
         }
@@ -5980,12 +5982,13 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
       return;
     }
 
-    // A block (e.g. a <heading>) can wrap a <field_region> and carry no bbox itself —
-    // the key/value leaves hold the locations. Place those instead of dropping the block.
+    // A bbox-less wrapper (e.g. a <heading> around a <field_region>, or a <text> made of
+    // several located <text>/<picture>/<value> parts) can't be positioned itself: place
+    // each located child in its own slot instead of dropping the lot.
     if (!boxById.has(elementIds.get(el))) {
-      const regions = [...el.getElementsByTagName("*")].filter((n) => localName(n) === "field_region");
-      if (regions.length) {
-        regions.forEach(placeElement);
+      const parts = childElements(el).filter((c) => RENDER_BLOCK_TAGS.has(localName(c)) || localName(c) === "field_region");
+      if (parts.length) {
+        parts.forEach(placeElement);
         return;
       }
     }
@@ -6300,6 +6303,10 @@ function renderFieldHintElement(el, elementIds, ctx) {
   return node;
 }
 
+const INLINE_NESTABLE_TAGS = new Set([
+  "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "field_region", "field_item",
+]);
+
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
     let text = node.textContent;
@@ -6325,6 +6332,29 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
   if (tag === "code" || tag === "formula") {
     const rendered = renderBlockElement(node, elementIds, { inline: true });
     if (rendered) parent.appendChild(rendered);
+    return;
+  }
+
+  // Text-like elements and field regions nested in running text (a footer, caption, text…)
+  // are part of that text: render them inline, like code and formulas.
+  if (ctx.inline && INLINE_NESTABLE_TAGS.has(tag)) {
+    const span = document.createElement("span");
+    span.className = `rendered-el rendered-inline rendered-${tag}`;
+    const elementId = elementIds.get(node);
+    if (elementId) span.setAttribute("data-element-id", elementId);
+    applyElementLayerAttr(node, span);
+    appendRenderedBody(span, node, elementIds, ctx);
+    parent.appendChild(span);
+    return;
+  }
+
+  // A picture nested in running text sits in the line like an inline image.
+  if (ctx.inline && tag === "picture") {
+    const rendered = renderBlockElement(node, elementIds, ctx);
+    if (rendered) {
+      rendered.classList.add("rendered-inline-picture");
+      parent.appendChild(rendered);
+    }
     return;
   }
 
