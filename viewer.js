@@ -4274,7 +4274,7 @@ function computeReadingOrder(docRoot) {
         if (threadId) consumeThread(threadId);
         continue;
       }
-      if (tag === "page_break") continue;
+      if (tag === "page_break" || tag === "custom") continue;
       visitElement(child);
     }
   }
@@ -4535,6 +4535,8 @@ function parseElementHeadAt(nodes, startIdx) {
 function walkElements(nodes, fn) {
   for (const node of nodes) {
     if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    // <custom> carries opaque vendor data: nothing inside it is document content.
+    if (localName(node) === "custom") continue;
     fn(node);
     walkElements(childElements(node), fn);
   }
