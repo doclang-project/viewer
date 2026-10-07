@@ -687,6 +687,7 @@ body.viewer-loaded.drag-over .drop-banner {
 .toolbar-file-group {
   display: inline-flex;
   align-items: center;
+  gap: 0.5rem;
 }
 
 .header-site-link:hover {
@@ -713,12 +714,13 @@ label.file-btn {
   cursor: pointer;
 }
 
-button:hover,
+button:hover:not([aria-disabled="true"]),
 label.file-btn:hover {
   border-color: var(--accent);
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }

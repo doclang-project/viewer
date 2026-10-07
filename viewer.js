@@ -2,6 +2,8 @@
 
 const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
 const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
+const RELOAD_FILE_HINT = "Re-read the active file from disk";
+const RELOAD_FILE_UNAVAILABLE_HINT = "Reload is available for files opened from disk (file picker or drag-and-drop)";
 const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
 const FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
 const FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
@@ -1090,6 +1092,35 @@ changeBanner.reload?.addEventListener("click", async () => {
   pending.entry.validation = null;
   if (await refreshCatalogEntry(pending.entry, pending.file)) await switchToFile(activeFileIndex);
 });
+/** The explicit reload needs a file handle (Chromium file picker / drop); without one the button stays disabled. */
+function syncReloadFileButton() {
+  const btn = document.getElementById("btn-reload-file");
+  if (!btn) return;
+  btn.setAttribute("aria-disabled", String(!fileCatalog[activeFileIndex]?.handle));
+}
+
+/** Re-read the active file from disk, keeping the rest of the open files untouched. */
+async function reloadActiveFile() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry?.handle) return;
+  if (entry.dirty && !confirm("Reloading discards your unsaved changes. Continue?")) return;
+  let file;
+  try {
+    file = await entry.handle.getFile();
+  } catch (err) {
+    alert(`Failed to reload ${entry.label}: ${err.message}`);
+    return;
+  }
+  hideChangeBanner();
+  stopEditing({ render: false });
+  entry.dirty = false;
+  entry.savedSource = null;
+  entry.validation = null;
+  fileHandles.set(file, entry.handle);
+  if (await refreshCatalogEntry(entry, file)) await switchToFile(activeFileIndex);
+}
+document.getElementById("btn-reload-file")?.addEventListener("click", reloadActiveFile);
+
 changeBanner.dismiss?.addEventListener("click", () => {
   if (changeBannerEntry) {
     dismissedChange = { entry: changeBannerEntry.entry, lastModified: changeBannerEntry.file.lastModified };
@@ -1402,6 +1433,7 @@ function renderFileView() {
 }
 
 function updateFileView() {
+  syncReloadFileButton();
   syncFilePaneDefault();
   syncFilePaneCloseAllButton();
   renderFileView();
@@ -1944,6 +1976,14 @@ function initCursorHints() {
     showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY);
   });
   els.openFileBtn?.addEventListener("mouseleave", hideCursorHint);
+
+  // aria-disabled (not `disabled`) so the hint still shows on hover while inactive.
+  const reloadBtn = document.getElementById("btn-reload-file");
+  reloadBtn?.addEventListener("mousemove", (e) => {
+    const available = reloadBtn.getAttribute("aria-disabled") !== "true";
+    showCursorHint(available ? RELOAD_FILE_HINT : RELOAD_FILE_UNAVAILABLE_HINT, e.clientX, e.clientY);
+  });
+  reloadBtn?.addEventListener("mouseleave", hideCursorHint);
 }
 
 function initBboxHints() {
