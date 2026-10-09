@@ -6265,6 +6265,23 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
  * both shrinks content that overflows and grows content that has room to spare, up
  * to whatever the box's width and height allow without overflowing either.
  */
+/**
+ * Whether getBoundingClientRect() reports an element's size with its CSS `zoom` applied. Engines differ
+ * (older Chromium builds, e.g. in some Electron versions, report the unzoomed layout size), which would
+ * make the fit below measure the wrong size.
+ */
+let zoomScalesRect = null;
+function rectIncludesZoom() {
+  if (zoomScalesRect === null) {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100px;height:100px;zoom:2";
+    document.body.appendChild(probe);
+    zoomScalesRect = probe.getBoundingClientRect().width > 150;
+    probe.remove();
+  }
+  return zoomScalesRect;
+}
+
 function fitSlotContent(slot) {
   const content = slot.firstElementChild;
   if (!content) return;
@@ -6276,7 +6293,8 @@ function fitSlotContent(slot) {
   const fitsAt = (zoom) => {
     content.style.zoom = String(zoom);
     const rect = content.getBoundingClientRect();
-    return rect.width <= targetW + 0.5 && rect.height <= targetH + 0.5;
+    const scale = rectIncludesZoom() ? 1 : zoom;
+    return rect.width * scale <= targetW + 0.5 && rect.height * scale <= targetH + 0.5;
   };
 
   let lo = 0.02;
