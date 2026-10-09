@@ -32,6 +32,7 @@ class ViewerShell {
   async mount(panel, source) {
     const { webview } = panel;
     webview.options = { enableScripts: true, localResourceRoots: [this.mediaRoot] };
+    await this.migratePrefs();
     webview.html = await this.renderHtml(webview);
 
     let lastKey = null;
@@ -118,6 +119,14 @@ class ViewerShell {
     return this.context.globalState.get(PREFS_KEY, {});
   }
 
+  /** Pane layouts saved before the markup pane was hidden by default would keep showing it; drop them once. */
+  async migratePrefs() {
+    const prefs = this.prefs();
+    if (prefs.__layoutDefaultsV1) return;
+    const { "doclang-viewer-pane-layout": _dropped, ...rest } = prefs;
+    await this.context.globalState.update(PREFS_KEY, { ...rest, __layoutDefaultsV1: true });
+  }
+
   /** The viewer's index.html with a base URL, a CSP and the host bootstrap. */
   async renderHtml(webview) {
     this.template ??= Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.mediaRoot, "index.html"))).toString("utf8");
@@ -154,6 +163,8 @@ window.DOCLANG_VIEWER_HOST = {
   demo: false,
   embedded: true,
   readOnly: true,
+  // VS Code's own text editor replaces the viewer's markup pane.
+  panes: { markup: false },
   storage: {
     getItem: (key) => prefs[key] ?? null,
     setItem: (key, value) => {
