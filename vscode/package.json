@@ -6,8 +6,13 @@
   "publisher": "doclang-project",
   "license": "MIT",
   "private": true,
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Visualization", "Other"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
   "main": "./extension.js",
   "scripts": {
     "sync": "node scripts/sync-viewer.mjs",
@@ -18,15 +23,51 @@
       {
         "viewType": "doclang.viewer",
         "displayName": "DocLang Viewer",
-        "selector": [{ "filenamePattern": "*.dclx" }],
+        "selector": [
+          {
+            "filenamePattern": "*.dclx"
+          }
+        ],
         "priority": "default"
       },
       {
         "viewType": "doclang.viewer.markup",
         "displayName": "DocLang Viewer",
-        "selector": [{ "filenamePattern": "*.dclg" }],
+        "selector": [
+          {
+            "filenamePattern": "*.dclg"
+          }
+        ],
         "priority": "option"
       }
-    ]
-  }
+    ],
+    "languages": [
+      {
+        "id": "xml",
+        "extensions": [
+          ".dclg"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "doclang.openSource",
+        "title": "Open DocLang Markup to the Side",
+        "category": "DocLang",
+        "icon": "$(go-to-file)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "doclang.openSource",
+          "when": "activeCustomEditorId == doclang.viewer || activeCustomEditorId == doclang.viewer.markup",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "activationEvents": [
+    "onFileSystem:doclang-archive"
+  ]
 }
