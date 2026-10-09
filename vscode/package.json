@@ -1,0 +1,32 @@
+{
+  "name": "doclang-viewer",
+  "displayName": "DocLang Viewer",
+  "description": "View and edit DocLang documents (.dclx, .dclg) in VS Code.",
+  "version": "0.0.1",
+  "publisher": "doclang-project",
+  "license": "MIT",
+  "private": true,
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Visualization", "Other"],
+  "main": "./extension.js",
+  "scripts": {
+    "sync": "node scripts/sync-viewer.mjs",
+    "package": "npm run sync && npx @vscode/vsce package"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "doclang.viewer",
+        "displayName": "DocLang Viewer",
+        "selector": [{ "filenamePattern": "*.dclx" }],
+        "priority": "default"
+      },
+      {
+        "viewType": "doclang.viewer.markup",
+        "displayName": "DocLang Viewer",
+        "selector": [{ "filenamePattern": "*.dclg" }],
+        "priority": "option"
+      }
+    ]
+  }
+}

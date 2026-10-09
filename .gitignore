@@ -237,3 +237,6 @@ tags
 ~$*.docx
 
 .DS_Store
+
+# VS Code extension build copy of the viewer
+vscode/media/
