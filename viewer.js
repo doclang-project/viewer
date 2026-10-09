@@ -7,6 +7,7 @@
  *  - `embedded: true`         hide the standalone chrome (open/demo/home/site link)
  *  - `storage`                `{ getItem, setItem }` for view preferences (default: localStorage)
  *  - `validate`               `(markup) => Promise<{ schemaVersion, issues }>` for XSD validation (default: validator-worker.mjs)
+ *  - `panes`                  default pane visibility, e.g. `{ markup: false }` (a saved user choice wins)
  *  - `readOnly: true`         hide the viewer's own markup editing (the host edits the text)
  *  - `saveFile`               `(name, ArrayBuffer) => Promise` that persists edits (default: file handle / download)
  * Documents are handed in with `window.DocLangViewer.open(name, buffer)`.
@@ -347,7 +348,7 @@ const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
-const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
+const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true, ...HOST.panes };
 const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 
 const ARROW_STYLE_STORAGE_KEY = "doclang-viewer-arrow-styles";
@@ -3040,10 +3041,8 @@ function setReadingLayoutMode(mode) {
 function resetPaneLayout() {
   filePaneUserToggled = false;
   userPaneVisible = {
+    ...DEFAULT_USER_PANE_VISIBLE,
     file: defaultFilePaneVisible(),
-    page: true,
-    markup: true,
-    reading: true,
   };
   paneRatios = [...DEFAULT_PANE_RATIOS];
   normalizePaneRatios();
