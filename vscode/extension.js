@@ -45,7 +45,7 @@ class DocLangEditorProvider {
       const bytes = await vscode.workspace.fs.readFile(uri);
       if (known && Buffer.compare(known, bytes) === 0) return;
       known = bytes;
-      webview.postMessage({ type: "open", name, bytes });
+      webview.postMessage({ type: "open", name, data: Buffer.from(bytes).toString("base64") });
     };
 
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.joinPath(uri, ".."), name));
@@ -56,13 +56,16 @@ class DocLangEditorProvider {
         case "ready":
           await push().catch((err) => vscode.window.showErrorMessage(`Could not read ${name}: ${err.message}`));
           break;
+        case "error":
+          vscode.window.showErrorMessage(`DocLang Viewer: ${msg.message}`);
+          break;
         case "pref":
           await this.context.globalState.update(PREFS_KEY, { ...this.prefs(), [msg.key]: msg.value });
           break;
         case "save": {
           let error;
           try {
-            known = Buffer.from(msg.bytes);
+            known = Buffer.from(msg.data, "base64");
             await vscode.workspace.fs.writeFile(uri, known);
           } catch (err) {
             known = null;
@@ -136,14 +139,22 @@ window.DOCLANG_VIEWER_HOST = {
   saveFile: (name, buffer) => new Promise((resolve, reject) => {
     const id = ++saveSeq;
     pendingSaves.set(id, { resolve, reject });
-    vscode.postMessage({ type: 'save', id, name, bytes: new Uint8Array(buffer) });
+    vscode.postMessage({ type: 'save', id, name, data: toBase64(new Uint8Array(buffer)) });
   }),
 };
+// Bytes travel as base64: structured typed-array support in webview messaging varies by VS Code version.
+function toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+const reportError = (err) => vscode.postMessage({ type: 'error', message: String(err?.stack ?? err?.message ?? err) });
+window.addEventListener('error', (e) => reportError(e.error ?? e.message));
+window.addEventListener('unhandledrejection', (e) => reportError(e.reason));
 window.addEventListener('message', ({ data }) => {
   if (data.type === 'open') {
-    const b = data.bytes;
-    const buffer = b instanceof ArrayBuffer ? b : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
-    window.DocLangViewer.open(data.name, buffer);
+    const bytes = Uint8Array.from(atob(data.data), (c) => c.charCodeAt(0));
+    window.DocLangViewer.open(data.name, bytes.buffer).catch(reportError);
   } else if (data.type === 'saved') {
     const pending = pendingSaves.get(data.id);
     pendingSaves.delete(data.id);
