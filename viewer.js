@@ -1,5 +1,23 @@
 /* DocLang Archive Viewer — archive format: github.com/doclang-project/doclang spec.md#doclang-archive-format */
 
+/**
+ * Optional embedding host (e.g. the VS Code extension). A host defines `window.DOCLANG_VIEWER_HOST`
+ * before this script runs; every field is optional and the defaults give the standalone web viewer.
+ *  - `demo: false`            do not load the demo document on start
+ *  - `embedded: true`         hide the standalone chrome (open/demo/home/site link)
+ *  - `storage`                `{ getItem, setItem }` for view preferences (default: localStorage)
+ *  - `createValidatorWorker`  `() => Worker` for XSD validation (default: validator-worker.mjs)
+ *  - `saveFile`               `(name, ArrayBuffer) => Promise` that persists edits (default: file handle / download)
+ * Documents are handed in with `window.DocLangViewer.open(name, buffer)`.
+ */
+const HOST = window.DOCLANG_VIEWER_HOST ?? {};
+/** Reading `localStorage` itself can throw (blocked site data); callers already tolerate failing reads and writes. */
+const prefStorage = HOST.storage ?? {
+  getItem: (key) => localStorage.getItem(key),
+  setItem: (key, value) => localStorage.setItem(key, value),
+};
+document.body.classList.toggle("host-embedded", !!HOST.embedded);
+
 const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
 const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
 const RELOAD_FILE_HINT = "Re-read the active file from disk";
@@ -784,9 +802,20 @@ initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
-let suppressDemoLoad = false;
+let suppressDemoLoad = HOST.demo === false;
 initFileHandling();
 initOpenerHandoff();
+// Without the demo there is nothing to wait for, so the standalone viewer shows its open prompt;
+// an embedded one keeps the loading state until the host hands in a document.
+if (HOST.demo === false && !HOST.embedded) setDemoLoading(false);
+
+/** Entry point for embedding hosts: show a document, or refresh it when it was already open. */
+window.DocLangViewer = {
+  async open(name, buffer) {
+    const file = new File([buffer], name);
+    await addFilesToCatalog([file], { replace: findCatalogIndexForFile(file) === -1 });
+  },
+};
 
 function setDemoLoading(loading) {
   document.body.classList.toggle("demo-loading", loading);
@@ -2363,7 +2392,9 @@ async function saveActiveFile() {
   const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
   const handle = entry.handle;
   try {
-    if (handle?.createWritable) {
+    if (HOST.saveFile) {
+      await HOST.saveFile(entry.label, buffer);
+    } else if (handle?.createWritable) {
       const opts = { mode: "readwrite" };
       if ((await handle.queryPermission?.(opts)) !== "granted" && (await handle.requestPermission?.(opts)) !== "granted") {
         throw new Error("Write permission was not granted.");
@@ -2419,7 +2450,7 @@ function failPendingValidations(message) {
 /** @returns {Promise<{ ok: true, issues: object[], schemaVersion: string | null } | { ok: false, error: string }>} */
 function requestValidation(markup) {
   if (!validatorWorker) {
-    validatorWorker = new Worker("validator-worker.mjs", { type: "module" });
+    validatorWorker = HOST.createValidatorWorker?.() ?? new Worker("validator-worker.mjs", { type: "module" });
     validatorWorker.addEventListener("message", (e) => {
       const { id, ...result } = e.data;
       validatorPending.get(id)?.(result);
@@ -2790,7 +2821,7 @@ function visiblePaneRatios(keys) {
 
 function loadLayoutPrefs() {
   try {
-    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    const raw = prefStorage.getItem(LAYOUT_STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
     if (data?.visible && typeof data.visible === "object") {
@@ -2819,7 +2850,7 @@ function loadLayoutPrefs() {
 
 function saveLayoutPrefs() {
   try {
-    localStorage.setItem(
+    prefStorage.setItem(
       LAYOUT_STORAGE_KEY,
       JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx }),
     );
@@ -2830,7 +2861,7 @@ function saveLayoutPrefs() {
 
 function loadOverlayPrefs() {
   try {
-    const raw = localStorage.getItem(OVERLAY_PREFS_STORAGE_KEY);
+    const raw = prefStorage.getItem(OVERLAY_PREFS_STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
     if (!data || typeof data !== "object") return;
@@ -2850,7 +2881,7 @@ function persistOverlayPrefs() {
     const data = {};
     for (const [key, acc] of Object.entries(OVERLAY_PREF_ACCESSORS)) data[key] = acc.get();
     data.hiddenTypes = [...hiddenOverlayTypes];
-    localStorage.setItem(OVERLAY_PREFS_STORAGE_KEY, JSON.stringify(data));
+    prefStorage.setItem(OVERLAY_PREFS_STORAGE_KEY, JSON.stringify(data));
   } catch {
     /* ignore quota / private mode */
   }
@@ -2951,7 +2982,7 @@ function resetOverlayPrefs() {
 
 function loadHotkeysPref() {
   try {
-    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) === "true";
+    hotkeysEnabled = prefStorage.getItem(HOTKEYS_STORAGE_KEY) === "true";
   } catch {
     /* ignore invalid stored hotkeys pref */
   }
@@ -2960,7 +2991,7 @@ function loadHotkeysPref() {
 
 function persistHotkeysPref() {
   try {
-    localStorage.setItem(HOTKEYS_STORAGE_KEY, String(hotkeysEnabled));
+    prefStorage.setItem(HOTKEYS_STORAGE_KEY, String(hotkeysEnabled));
   } catch {
     /* ignore quota / private mode */
   }
@@ -2968,7 +2999,7 @@ function persistHotkeysPref() {
 
 function loadReadingLayoutMode() {
   try {
-    const stored = localStorage.getItem(READING_LAYOUT_MODE_STORAGE_KEY);
+    const stored = prefStorage.getItem(READING_LAYOUT_MODE_STORAGE_KEY);
     if (stored === "paged" || stored === "pageless") readingLayoutMode = stored;
   } catch {
     /* ignore invalid stored reading-layout-mode pref */
@@ -2977,7 +3008,7 @@ function loadReadingLayoutMode() {
 
 function persistReadingLayoutMode() {
   try {
-    localStorage.setItem(READING_LAYOUT_MODE_STORAGE_KEY, readingLayoutMode);
+    prefStorage.setItem(READING_LAYOUT_MODE_STORAGE_KEY, readingLayoutMode);
   } catch {
     /* ignore quota / private mode */
   }
@@ -4800,7 +4831,7 @@ function arrowMarkerOptions(layerKey) {
 
 function loadArrowStyles() {
   try {
-    const raw = localStorage.getItem(ARROW_STYLE_STORAGE_KEY);
+    const raw = prefStorage.getItem(ARROW_STYLE_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
@@ -4811,7 +4842,7 @@ function loadArrowStyles() {
 
 function persistArrowStyles() {
   try {
-    localStorage.setItem(ARROW_STYLE_STORAGE_KEY, JSON.stringify(arrowStyles));
+    prefStorage.setItem(ARROW_STYLE_STORAGE_KEY, JSON.stringify(arrowStyles));
   } catch {
     /* storage unavailable — keep in-memory only */
   }

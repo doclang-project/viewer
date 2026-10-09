@@ -3056,3 +3056,11 @@ li.has-marker > .rendered-marker {
 [data-alt-restore] {
   cursor: pointer;
 }
+
+/* Embedded in a host (see DOCLANG_VIEWER_HOST in viewer.js): the host owns file opening and navigation. */
+body.host-embedded .header-logo-link { pointer-events: none; }
+body.host-embedded #toolbar-file-group,
+body.host-embedded #btn-demo,
+body.host-embedded .header-site-link,
+body.host-embedded .header-divider:has(+ #toolbar-file-group),
+body.host-embedded #btn-demo + .header-divider { display: none; }
