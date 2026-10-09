@@ -1,5 +1,6 @@
 // DocLang Viewer: hosts the standalone viewer (media/, synced from the repo root) in a custom editor.
 const vscode = require("vscode");
+const { pathToFileURL } = require("node:url");
 
 const VIEW_TYPES = ["doclang.viewer", "doclang.viewer.markup"];
 const PREFS_KEY = "doclang.viewerPrefs";
@@ -26,6 +27,7 @@ class DocLangEditorProvider {
     this.context = context;
     this.mediaRoot = vscode.Uri.joinPath(context.extensionUri, "media");
     this.template = null;
+    this.validator = null;
   }
 
   openCustomDocument(uri) {
@@ -59,6 +61,14 @@ class DocLangEditorProvider {
         case "error":
           vscode.window.showErrorMessage(`DocLang Viewer: ${msg.message}`);
           break;
+        case "validate": {
+          try {
+            webview.postMessage({ type: "validated", id: msg.id, result: await this.validate(msg.markup) });
+          } catch (err) {
+            webview.postMessage({ type: "validated", id: msg.id, error: String(err?.message ?? err) });
+          }
+          break;
+        }
         case "pref":
           await this.context.globalState.update(PREFS_KEY, { ...this.prefs(), [msg.key]: msg.value });
           break;
@@ -82,6 +92,14 @@ class DocLangEditorProvider {
     });
   }
 
+  /** XSD validation with the viewer's own validator (libxml2 compiled to WASM), loaded on first use. */
+  async validate(markup) {
+    this.validator ??= import(pathToFileURL(vscode.Uri.joinPath(this.mediaRoot, "validator-core.mjs").fsPath).href);
+    const { validate } = await this.validator;
+    const schema = vscode.Uri.joinPath(this.mediaRoot, "schema", "doclang.xsd");
+    return validate(markup, () => vscode.workspace.fs.readFile(schema));
+  }
+
   prefs() {
     return this.context.globalState.get(PREFS_KEY, {});
   }
@@ -97,7 +115,6 @@ class DocLangEditorProvider {
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `font-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'`,
-      `worker-src blob: ${webview.cspSource}`,
       `connect-src ${webview.cspSource} blob:`,
     ].join("; ");
     const json = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
@@ -118,8 +135,8 @@ function hostBootstrap(prefsJson, baseJson) {
 const vscode = acquireVsCodeApi();
 const base = ${baseJson};
 const prefs = ${prefsJson};
-const pendingSaves = new Map();
-let saveSeq = 0;
+const pendingRequests = new Map();
+let requestSeq = 0;
 window.DOCLANG_VIEWER_HOST = {
   demo: false,
   embedded: true,
@@ -130,15 +147,15 @@ window.DOCLANG_VIEWER_HOST = {
       vscode.postMessage({ type: "pref", key, value });
     },
   },
-  // Module workers must come from the page's origin, so start a blob worker that imports the real one.
-  createValidatorWorker: () => {
-    const source = 'import ' + JSON.stringify(base + 'validator-worker.mjs') + ';';
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
-    return new Worker(url, { type: 'module' });
-  },
+  // Validation runs in the extension host: webviews cannot start module workers from their resource origin.
+  validate: (markup) => new Promise((resolve, reject) => {
+    const id = ++requestSeq;
+    pendingRequests.set(id, { resolve, reject });
+    vscode.postMessage({ type: 'validate', id, markup });
+  }),
   saveFile: (name, buffer) => new Promise((resolve, reject) => {
-    const id = ++saveSeq;
-    pendingSaves.set(id, { resolve, reject });
+    const id = ++requestSeq;
+    pendingRequests.set(id, { resolve, reject });
     vscode.postMessage({ type: 'save', id, name, data: toBase64(new Uint8Array(buffer)) });
   }),
 };
@@ -155,10 +172,10 @@ window.addEventListener('message', ({ data }) => {
   if (data.type === 'open') {
     const bytes = Uint8Array.from(atob(data.data), (c) => c.charCodeAt(0));
     window.DocLangViewer.open(data.name, bytes.buffer).catch(reportError);
-  } else if (data.type === 'saved') {
-    const pending = pendingSaves.get(data.id);
-    pendingSaves.delete(data.id);
-    if (data.error) pending?.reject(new Error(data.error)); else pending?.resolve();
+  } else if (data.type === 'saved' || data.type === 'validated') {
+    const pending = pendingRequests.get(data.id);
+    pendingRequests.delete(data.id);
+    if (data.error) pending?.reject(new Error(data.error)); else pending?.resolve(data.result);
   }
 });
 window.__doclangHostReady = () => vscode.postMessage({ type: 'ready' });

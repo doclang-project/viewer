@@ -8,7 +8,7 @@ const media = join(root, "vscode", "media");
 
 rmSync(media, { recursive: true, force: true });
 mkdirSync(join(media, "assets"), { recursive: true });
-for (const file of ["index.html", "viewer.js", "viewer.css", "validator-worker.mjs", "demo-data.js"]) {
+for (const file of ["index.html", "viewer.js", "viewer.css", "validator-worker.mjs", "validator-core.mjs", "demo-data.js"]) {
   cpSync(join(root, file), join(media, file));
 }
 cpSync(join(root, "vendor"), join(media, "vendor"), { recursive: true });
