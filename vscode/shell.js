@@ -170,7 +170,8 @@ window.DOCLANG_VIEWER_HOST = {
 };
 // Bytes travel as base64: structured typed-array support in webview messaging varies by VS Code version.
 const reportError = (err) => vscode.postMessage({ type: 'error', message: String(err?.stack ?? err?.message ?? err) });
-window.addEventListener('error', (e) => reportError(e.error ?? e.message));
+// The browser reports this one for harmless layout feedback loops; it is not worth a notification.
+window.addEventListener('error', (e) => { if (!/ResizeObserver loop/.test(e.message)) reportError(e.error ?? e.message); });
 window.addEventListener('unhandledrejection', (e) => reportError(e.reason));
 window.addEventListener('message', ({ data }) => {
   if (data.type === 'open') {
