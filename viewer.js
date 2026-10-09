@@ -7,6 +7,7 @@
  *  - `embedded: true`         hide the standalone chrome (open/demo/home/site link)
  *  - `storage`                `{ getItem, setItem }` for view preferences (default: localStorage)
  *  - `validate`               `(markup) => Promise<{ schemaVersion, issues }>` for XSD validation (default: validator-worker.mjs)
+ *  - `readOnly: true`         hide the viewer's own markup editing (the host edits the text)
  *  - `saveFile`               `(name, ArrayBuffer) => Promise` that persists edits (default: file handle / download)
  * Documents are handed in with `window.DocLangViewer.open(name, buffer)`.
  */
@@ -2269,7 +2270,7 @@ function setDocLabel(label) {
 let markupEditor = null;
 
 function editableEntry() {
-  const entry = fileCatalog[activeFileIndex];
+  const entry = HOST.readOnly ? null : fileCatalog[activeFileIndex];
   return entry && state && (entry.kind === "markup" || entry.kind === "archive") ? entry : null;
 }
 
