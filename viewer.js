@@ -6,7 +6,7 @@
  *  - `demo: false`            do not load the demo document on start
  *  - `embedded: true`         hide the standalone chrome (open/demo/home/site link)
  *  - `storage`                `{ getItem, setItem }` for view preferences (default: localStorage)
- *  - `createValidatorWorker`  `() => Worker` for XSD validation (default: validator-worker.mjs)
+ *  - `validate`               `(markup) => Promise<{ schemaVersion, issues }>` for XSD validation (default: validator-worker.mjs)
  *  - `saveFile`               `(name, ArrayBuffer) => Promise` that persists edits (default: file handle / download)
  * Documents are handed in with `window.DocLangViewer.open(name, buffer)`.
  */
@@ -2449,8 +2449,14 @@ function failPendingValidations(message) {
 
 /** @returns {Promise<{ ok: true, issues: object[], schemaVersion: string | null } | { ok: false, error: string }>} */
 function requestValidation(markup) {
+  if (HOST.validate) {
+    return HOST.validate(markup).then(
+      (result) => ({ ok: true, ...result }),
+      (err) => ({ ok: false, error: String(err?.message ?? err) }),
+    );
+  }
   if (!validatorWorker) {
-    validatorWorker = HOST.createValidatorWorker?.() ?? new Worker("validator-worker.mjs", { type: "module" });
+    validatorWorker = new Worker("validator-worker.mjs", { type: "module" });
     validatorWorker.addEventListener("message", (e) => {
       const { id, ...result } = e.data;
       validatorPending.get(id)?.(result);
