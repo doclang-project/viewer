@@ -2679,6 +2679,7 @@ body.demo-loading .empty-state-prompt {
   margin: 0.25rem 0;
 }
 
+.rendered-doc li > .rendered-li-body > .rendered-el:first-child > p:first-child,
 .rendered-doc li > .rendered-el > p:first-child,
 .rendered-doc li > .rendered-el > h1:first-child,
 .rendered-doc li > .rendered-el > h2:first-child,
@@ -2701,6 +2702,11 @@ li.has-marker {
 
 li.has-marker > .rendered-marker {
   flex: none;
+}
+
+li.has-marker > .rendered-li-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .rendered-handwriting {

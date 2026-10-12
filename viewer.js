@@ -6809,12 +6809,16 @@ function appendPictureBodyContent(container, nodes, startIdx, elementIds) {
 }
 
 function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
-  const hasBlock = contentNodes.some(
-    (n) => n.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(n)),
-  );
+  // Anything inlinable among running text stays inline, as in an explicit <text>.
+  const hasRunningText = contentNodes.some((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
+  const isBlock = (n) =>
+    n.nodeType === Node.ELEMENT_NODE &&
+    RENDER_BLOCK_TAGS.has(localName(n)) &&
+    !(hasRunningText && (["code", "formula", "picture"].includes(localName(n)) || INLINE_NESTABLE_TAGS.has(localName(n))));
+  const hasBlock = contentNodes.some(isBlock);
   const inner = document.createElement(hasBlock ? "div" : "p");
   for (const node of contentNodes) {
-    if (node.nodeType === Node.ELEMENT_NODE && RENDER_BLOCK_TAGS.has(localName(node))) {
+    if (isBlock(node)) {
       const rendered = renderBlockElement(node, elementIds, { inline: false });
       if (rendered) inner.appendChild(rendered);
     } else {
@@ -6871,7 +6875,15 @@ function collectListItems(el, elementIds) {
     }
 
     const contentNodes = nodes.slice(contentStart, i);
-    appendRenderedSliceContent(li, ldiv, contentNodes, elementIds);
+    // With a marker the <li> is a flex row: keep the content in one block body so its
+    // components (text, formula, …) stack instead of becoming side-by-side flex items.
+    let host = li;
+    if (li.classList.contains("has-marker")) {
+      host = document.createElement("div");
+      host.className = "rendered-li-body";
+      li.appendChild(host);
+    }
+    appendRenderedSliceContent(host, ldiv, contentNodes, elementIds);
 
     items.push({ ldiv, li });
   }
