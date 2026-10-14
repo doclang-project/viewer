@@ -5,6 +5,9 @@ const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(",
 const RELOAD_FILE_HINT = "Re-read the active file from disk";
 const RELOAD_FILE_UNAVAILABLE_HINT = "Reload is available for files opened from disk (file picker or drag-and-drop)";
 const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
+const FORMULA_REWRITE_COPY = "Click to copy";
+const FORMULA_REWRITE_COPIED = "Copied";
+const FORMULA_REWRITE_HINT = "LaTeX rewritten for KaTeX:";
 const FRAGMENT_LINK_LABEL_CROSS_PAGE = "cross-page content";
 const FRAGMENT_LINK_LABEL_SAME_PAGE = "fragmented content";
 const FRAGMENT_NAV_HINT_PREV = "Previous fragment";
@@ -778,6 +781,7 @@ initPaneSplitters();
 initLayoutStackListener();
 initFileTypeHints();
 initCursorHints();
+initFormulaRewriteHints();
 initBboxHints();
 initDragDrop();
 initFilePaneCloseAll();
@@ -1985,6 +1989,41 @@ function initCursorHints() {
     showCursorHint(available ? RELOAD_FILE_HINT : RELOAD_FILE_UNAVAILABLE_HINT, e.clientX, e.clientY);
   });
   reloadBtn?.addEventListener("mouseleave", hideCursorHint);
+}
+
+function initFormulaRewriteHints() {
+  els.renderedPane?.addEventListener("mousemove", (e) => {
+    const badge = e.target.closest?.(".formula-rewrite-badge");
+    if (!badge) {
+      hideCursorHint();
+      return;
+    }
+    const wrap = document.createElement("div");
+    const title = document.createElement("div");
+    title.textContent = FORMULA_REWRITE_HINT;
+    title.className = "formula-rewrite-title";
+    const pre = document.createElement("pre");
+    pre.className = "formula-rewrite-latex";
+    pre.textContent = badge.dataset.latex ?? "";
+    const copy = document.createElement("div");
+    copy.className = "formula-rewrite-copy";
+    copy.textContent = badge.classList.contains("copied") ? FORMULA_REWRITE_COPIED : FORMULA_REWRITE_COPY;
+    wrap.append(title, pre, copy);
+    showCursorHint(wrap, e.clientX, e.clientY, { detail: true });
+  });
+  // Capture phase: copying must not also select the formula underneath.
+  els.renderedPane?.addEventListener("click", (e) => {
+    const badge = e.target.closest?.(".formula-rewrite-badge");
+    if (!badge) return;
+    e.stopPropagation();
+    navigator.clipboard?.writeText(badge.dataset.latex ?? "").then(() => {
+      badge.classList.add("copied");
+      const live = cursorHintEl.querySelector(".formula-rewrite-copy");
+      if (live) live.textContent = FORMULA_REWRITE_COPIED;
+      setTimeout(() => badge.classList.remove("copied"), 1500);
+    }, () => {});
+  }, true);
+  els.renderedPane?.addEventListener("mouseleave", hideCursorHint);
 }
 
 function initBboxHints() {
@@ -3557,6 +3596,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   if (readingLayoutMode === "paged") {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
+    continueEquationNumbering(canvas, segment);
     // The page image (in the separate "Original page" pane) may have already
     // finished loading before this canvas existed to receive onImageReady's
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
@@ -3576,8 +3616,17 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     }
   } else {
     els.renderedPane.classList.remove("reading-mode-paged");
-    els.renderedPane.appendChild(buildRenderedView(segment, elementIds));
+    const view = buildRenderedView(segment, elementIds);
+    continueEquationNumbering(view, segment);
+    els.renderedPane.appendChild(view);
   }
+}
+
+/** Pages render one at a time, so continue KaTeX's equation numbering from earlier pages. */
+function continueEquationNumbering(container, segment) {
+  const pageIdx = state.segments.indexOf(segment);
+  const before = state.segments.slice(0, Math.max(pageIdx, 0)).reduce((n, seg) => n + countEquationNumbers(seg), 0);
+  if (before) container.style.counterReset = `katexEqnNo ${before}`;
 }
 
 function pageZoomFactor() {
@@ -6071,6 +6120,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
     // everything else regardless of order; leave body/furniture stacking as-is.
     slot.style.zIndex = layer === "background" ? "0" : "1";
     slot.appendChild(node);
+    if (node?.dataset?.rewrittenLatex) slot.appendChild(makeFormulaRewriteBadge(node.dataset.rewrittenLatex));
     canvas.appendChild(slot);
   };
 
@@ -6615,24 +6665,71 @@ function formulaSourceText(el) {
   return text.trim();
 }
 
+// KaTeX has no eqnarray; align is its closest (numbered) equivalent.
+function normalizeFormulaSource(source) {
+  return source.replace(/\\(begin|end)\{eqnarray(\*?)\}/g, "\\$1{align$2}");
+}
+
+const equationNumberCounts = new WeakMap();
+
+/** How many equation numbers KaTeX assigns to one formula (rows of align/equation without \\tag, \\nonumber, or a star). */
+function formulaEquationNumberCount(el) {
+  let count = equationNumberCounts.get(el);
+  if (count === undefined) {
+    count = 0;
+    if (window.katex?.renderToString) {
+      try {
+        const html = window.katex.renderToString(normalizeFormulaSource(formulaSourceText(el)), {
+          displayMode: true,
+          throwOnError: true,
+        });
+        count = html.split('class="eqn-num"').length - 1;
+      } catch {
+        // Unrenderable formulas show no number.
+      }
+    }
+    equationNumberCounts.set(el, count);
+  }
+  return count;
+}
+
+/** Equation numbers consumed by the display formulas in a page segment (formulas inside running text are inline). */
+function countEquationNumbers(segment) {
+  let total = 0;
+  for (const top of segment) {
+    if (top.nodeType !== Node.ELEMENT_NODE) continue;
+    const formulas = localName(top) === "formula" ? [top] : [...top.getElementsByTagName("*")].filter((e) => localName(e) === "formula");
+    for (const f of formulas) {
+      const parent = localName(f.parentNode);
+      if (parent === "text" || parent === "heading") continue;
+      total += formulaEquationNumberCount(f);
+    }
+  }
+  return total;
+}
+
+/** Renders the formula; returns the LaTeX actually fed to KaTeX when it differs from the source. */
 function renderFormulaContent(target, el, displayMode) {
-  const source = formulaSourceText(el);
+  const original = formulaSourceText(el);
+  const source = normalizeFormulaSource(original);
+  const rewritten = source !== original ? source : null;
   if (source && window.katex?.render) {
     try {
       window.katex.render(source, target, { displayMode, throwOnError: false });
-      return;
+      return rewritten;
     } catch {
       // Fall through to the raw-source fallback below.
     }
   }
   target.textContent = source;
   target.classList.add("rendered-formula-fallback");
+  return rewritten;
 }
 
 function renderFormula(el, elementIds, ctx) {
   const span = document.createElement("span");
   span.className = ctx.inline ? "rendered-formula-inline" : "rendered-formula";
-  renderFormulaContent(span, el, !ctx.inline);
+  const rewritten = renderFormulaContent(span, el, !ctx.inline);
 
   if (ctx.inline) {
     span.classList.add("rendered-el");
@@ -6642,13 +6739,30 @@ function renderFormula(el, elementIds, ctx) {
   }
 
   const captionEl = readCaptionElement(el);
-  if (!captionEl || ctx?.paged) return wrapRendered(el, span, elementIds.get(el));
+  if (!captionEl || ctx?.paged) return withRewriteBadge(wrapRendered(el, span, elementIds.get(el)), rewritten, ctx);
 
   const figure = document.createElement("figure");
   figure.className = "rendered-formula-figure";
   figure.appendChild(span);
   figure.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
-  return wrapRendered(el, figure, elementIds.get(el));
+  return withRewriteBadge(wrapRendered(el, figure, elementIds.get(el)), rewritten, ctx);
+}
+
+function makeFormulaRewriteBadge(latex) {
+  const badge = document.createElement("span");
+  badge.className = "formula-rewrite-badge";
+  badge.textContent = "i";
+  badge.dataset.latex = latex;
+  return badge;
+}
+
+/** Flags a wrapper whose LaTeX was rewritten before rendering, with a hover badge showing the result. */
+function withRewriteBadge(wrapper, rewritten, ctx) {
+  if (!rewritten) return wrapper;
+  // Paged slots scale their content to fit, so makeSlot adds the badge outside the scaled box.
+  if (ctx?.paged) wrapper.dataset.rewrittenLatex = rewritten;
+  else wrapper.appendChild(makeFormulaRewriteBadge(rewritten));
+  return wrapper;
 }
 
 function markPictureUnavailable(img) {
