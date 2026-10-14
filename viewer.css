@@ -1640,10 +1640,16 @@ body.pane-drag-active .pane-splitter {
 .paged-canvas .rendered-formula {
   margin: 0;
   padding: 0;
+  /* fitSlotContent() scales the content to the bbox; scrollbars would only steal space. */
+  overflow: visible;
+  /* Fill the slot (keeps KaTeX's right-aligned equation number at the bbox edge), but never
+     less than natural size, so the measured rect includes any overflow and the fit shrinks it. */
+  min-width: max-content;
 }
 
 .paged-canvas .katex-display {
   margin: 0;
+  overflow: visible;
 }
 
 .paged-canvas .rendered-table,
@@ -1981,6 +1987,24 @@ pre.markup {
   max-width: 24rem;
   padding: 0.45rem 0.55rem;
   text-align: left;
+}
+
+.formula-rewrite-copy {
+  margin-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.formula-rewrite-latex {
+  margin: 0.3rem 0 0;
+  padding: 0.3rem 0.4rem;
+  background: var(--placeholder-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .head-tooltip {
@@ -2754,6 +2778,34 @@ li.has-marker > .rendered-li-body {
   background: var(--placeholder-bg);
   border-left: 3px solid var(--border);
   overflow-x: auto;
+}
+
+.rendered-formula-figure,
+.rendered-el.rendered-formula {
+  position: relative;
+}
+
+.formula-rewrite-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 0.875rem;
+  height: 0.875rem;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  font: italic 600 0.625rem/1 serif;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: help;
+  opacity: 0.7;
+}
+
+.formula-rewrite-badge:hover {
+  opacity: 1;
 }
 
 .rendered-formula-inline {
