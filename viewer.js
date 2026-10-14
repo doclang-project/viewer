@@ -3596,10 +3596,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   if (readingLayoutMode === "paged") {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
-    // Pages are rendered one at a time, so continue KaTeX's equation numbering from earlier pages.
-    const pageIdx = state.segments.indexOf(segment);
-    const before = state.segments.slice(0, Math.max(pageIdx, 0)).reduce((n, seg) => n + countEquationNumbers(seg), 0);
-    if (before) canvas.style.counterReset = `katexEqnNo ${before}`;
+    continueEquationNumbering(canvas, segment);
     // The page image (in the separate "Original page" pane) may have already
     // finished loading before this canvas existed to receive onImageReady's
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
@@ -3619,8 +3616,17 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     }
   } else {
     els.renderedPane.classList.remove("reading-mode-paged");
-    els.renderedPane.appendChild(buildRenderedView(segment, elementIds));
+    const view = buildRenderedView(segment, elementIds);
+    continueEquationNumbering(view, segment);
+    els.renderedPane.appendChild(view);
   }
+}
+
+/** Pages render one at a time, so continue KaTeX's equation numbering from earlier pages. */
+function continueEquationNumbering(container, segment) {
+  const pageIdx = state.segments.indexOf(segment);
+  const before = state.segments.slice(0, Math.max(pageIdx, 0)).reduce((n, seg) => n + countEquationNumbers(seg), 0);
+  if (before) container.style.counterReset = `katexEqnNo ${before}`;
 }
 
 function pageZoomFactor() {
