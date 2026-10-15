@@ -1,4 +1,6 @@
 // XSD validation of DocLang markup, run off the main thread.
+// A document is validated against the schema of the version it declares (`<doclang version="0.8">`);
+// without one, against the default (latest) version. Schemas live in schema/, listed in schema/versions.json.
 // Mirrors doclang/xsd_validation.py (lxml → libxml2) so results match
 // `doclang validate --xsd-only --allow-empty-namespace` (i.e. `-n`).
 
@@ -7,27 +9,60 @@
 const libxml2 = import("./vendor/libxml2-wasm/index.mjs");
 
 const DOCLANG_NS = "https://www.doclang.ai/ns/v0";
-const SCHEMA_URL = new URL("./schema/doclang.xsd", import.meta.url);
+const SCHEMA_DIR = new URL("./schema/", import.meta.url);
 const DTD_REJECTED_MESSAGE = "DTD declarations and entity references are not allowed in DocLang documents";
 
-/** @type {Promise<{ validator: import("./vendor/libxml2-wasm/index.mjs").XsdValidator, schemaVersion: string | null }> | null} */
-let schemaPromise = null;
+async function fetchSchemaFile(name) {
+  const res = await fetch(new URL(name, SCHEMA_DIR));
+  if (!res.ok) throw new Error(`Failed to load ${name} (${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+}
 
-function loadSchema() {
-  schemaPromise ??= (async () => {
-    const { XmlDocument, XsdValidator } = await libxml2;
-    const res = await fetch(SCHEMA_URL);
-    if (!res.ok) throw new Error(`Failed to load schema (${res.status})`);
-    const xsdDoc = XmlDocument.fromBuffer(new Uint8Array(await res.arrayBuffer()), { url: "doclang.xsd" });
-    const schemaVersion = xsdDoc.root.attr("version")?.value ?? null;
-    // xsdDoc stays alive for the worker's lifetime: the compiled schema may reference its nodes.
-    const validator = XsdValidator.fromDoc(xsdDoc);
-    return { validator, schemaVersion };
-  })().catch((err) => {
-    schemaPromise = null;
-    throw err;
-  });
-  return schemaPromise;
+/** @type {Promise<{ default: string, versions: Record<string, { file: string, tag: string }> }> | null} */
+let versionsPromise = null;
+
+function loadVersions() {
+  versionsPromise ??= fetchSchemaFile("versions.json")
+    .then((bytes) => JSON.parse(new TextDecoder().decode(bytes)))
+    .catch((err) => {
+      versionsPromise = null;
+      throw err;
+    });
+  return versionsPromise;
+}
+
+/** Compiled schemas by minor version. */
+const schemaPromises = new Map();
+
+function loadSchema(minor, file) {
+  if (!schemaPromises.has(minor)) {
+    schemaPromises.set(
+      minor,
+      (async () => {
+        const { XmlDocument, XsdValidator } = await libxml2;
+        const xsdDoc = XmlDocument.fromBuffer(await fetchSchemaFile(file), { url: file });
+        const schemaVersion = xsdDoc.root.attr("version")?.value ?? null;
+        // xsdDoc stays alive for the worker's lifetime: the compiled schema may reference its nodes.
+        const validator = XsdValidator.fromDoc(xsdDoc);
+        return { validator, schemaVersion };
+      })().catch((err) => {
+        schemaPromises.delete(minor);
+        throw err;
+      }),
+    );
+  }
+  return schemaPromises.get(minor);
+}
+
+/**
+ * The schema to validate a document declaring `declared` against: its `major.minor`, or the default
+ * when it declares none or something that is not a version at all (the schema reports that itself).
+ * @returns {{ minor: string, file: string } | { unsupported: string, supported: string[] }}
+ */
+function pickSchema(versions, declared) {
+  const minor = declared == null ? versions.default : declared.trim().match(/^(\d+)\.(\d+)/)?.slice(1, 3).join(".") ?? versions.default;
+  const entry = versions.versions[minor];
+  return entry ? { minor, file: entry.file } : { unsupported: minor, supported: Object.keys(versions.versions) };
 }
 
 /**
@@ -55,20 +90,26 @@ function toIssue(detail, kind) {
 
 async function validate(markup) {
   const { XmlDocument, XmlValidateError, XmlParseError } = await libxml2;
-  const { validator, schemaVersion } = await loadSchema();
+  const versions = await loadVersions();
   let doc;
   try {
     doc = XmlDocument.fromString(markup, { url: "document.xml" });
   } catch (err) {
     if (err instanceof XmlParseError) {
-      return { schemaVersion, issues: err.details.map((d) => toIssue(d, "parse")) };
+      return { schemaVersion: null, issues: err.details.map((d) => toIssue(d, "parse")) };
     }
     throw err;
   }
   try {
     if (doc.dtd) {
-      return { schemaVersion, issues: [{ kind: "policy", message: DTD_REJECTED_MESSAGE, line: null, col: null, xpath: null }] };
+      return { schemaVersion: null, issues: [{ kind: "policy", message: DTD_REJECTED_MESSAGE, line: null, col: null, xpath: null }] };
     }
+    const picked = pickSchema(versions, doc.root.attr("version")?.value);
+    if (picked.unsupported) {
+      const message = `Unsupported DocLang version "${picked.unsupported}" (supported: ${picked.supported.join(", ")})`;
+      return { schemaVersion: null, issues: [{ kind: "version", message, line: null, col: null, xpath: null }] };
+    }
+    const { validator, schemaVersion } = await loadSchema(picked.minor, picked.file);
     ensureNamespace(doc);
     try {
       validator.validate(doc);

@@ -2580,7 +2580,7 @@ function buildValidationIssueItem(issue) {
   }
   const loc = document.createElement("span");
   loc.className = "validation-issue-loc";
-  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "policy" ? "Document" : "—";
+  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "policy" || issue.kind === "version" ? "Document" : "—";
   const msg = document.createElement("span");
   msg.className = "validation-issue-msg";
   msg.textContent = issue.message.replaceAll(DOCLANG_NS_CLARK, "");
