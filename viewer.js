@@ -4108,8 +4108,28 @@ function findVirtualTextHost(xmlEl) {
   return null;
 }
 
+/**
+ * Selection unit inside a `<track>`: a cue block is its `<bdiv/>` plus everything up
+ * to the next sibling `<bdiv/>` (spec: Tracks), so any node in it resolves to that
+ * `<bdiv/>`. The `<cover>` is its own unit; the track's head resolves normally.
+ */
+function findTrackSelectionHost(xmlEl) {
+  let child = xmlEl;
+  while (child.parentNode && !(child.parentNode.nodeType === Node.ELEMENT_NODE && localName(child.parentNode) === "track")) {
+    child = child.parentNode;
+  }
+  if (!child.parentNode) return null;
+  if (child.nodeType === Node.ELEMENT_NODE && localName(child) === "cover") return child;
+  for (let n = child; n; n = n.previousSibling) {
+    if (n.nodeType === Node.ELEMENT_NODE && localName(n) === "bdiv") return n;
+  }
+  return null;
+}
+
 function resolveSelectionElement(xmlEl) {
   if (!xmlEl) return null;
+  const trackHost = findTrackSelectionHost(xmlEl);
+  if (trackHost) return trackHost;
   if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
 
   let node = xmlEl.parentElement;
@@ -5824,9 +5844,20 @@ function buildMarkupView(segment, elementIds) {
       return;
     }
     const elementId = resolveMarkupClickTarget(e.target);
-    if (elementId) selectElement(elementId);
+    if (elementId) {
+      selectElement(elementId);
+      seekTrackToElement(elementId);
+    }
   });
   return root;
+}
+
+/** Selecting a cue block in the source view seeks the track's player to it. */
+function seekTrackToElement(elementId) {
+  const row = els.renderedPane?.querySelector(
+    `.rendered-doc .rendered-track-cue[data-element-id="${elementId}"]`,
+  );
+  row?.trackSeek?.();
 }
 
 function sliceHasMarkupContent(nodes) {
@@ -5969,6 +6000,35 @@ function buildMarkupList(el, depth, elementIds) {
   });
 }
 
+/** A track in the source view: each cue block (a `<bdiv/>` and its content) is one selectable unit. */
+function buildMarkupTrack(el, depth, elementIds) {
+  return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
+    const nodes = [...el.childNodes];
+    let i = 0;
+    while (i < nodes.length && !isTrackBdiv(nodes[i])) i += 1;
+    appendMarkupNodesFromSlice(children, childDepth, nodes.slice(0, i), elementIds);
+    while (i < nodes.length) {
+      const bdiv = nodes[i];
+      let end = i + 1;
+      while (end < nodes.length && !isTrackBdiv(nodes[end])) end += 1;
+      const block = document.createElement("div");
+      block.className = "markup-el markup-el-cue";
+      const elementId = elementIds.get(bdiv);
+      if (elementId) block.setAttribute("data-element-id", elementId);
+      const bdivBlock = buildMarkupElement(bdiv, childDepth, elementIds);
+      bdivBlock.removeAttribute?.("data-element-id"); // the cue block carries the id
+      block.appendChild(bdivBlock);
+      appendMarkupNodesFromSlice(block, childDepth, nodes.slice(i + 1, end), elementIds);
+      children.appendChild(block);
+      i = end;
+    }
+  });
+}
+
+function isTrackBdiv(node) {
+  return node.nodeType === Node.ELEMENT_NODE && localName(node) === "bdiv";
+}
+
 function buildMarkupOtslContainer(el, depth, elementIds) {
   return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
     const nodes = [...el.childNodes];
@@ -6047,6 +6107,7 @@ function buildMarkupElement(el, depth, elementIds) {
     return hostBlock;
   }
   if (tag === "list") return buildMarkupList(el, depth, elementIds);
+  if (tag === "track") return buildMarkupTrack(el, depth, elementIds);
   if (OTSL_CONTAINER_TAGS.has(tag)) return buildMarkupOtslContainer(el, depth, elementIds);
 
   const block = document.createElement("div");
@@ -7098,7 +7159,7 @@ function parseTrackCues(el) {
     const isEl = node.nodeType === Node.ELEMENT_NODE;
     if (isEl && localName(node) === "bdiv") {
       cue = {
-        startEls: [], endEls: [], chapterEl: null, frameEl: null, audioEl: null,
+        bdivEl: node, startEls: [], endEls: [], chapterEl: null, frameEl: null, audioEl: null,
         turns: [], phase: "start", lastRank: -1,
       };
       cues.push(cue);
@@ -7345,6 +7406,7 @@ function wireActiveTranscriptRow(media, entries, scrollBox) {
       entries[active].row.removeAttribute("aria-current");
     }
     active = idx;
+    syncMarkupPlayhead(idx < 0 ? null : entries[idx].elementId);
     if (idx < 0) return;
     const row = entries[idx].row;
     row.classList.add("is-active");
@@ -7355,6 +7417,31 @@ function wireActiveTranscriptRow(media, entries, scrollBox) {
   };
   media.addEventListener("timeupdate", update);
   media.addEventListener("seeked", update);
+}
+
+let markupUserScrolledAt = 0;
+{
+  // Same courtesy as the transcript: stop following the playhead briefly after a
+  // manual scroll of the source view.
+  const mark = () => { markupUserScrolledAt = performance.now(); };
+  els.markupPane?.addEventListener("wheel", mark, { passive: true });
+  els.markupPane?.addEventListener("touchmove", mark, { passive: true });
+  els.markupPane?.addEventListener("keydown", (e) => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) mark();
+  });
+}
+
+/** Mirror the playing cue block into the source view (highlight, and follow it unless the viewer is scrolling). */
+function syncMarkupPlayhead(elementId) {
+  const pane = els.markupPane;
+  if (!pane) return;
+  pane.querySelectorAll(".markup-el-cue.is-playing").forEach((b) => b.classList.remove("is-playing"));
+  if (!elementId) return;
+  const block = pane.querySelector(`.markup-el-cue[data-element-id="${elementId}"]`);
+  if (!block) return;
+  block.classList.add("is-playing");
+  if (performance.now() - markupUserScrolledAt < 4000) return;
+  scrollRowIntoView(block, pane);
 }
 
 /** Center a transcript row within its own scroll box; no-op if already visible. */
@@ -7427,7 +7514,9 @@ function renderTrack(el, elementIds) {
   const coverUri = coverSrc ? resolveArchiveUri(coverSrc.getAttribute("uri")?.trim() || "") : null;
   if (coverUri && !videoUrl) {
     const coverFig = document.createElement("figure");
-    coverFig.className = "rendered-track-cover";
+    coverFig.className = "rendered-el rendered-track-cover";
+    const coverId = elementIds.get(coverEl);
+    if (coverId) coverFig.setAttribute("data-element-id", coverId);
     const img = document.createElement("img");
     img.src = coverUri;
     img.alt = "";
@@ -7478,7 +7567,9 @@ function renderTrack(el, elementIds) {
     info.className = "rendered-track-info";
     if (coverUri && videoUrl) {
       const avatar = document.createElement("img");
-      avatar.className = "rendered-track-avatar";
+      avatar.className = "rendered-el rendered-track-avatar";
+      const coverId = elementIds.get(coverEl);
+      if (coverId) avatar.setAttribute("data-element-id", coverId);
       avatar.src = coverUri;
       avatar.alt = "";
       avatar.loading = "lazy";
@@ -7556,7 +7647,11 @@ function renderTrack(el, elementIds) {
       appendRenderedBody(name, cue.chapterEl, elementIds, { inline: true });
       btn.appendChild(name);
 
-      btn.addEventListener("click", () => revealCue(cue.start));
+      btn.addEventListener("click", () => {
+        revealCue(cue.start);
+        const cueId = elementIds.get(cue.bdivEl);
+        if (cueId) selectElement(cueId);
+      });
       li.appendChild(btn);
       list.appendChild(li);
       chapterEntries.push({ start: cue.start ?? 0, btn });
@@ -7567,7 +7662,10 @@ function renderTrack(el, elementIds) {
 
   for (const cue of cues) {
     const row = document.createElement("div");
-    row.className = "rendered-track-cue";
+    row.className = "rendered-el rendered-track-cue";
+    const cueId = elementIds.get(cue.bdivEl);
+    if (cueId) row.setAttribute("data-element-id", cueId);
+    row.trackSeek = () => revealCue(cue.start);
     // Click anywhere on the row navigates — but leave text selection and any
     // nested control (the timecode button) to do their own thing.
     row.addEventListener("click", (e) => {
@@ -7595,7 +7693,7 @@ function renderTrack(el, elementIds) {
     row.appendChild(turns);
 
     body.appendChild(row);
-    rowEntries.push({ start: cue.start, end: cue.end, row });
+    rowEntries.push({ start: cue.start, end: cue.end, row, elementId: elementIds.get(cue.bdivEl) });
   }
   details.appendChild(body);
   figure.appendChild(details);
