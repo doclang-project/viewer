@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.8">
+  <heading>Artemis Flight Directors &#8212; a clip</heading>
+  <text>Thirty-four seconds from NASA&#8217;s on-camera &#8220;Houston We Have a Podcast,&#8221; episode 179. Host Gary Jordan interviews Rick Labrode and Judd Frieling.</text>
+  <track>
+    <caption>Gary Jordan, Rick Labrode, and Judd Frieling, Houston We Have a Podcast 179</caption>
+    <cover><src uri="assets/cover.webp"/></cover>
+    <bdiv/>
+    <seconds value="0"/>
+    <seconds value="1"/><msecs value="570"/>
+    <chapter>Intro</chapter>
+    <frame><src uri="assets/frames/00-00.jpg"/></frame>
+    <voice>Gary Jordan</voice>
+    Awesome. Let's, uh, let's get right into it.
+    <bdiv/>
+    <seconds value="1"/><msecs value="570"/>
+    <seconds value="4"/><msecs value="600"/>
+    I wanted to talk, uh, mainly about the Artemis mission.
+    <bdiv/>
+    <seconds value="4"/><msecs value="600"/>
+    <seconds value="7"/><msecs value="740"/>
+    We're gonna dive into the operations inside Mission Control.
+    <bdiv/>
+    <seconds value="7"/><msecs value="740"/>
+    <seconds value="12"/><msecs value="950"/>
+    But, first, I wanna understand a little bit more about you, your history, and what got you into th-this position.
+    <bdiv/>
+    <seconds value="12"/><msecs value="950"/>
+    <seconds value="13"/><msecs value="710"/>
+    Rick, we'll start with you.
+    <bdiv/>
+    <seconds value="13"/><msecs value="710"/>
+    <seconds value="17"/><msecs value="920"/>
+    I know you have a lot of experience with shuttle, uh, and some other stuff as well.
+    <bdiv/>
+    <seconds value="17"/><msecs value="920"/>
+    <seconds value="24"/><msecs value="960"/>
+    <chapter>Thirty-six years in Mission Control</chapter>
+    <frame><src uri="assets/frames/00-18.jpg"/></frame>
+    <voice>Rick Labrode</voice>
+    Yeah, well, I started, uh, actually this— end of this month, uh, it'll be 36 years I've been working Mission Control.
+    <voice>Gary Jordan</voice>
+    Oh, my gosh.
+    <bdiv/>
+    <seconds value="24"/><msecs value="960"/>
+    <seconds value="30"/><msecs value="660"/>
+    <voice>Rick Labrode</voice>
+    I started as a shuttle flight direct— uh, flight controller in the Instrumentation and Communications Officer position.
+    <bdiv/>
+    <seconds value="30"/><msecs value="660"/>
+    <seconds value="33"/><msecs value="400"/>
+    Uh, we have that same position in the Artemis program now.
+    <bdiv/>
+    <seconds value="33"/><msecs value="400"/>
+    <seconds value="33"/><msecs value="800"/>
+    <voice>Gary Jordan</voice>
+    Cool.
+  </track>
+  <heading level="2">Resources</heading>
+  <text>Public domain, NASA / Johnson Space Center:</text>
+  <list>
+    <ldiv/>
+    Video and transcript: <text><href uri="https://images.nasa.gov/details/jsc2021m000179_Houston_We_Have_a_Podcast-Artemis_Flight_Directors-MP4"/>images.nasa.gov</text> (trimmed to 00:41&#8211;01:15, re-encoded; captions lightly case-normalized)
+    <ldiv/>
+    Cover: <text><href uri="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/artemis-flight-directors/"/>www.nasa.gov/podcasts</text> (square crop of photo from episode page)
+  </list>
+</doclang>

@@ -237,3 +237,4 @@ tags
 ~$*.docx
 
 .DS_Store
+.claude/
