@@ -34,7 +34,7 @@ const HEAD_TAGS = new Set([
 const SEMANTIC_TAGS = new Set([
   "text", "heading", "footnote", "page_header", "page_footer", "field_region", "list", "table", "index",
   "formula", "code", "picture", "marker", "group", "field_heading", "field_item", "key", "value", "hint",
-  "caption", "page_break",
+  "caption", "page_break", "track",
 ]);
 const CELL_TOKENS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow", "lcel", "ucel", "xcel", "nl"]);
 const CELL_CONTENT_TAGS = new Set(["fcel", "ecel", "ched", "rhed", "corn", "srow"]);
@@ -46,7 +46,13 @@ const RENDER_BLOCK_TAGS = new Set([
   "text", "heading", "field_heading", "footnote", "page_header", "page_footer", "list", "code", "formula", "picture", "group",
   "field_region", "field_item",
   "table", "index", "tabular",
+  "track",
 ]);
+/** Whole-track media (PR doclang#175): archive dirs audio/ and video/, files named {N}.{ext} by track order. */
+const TRACK_VIDEO_EXTS = ["mp4", "webm", "mkv", "mov", "m4v", "ogv"];
+const TRACK_AUDIO_EXTS = ["mp3", "m4a", "ogg", "opus", "wav"];
+/** Timestamp component elements inside a cue block, in order of magnitude. */
+const TRACK_TS_TAGS = new Set(["hours", "minutes", "seconds", "msecs"]);
 const RENDER_FORMAT_TAGS = new Set([
   "bold", "italic", "underline", "strikethrough", "superscript", "subscript", "handwriting", "rtl", "content",
 ]);
@@ -809,13 +815,35 @@ async function loadDemo() {
   demoLoadInProgress = true;
   setDemoLoading(true);
   try {
-    const res = await fetch(DEMO_ARCHIVE_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buffer = await res.arrayBuffer();
+    const urls = typeof DEMO_ARCHIVE_URLS !== "undefined" && DEMO_ARCHIVE_URLS.length
+      ? DEMO_ARCHIVE_URLS
+      : [DEMO_ARCHIVE_URL];
+    const primary = await fetch(urls[0]);
+    if (!primary.ok) throw new Error(`HTTP ${primary.status}`);
+    const primaryBuffer = await primary.arrayBuffer();
     // A document may have arrived while the demo was downloading; don't replace it.
     if (suppressDemoLoad) return;
-    const label = DEMO_ARCHIVE_URL.split("/").pop() || "demo.dclx";
-    await addArchiveBufferToCatalog(buffer, label, { replace: true });
+    await addArchiveBufferToCatalog(
+      primaryBuffer,
+      urls[0].split("/").pop() || "demo.dclx",
+      { replace: true },
+    );
+    for (const url of urls.slice(1)) {
+      if (suppressDemoLoad) return;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const buffer = await res.arrayBuffer();
+        if (suppressDemoLoad) return;
+        await addArchiveBufferToCatalog(
+          buffer,
+          url.split("/").pop() || "demo.dclx",
+          { replace: false, activate: false },
+        );
+      } catch (extraErr) {
+        console.warn(`Skipped demo archive ${url}: ${extraErr.message}`);
+      }
+    }
   } catch (err) {
     alert(
       `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
@@ -961,14 +989,50 @@ async function createFirstPageImageUrlFromZip(source) {
   return createPageImageObjectUrl(bestEntry.data, ext);
 }
 
+/**
+ * Archive path of the first image `<src>` in document order (a picture, a track
+ * `<cover>` or `<frame>`, …) — the thumbnail fallback for documents without a
+ * page image. Embedded data URIs and external URLs are skipped.
+ */
+function firstReferencedImagePath(markupXml) {
+  const re = /<(?:\w+:)?src\b[^>]*?\buri\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  for (const m of markupXml.matchAll(re)) {
+    const uri = (m[1] ?? m[2]).trim();
+    if (/^[a-z][a-z0-9+.-]*:/i.test(uri) || uri.startsWith("//")) continue;
+    if (/\.(png|jpe?g|webp)$/i.test(uri)) return normalizeArchivePath(uri);
+  }
+  return null;
+}
+
+async function createFirstReferencedImageUrlFromFiles(files) {
+  const markupFile = files.find((f) => f.name === "document.xml");
+  if (!markupFile) return null;
+  const path = firstReferencedImagePath(await markupFile.text());
+  if (!path) return null;
+  const file = files.find((f) => archiveRelativeAssetPath(f.webkitRelativePath || f.name) === path);
+  return file ? URL.createObjectURL(file) : null;
+}
+
+async function createFirstReferencedImageUrlFromZip(source) {
+  const buffer = source instanceof File ? await source.arrayBuffer() : source;
+  const [markup] = await unzip(buffer, { shouldExtract: (name) => name === "document.xml" });
+  if (!markup) return null;
+  const path = firstReferencedImagePath(new TextDecoder().decode(markup.data));
+  if (!path) return null;
+  const [image] = await unzip(buffer, { shouldExtract: (name) => name === path });
+  return image ? createPageImageObjectUrl(image.data, path.split(".").pop() ?? "png") : null;
+}
+
 async function resolveCatalogEntryThumbnail(entry) {
   if (entry.thumbnailUrl) return entry.thumbnailUrl;
   if (entry.kind === "markup") return null;
   try {
     if (entry.kind === "folder") {
-      entry.thumbnailUrl = createFirstPageImageUrlFromFiles(entry.source);
+      entry.thumbnailUrl = createFirstPageImageUrlFromFiles(entry.source)
+        ?? await createFirstReferencedImageUrlFromFiles(entry.source);
     } else if (entry.kind === "archive") {
-      entry.thumbnailUrl = await createFirstPageImageUrlFromZip(entry.source);
+      entry.thumbnailUrl = await createFirstPageImageUrlFromZip(entry.source)
+        ?? await createFirstReferencedImageUrlFromZip(entry.source);
     }
   } catch {
     entry.thumbnailUrl = null;
@@ -1186,7 +1250,7 @@ async function appendFolderArchive(files) {
   await switchToFile(fileCatalog.length - 1);
 }
 
-async function addArchiveBufferToCatalog(buffer, label, { replace = false } = {}) {
+async function addArchiveBufferToCatalog(buffer, label, { replace = false, activate = true } = {}) {
   if (replace) {
     clearFileCatalog();
     filePaneUserToggled = false;
@@ -1203,7 +1267,8 @@ async function addArchiveBufferToCatalog(buffer, label, { replace = false } = {}
   };
   fileCatalog.push(entry);
   enrichCatalogEntryThumbnail(entry);
-  await switchToFile(replace ? 0 : fileCatalog.length - 1);
+  if (activate) await switchToFile(replace ? 0 : fileCatalog.length - 1);
+  else updateFileView();
 }
 
 async function extractArchiveFromFiles(files) {
@@ -1220,7 +1285,11 @@ async function extractArchiveFromFiles(files) {
       if (m) pageImages.set(Number(m[1]), URL.createObjectURL(f));
     }
     const assetPath = archiveRelativeAssetPath(relPath);
-    if (assetPath) assetUrls.set(assetPath, URL.createObjectURL(f));
+    if (assetPath) {
+      assetUrls.set(assetPath, URL.createObjectURL(f));
+    } else if (parts.length >= 2 && /^(?:audio|video)$/i.test(parts[parts.length - 2])) {
+      assetUrls.set(`${parts[parts.length - 2].toLowerCase()}/${f.name}`, URL.createObjectURL(f));
+    }
   }
   return { markupXml, pageImages, assetUrls };
 }
@@ -1740,6 +1809,17 @@ function elementHeadLocations(el) {
   return own.length === 4 ? own : virtualTextHeadLocations(el);
 }
 
+/** URI of an element's <href> head child, or null. */
+function readHrefUri(el) {
+  const hrefEl = childElements(el).find((c) => localName(c) === "href");
+  return hrefEl?.getAttribute("uri")?.trim() || null;
+}
+
+/** Allow only http(s) / mailto targets for rendered links. */
+function safeLinkUri(uri) {
+  return uri && /^(https?:|mailto:)/i.test(uri) ? uri : null;
+}
+
 function firstHeadChild(el, tag) {
   return childElements(el).find((child) => localName(child) === tag) ?? null;
 }
@@ -2218,6 +2298,7 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     altReplacements: alt.replacements,
     pageImages,
     assetUrls,
+    trackMedia: buildTrackMedia(root, assetUrls),
     currentPage: 1,
     pageCount,
     segments,
@@ -2233,6 +2314,43 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     readingOrderIndexByElement: new Map(readingOrder.map((el, i) => [el, i])),
     pageViewOverlay: null,
   };
+}
+
+/**
+ * Enumerate <track> elements in document order and map each to its whole-track
+ * media, following PR doclang#175: media lives at video/{N}.{ext} / audio/{N}.{ext}
+ * where N is the 1-based position of the <track> in the document.
+ * @returns {Map<Element, { videoUrl: string | null, audioUrl: string | null, vttUrl: string | null }>}
+ */
+function buildTrackMedia(root, assetUrls) {
+  const media = new Map();
+  let ordinal = 0;
+  walkElements(childElements(root), (el) => {
+    if (localName(el) !== "track") return;
+    ordinal += 1;
+    const videoUrl = findTrackAsset(assetUrls, "video", ordinal, TRACK_VIDEO_EXTS);
+    // Captions overlay a video surface only; skip the blob for audio-only tracks.
+    const vtt = videoUrl ? trackCuesToWebVTT(parseTrackCues(el)) : null;
+    media.set(el, {
+      videoUrl,
+      audioUrl: findTrackAsset(assetUrls, "audio", ordinal, TRACK_AUDIO_EXTS),
+      vttUrl: vtt ? URL.createObjectURL(new Blob([vtt], { type: "text/vtt" })) : null,
+    });
+  });
+  return media;
+}
+
+/** @returns {string | null} */
+function findTrackAsset(assetUrls, dir, ordinal, preferredExts) {
+  for (const ext of preferredExts) {
+    const url = assetUrls.get(`${dir}/${ordinal}.${ext}`);
+    if (url) return url;
+  }
+  const prefix = `${dir}/${ordinal}.`;
+  for (const [key, url] of assetUrls) {
+    if (key.startsWith(prefix)) return url;
+  }
+  return null;
 }
 
 function activateDocument(docState, entry) {
@@ -2256,6 +2374,7 @@ function activateDocument(docState, entry) {
   setDocLabel(entry.label);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
+  syncReadingLayoutButtons();
   renderPage(state.currentPage);
   updateFileView();
   syncValidationForActiveDocument();
@@ -3022,13 +3141,21 @@ function persistReadingLayoutMode() {
   }
 }
 
+// Paged layout is drawn over the page image, so it needs one; the stored
+// preference is kept and applies again to the next document that has images.
+function effectiveReadingLayoutMode() {
+  return readingLayoutMode === "paged" && state?.hasPageView !== false ? "paged" : "pageless";
+}
+
 function syncReadingLayoutButtons() {
-  const paged = readingLayoutMode === "paged";
+  const paged = effectiveReadingLayoutMode() === "paged";
+  if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.disabled = state?.hasPageView === false;
   if (els.readingLayoutPagelessBtn) els.readingLayoutPagelessBtn.setAttribute("aria-pressed", String(!paged));
   if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.setAttribute("aria-pressed", String(paged));
 }
 
 function setReadingLayoutMode(mode) {
+  if (mode === "paged" && state?.hasPageView === false) return;
   if (mode === readingLayoutMode) return;
   readingLayoutMode = mode;
   persistReadingLayoutMode();
@@ -3593,7 +3720,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     return;
   }
 
-  if (readingLayoutMode === "paged") {
+  if (effectiveReadingLayoutMode() === "paged") {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
     continueEquationNumbering(canvas, segment);
@@ -3981,8 +4108,28 @@ function findVirtualTextHost(xmlEl) {
   return null;
 }
 
+/**
+ * Selection unit inside a `<track>`: a cue block is its `<bdiv/>` plus everything up
+ * to the next sibling `<bdiv/>` (spec: Tracks), so any node in it resolves to that
+ * `<bdiv/>`. The `<cover>` is its own unit; the track's head resolves normally.
+ */
+function findTrackSelectionHost(xmlEl) {
+  let child = xmlEl;
+  while (child.parentNode && !(child.parentNode.nodeType === Node.ELEMENT_NODE && localName(child.parentNode) === "track")) {
+    child = child.parentNode;
+  }
+  if (!child.parentNode) return null;
+  if (child.nodeType === Node.ELEMENT_NODE && localName(child) === "cover") return child;
+  for (let n = child; n; n = n.previousSibling) {
+    if (n.nodeType === Node.ELEMENT_NODE && localName(n) === "bdiv") return n;
+  }
+  return null;
+}
+
 function resolveSelectionElement(xmlEl) {
   if (!xmlEl) return null;
+  const trackHost = findTrackSelectionHost(xmlEl);
+  if (trackHost) return trackHost;
   if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
 
   let node = xmlEl.parentElement;
@@ -4744,7 +4891,7 @@ function elementKindKey(kind) {
   if (kind === "tabular") return "table";
   const known = new Set([
     "text", "heading", "list", "ldiv", "table", "index", "formula", "code", "picture",
-    "group", "footnote", "page_header", "page_footer", "caption",
+    "group", "footnote", "page_header", "page_footer", "caption", "track",
   ]);
   return known.has(kind) ? kind : "default";
 }
@@ -5697,9 +5844,20 @@ function buildMarkupView(segment, elementIds) {
       return;
     }
     const elementId = resolveMarkupClickTarget(e.target);
-    if (elementId) selectElement(elementId);
+    if (elementId) {
+      selectElement(elementId);
+      seekTrackToElement(elementId);
+    }
   });
   return root;
+}
+
+/** Selecting a cue block in the source view seeks the track's player to it. */
+function seekTrackToElement(elementId) {
+  const row = els.renderedPane?.querySelector(
+    `.rendered-doc .rendered-track-cue[data-element-id="${elementId}"]`,
+  );
+  row?.trackSeek?.();
 }
 
 function sliceHasMarkupContent(nodes) {
@@ -5842,6 +6000,35 @@ function buildMarkupList(el, depth, elementIds) {
   });
 }
 
+/** A track in the source view: each cue block (a `<bdiv/>` and its content) is one selectable unit. */
+function buildMarkupTrack(el, depth, elementIds) {
+  return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
+    const nodes = [...el.childNodes];
+    let i = 0;
+    while (i < nodes.length && !isTrackBdiv(nodes[i])) i += 1;
+    appendMarkupNodesFromSlice(children, childDepth, nodes.slice(0, i), elementIds);
+    while (i < nodes.length) {
+      const bdiv = nodes[i];
+      let end = i + 1;
+      while (end < nodes.length && !isTrackBdiv(nodes[end])) end += 1;
+      const block = document.createElement("div");
+      block.className = "markup-el markup-el-cue";
+      const elementId = elementIds.get(bdiv);
+      if (elementId) block.setAttribute("data-element-id", elementId);
+      const bdivBlock = buildMarkupElement(bdiv, childDepth, elementIds);
+      bdivBlock.removeAttribute?.("data-element-id"); // the cue block carries the id
+      block.appendChild(bdivBlock);
+      appendMarkupNodesFromSlice(block, childDepth, nodes.slice(i + 1, end), elementIds);
+      children.appendChild(block);
+      i = end;
+    }
+  });
+}
+
+function isTrackBdiv(node) {
+  return node.nodeType === Node.ELEMENT_NODE && localName(node) === "bdiv";
+}
+
 function buildMarkupOtslContainer(el, depth, elementIds) {
   return buildMarkupFoldableElement(el, depth, elementIds, (children, childDepth) => {
     const nodes = [...el.childNodes];
@@ -5920,6 +6107,7 @@ function buildMarkupElement(el, depth, elementIds) {
     return hostBlock;
   }
   if (tag === "list") return buildMarkupList(el, depth, elementIds);
+  if (tag === "track") return buildMarkupTrack(el, depth, elementIds);
   if (OTSL_CONTAINER_TAGS.has(tag)) return buildMarkupOtslContainer(el, depth, elementIds);
 
   const block = document.createElement("div");
@@ -6317,8 +6505,31 @@ function renderBlockElement(el, elementIds, ctx) {
 
   switch (tag) {
     case "text": {
+      const linkUri = safeLinkUri(readHrefUri(el));
+      if (ctx?.inline) {
+        // a <text> nested inside a <text> flows inline; with an <href> head it
+        // is a hyperlink (DocLang: <text><href uri="…"/>label</text>).
+        const span = document.createElement(linkUri ? "a" : "span");
+        if (linkUri) {
+          span.href = linkUri;
+          span.target = "_blank";
+          span.rel = "noopener noreferrer";
+          span.className = "rendered-link";
+        }
+        appendRenderedBody(span, el, elementIds, { inline: true });
+        return span;
+      }
       const p = document.createElement("p");
       appendRenderedBody(p, el, elementIds, { inline: true });
+      if (linkUri) {
+        const a = document.createElement("a");
+        a.href = linkUri;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.className = "rendered-link";
+        a.appendChild(p);
+        return wrapRendered(el, a, elementId);
+      }
       return wrapRendered(el, p, elementId);
     }
     case "heading": {
@@ -6363,6 +6574,8 @@ function renderBlockElement(el, elementIds, ctx) {
       return renderFormula(el, elementIds, ctx);
     case "picture":
       return renderPicture(el, elementIds, ctx);
+    case "track":
+      return renderTrack(el, elementIds, ctx);
     case "group": {
       const figure = document.createElement("figure");
       figure.className = "rendered-group";
@@ -6550,8 +6763,15 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
   // Text-like elements and field regions nested in running text (a footer, caption, text…)
   // are part of that text: render them inline, like code and formulas.
   if (ctx.inline && INLINE_NESTABLE_TAGS.has(tag)) {
-    const span = document.createElement("span");
-    span.className = `rendered-el rendered-inline rendered-${tag}`;
+    // A <text> with an <href> head is a hyperlink.
+    const linkUri = tag === "text" ? safeLinkUri(readHrefUri(node)) : null;
+    const span = document.createElement(linkUri ? "a" : "span");
+    span.className = `rendered-el rendered-inline rendered-${tag}${linkUri ? " rendered-link" : ""}`;
+    if (linkUri) {
+      span.href = linkUri;
+      span.target = "_blank";
+      span.rel = "noopener noreferrer";
+    }
     const elementId = elementIds.get(node);
     if (elementId) span.setAttribute("data-element-id", elementId);
     applyElementLayerAttr(node, span);
@@ -6922,6 +7142,582 @@ function appendPictureBodyContent(container, nodes, startIdx, elementIds) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * <track> — time-aligned media transcript (PR doclang#175).
+ * Barebones widget: native <video> + a derived chapter index + a
+ * collapsible transcript. Cue blocks drive both; whole-track media is
+ * resolved by track order (see buildTrackMedia).
+ * ------------------------------------------------------------------ */
+
+const TRACK_TS_RANK = { hours: 0, minutes: 1, seconds: 2, msecs: 3 };
+
+/** Split a <track> body into cue blocks delimited by <bdiv/>. */
+function parseTrackCues(el) {
+  const cues = [];
+  let cue = null;
+  for (const node of el.childNodes) {
+    const isEl = node.nodeType === Node.ELEMENT_NODE;
+    if (isEl && localName(node) === "bdiv") {
+      cue = {
+        bdivEl: node, startEls: [], endEls: [], chapterEl: null, frameEl: null, audioEl: null,
+        turns: [], phase: "start", lastRank: -1,
+      };
+      cues.push(cue);
+      continue;
+    }
+    if (!cue) continue; // element head / whitespace before the first cue block
+    if (isWhitespaceOnlyText(node)) continue;
+    if (node.nodeType === Node.COMMENT_NODE) continue; // don't let comments break the timestamp runs
+
+    if (isEl && TRACK_TS_TAGS.has(localName(node))) {
+      const rank = TRACK_TS_RANK[localName(node)];
+      if (cue.phase === "start") {
+        // A non-increasing magnitude rank starts the (optional) end-time run.
+        if (cue.startEls.length && rank <= cue.lastRank) {
+          cue.phase = "end";
+          cue.endEls.push(node);
+        } else {
+          cue.startEls.push(node);
+        }
+      } else if (cue.phase === "end") {
+        cue.endEls.push(node);
+      } else {
+        cue.turns.push(node);
+      }
+      cue.lastRank = rank;
+      continue;
+    }
+
+    // First non-timestamp node closes any timestamp run.
+    if (cue.phase === "start" || cue.phase === "end") cue.phase = "body";
+    if (isEl) {
+      const tag = localName(node);
+      if (tag === "chapter") { cue.chapterEl = node; continue; }
+      if (tag === "frame") { cue.frameEl = node; continue; }
+      if (tag === "audio") { cue.audioEl = node; continue; }
+    }
+    cue.turns.push(node);
+  }
+  return cues;
+}
+
+/** Sum <hours|minutes|seconds|msecs value=…/> elements to seconds. */
+function trackTimestampSeconds(tsEls) {
+  if (!tsEls?.length) return null;
+  let seconds = 0;
+  for (const tsEl of tsEls) {
+    const v = Number(tsEl.getAttribute("value"));
+    if (!Number.isFinite(v)) continue;
+    switch (localName(tsEl)) {
+      case "hours": seconds += v * 3600; break;
+      case "minutes": seconds += v * 60; break;
+      case "seconds": seconds += v; break;
+      case "msecs": seconds += v / 1000; break;
+      default: break;
+    }
+  }
+  return seconds;
+}
+
+function formatTrackTime(seconds) {
+  if (!Number.isFinite(seconds)) return "";
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = h ? String(m).padStart(2, "0") : String(m);
+  return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
+}
+
+function trackFrameUri(frameEl) {
+  if (!frameEl) return null;
+  const src = childElements(frameEl).find((c) => localName(c) === "src");
+  return src?.getAttribute("uri")?.trim() || null;
+}
+
+/* ---- WebVTT: cue blocks -> native <track kind="captions"> overlay ---- */
+
+const VTT_INLINE_TAG = { bold: "b", italic: "i", underline: "u" };
+
+function vttEscape(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function vttTimestamp(seconds) {
+  const s = Math.max(0, seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = (s % 60).toFixed(3).padStart(6, "0");
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${ss}`;
+}
+
+/** Serialize a transcript node to the WebVTT cue-text tag subset (b/i/u + text). */
+function nodeToVttInline(node) {
+  if (isTextLikeNode(node)) return vttEscape(node.textContent.replace(/\s+/g, " "));
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  const inner = [...node.childNodes].map(nodeToVttInline).join("");
+  const tag = VTT_INLINE_TAG[localName(node)];
+  return tag ? `<${tag}>${inner}</${tag}>` : inner;
+}
+
+/**
+ * One cue block -> cue payload: a line per <voice> segment, wrapped in `<v Name>`
+ * and prefixed with a visible `[Name] ` so the speaker shows in the overlay.
+ */
+function trackCuePayload(cue) {
+  const lines = [];
+  let voiceName = "";
+  let buf = "";
+  const flush = () => {
+    const body = buf.replace(/\s+/g, " ").trim();
+    if (!body) {
+      buf = "";
+      return;
+    }
+    lines.push(
+      voiceName
+        ? `<v ${vttEscape(voiceName)}>[${vttEscape(voiceName)}] ${body}`
+        : body,
+    );
+    buf = "";
+  };
+  for (const node of cue.turns) {
+    if (node.nodeType === Node.ELEMENT_NODE && localName(node) === "voice") {
+      flush();
+      voiceName = node.textContent.trim().replace(/\s+/g, " ");
+      continue;
+    }
+    buf += nodeToVttInline(node);
+  }
+  flush();
+  return lines.join("\n");
+}
+
+/** @returns {string | null} WebVTT document, or null if no timed text. */
+function trackCuesToWebVTT(cues) {
+  const timed = cues.map((cue) => ({
+    start: trackTimestampSeconds(cue.startEls),
+    end: trackTimestampSeconds(cue.endEls),
+    payload: trackCuePayload(cue),
+  }));
+  const GAP = 0.001; // keep a hair before the next cue so a seek to a
+                     // shared boundary never lights up two cues at once
+  const out = ["WEBVTT", ""];
+  let any = false;
+  timed.forEach((cue, i) => {
+    if (!Number.isFinite(cue.start) || !cue.payload) return;
+    const next = timed.slice(i + 1).find((c) => Number.isFinite(c.start) && c.start > cue.start);
+    let end = cue.end;
+    if (!Number.isFinite(end) || end <= cue.start) {
+      end = next ? next.start : cue.start + 4;
+    }
+    if (next && end >= next.start - GAP) end = next.start - GAP;
+    if (end <= cue.start) end = cue.start + GAP;
+    out.push(`${vttTimestamp(cue.start)} --> ${vttTimestamp(end)}`, cue.payload, "");
+    any = true;
+  });
+  return any ? out.join("\n") : null;
+}
+
+/** Returns a seek(seconds) fn that waits for metadata and then plays. */
+function makeTrackSeeker(video, enabled) {
+  return (seconds) => {
+    if (!enabled || !Number.isFinite(seconds)) return;
+    const doSeek = () => {
+      try {
+        video.currentTime = seconds;
+      } catch {
+        /* not seekable yet — ignore */
+      }
+      const played = video.play?.();
+      if (played?.catch) played.catch(() => {});
+    };
+    if (video.readyState >= 1 /* HAVE_METADATA */) doSeek();
+    else video.addEventListener("loadedmetadata", doSeek, { once: true });
+  };
+}
+
+/** Highlight the chapter button whose start time contains the playhead. */
+function wireActiveChapter(video, entries) {
+  if (!entries.length) return;
+  let active = -1;
+  const update = () => {
+    const t = video.currentTime + 0.25;
+    let idx = -1;
+    for (let i = 0; i < entries.length; i += 1) {
+      if (t >= entries[i].start) idx = i;
+      else break;
+    }
+    if (idx === active) return;
+    if (active >= 0) {
+      entries[active].btn.classList.remove("is-active");
+      entries[active].btn.removeAttribute("aria-current");
+    }
+    if (idx >= 0) {
+      entries[idx].btn.classList.add("is-active");
+      entries[idx].btn.setAttribute("aria-current", "true");
+    }
+    active = idx;
+  };
+  video.addEventListener("timeupdate", update);
+  video.addEventListener("seeked", update);
+}
+
+/**
+ * Highlight the transcript row whose [start, end) contains the playhead and,
+ * unless the viewer is scrolling the transcript by hand, keep it in view inside
+ * the transcript's own scroll box (never scrolls the page/reading pane).
+ */
+function wireActiveTranscriptRow(media, entries, scrollBox) {
+  if (!entries.length) return;
+  for (let i = 0; i < entries.length; i += 1) {
+    const e = entries[i];
+    let end = e.end;
+    if (!Number.isFinite(end) || end <= e.start) {
+      const next = entries.slice(i + 1).find((n) => Number.isFinite(n.start) && n.start > e.start);
+      end = next ? next.start : e.start + 4;
+    }
+    e.effEnd = end;
+  }
+
+  let active = -1;
+  // Pause auto-scroll for a while after the viewer scrolls the box by hand.
+  // Only real input gestures count — programmatic scrollTo fires "scroll" too.
+  let userScrolledAt = 0;
+  const markUserScroll = () => { userScrolledAt = performance.now(); };
+  scrollBox.addEventListener("wheel", markUserScroll, { passive: true });
+  scrollBox.addEventListener("touchmove", markUserScroll, { passive: true });
+  scrollBox.addEventListener("keydown", (e) => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) {
+      markUserScroll();
+    }
+  });
+
+  const update = () => {
+    const t = media.currentTime + 0.1;
+    let idx = -1;
+    for (let i = 0; i < entries.length; i += 1) {
+      if (entries[i].start > t) break;
+      if (t < entries[i].effEnd) { idx = i; break; }
+    }
+    if (idx === active) return;
+    if (active >= 0) {
+      entries[active].row.classList.remove("is-active");
+      entries[active].row.removeAttribute("aria-current");
+    }
+    active = idx;
+    syncMarkupPlayhead(idx < 0 ? null : entries[idx].elementId);
+    if (idx < 0) return;
+    const row = entries[idx].row;
+    row.classList.add("is-active");
+    row.setAttribute("aria-current", "true");
+
+    if (performance.now() - userScrolledAt < 4000) return;
+    scrollRowIntoView(row, scrollBox);
+  };
+  media.addEventListener("timeupdate", update);
+  media.addEventListener("seeked", update);
+}
+
+let markupUserScrolledAt = 0;
+{
+  // Same courtesy as the transcript: stop following the playhead briefly after a
+  // manual scroll of the source view.
+  const mark = () => { markupUserScrolledAt = performance.now(); };
+  els.markupPane?.addEventListener("wheel", mark, { passive: true });
+  els.markupPane?.addEventListener("touchmove", mark, { passive: true });
+  els.markupPane?.addEventListener("keydown", (e) => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) mark();
+  });
+}
+
+/** Mirror the playing cue block into the source view (highlight, and follow it unless the viewer is scrolling). */
+function syncMarkupPlayhead(elementId) {
+  const pane = els.markupPane;
+  if (!pane) return;
+  pane.querySelectorAll(".markup-el-cue.is-playing").forEach((b) => b.classList.remove("is-playing"));
+  if (!elementId) return;
+  const block = pane.querySelector(`.markup-el-cue[data-element-id="${elementId}"]`);
+  if (!block) return;
+  block.classList.add("is-playing");
+  if (performance.now() - markupUserScrolledAt < 4000) return;
+  scrollRowIntoView(block, pane);
+}
+
+/** Center a transcript row within its own scroll box; no-op if already visible. */
+function scrollRowIntoView(row, box) {
+  const boxRect = box.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  if (rowRect.top >= boxRect.top && rowRect.bottom <= boxRect.bottom) return;
+  const rowTop = rowRect.top - boxRect.top + box.scrollTop;
+  box.scrollTop = Math.max(0, rowTop - (box.clientHeight - rowRect.height) / 2);
+}
+
+function appendTrackTurns(container, cue, elementIds) {
+  let para = null;
+  const flush = () => {
+    if (para && para.textContent.trim()) container.appendChild(para);
+    para = null;
+  };
+  const ensure = () => {
+    if (!para) {
+      para = document.createElement("p");
+      para.className = "rendered-track-turn";
+    }
+    return para;
+  };
+  for (const node of cue.turns) {
+    if (node.nodeType === Node.ELEMENT_NODE && localName(node) === "voice") {
+      flush();
+      const label = document.createElement("b");
+      label.className = "rendered-track-voice";
+      appendRenderedBody(label, node, elementIds, { inline: true });
+      ensure().appendChild(label);
+      para.appendChild(document.createTextNode(" "));
+      continue;
+    }
+    appendRenderedNode(ensure(), node, elementIds, { inline: true });
+  }
+  flush();
+}
+
+function renderTrack(el, elementIds) {
+  const figure = document.createElement("figure");
+  figure.className = "rendered-track-figure";
+
+  const cues = parseTrackCues(el);
+  for (const cue of cues) {
+    cue.start = trackTimestampSeconds(cue.startEls);
+    cue.end = trackTimestampSeconds(cue.endEls);
+  }
+
+  const media = state?.trackMedia?.get(el) ?? null;
+  const videoUrl = media?.videoUrl ?? null;
+  const audioUrl = media?.audioUrl ?? null;
+  const mediaUrl = videoUrl || audioUrl;
+
+  // A track may carry both video/ and audio/. Video wins (it already carries
+  // its own audio); the standalone audio file is kept as a fallback wired up
+  // below in case the video can't be decoded.
+  let mediaEl = document.createElement(videoUrl ? "video" : "audio");
+  mediaEl.className = videoUrl ? "rendered-track-video" : "rendered-track-audio";
+  mediaEl.controls = true;
+  mediaEl.preload = "metadata";
+
+  // <track> cover: the track's identity image (podcast art / title card). With
+  // video it is a small avatar beside the caption (the video's own frames are
+  // its poster, so the cover never gets stretched into the player); without a
+  // video (audio-only, or no media at all) it is shown as its own centered
+  // figure above the player — and, for audio, clicking it toggles playback.
+  const coverEl = childElements(el).find((c) => localName(c) === "cover") ?? null;
+  const coverSrc = coverEl ? childElements(coverEl).find((c) => localName(c) === "src") : null;
+  const coverUri = coverSrc ? resolveArchiveUri(coverSrc.getAttribute("uri")?.trim() || "") : null;
+  if (coverUri && !videoUrl) {
+    const coverFig = document.createElement("figure");
+    coverFig.className = "rendered-el rendered-track-cover";
+    const coverId = elementIds.get(coverEl);
+    if (coverId) coverFig.setAttribute("data-element-id", coverId);
+    const img = document.createElement("img");
+    img.src = coverUri;
+    img.alt = "";
+    img.loading = "lazy";
+    if (audioUrl) {
+      coverFig.classList.add("is-playable");
+      img.addEventListener("click", () => {
+        if (mediaEl.paused) {
+          const played = mediaEl.play?.();
+          if (played?.catch) played.catch(() => {});
+        } else {
+          mediaEl.pause();
+        }
+      });
+    }
+    coverFig.appendChild(img);
+    const coverCaption = coverEl && childElements(coverEl).find((c) => localName(c) === "caption");
+    if (coverCaption) {
+      coverFig.appendChild(renderEmbeddedCaption(coverCaption, elementIds, "figcaption"));
+    }
+    figure.appendChild(coverFig);
+  }
+
+  if (videoUrl) {
+    mediaEl.playsInline = true;
+    const posterCue = cues.find((c) => c.frameEl);
+    const posterUri = posterCue ? resolveArchiveUri(trackFrameUri(posterCue.frameEl)) : null;
+    if (posterUri) mediaEl.poster = posterUri;
+    if (media?.vttUrl) {
+      const textTrack = document.createElement("track");
+      textTrack.kind = "captions";
+      textTrack.label = "Transcript";
+      textTrack.srclang = el.getAttribute("lang") || "en";
+      textTrack.default = true;
+      textTrack.src = media.vttUrl;
+      mediaEl.appendChild(textTrack);
+    }
+  }
+  if (mediaUrl) mediaEl.src = mediaUrl;
+  else mediaEl.hidden = true;
+  figure.appendChild(mediaEl);
+
+  // The track <caption> is the track's title, shown right under the player
+  // (YouTube-style) — with the cover as an avatar beside it for video.
+  const captionEl = readCaptionElement(el);
+  if (captionEl || (coverUri && videoUrl)) {
+    const info = document.createElement("div");
+    info.className = "rendered-track-info";
+    if (coverUri && videoUrl) {
+      const avatar = document.createElement("img");
+      avatar.className = "rendered-el rendered-track-avatar";
+      const coverId = elementIds.get(coverEl);
+      if (coverId) avatar.setAttribute("data-element-id", coverId);
+      avatar.src = coverUri;
+      avatar.alt = "";
+      avatar.loading = "lazy";
+      info.appendChild(avatar);
+    }
+    if (captionEl) info.appendChild(renderEmbeddedCaption(captionEl, elementIds, "figcaption"));
+    figure.appendChild(info);
+  }
+
+  let seekTo = makeTrackSeeker(mediaEl, Boolean(mediaUrl));
+
+  // --- transcript scaffold (rows filled in below) ---
+  const details = document.createElement("details");
+  details.className = "rendered-track-transcript";
+  details.open = true;
+  const summary = document.createElement("summary");
+  summary.textContent = "Transcript";
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "rendered-track-transcript-body is-seekable";
+  const rowEntries = [];
+
+  /**
+   * The one navigation primitive used by every timed control (chapter buttons,
+   * transcript timecodes, transcript rows) across all three variants: seek the
+   * media if there is any, and always bring the matching transcript row into
+   * view with a brief flash so the jump is visible without a playhead.
+   */
+  const revealCue = (seconds) => {
+    if (mediaUrl) seekTo(seconds);
+    const entry = rowEntries.find(
+      (e) => Number.isFinite(e.start) && Math.abs(e.start - seconds) < 0.001,
+    );
+    if (!entry) return;
+    details.open = true;
+    scrollRowIntoView(entry.row, body);
+    entry.row.classList.add("is-cue-target");
+    clearTimeout(entry.pulseTimer);
+    entry.pulseTimer = setTimeout(() => entry.row.classList.remove("is-cue-target"), 1100);
+  };
+
+  const chapterCues = cues.filter((c) => c.chapterEl);
+  const chapterEntries = [];
+  if (chapterCues.length) {
+    const chaptersLabel = document.createElement("p");
+    chaptersLabel.className = "rendered-track-chapters-label";
+    chaptersLabel.textContent = "Chapters";
+    figure.appendChild(chaptersLabel);
+
+    const list = document.createElement("ol");
+    list.className = "rendered-track-chapters";
+    for (const cue of chapterCues) {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rendered-track-chapter";
+
+      const thumbUri = cue.frameEl ? resolveArchiveUri(trackFrameUri(cue.frameEl)) : null;
+      if (thumbUri) {
+        const img = document.createElement("img");
+        img.className = "rendered-track-thumb";
+        img.src = thumbUri;
+        img.alt = "";
+        img.loading = "lazy";
+        btn.appendChild(img);
+      }
+
+      const time = document.createElement("span");
+      time.className = "rendered-track-time";
+      time.textContent = formatTrackTime(cue.start);
+      btn.appendChild(time);
+
+      const name = document.createElement("span");
+      name.className = "rendered-track-chapter-name";
+      appendRenderedBody(name, cue.chapterEl, elementIds, { inline: true });
+      btn.appendChild(name);
+
+      btn.addEventListener("click", () => {
+        revealCue(cue.start);
+        const cueId = elementIds.get(cue.bdivEl);
+        if (cueId) selectElement(cueId);
+      });
+      li.appendChild(btn);
+      list.appendChild(li);
+      chapterEntries.push({ start: cue.start ?? 0, btn });
+    }
+    figure.appendChild(list);
+    wireActiveChapter(mediaEl, chapterEntries);
+  }
+
+  for (const cue of cues) {
+    const row = document.createElement("div");
+    row.className = "rendered-el rendered-track-cue";
+    const cueId = elementIds.get(cue.bdivEl);
+    if (cueId) row.setAttribute("data-element-id", cueId);
+    row.trackSeek = () => revealCue(cue.start);
+    // Click anywhere on the row navigates — but leave text selection and any
+    // nested control (the timecode button) to do their own thing.
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button, a")) return;
+      if (!window.getSelection()?.isCollapsed) return;
+      revealCue(cue.start);
+    });
+
+    const time = document.createElement("button");
+    time.type = "button";
+    time.className = "rendered-track-time rendered-track-time-btn";
+    time.textContent = formatTrackTime(cue.start);
+    time.addEventListener("click", () => revealCue(cue.start));
+    row.appendChild(time);
+
+    const turns = document.createElement("div");
+    turns.className = "rendered-track-turns";
+    if (cue.chapterEl) {
+      const ch = document.createElement("p");
+      ch.className = "rendered-track-cue-chapter";
+      appendRenderedBody(ch, cue.chapterEl, elementIds, { inline: true });
+      turns.appendChild(ch);
+    }
+    appendTrackTurns(turns, cue, elementIds);
+    row.appendChild(turns);
+
+    body.appendChild(row);
+    rowEntries.push({ start: cue.start, end: cue.end, row, elementId: elementIds.get(cue.bdivEl) });
+  }
+  details.appendChild(body);
+  figure.appendChild(details);
+  if (mediaUrl) wireActiveTranscriptRow(mediaEl, rowEntries, body);
+
+  // Fall back to the standalone audio file if the video element errors out.
+  if (videoUrl && audioUrl) {
+    mediaEl.addEventListener("error", () => {
+      const fallback = document.createElement("audio");
+      fallback.className = "rendered-track-audio";
+      fallback.controls = true;
+      fallback.preload = "metadata";
+      fallback.src = audioUrl;
+      mediaEl.replaceWith(fallback);
+      mediaEl = fallback;
+      seekTo = makeTrackSeeker(fallback, true);
+      wireActiveChapter(fallback, chapterEntries);
+      wireActiveTranscriptRow(fallback, rowEntries, body);
+    }, { once: true });
+  }
+
+  return wrapRendered(el, figure, elementIds.get(el));
+}
+
 function renderVirtualTextBlock(hostEl, contentNodes, elementIds) {
   // Anything inlinable among running text stays inline, as in an explicit <text>.
   const hasRunningText = contentNodes.some((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
@@ -7254,6 +8050,26 @@ function mimeFromAssetPath(path) {
       return "image/gif";
     case "svg":
       return "image/svg+xml";
+    case "mp4":
+    case "m4v":
+      return "video/mp4";
+    case "webm":
+      return "video/webm";
+    case "mkv":
+      return "video/x-matroska";
+    case "mov":
+      return "video/quicktime";
+    case "ogv":
+      return "video/ogg";
+    case "mp3":
+      return "audio/mpeg";
+    case "m4a":
+      return "audio/mp4";
+    case "ogg":
+    case "opus":
+      return "audio/ogg";
+    case "wav":
+      return "audio/wav";
     default:
       return "application/octet-stream";
   }
@@ -7289,6 +8105,9 @@ function revokeDocumentState(docState) {
   for (const url of docState.assetUrls.values()) {
     if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   }
+  for (const m of docState.trackMedia?.values() ?? []) {
+    if (m.vttUrl?.startsWith("blob:")) URL.revokeObjectURL(m.vttUrl);
+  }
 }
 
 function revokeArchiveUrls() {
@@ -7312,7 +8131,10 @@ async function extractArchiveFromZipBuffer(buffer) {
       pageImages.set(Number(m[1]), URL.createObjectURL(new Blob([e.data], { type: mime })));
       continue;
     }
-    if (e.name.startsWith("assets/") && !e.name.endsWith("/")) {
+    if (
+      !e.name.endsWith("/")
+      && (e.name.startsWith("assets/") || /^(?:audio|video)\/[^/]+$/i.test(e.name))
+    ) {
       assetUrls.set(
         e.name,
         URL.createObjectURL(new Blob([e.data], { type: mimeFromAssetPath(e.name) })),

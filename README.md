@@ -20,12 +20,12 @@ Open [http://localhost:8080/](http://localhost:8080/) and click **Load demo**.
 
 | Action | Description |
 |--------|-------------|
-| **Load demo** | Fetches [`assets/2501.17887.dclx`](assets/2501.17887.dclx) (requires HTTP). |
+| **Load demo** | Fetches the demo archives, [`assets/2501.17887.dclx`](assets/2501.17887.dclx) and [`assets/artemis.dclx`](assets/artemis.dclx) (requires HTTP). |
 | **Open file** | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file. |
 | **Drag and drop** | Drop any supported file onto the page. |
 | **From another page** | A page that opens the viewer can hand it a file; see [Opening from another page](#opening-from-another-page). |
 
-Supported types: `.dclx`, `.dclg`, `.xml`. The demo URL is configured in [`demo-data.js`](demo-data.js).
+Supported types: `.dclx`, `.dclg`, `.xml`. The demo URLs are configured in [`demo-data.js`](demo-data.js).
 
 ### Opening from another page
 
