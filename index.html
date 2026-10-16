@@ -622,6 +622,8 @@
           <button type="button" class="pane-action-btn" id="btn-edit" title="Edit the DocLang source" hidden>Edit</button>
           <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
           <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
+          <button type="button" class="pane-action-btn" id="btn-undo" title="Undo the last visual edit (Ctrl/Cmd+Z)" hidden>Undo</button>
+          <button type="button" class="pane-action-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" hidden>Redo</button>
           <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and restore the last saved version" hidden>Revert</button>
           <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the applied changes to the file" hidden>Save</button>
           <button
@@ -643,6 +645,7 @@
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
+      <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
       <div class="pane-body" id="markup-pane"></div>
     </section>
     <div

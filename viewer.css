@@ -3399,3 +3399,64 @@ li.has-marker > .rendered-li-body {
 [data-alt-restore] {
   cursor: pointer;
 }
+
+/* Visual editing */
+.inspector {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector[hidden] {
+  display: none;
+}
+
+.inspector-title {
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--muted);
+}
+
+.inspector-field:has(.inspector-text) {
+  flex: 1 1 100%;
+}
+
+.inspector select,
+.inspector-text {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.35rem;
+}
+
+.inspector-text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.inspector-note {
+  color: var(--muted);
+}
+
+.overlay .bbox-handle {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}

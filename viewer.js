@@ -537,6 +537,9 @@ const els = {
   editCancelBtn: document.getElementById("btn-edit-cancel"),
   saveBtn: document.getElementById("btn-save"),
   revertBtn: document.getElementById("btn-revert"),
+  undoBtn: document.getElementById("btn-undo"),
+  redoBtn: document.getElementById("btn-redo"),
+  inspector: document.getElementById("inspector"),
   editError: document.getElementById("edit-error"),
   validationPanel: document.getElementById("validation-panel"),
   validationSummary: document.getElementById("validation-summary"),
@@ -676,6 +679,8 @@ els.editApplyBtn?.addEventListener("click", applyEdit);
 els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
+els.undoBtn?.addEventListener("click", undoLastEdit);
+els.redoBtn?.addEventListener("click", redoLastEdit);
 window.addEventListener("beforeunload", (e) => {
   if (fileCatalog.some((entry) => entry.dirty)) e.preventDefault();
 });
@@ -2454,6 +2459,8 @@ function syncEditUi() {
     els.saveBtn.hidden = !entry?.dirty || editing;
   }
   if (els.revertBtn) els.revertBtn.hidden = !entry?.dirty || editing;
+  if (els.undoBtn) els.undoBtn.hidden = !entry?.undoStack?.length || editing;
+  if (els.redoBtn) els.redoBtn.hidden = !entry?.redoStack?.length || editing;
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
   if (!editing) setEditError(null);
 }
@@ -2513,6 +2520,25 @@ async function applyEdit() {
     return;
   }
 
+  markupEditor = null; // the discard prompt in switchToFile must not fire for applied text
+  els.markupPane?.classList.remove("editing");
+  if (!(await commitMarkupText(text))) {
+    markupEditor = null;
+    startEditing();
+    markupEditor.value = text;
+  }
+}
+
+/**
+ * Stores `text` as the active document's new source and rebuilds every view from it.
+ * @param {string} text
+ * @param {{ record?: boolean, reselect?: string | null }} [opts] record: push the previous text on the undo stack
+ * @returns {Promise<boolean>} false when the source could not be written
+ */
+async function commitMarkupText(text, { record = true, reselect = null } = {}) {
+  const entry = editableEntry();
+  if (!entry) return false;
+  const previousText = state.markupXml;
   const bytes = new TextEncoder().encode(text);
   const previousSource = entry.source;
   try {
@@ -2520,15 +2546,20 @@ async function applyEdit() {
       ? await replaceArchiveDocument(entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source, bytes)
       : bytes.buffer;
   } catch (err) {
+    entry.source = previousSource;
     setEditError(`Could not apply: ${err.message}`);
-    return;
+    return false;
   }
   if (!entry.dirty) entry.savedSource = previousSource;
   entry.dirty = true;
   entry.validation = null;
-  markupEditor = null; // the discard prompt in switchToFile must not fire for applied text
-  els.markupPane?.classList.remove("editing");
+  if (record) {
+    (entry.undoStack ??= []).push(previousText);
+    entry.redoStack = [];
+  }
   await switchToFile(activeFileIndex);
+  if (reselect && state?.idToElement?.has(reselect)) selectElement(reselect);
+  return true;
 }
 
 function downloadBlob(blob, name) {
@@ -2582,10 +2613,358 @@ async function revertActiveFile() {
   entry.source = entry.savedSource;
   entry.savedSource = null;
   entry.dirty = false;
+  entry.undoStack = [];
+  entry.redoStack = [];
   entry.validation = null;
   markupEditor = null;
   els.markupPane?.classList.remove("editing");
   await switchToFile(activeFileIndex);
+}
+
+// --- Visual editing: select an element, then change it from the inspector or the page overlay ---
+
+/** Block types that share one content model in the schema, so any of them can become another. */
+const TEXT_BLOCK_TYPES = ["text", "heading", "footnote", "page_header", "page_footer"];
+const TEXT_EDITABLE_TYPES = new Set([...TEXT_BLOCK_TYPES, "code", "formula"]);
+const BBOX_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
+function serializeDocument() {
+  let xml = new XMLSerializer().serializeToString(state.docRoot.ownerDocument);
+  const decl = state.markupXml.match(/^\s*<\?xml[^>]*\?>/)?.[0];
+  if (decl && !xml.startsWith("<?xml")) xml = `${decl.trim()}\n${xml}`;
+  if (/\n\s*$/.test(state.markupXml) && !xml.endsWith("\n")) xml += "\n";
+  return xml;
+}
+
+/** Applies `mutate` to the selected element's DOM node, then commits the serialized result. */
+async function editSelectedElement(mutate) {
+  const id = selectedElementId;
+  const el = id ? state?.idToElement?.get(id) : null;
+  if (!el || !editableEntry()) return;
+  mutate(el);
+  const text = serializeDocument();
+  if (text === state.markupXml) return;
+  setEditError(null);
+  await commitMarkupText(text, { reselect: id });
+}
+
+function isWhitespaceText(node) {
+  return node.nodeType === Node.TEXT_NODE && !node.nodeValue.trim();
+}
+
+/** Index just past the element's leading head children (layer, location, label, ...). */
+function headEndIndex(el) {
+  const nodes = [...el.childNodes];
+  let end = 0;
+  for (let i = 0; i < nodes.length; i += 1) {
+    const node = nodes[i];
+    if (node.nodeType === Node.ELEMENT_NODE && HEAD_TAGS.has(localName(node))) end = i + 1;
+    else if (!isWhitespaceText(node)) break;
+  }
+  return end;
+}
+
+function bodyNodes(el) {
+  return [...el.childNodes].slice(headEndIndex(el));
+}
+
+/** Plain text of an element, or null when it holds inline elements that a text box would flatten. */
+function plainTextOf(el) {
+  const body = bodyNodes(el);
+  if (body.some((n) => n.nodeType === Node.ELEMENT_NODE)) return null;
+  return body.map((n) => n.nodeValue ?? "").join("").trim();
+}
+
+function setPlainText(el, text) {
+  const first = [...el.childNodes][0];
+  const last = el.lastChild;
+  const childIndent = first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/\n([ \t]*)$/)?.[1] : null;
+  const closeIndent = last?.nodeType === Node.TEXT_NODE ? last.nodeValue.match(/\n([ \t]*)$/)?.[1] : null;
+  for (const node of bodyNodes(el)) node.remove();
+  const clean = text.trim();
+  const multiline = clean.includes("\n");
+  el.appendChild(el.ownerDocument.createTextNode(
+    childIndent != null && !multiline ? `\n${childIndent}${clean}\n${closeIndent ?? ""}` : clean,
+  ));
+}
+
+function insertHeadChild(el, child) {
+  const ref = firstHeadChild(el, "location");
+  if (!ref) {
+    el.insertBefore(child, el.firstChild);
+    return;
+  }
+  const ws = ref.previousSibling && isWhitespaceText(ref.previousSibling) ? ref.previousSibling : null;
+  el.insertBefore(child, ref);
+  if (ws) el.insertBefore(ws.cloneNode(), ref);
+}
+
+function setElementLayer(el, value) {
+  const layerEl = firstHeadChild(el, "layer");
+  if (value === "body") {
+    if (!layerEl) return;
+    const prev = layerEl.previousSibling;
+    if (prev && isWhitespaceText(prev)) prev.remove();
+    layerEl.remove();
+    return;
+  }
+  if (layerEl) {
+    layerEl.setAttribute("value", value);
+    return;
+  }
+  const created = el.ownerDocument.createElementNS(el.namespaceURI, "layer");
+  created.setAttribute("value", value);
+  insertHeadChild(el, created);
+}
+
+/** Renames an element in place (same attributes and children) and fixes the attributes the new type owns. */
+function retypeElement(el, tag) {
+  if (localName(el) === tag) return;
+  const next = el.ownerDocument.createElementNS(el.namespaceURI, tag);
+  for (const attr of [...el.attributes]) next.setAttribute(attr.name, attr.value);
+  while (el.firstChild) next.appendChild(el.firstChild);
+  el.replaceWith(next);
+  if (tag === "heading") {
+    if (!next.hasAttribute("level")) next.setAttribute("level", "1");
+  } else {
+    next.removeAttribute("level");
+  }
+}
+
+function setElementLocations(el, [x0, y0, x1, y1]) {
+  headLocations(el).forEach((loc, i) => loc.setAttribute("value", String([x0, y0, x1, y1][i])));
+}
+
+/** Moves the document one step along the undo (`from`) or redo stack, pushing the current text onto the other. */
+async function stepHistory(from, to) {
+  const entry = editableEntry();
+  const target = entry?.[from]?.pop();
+  if (target == null) return;
+  const current = state.markupXml;
+  const ok = await commitMarkupText(target, { record: false, reselect: selectedElementId });
+  if (!ok) {
+    entry[from].push(target);
+    return;
+  }
+  (entry[to] ??= []).push(current);
+  if (!entry.undoStack?.length) {
+    entry.dirty = false;
+    entry.savedSource = null;
+  }
+  syncEditUi();
+}
+
+function undoLastEdit() {
+  return stepHistory("undoStack", "redoStack");
+}
+
+function redoLastEdit() {
+  return stepHistory("redoStack", "undoStack");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey) || e.defaultPrevented) return;
+  if (isTypingTarget(document.activeElement) || markupEditor) return;
+  const entry = editableEntry();
+  const stack = e.shiftKey ? entry?.redoStack : entry?.undoStack;
+  if (!stack?.length) return;
+  e.preventDefault();
+  if (e.shiftKey) redoLastEdit();
+  else undoLastEdit();
+});
+
+function syncSelectionEditUi() {
+  renderInspector();
+  syncBboxHandles();
+}
+
+function inspectorField(label, control) {
+  const wrap = document.createElement("label");
+  wrap.className = "inspector-field";
+  const name = document.createElement("span");
+  name.textContent = label;
+  wrap.append(name, control);
+  return wrap;
+}
+
+function inspectorSelect(options, value, onChange) {
+  const select = document.createElement("select");
+  for (const opt of options) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    select.appendChild(o);
+  }
+  select.value = value;
+  select.addEventListener("change", () => onChange(select.value));
+  return select;
+}
+
+function renderInspector() {
+  const host = els.inspector;
+  if (!host) return;
+  const el = selectedElementId && !markupEditor && editableEntry() ? state.idToElement?.get(selectedElementId) : null;
+  if (!el) {
+    host.hidden = true;
+    host.replaceChildren();
+    return;
+  }
+  const tag = localName(el);
+  const ownHead = headLocations(el).length === 4 || firstHeadChild(el, "layer") != null;
+  const parts = [];
+
+  const title = document.createElement("div");
+  title.className = "inspector-title";
+  title.textContent = `<${tag}> ${selectedElementId}`;
+  parts.push(title);
+
+  if (TEXT_BLOCK_TYPES.includes(tag)) {
+    parts.push(inspectorField("Type", inspectorSelect(TEXT_BLOCK_TYPES, tag, (v) => {
+      editSelectedElement((node) => retypeElement(node, v));
+    })));
+  }
+  if (tag === "heading") {
+    parts.push(inspectorField("Level", inspectorSelect(["1", "2", "3", "4", "5", "6"], String(headingLevel(el)), (v) => {
+      editSelectedElement((node) => node.setAttribute("level", v));
+    })));
+  }
+  if (ownHead) {
+    parts.push(inspectorField("Layer", inspectorSelect([...ELEMENT_LAYERS], elementLayer(el), (v) => {
+      editSelectedElement((node) => setElementLayer(node, v));
+    })));
+  }
+  const text = TEXT_EDITABLE_TYPES.has(tag) ? plainTextOf(el) : null;
+  if (text != null) {
+    const area = document.createElement("textarea");
+    area.className = "inspector-text";
+    area.rows = Math.min(8, Math.max(2, Math.ceil(text.length / 48)));
+    area.value = text;
+    area.spellcheck = false;
+    area.addEventListener("change", () => editSelectedElement((node) => setPlainText(node, area.value)));
+    parts.push(inspectorField("Text", area));
+  } else if (TEXT_EDITABLE_TYPES.has(tag)) {
+    const note = document.createElement("div");
+    note.className = "inspector-note";
+    note.textContent = "Contains inline elements: edit the text in the source.";
+    parts.push(note);
+  }
+  if (!ownHead && !TEXT_BLOCK_TYPES.includes(tag)) {
+    const note = document.createElement("div");
+    note.className = "inspector-note";
+    note.textContent = "No editable properties yet.";
+    parts.push(note);
+  }
+  host.replaceChildren(...parts);
+  host.hidden = false;
+}
+
+// --- Bbox move / resize on the page overlay ---
+
+const HANDLE_CURSORS = { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" };
+
+function syncBboxHandles() {
+  const svg = els.pagePane?.querySelector("svg.overlay");
+  svg?.querySelector(".bbox-handles")?.remove();
+  if (!svg || !selectedElementId || markupEditor || !editableEntry()) return;
+  const el = state.idToElement?.get(selectedElementId);
+  const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
+  const img = els.pagePane.querySelector(".page-view img");
+  if (!el || !box || !img || headLocations(el).length !== 4) return;
+  if (!svg.dataset.editWired) {
+    svg.dataset.editWired = "1";
+    svg.addEventListener("pointerdown", onOverlayPointerDown);
+  }
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("class", "bbox-handles");
+  svg.appendChild(group);
+  drawBboxHandles(group, box, img);
+}
+
+function drawBboxHandles(group, box, img) {
+  group.replaceChildren();
+  const { x, y, w, h } = boxPixelRect(box, img);
+  const size = Math.max(8, img.naturalWidth * 0.01);
+  const pos = {
+    nw: [x, y], n: [x + w / 2, y], ne: [x + w, y], e: [x + w, y + h / 2],
+    se: [x + w, y + h], s: [x + w / 2, y + h], sw: [x, y + h], w: [x, y + h / 2],
+  };
+  for (const name of BBOX_HANDLES) {
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("class", "bbox-handle");
+    r.setAttribute("data-handle", name);
+    r.setAttribute("x", String(pos[name][0] - size / 2));
+    r.setAttribute("y", String(pos[name][1] - size / 2));
+    r.setAttribute("width", String(size));
+    r.setAttribute("height", String(size));
+    r.style.cursor = HANDLE_CURSORS[name];
+    group.appendChild(r);
+  }
+}
+
+function onOverlayPointerDown(e) {
+  if (e.button !== 0 || !selectedElementId || markupEditor) return;
+  const svg = e.currentTarget;
+  const img = els.pagePane.querySelector(".page-view img");
+  const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
+  if (!img || !box) return;
+  let mode = e.target.closest?.(".bbox-handle")?.getAttribute("data-handle") ?? null;
+  const start = imageCoordsFromEvent(svg, e);
+  if (!start) return;
+  if (!mode) {
+    const hit = hitTestBoxes(state.currentBoxes, img, start.x, start.y);
+    if (hit?.elementId !== selectedElementId) return;
+    mode = "move";
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  svg.setPointerCapture(e.pointerId);
+
+  const orig = { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 };
+  const rect = svg.querySelector(`rect.bbox[data-element-id="${selectedElementId}"]`);
+  const group = svg.querySelector(".bbox-handles");
+  const live = { ...box };
+  let moved = false;
+
+  const onMove = (ev) => {
+    const p = imageCoordsFromEvent(svg, ev);
+    if (!p) return;
+    const du = Math.round(((p.x - start.x) / img.naturalWidth) * box.resW);
+    const dv = Math.round(((p.y - start.y) / img.naturalHeight) * box.resH);
+    let { x0, y0, x1, y1 } = orig;
+    if (mode === "move") {
+      const dx = Math.min(Math.max(du, -x0), box.resW - x1);
+      const dy = Math.min(Math.max(dv, -y0), box.resH - y1);
+      x0 += dx; x1 += dx; y0 += dy; y1 += dy;
+    } else {
+      if (mode.includes("w")) x0 = Math.min(Math.max(x0 + du, 0), x1 - 1);
+      if (mode.includes("e")) x1 = Math.max(Math.min(x1 + du, box.resW), x0 + 1);
+      if (mode.includes("n")) y0 = Math.min(Math.max(y0 + dv, 0), y1 - 1);
+      if (mode.includes("s")) y1 = Math.max(Math.min(y1 + dv, box.resH), y0 + 1);
+    }
+    Object.assign(live, { x0, y0, x1, y1 });
+    moved = x0 !== orig.x0 || y0 !== orig.y0 || x1 !== orig.x1 || y1 !== orig.y1;
+    const px = boxPixelRect(live, img);
+    if (rect) {
+      rect.setAttribute("x", String(px.x));
+      rect.setAttribute("y", String(px.y));
+      rect.setAttribute("width", String(Math.max(px.w, 1)));
+      rect.setAttribute("height", String(Math.max(px.h, 1)));
+    }
+    if (group) drawBboxHandles(group, live, img);
+  };
+  const onUp = () => {
+    svg.removeEventListener("pointermove", onMove);
+    svg.removeEventListener("pointerup", onUp);
+    svg.removeEventListener("pointercancel", onUp);
+    pagePanSuppressClick = true; // the click that follows a drag must not re-select
+    setTimeout(() => { pagePanSuppressClick = false; }, 0);
+    if (moved) {
+      editSelectedElement((el) => setElementLocations(el, [live.x0, live.y0, live.x1, live.y1]));
+    }
+  };
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerup", onUp);
+  svg.addEventListener("pointercancel", onUp);
 }
 
 // --- XSD validation (libxml2 compiled to WASM, run in validator-worker.mjs) ---
@@ -5779,6 +6158,11 @@ function revealReadingLayerForSelection(renderedEl) {
 }
 
 function applySelection() {
+  applySelectionCore();
+  syncSelectionEditUi();
+}
+
+function applySelectionCore() {
   updateBboxNavButtons();
   els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => {
     el.classList.remove("selected");
