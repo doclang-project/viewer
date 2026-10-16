@@ -1,0 +1,7 @@
+{
+  "default": "0.8",
+  "versions": {
+    "0.7": { "file": "doclang-0.7.xsd", "tag": "v0.7.3" },
+    "0.8": { "file": "doclang-0.8.xsd", "tag": "v0.8.0" }
+  }
+}
