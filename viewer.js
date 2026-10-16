@@ -2374,6 +2374,7 @@ function activateDocument(docState, entry) {
   setDocLabel(entry.label);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
+  syncReadingLayoutButtons();
   renderPage(state.currentPage);
   updateFileView();
   syncValidationForActiveDocument();
@@ -3140,13 +3141,21 @@ function persistReadingLayoutMode() {
   }
 }
 
+// Paged layout is drawn over the page image, so it needs one; the stored
+// preference is kept and applies again to the next document that has images.
+function effectiveReadingLayoutMode() {
+  return readingLayoutMode === "paged" && state?.hasPageView !== false ? "paged" : "pageless";
+}
+
 function syncReadingLayoutButtons() {
-  const paged = readingLayoutMode === "paged";
+  const paged = effectiveReadingLayoutMode() === "paged";
+  if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.disabled = state?.hasPageView === false;
   if (els.readingLayoutPagelessBtn) els.readingLayoutPagelessBtn.setAttribute("aria-pressed", String(!paged));
   if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.setAttribute("aria-pressed", String(paged));
 }
 
 function setReadingLayoutMode(mode) {
+  if (mode === "paged" && state?.hasPageView === false) return;
   if (mode === readingLayoutMode) return;
   readingLayoutMode = mode;
   persistReadingLayoutMode();
@@ -3711,7 +3720,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     return;
   }
 
-  if (readingLayoutMode === "paged") {
+  if (effectiveReadingLayoutMode() === "paged") {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
     continueEquationNumbering(canvas, segment);

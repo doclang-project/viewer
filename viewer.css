@@ -851,9 +851,14 @@ label.file-btn input {
   border-left: 1px solid var(--border);
 }
 
-.reading-layout-btn:hover {
+.reading-layout-btn:hover:not(:disabled) {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.reading-layout-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .reading-layout-btn[aria-pressed="true"] {
