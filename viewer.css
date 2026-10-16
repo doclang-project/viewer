@@ -3481,6 +3481,7 @@ li.has-marker > .rendered-li-body {
 }
 
 .inspector select,
+.inspector-marker,
 .inspector-text {
   font: inherit;
   color: var(--text);
@@ -3585,6 +3586,17 @@ li.has-marker > .rendered-li-body {
 
 .page-edit-bar[hidden] {
   display: none;
+}
+
+.inspector-marker-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.inspector-marker {
+  width: 7rem;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Icon-only action buttons (undo / redo) */
