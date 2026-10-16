@@ -3222,6 +3222,13 @@ function renderInspector() {
       editSelectedElement(deleteElementAndTidy);
     }));
   }
+  if (canDissolveParent(el)) {
+    const parentTag = localName(el.parentElement);
+    const what = ["list", "table", "index"].includes(parentTag)
+      ? `its ${parentTag === "list" ? "items" : "cells"} become plain blocks`
+      : "its content moves up one level";
+    actions.appendChild(inspectorButton("− PARENT", `Dissolve the parent <${parentTag}>: ${what} (undoable)`, dissolveParentOfSelected));
+  }
   if (actions.childElementCount) parts.push(actions);
   host.replaceChildren(...parts);
   host.hidden = false;
@@ -3868,6 +3875,164 @@ function beginThreadDrag(e) {
   svg.addEventListener("pointermove", onMove);
   svg.addEventListener("pointerup", onUp);
   svg.addEventListener("pointercancel", onUp);
+}
+
+
+// --- Dissolving a parent: its content moves up one level ---
+
+/** Parents that can be dissolved: containers of blocks, lists and tables (whose items and cells become blocks), and pictures. */
+const DISSOLVABLE_PARENTS = new Set([...CHILD_CONTAINER_TYPES, "list", "table", "index", "picture"]);
+
+function canDissolveParent(el) {
+  const parent = el.parentElement;
+  return !!parent && parent !== state.docRoot && DISSOLVABLE_PARENTS.has(localName(parent));
+}
+
+/** Removes up to two leading spaces from every line of an element's markup, except inside whitespace-preserving <content>. */
+function dedentMarkup(el) {
+  for (const node of [...el.childNodes]) {
+    if (node.nodeType === Node.TEXT_NODE) node.nodeValue = node.nodeValue.replace(/\n {2}/g, "\n");
+    else if (node.nodeType === Node.ELEMENT_NODE && localName(node) !== "content") dedentMarkup(node);
+  }
+}
+
+/**
+ * Replaces the parent of `el` by its content. Blocks inside it move up as they are. Text that sat directly in
+ * the parent, in the parent itself or in a list item or table cell (a virtual <text>), becomes a <text> element
+ * that takes over the head (layer, bbox, thread) it had. A caption in the parent's head becomes a <text> of its
+ * own, a picture's chart data (<tabular>) becomes a <table>. The <ldiv/> and cell tokens, markers, the image
+ * reference (<src>) and the rest of the parent's head (its bbox, description, summary) disappear.
+ * Returns the node to select afterwards.
+ */
+function unwrapParent(el) {
+  const parent = el.parentElement;
+  const grand = parent.parentNode;
+  const doc = parent.ownerDocument;
+  const ns = parent.namespaceURI;
+  const parentTag = localName(parent);
+  const indent = indentBefore(parent);
+  const nodes = [...parent.childNodes];
+  const headEnd = headEndIndex(parent);
+  const headIds = threadIdsIn(parent).filter((id) => headElementsOf(parent).some((n) => localName(n) === "thread" && n.getAttribute("thread_id") === id));
+
+  const isToken = (n) => n.nodeType === Node.ELEMENT_NODE && (parentTag === "list" ? localName(n) === "ldiv" : isCellToken(localName(n)));
+  const virtual = ["list", "table", "index"].includes(parentTag);
+
+  // Units: a token with its head and body, or (without tokens) the parent's own head and body.
+  /** @type {{ token: Element | null, head: Element[], body: Node[] }[]} */
+  const units = [];
+  if (virtual) {
+    let i = headEnd;
+    while (i < nodes.length) {
+      if (!isToken(nodes[i])) {
+        i += 1;
+        continue;
+      }
+      const head = parseElementHeadAt(nodes, i + 1);
+      const bodyStart = head ? head.nextIndex : i + 1;
+      let end = bodyStart;
+      while (end < nodes.length && !isToken(nodes[end])) end += 1;
+      units.push({
+        token: nodes[i],
+        head: head ? nodes.slice(i + 1, head.nextIndex).filter((n) => n.nodeType === Node.ELEMENT_NODE) : [],
+        body: nodes.slice(bodyStart, end),
+      });
+      i = end;
+    }
+  } else {
+    units.push({
+      token: null,
+      head: nodes.slice(0, headEnd).filter((n) => n.nodeType === Node.ELEMENT_NODE),
+      body: nodes.slice(headEnd),
+    });
+  }
+
+  const out = [];
+  const firstOf = new Map();
+  // Captions of the parent become texts of their own, ahead of its content (as in the source).
+  for (const caption of headElementsOf(parent).filter((n) => localName(n) === "caption")) {
+    const text = doc.createElementNS(ns, "text");
+    while (caption.firstChild) text.appendChild(caption.firstChild);
+    dedentMarkup(text);
+    out.push(text);
+  }
+  const INHERITED_HEAD = new Set(["label", "thread", "xref", "href", "layer", "location"]);
+  const note = (unit, node) => {
+    out.push(node);
+    if (!firstOf.has(unit)) firstOf.set(unit, node);
+  };
+  for (const unit of units) {
+    let head = unit.head.filter((h) => INHERITED_HEAD.has(localName(h)));
+    let run = [];
+    const flush = () => {
+      if (run.some((n) => !isWhitespaceText(n))) {
+        const text = doc.createElementNS(ns, "text");
+        for (const h of head) {
+          text.appendChild(doc.createTextNode(`\n${indent}  `));
+          text.appendChild(h);
+        }
+        head = [];
+        const first = run[0];
+        const last = run[run.length - 1];
+        if (first.nodeType === Node.TEXT_NODE) first.nodeValue = first.nodeValue.replace(/^\s+/, "");
+        if (last.nodeType === Node.TEXT_NODE) last.nodeValue = last.nodeValue.replace(/\s+$/, "");
+        text.appendChild(doc.createTextNode(`\n${indent}  `));
+        for (const n of run) text.appendChild(n);
+        text.appendChild(doc.createTextNode(`\n${indent}`));
+        note(unit, text);
+      }
+      run = [];
+    };
+    for (const n of unit.body) {
+      const tag = n.nodeType === Node.ELEMENT_NODE ? localName(n) : null;
+      if (tag === "src") continue;
+      if (tag === "tabular") {
+        flush();
+        const table = doc.createElementNS(ns, "table");
+        while (n.firstChild) table.appendChild(n.firstChild);
+        dedentMarkup(table);
+        note(unit, table);
+      } else if (tag && TOP_LEVEL_TYPES.has(tag)) {
+        flush();
+        dedentMarkup(n);
+        note(unit, n);
+      } else {
+        run.push(n);
+      }
+    }
+    flush();
+  }
+
+  const ref = parent;
+  out.forEach((node, i) => {
+    if (i) grand.insertBefore(doc.createTextNode(`\n${indent}`), ref);
+    grand.insertBefore(node, ref);
+  });
+  if (!out.length) {
+    const prev = parent.previousSibling;
+    if (prev && isWhitespaceText(prev)) prev.remove();
+  }
+  parent.remove();
+  cleanupThreads(headIds);
+  return (virtual && units.find((u) => u.token === el) && firstOf.get(units.find((u) => u.token === el))) || (out.includes(el) ? el : out[0] ?? null);
+}
+
+/** Id (on the current page) of a node that now sits somewhere on it, after the document was restructured. */
+function idOnCurrentPage(node) {
+  const root = state.docRoot;
+  const segments = state.markupOnly
+    ? [childElements(root).filter((e) => localName(e) !== "head")]
+    : splitIntoSegments(root);
+  return node ? assignElementIds(segments[state.currentPage - 1] ?? []).get(node) ?? null : null;
+}
+
+async function dissolveParentOfSelected() {
+  const el = selectedElement();
+  if (!el || !canDissolveParent(el) || !canEditDocument()) return;
+  const target = unwrapParent(el);
+  const id = idOnCurrentPage(target);
+  selectedFacet = "text";
+  await commitMarkupText(serializeDocument(), { reselect: id });
 }
 
 // --- Bbox resize on the page overlay (no free move: it is too easy to do by accident) ---
