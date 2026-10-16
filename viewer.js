@@ -3208,6 +3208,10 @@ function renderInspector() {
       editSelectedElement(removeBboxFromElement);
     }));
   }
+  if (text != null && state.hasPageView && elementHeadLocations(el).length === 4) {
+    const ocr = inspectorButton("READ FROM PAGE", "Read the text under this bbox with an in-browser vision model (Granite-Docling) and put it in the text box", () => ocrSelectedElement(ocr));
+    actions.appendChild(ocr);
+  }
   const threadId = itemFacet ? null : threadIdOf(el);
   if (threadId) {
     actions.appendChild(inspectorButton("− THREAD", `Dissolve thread ${threadId}: every fragment loses it (cross-references to it are kept)`, () => {
@@ -4488,6 +4492,149 @@ function onOverlayPointerDown(e) {
   svg.addEventListener("pointermove", onMove);
   svg.addEventListener("pointerup", onUp);
   svg.addEventListener("pointercancel", onUp);
+}
+
+// --- OCR of a bbox with Granite-Docling, in the browser (WebGPU), via ocr-worker.mjs ---
+
+const OCR_DOWNLOAD_NOTE = "Reading text from the page runs the Granite-Docling vision model (258M parameters) in your browser on WebGPU.\n\nThe first use downloads about 1.2 GB of model weights from Hugging Face (cached afterwards). Nothing from your document leaves the browser.\n\nContinue?";
+
+/** @type {Worker | null} */
+let ocrWorker = null;
+let ocrSeq = 0;
+let ocrModelUsed = false;
+let ocrBusy = false;
+/** @type {Map<number, { resolve: (text: string) => void, reject: (err: Error) => void, onProgress: (percent: number | null) => void }>} */
+const ocrPending = new Map();
+
+function ocrRequest(pixels, width, height, prompt, onProgress) {
+  if (!ocrWorker) {
+    ocrWorker = new Worker("ocr-worker.mjs", { type: "module" });
+    ocrWorker.addEventListener("message", (e) => {
+      const { id, type, ...rest } = e.data;
+      const pending = ocrPending.get(id);
+      if (!pending) return;
+      if (type === "progress" || type === "reading") {
+        pending.onProgress(type === "reading" ? null : rest.percent);
+        return;
+      }
+      ocrPending.delete(id);
+      if (type === "result") pending.resolve(rest.text);
+      else pending.reject(new Error(rest.message));
+    });
+    ocrWorker.addEventListener("error", (e) => {
+      e.preventDefault();
+      for (const pending of ocrPending.values()) pending.reject(new Error("The OCR worker failed to start."));
+      ocrPending.clear();
+      ocrWorker?.terminate();
+      ocrWorker = null;
+    });
+  }
+  const id = ++ocrSeq;
+  return new Promise((resolve, reject) => {
+    ocrPending.set(id, { resolve, reject, onProgress });
+    ocrWorker.postMessage({ id, pixels, width, height, prompt }, [pixels]);
+  });
+}
+
+/**
+ * True when the model weights are already in the browser's cache (Transformers.js keeps what it downloads in the
+ * Cache API under "transformers-cache"), so nothing needs to be downloaded and the warning can be skipped.
+ */
+async function ocrModelCached() {
+  try {
+    if (!("caches" in window) || !(await caches.has("transformers-cache"))) return false;
+    const urls = (await (await caches.open("transformers-cache")).keys()).map((request) => request.url);
+    return ["vision_encoder", "decoder_model_merged"].every((part) =>
+      urls.some((url) => url.includes("granite-docling-258M-ONNX") && url.includes(part) && url.includes("onnx_data")));
+  } catch {
+    return false; // when in doubt, ask
+  }
+}
+
+/**
+ * The page image as pixels, at most `maxSide` on its longer side (the model is trained on page-sized input), with
+ * everything outside the bbox painted white: the model keeps the page's proportions and the box's position, but
+ * cannot read anything else, so it stays within the selection even when it ignores the location in its prompt.
+ */
+function maskedPagePixels(img, box, maxSide = 1536) {
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const { x, y, w, h } = boxPixelRect(box, img);
+  const pad = Math.min(8, Math.max(2, Math.round(h * 0.1))); // a sliver of margin so glyphs at the edge are not cut
+  const sx = Math.max(0, Math.floor(x - pad));
+  const sy = Math.max(0, Math.floor(y - pad));
+  const sw = Math.min(img.naturalWidth - sx, Math.ceil(w + 2 * pad));
+  const sh = Math.min(img.naturalHeight - sy, Math.ceil(h + 2 * pad));
+  ctx.drawImage(img, sx, sy, sw, sh, sx * scale, sy * scale, sw * scale, sh * scale);
+  return { pixels: ctx.getImageData(0, 0, canvas.width, canvas.height).data.buffer, width: canvas.width, height: canvas.height };
+}
+
+/** The model's instruction to read one region: locations on its 500 x 500 grid, as <loc_N> tokens. */
+function ocrRegionPrompt(box) {
+  const loc = (v, res) => `<loc_${Math.min(500, Math.max(0, Math.round((v / res) * 500)))}>`;
+  return `OCR the text in a specific location: ${loc(box.x0, box.resW)}${loc(box.y0, box.resH)}${loc(box.x1, box.resW)}${loc(box.y1, box.resH)}`;
+}
+
+/** DocTags output (`<text><loc_1>…<loc_4>Hello</text>`) as plain text; line breaks are kept only when asked. */
+function docTagsToText(raw, keepLines) {
+  const text = raw
+    .replace(/<\|[^|>]*\|>/g, "")
+    .replace(/<loc_\d+>/g, "")
+    .replace(/<[a-z_0-9]*$/, "") // a tag cut off by the token limit
+    .replace(/<\/[a-z_0-9]+>/g, "\n")
+    .replace(/<[a-z_0-9]+>/g, "")
+    .trim();
+  return keepLines ? text.replace(/\n{2,}/g, "\n") : text.replace(/\s+/g, " ");
+}
+
+/** Reads the text under the selected element's bbox and applies it to the element (undoable, saved with the rest). */
+async function ocrSelectedElement(button) {
+  const el = selectedElement();
+  const box = el ? state.currentBoxes?.find((b) => b.elementId === selectedElementId) : null;
+  const img = els.pagePane?.querySelector(".page-view img");
+  const id = selectedElementId;
+  if (!el || !box || !img || ocrBusy) return;
+  if (!navigator.gpu) {
+    setEditError("Reading text from the page needs WebGPU, which this browser does not offer.");
+    return;
+  }
+  if (!ocrModelUsed && !(await ocrModelCached()) && !confirm(OCR_DOWNLOAD_NOTE)) return;
+  ocrBusy = true;
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Loading model…";
+  setEditError(null);
+  try {
+    const { pixels, width, height } = maskedPagePixels(img, box);
+    const raw = await ocrRequest(pixels, width, height, ocrRegionPrompt(box), (percent) => {
+      button.textContent = percent == null ? "Reading…" : `Loading model ${percent}%`;
+    });
+    ocrModelUsed = true;
+    const text = docTagsToText(raw, localName(el) === "code");
+    if (!text) {
+      setEditError("The model found no text in this box.");
+    } else if (state?.idToElement?.get(id) !== el) {
+      setEditError("The document changed while the text was being read: the result was dropped.");
+    } else {
+      // The user may have selected something else meanwhile: apply to the element that was read, keep their selection.
+      setPlainText(el, text);
+      const serialized = serializeDocument();
+      if (serialized !== state.markupXml) await commitMarkupText(serialized, { reselect: selectedElementId });
+    }
+  } catch (err) {
+    setEditError(`Could not read the text: ${err.message}`);
+  } finally {
+    ocrBusy = false;
+    if (button.isConnected) {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
 }
 
 // --- XSD validation (libxml2 compiled to WASM, run in validator-worker.mjs) ---
