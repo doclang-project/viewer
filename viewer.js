@@ -537,6 +537,12 @@ const els = {
   editCancelBtn: document.getElementById("btn-edit-cancel"),
   saveBtn: document.getElementById("btn-save"),
   revertBtn: document.getElementById("btn-revert"),
+  pageEditBar: document.getElementById("page-edit-bar"),
+  addParentBtn: document.getElementById("btn-add-parent"),
+  addPrevBtn: document.getElementById("btn-add-prev"),
+  addNextBtn: document.getElementById("btn-add-next"),
+  addChildBtn: document.getElementById("btn-add-child"),
+  addThreadBtn: document.getElementById("btn-add-thread"),
   undoBtn: document.getElementById("btn-undo"),
   redoBtn: document.getElementById("btn-redo"),
   inspector: document.getElementById("inspector"),
@@ -679,6 +685,11 @@ els.editApplyBtn?.addEventListener("click", applyEdit);
 els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
+els.addParentBtn?.addEventListener("click", () => toggleAddElement("parent"));
+els.addPrevBtn?.addEventListener("click", () => toggleAddElement("prev"));
+els.addNextBtn?.addEventListener("click", () => toggleAddElement("next"));
+els.addChildBtn?.addEventListener("click", () => toggleAddElement("child"));
+els.addThreadBtn?.addEventListener("click", toggleThread);
 els.undoBtn?.addEventListener("click", undoLastEdit);
 els.redoBtn?.addEventListener("click", redoLastEdit);
 window.addEventListener("beforeunload", (e) => {
@@ -2455,12 +2466,19 @@ function syncEditUi() {
   if (els.editBtn) els.editBtn.hidden = !entry || editing;
   if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
   if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
-  if (els.saveBtn) {
-    els.saveBtn.hidden = !entry?.dirty || editing;
+  syncAddButtons();
+  // The history/commit buttons keep their place and only toggle enabled, so a click never lands on a moved button.
+  const showHistory = !!entry && !editing;
+  for (const [btn, enabled] of [
+    [els.undoBtn, entry?.undoStack?.length],
+    [els.redoBtn, entry?.redoStack?.length],
+    [els.revertBtn, entry?.dirty || pendingTextEdit],
+    [els.saveBtn, entry?.dirty || pendingTextEdit],
+  ]) {
+    if (!btn) continue;
+    btn.hidden = !showHistory;
+    btn.disabled = !enabled;
   }
-  if (els.revertBtn) els.revertBtn.hidden = !entry?.dirty || editing;
-  if (els.undoBtn) els.undoBtn.hidden = !entry?.undoStack?.length || editing;
-  if (els.redoBtn) els.redoBtn.hidden = !entry?.redoStack?.length || editing;
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
   if (!editing) setEditError(null);
 }
@@ -2486,6 +2504,7 @@ function startEditing() {
   markupEditor.setSelectionRange(0, 0); // setting the value parks the caret (and the scroll) at the end
   markupEditor.scrollTop = 0;
   syncEditUi();
+  syncSelectionEditUi(); // source editing and visual editing are exclusive: hide the inspector and handles
 }
 
 function stopEditing({ render }) {
@@ -2575,6 +2594,7 @@ function downloadBlob(blob, name) {
 
 /** Writes the applied bytes back through the file's handle, or downloads them when there is none. */
 async function saveActiveFile() {
+  await flushPendingEdit();
   const entry = editableEntry();
   if (!entry?.dirty) return;
   const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
@@ -2607,9 +2627,10 @@ async function saveActiveFile() {
 
 /** Drops every applied change and goes back to the last saved (or opened) bytes. */
 async function revertActiveFile() {
+  await flushPendingEdit();
   const entry = editableEntry();
   if (!entry?.dirty || !entry.savedSource) return;
-  if (!confirm(`Revert ${entry.label} to its last saved version? Your unsaved changes will be lost.`)) return;
+  if (!confirm(`Discard the unsaved changes to ${entry.label} and restore its last saved version?`)) return;
   entry.source = entry.savedSource;
   entry.savedSource = null;
   entry.dirty = false;
@@ -2624,8 +2645,42 @@ async function revertActiveFile() {
 // --- Visual editing: select an element, then change it from the inspector or the page overlay ---
 
 /** Block types that share one content model in the schema, so any of them can become another. */
-const TEXT_BLOCK_TYPES = ["text", "heading", "footnote", "page_header", "page_footer"];
+/** Types that carry text and may nest blocks; they convert freely into each other. */
+const TEXT_BLOCK_TYPES = [
+  "text", "heading", "footnote", "page_header", "page_footer", "field_region", "field_item", "field_heading", "key", "value",
+];
+/** The schema's top_level_cat: the only elements a <group> may hold. */
+const TOP_LEVEL_TYPES = new Set([
+  "text", "heading", "code", "formula", "page_header", "page_footer", "footnote", "list", "group", "field_region",
+  "field_heading", "field_item", "key", "value", "picture", "table", "index", "track",
+]);
+const CONVERTIBLE_TYPES = [...TEXT_BLOCK_TYPES, "group"];
+/** Types whose schema content model allows a <content> wrapper (and so can keep whitespace). */
+const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula"]);
+/** Types that carry text of their own. Containers such as group and list only hold other elements. */
 const TEXT_EDITABLE_TYPES = new Set([...TEXT_BLOCK_TYPES, "code", "formula"]);
+/** Types that may hold nested block elements (the schema's top_level_cat group). */
+const CHILD_CONTAINER_TYPES = new Set(["group", ...TEXT_BLOCK_TYPES]);
+/** Blocks with a bbox of their own that can be added to, drawn or deleted. */
+const BBOX_BLOCK_TYPES = new Set([...RENDER_BLOCK_TAGS, "key", "value"]);
+/** Type-specific attributes, as enumerated by the schema. */
+const ATTR_SPECS = {
+  heading: [{ name: "level", label: "Level", options: ["1", "2", "3", "4", "5", "6"], def: "1" }],
+  field_heading: [{ name: "level", label: "Level", options: ["1", "2", "3", "4", "5", "6"], def: "1" }],
+  list: [{ name: "class", label: "Kind", options: ["unordered", "ordered"], def: "unordered" }],
+  value: [{ name: "class", label: "Kind", options: ["read_only", "fillable"], def: "read_only" }],
+};
+
+/** Why `el` cannot become `tag`, or null when it can. */
+function retypeBlocker(el, tag) {
+  if (!CONTENT_WRAPPER_TYPES.has(tag) && contentWrapper(el)) return `<${tag}> cannot hold <content>`;
+  if (tag === "group") {
+    const body = bodyNodes(el);
+    const onlyBlocks = body.every((n) => isWhitespaceText(n) || (n.nodeType === Node.ELEMENT_NODE && TOP_LEVEL_TYPES.has(localName(n))));
+    if (!onlyBlocks) return "<group> can only hold nested blocks, not text";
+  }
+  return null;
+}
 const BBOX_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 function serializeDocument() {
@@ -2636,11 +2691,18 @@ function serializeDocument() {
   return xml;
 }
 
+/** Visual edits serialize the parsed DOM, which holds substituted content while an alternative is chosen. */
+function canEditDocument() {
+  if (!state?.altInactive?.size) return true;
+  setEditError("Switch back to the original (no alternative chosen) before editing.");
+  return false;
+}
+
 /** Applies `mutate` to the selected element's DOM node, then commits the serialized result. */
 async function editSelectedElement(mutate) {
   const id = selectedElementId;
   const el = id ? state?.idToElement?.get(id) : null;
-  if (!el || !editableEntry()) return;
+  if (!el || !editableEntry() || !canEditDocument()) return;
   mutate(el);
   const text = serializeDocument();
   if (text === state.markupXml) return;
@@ -2668,24 +2730,107 @@ function bodyNodes(el) {
   return [...el.childNodes].slice(headEndIndex(el));
 }
 
+// Virtual units (list items and table cells) are a token (<ldiv/>, <fcel/>, ...) followed by sibling nodes:
+// an optional head (layer, location x4), then the item's text, up to the next token.
+
+function isVirtualUnit(el) {
+  const tag = localName(el);
+  const parentTag = el.parentElement ? localName(el.parentElement) : null;
+  if (tag === "ldiv") return parentTag === "list";
+  return isCellToken(tag) && tag !== "nl" && !CELL_SPAN_TAGS.has(tag) && OTSL_CONTAINER_TAGS.has(parentTag);
+}
+
+/** Where a virtual unit's head and body sit among its parent's child nodes. */
+function virtualRange(el) {
+  const nodes = [...el.parentNode.childNodes];
+  const idx = nodes.indexOf(el);
+  const head = parseElementHeadAt(nodes, idx + 1);
+  const headEnd = head ? head.nextIndex : idx + 1;
+  const end = (localName(el) === "ldiv" ? skipUntilListItemBoundary : skipUntilCellBoundary)(nodes, headEnd);
+  return { nodes, idx, headEnd, end, locs: head?.locs ?? [] };
+}
+
+/** Virtual units that carry text of their own (an empty cell does not). */
+function virtualUnitHoldsText(el) {
+  const tag = localName(el);
+  return tag === "ldiv" || (CELL_CONTENT_TAGS.has(tag) && tag !== "ecel");
+}
+
+function bodyNodesOf(el) {
+  if (!isVirtualUnit(el)) return bodyNodes(el);
+  const r = virtualRange(el);
+  return r.nodes.slice(r.headEnd, r.end);
+}
+
+/** The element's body as a single <content> wrapper, or null. */
+function contentWrapper(el) {
+  const body = bodyNodesOf(el).filter((n) => !isWhitespaceText(n));
+  return body.length === 1 && body[0].nodeType === Node.ELEMENT_NODE && localName(body[0]) === "content" ? body[0] : null;
+}
+
 /** Plain text of an element, or null when it holds inline elements that a text box would flatten. */
 function plainTextOf(el) {
-  const body = bodyNodes(el);
+  const wrapper = contentWrapper(el);
+  if (wrapper) return childElements(wrapper).length ? null : wrapper.textContent;
+  const body = bodyNodesOf(el);
   if (body.some((n) => n.nodeType === Node.ELEMENT_NODE)) return null;
-  return body.map((n) => n.nodeValue ?? "").join("").trim();
+  return body.map((n) => n.nodeValue ?? "").join("").replace(/\s+/g, " ").trim();
+}
+
+/** Whitespace beyond single spaces between words only survives inside <content>. */
+function needsContentWrapper(text) {
+  return text !== text.trim() || /[\n\t\r]| {2}/.test(text);
+}
+
+/** Text node for `text`: CDATA when it holds XML-reserved characters, plain otherwise. */
+function textNodesFor(doc, text) {
+  if (!/[<&]/.test(text)) return [doc.createTextNode(text)];
+  return text.split("]]>").flatMap((part, i, parts) => {
+    const nodes = [doc.createCDATASection(i < parts.length - 1 ? `${part}]]` : part)];
+    if (i < parts.length - 1) nodes.push(doc.createCDATASection(">"));
+    return nodes;
+  });
 }
 
 function setPlainText(el, text) {
-  const first = [...el.childNodes][0];
-  const last = el.lastChild;
-  const childIndent = first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/\n([ \t]*)$/)?.[1] : null;
-  const closeIndent = last?.nodeType === Node.TEXT_NODE ? last.nodeValue.match(/\n([ \t]*)$/)?.[1] : null;
-  for (const node of bodyNodes(el)) node.remove();
-  const clean = text.trim();
-  const multiline = clean.includes("\n");
-  el.appendChild(el.ownerDocument.createTextNode(
-    childIndent != null && !multiline ? `\n${childIndent}${clean}\n${closeIndent ?? ""}` : clean,
-  ));
+  const doc = el.ownerDocument;
+  const virtual = isVirtualUnit(el);
+  /** @type {{ parent: Node, ref: Node | null, childIndent: string, closeIndent: string }} */
+  let place;
+  if (virtual) {
+    const r = virtualRange(el);
+    const body = r.nodes.slice(r.headEnd, r.end);
+    const childIndent = indentBefore(el);
+    const lastWs = body.length && isWhitespaceText(body[body.length - 1]) ? body[body.length - 1].nodeValue.match(/\n([ \t]*)$/)?.[1] : null;
+    place = {
+      parent: el.parentNode,
+      ref: r.nodes[r.end] ?? null,
+      childIndent,
+      closeIndent: r.nodes[r.end] ? childIndent : lastWs ?? childIndent.slice(0, Math.max(0, childIndent.length - 2)),
+    };
+    for (const node of body) node.remove();
+  } else {
+    const first = [...el.childNodes][0];
+    const last = el.lastChild;
+    place = {
+      parent: el,
+      ref: null,
+      childIndent: first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "",
+      closeIndent: last?.nodeType === Node.TEXT_NODE ? last.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "",
+    };
+    for (const node of bodyNodes(el)) node.remove();
+  }
+  const wrap = (virtual || CONTENT_WRAPPER_TYPES.has(localName(el))) && needsContentWrapper(text);
+  const nodes = textNodesFor(doc, wrap ? text : text.trim());
+  let inner = nodes;
+  if (wrap) {
+    const content = doc.createElementNS(el.namespaceURI, "content");
+    content.append(...nodes);
+    inner = [content];
+  }
+  for (const node of [doc.createTextNode(`\n${place.childIndent}`), ...inner, doc.createTextNode(`\n${place.closeIndent}`)]) {
+    place.parent.insertBefore(node, place.ref);
+  }
 }
 
 function insertHeadChild(el, child) {
@@ -2699,7 +2844,30 @@ function insertHeadChild(el, child) {
   if (ws) el.insertBefore(ws.cloneNode(), ref);
 }
 
+function setVirtualLayer(el, value) {
+  const r = virtualRange(el);
+  if (r.locs.length !== 4) return;
+  const parent = el.parentNode;
+  const layerEl = r.nodes.slice(r.idx + 1, r.headEnd).find((n) => n.nodeType === Node.ELEMENT_NODE && localName(n) === "layer");
+  if (value === "body") {
+    if (!layerEl) return;
+    const prev = layerEl.previousSibling;
+    if (prev && isWhitespaceText(prev)) prev.remove();
+    layerEl.remove();
+  } else if (layerEl) {
+    layerEl.setAttribute("value", value);
+  } else {
+    const created = el.ownerDocument.createElementNS(el.namespaceURI, "layer");
+    created.setAttribute("value", value);
+    const ref = r.locs[0];
+    const ws = ref.previousSibling && isWhitespaceText(ref.previousSibling) ? ref.previousSibling : null;
+    parent.insertBefore(created, ref);
+    if (ws) parent.insertBefore(ws.cloneNode(), ref);
+  }
+}
+
 function setElementLayer(el, value) {
+  if (isVirtualUnit(el)) return setVirtualLayer(el, value);
   const layerEl = firstHeadChild(el, "layer");
   if (value === "body") {
     if (!layerEl) return;
@@ -2724,19 +2892,20 @@ function retypeElement(el, tag) {
   for (const attr of [...el.attributes]) next.setAttribute(attr.name, attr.value);
   while (el.firstChild) next.appendChild(el.firstChild);
   el.replaceWith(next);
-  if (tag === "heading") {
-    if (!next.hasAttribute("level")) next.setAttribute("level", "1");
-  } else {
-    next.removeAttribute("level");
+  const owned = new Set((ATTR_SPECS[tag] ?? []).map((a) => a.name));
+  for (const spec of Object.values(ATTR_SPECS).flat()) {
+    if (!owned.has(spec.name)) next.removeAttribute(spec.name);
   }
+  if (tag === "heading" && !next.hasAttribute("level")) next.setAttribute("level", "1");
 }
 
 function setElementLocations(el, [x0, y0, x1, y1]) {
-  headLocations(el).forEach((loc, i) => loc.setAttribute("value", String([x0, y0, x1, y1][i])));
+  elementHeadLocations(el).forEach((loc, i) => loc.setAttribute("value", String([x0, y0, x1, y1][i])));
 }
 
 /** Moves the document one step along the undo (`from`) or redo stack, pushing the current text onto the other. */
 async function stepHistory(from, to) {
+  await flushPendingEdit();
   const entry = editableEntry();
   const target = entry?.[from]?.pop();
   if (target == null) return;
@@ -2773,7 +2942,27 @@ document.addEventListener("keydown", (e) => {
   else undoLastEdit();
 });
 
+/** @type {(() => Promise<void>) | null} text typed in the inspector but not yet committed */
+let pendingTextEdit = null;
+/** @type {Promise<void> | null} */
+let pendingTextEditRun = null;
+
+/** Commits any uncommitted inspector text and waits for it (also for a commit that is already running). */
+async function flushPendingEdit() {
+  const run = pendingTextEdit;
+  pendingTextEdit = null;
+  if (run) {
+    pendingTextEditRun = run().finally(() => {
+      pendingTextEditRun = null;
+      syncEditUi();
+    });
+  }
+  await pendingTextEditRun;
+}
+
 function syncSelectionEditUi() {
+  wireOverlayEditing();
+  syncAddButtons();
   renderInspector();
   syncBboxHandles();
 }
@@ -2787,17 +2976,32 @@ function inspectorField(label, control) {
   return wrap;
 }
 
-function inspectorSelect(options, value, onChange) {
+function inspectorSelect(options, value, onChange, blocker = () => null) {
   const select = document.createElement("select");
   for (const opt of options) {
     const o = document.createElement("option");
     o.value = opt;
     o.textContent = opt;
+    const why = blocker(opt);
+    if (why) {
+      o.disabled = true;
+      o.title = why;
+    }
     select.appendChild(o);
   }
   select.value = value;
   select.addEventListener("change", () => onChange(select.value));
   return select;
+}
+
+function inspectorButton(label, title, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "pane-action-btn";
+  btn.textContent = label;
+  btn.title = title;
+  btn.addEventListener("click", onClick);
+  return btn;
 }
 
 function renderInspector() {
@@ -2810,22 +3014,23 @@ function renderInspector() {
     return;
   }
   const tag = localName(el);
-  const ownHead = headLocations(el).length === 4 || firstHeadChild(el, "layer") != null;
+  const virtual = isVirtualUnit(el);
+  const ownHead = virtual ? elementHeadLocations(el).length === 4 : headLocations(el).length === 4 || firstHeadChild(el, "layer") != null;
   const parts = [];
 
   const title = document.createElement("div");
   title.className = "inspector-title";
-  title.textContent = `<${tag}> ${selectedElementId}`;
+  title.textContent = `<${tag}> ${selectedElementId}${threadIdOf(el) ? ` · thread ${threadIdOf(el)}` : ""}`;
   parts.push(title);
 
-  if (TEXT_BLOCK_TYPES.includes(tag)) {
-    parts.push(inspectorField("Type", inspectorSelect(TEXT_BLOCK_TYPES, tag, (v) => {
+  if (CONVERTIBLE_TYPES.includes(tag)) {
+    parts.push(inspectorField("Type", inspectorSelect(CONVERTIBLE_TYPES, tag, (v) => {
       editSelectedElement((node) => retypeElement(node, v));
-    })));
+    }, (t) => retypeBlocker(el, t))));
   }
-  if (tag === "heading") {
-    parts.push(inspectorField("Level", inspectorSelect(["1", "2", "3", "4", "5", "6"], String(headingLevel(el)), (v) => {
-      editSelectedElement((node) => node.setAttribute("level", v));
+  for (const spec of ATTR_SPECS[tag] ?? []) {
+    parts.push(inspectorField(spec.label, inspectorSelect(spec.options, el.getAttribute(spec.name) ?? spec.def, (v) => {
+      editSelectedElement((node) => node.setAttribute(spec.name, v));
     })));
   }
   if (ownHead) {
@@ -2833,32 +3038,614 @@ function renderInspector() {
       editSelectedElement((node) => setElementLayer(node, v));
     })));
   }
-  const text = TEXT_EDITABLE_TYPES.has(tag) ? plainTextOf(el) : null;
+  const note = (message) => {
+    const div = document.createElement("div");
+    div.className = "inspector-note";
+    div.textContent = message;
+    parts.push(div);
+  };
+  const holdsText = virtual ? virtualUnitHoldsText(el) : TEXT_EDITABLE_TYPES.has(tag);
+  const text = holdsText ? plainTextOf(el) : null;
   if (text != null) {
     const area = document.createElement("textarea");
     area.className = "inspector-text";
     area.rows = Math.min(8, Math.max(2, Math.ceil(text.length / 48)));
     area.value = text;
     area.spellcheck = false;
-    area.addEventListener("change", () => editSelectedElement((node) => setPlainText(node, area.value)));
+    // Typing arms Save/Discard right away; the edit itself is committed on blur (or when Save needs it).
+    area.addEventListener("input", () => {
+      pendingTextEdit = () => editSelectedElement((node) => setPlainText(node, area.value));
+      syncEditUi();
+    });
+    area.addEventListener("change", flushPendingEdit);
     parts.push(inspectorField("Text", area));
-  } else if (TEXT_EDITABLE_TYPES.has(tag)) {
-    const note = document.createElement("div");
-    note.className = "inspector-note";
-    note.textContent = "Contains inline elements: edit the text in the source.";
-    parts.push(note);
+    if (!virtual && !CONTENT_WRAPPER_TYPES.has(tag)) note(`Whitespace is not preserved in <${tag}>.`);
+  } else if (holdsText) {
+    note("Has nested or inline elements: select a child, or use the source, to edit the text.");
+  } else if (BBOX_BLOCK_TYPES.has(tag) || virtual) {
+    note(`<${tag}> holds no text of its own.`);
+  } else {
+    note("No editable properties yet.");
   }
-  if (!ownHead && !TEXT_BLOCK_TYPES.includes(tag)) {
-    const note = document.createElement("div");
-    note.className = "inspector-note";
-    note.textContent = "No editable properties yet.";
-    parts.push(note);
+  const actions = document.createElement("div");
+  actions.className = "inspector-actions";
+  if (state.hasPageView && (BBOX_BLOCK_TYPES.has(tag) || virtual) && elementHeadLocations(el).length !== 4) {
+    actions.appendChild(inspectorButton("+ BBOX", "Draw a bounding box for this element on the page", () => {
+      startDrawing(`Draw the box for <${tag}>`, (coords) => editSelectedElement((node) => addBboxToElement(node, coords)));
+    }));
   }
+  if ((BBOX_BLOCK_TYPES.has(tag) || virtual) && elementHeadLocations(el).length === 4) {
+    actions.appendChild(inspectorButton("− BBOX", "Drop the bounding box but keep the element (undoable)", () => {
+      editSelectedElement(removeBboxFromElement);
+    }));
+  }
+  const threadId = threadIdOf(el);
+  if (threadId) {
+    actions.appendChild(inspectorButton("− THREAD", `Dissolve thread ${threadId}: every fragment loses it (cross-references to it are kept)`, () => {
+      editSelectedElement((node) => dissolveThread(threadIdOf(node)));
+    }));
+    actions.appendChild(inspectorButton("UNASSIGN THREAD", `Take this element out of thread ${threadId} (the other fragments keep it)`, () => {
+      editSelectedElement(unassignFromThread);
+    }));
+  }
+  if (DELETABLE_TYPES.has(tag) || tag === "ldiv") {
+    actions.appendChild(inspectorButton("DELETE", "Delete the whole element, including its text and children (undoable)", () => {
+      editSelectedElement(deleteElementAndTidy);
+    }));
+  }
+  if (actions.childElementCount) parts.push(actions);
   host.replaceChildren(...parts);
   host.hidden = false;
+  if (Date.now() < focusInspectorTextUntil) host.querySelector("textarea")?.focus();
 }
 
-// --- Bbox move / resize on the page overlay ---
+
+// --- Adding and removing elements ---
+
+const DELETABLE_TYPES = new Set([...BBOX_BLOCK_TYPES].filter((t) => t !== "tabular"));
+
+/** Whitespace used for an element's children, guessed from the surrounding markup. */
+function childIndentOf(el) {
+  const first = el.firstChild;
+  const own = first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/^\s*\n([ \t]*)$/)?.[1] : null;
+  if (own != null) return own;
+  const prev = el.previousSibling;
+  const base = prev && isWhitespaceText(prev) ? prev.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "";
+  return `${base}  `;
+}
+
+function locationNodes(doc, ns, coords, indent) {
+  return coords.flatMap((v) => {
+    const loc = doc.createElementNS(ns, "location");
+    loc.setAttribute("value", String(v));
+    return [doc.createTextNode(`\n${indent}`), loc];
+  });
+}
+
+/** Gives an element without a bbox its four <location> head children. */
+function addBboxToElement(el, coords) {
+  if (isVirtualUnit(el)) {
+    const parent = el.parentNode;
+    const ref = el.nextSibling;
+    for (const node of locationNodes(el.ownerDocument, el.namespaceURI, coords, indentBefore(el))) parent.insertBefore(node, ref);
+    return;
+  }
+  const indent = childIndentOf(el);
+  const wasEmpty = !el.firstChild;
+  const ref = el.childNodes[headEndIndex(el)] ?? null;
+  for (const node of locationNodes(el.ownerDocument, el.namespaceURI, coords, indent)) el.insertBefore(node, ref);
+  if (wasEmpty) el.appendChild(el.ownerDocument.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
+}
+
+function removeBboxFromElement(el) {
+  if (isVirtualUnit(el)) {
+    // A head without its four locations is no longer a head: whatever remains would read as body content.
+    const r = virtualRange(el);
+    for (const node of r.nodes.slice(r.idx + 1, r.headEnd)) node.remove();
+    return;
+  }
+  for (const loc of elementHeadLocations(el)) {
+    const prev = loc.previousSibling;
+    if (prev && isWhitespaceText(prev)) prev.remove();
+    loc.remove();
+  }
+}
+
+function removeElementNode(el) {
+  if (isVirtualUnit(el)) {
+    const r = virtualRange(el);
+    const doomed = r.nodes.slice(r.idx, r.end);
+    const before = r.nodes[r.idx - 1];
+    // Last item: keep the trailing whitespace (it closes the list) and drop the one before the token instead.
+    if (!r.nodes[r.end] && doomed.length > 1 && isWhitespaceText(doomed[doomed.length - 1])) {
+      doomed.pop();
+      if (before && isWhitespaceText(before)) doomed.push(before);
+    }
+    for (const node of doomed) node.remove();
+    return;
+  }
+  const prev = el.previousSibling;
+  if (prev && isWhitespaceText(prev)) prev.remove();
+  el.remove();
+}
+
+function selectedElement() {
+  return selectedElementId ? state?.idToElement?.get(selectedElementId) ?? null : null;
+}
+
+/** Nearest element at or above `el` whose parent can hold sibling blocks (the root or a container). */
+function blockSibling(el) {
+  let node = el;
+  while (node.parentElement && node.parentElement !== state.docRoot && !CHILD_CONTAINER_TYPES.has(localName(node.parentElement))) {
+    node = node.parentElement;
+  }
+  return node;
+}
+
+/** True when `el` sits where a wrapper group is allowed (the root or a container). */
+function canWrap(el) {
+  const parent = el.parentElement;
+  return DELETABLE_TYPES.has(localName(el)) && !!parent && (parent === state.docRoot || CHILD_CONTAINER_TYPES.has(localName(parent)));
+}
+
+const ADD_KINDS = ["parent", "prev", "next", "child"];
+
+function addButton(kind) {
+  return { parent: els.addParentBtn, prev: els.addPrevBtn, next: els.addNextBtn, child: els.addChildBtn }[kind];
+}
+
+function syncAddButtons() {
+  const entry = editableEntry();
+  const show = !!entry && !markupEditor;
+  const selected = selectedElement();
+  const enabled = {
+    parent: !!selected && canWrap(selected),
+    prev: !!selected,
+    next: true,
+    child: !!selected && CHILD_CONTAINER_TYPES.has(localName(selected)),
+  };
+  if (els.addThreadBtn) {
+    els.addThreadBtn.hidden = !show || !state.hasPageView;
+    els.addThreadBtn.classList.toggle("active", drawing?.kind === "thread");
+  }
+  if (els.pageEditBar) els.pageEditBar.hidden = !show;
+  for (const kind of ADD_KINDS) {
+    const btn = addButton(kind);
+    if (!btn) continue;
+    btn.hidden = !show;
+    btn.disabled = !enabled[kind] && drawing?.kind !== kind;
+    btn.classList.toggle("active", drawing?.kind === kind);
+  }
+}
+
+function toggleAddElement(kind) {
+  const was = drawing?.kind;
+  cancelDrawing();
+  if (was === kind) return;
+  const selectedTag = selectedElement() ? localName(selectedElement()) : null;
+  const label = {
+    parent: `Draw the box for the new group around <${selectedTag}>`,
+    prev: "Draw the box for the new element before the selection",
+    next: "Draw the box for the new element after the selection",
+    child: `Draw the box for the new child of <${selectedTag}>`,
+  }[kind];
+  if (!state.hasPageView) {
+    addElement(null, kind); // nothing to draw on: the element is created without a bbox
+    return;
+  }
+  startDrawing(label, (coords) => addElement(coords, kind), kind, { skippable: true });
+}
+
+/** A block element holding only the four <location> head children (or, without a bbox, placeholder text). */
+function newBlock(doc, ns, tag, coords, indent) {
+  const created = doc.createElementNS(ns, tag);
+  if (coords) {
+    for (const node of locationNodes(doc, ns, coords, `${indent}  `)) created.appendChild(node);
+  } else if (tag === "text") {
+    created.appendChild(doc.createTextNode(`\n${indent}  New text`)); // without a bbox there is nothing else to see or click
+  }
+  created.appendChild(doc.createTextNode(`\n${indent}`));
+  return created;
+}
+
+/** Adds two spaces to every line break of the element's markup, except inside whitespace-preserving <content>. */
+function indentMarkup(el, extra = "  ") {
+  for (const node of [...el.childNodes]) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      node.nodeValue = node.nodeValue.replace(/\n([ \t]*)/g, `\n$1${extra}`);
+    } else if (node.nodeType === Node.ELEMENT_NODE && localName(node) !== "content") {
+      indentMarkup(node, extra);
+    }
+  }
+}
+
+function indentBefore(el) {
+  const prev = el?.previousSibling;
+  return prev && isWhitespaceText(prev) ? prev.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "  " : "  ";
+}
+
+/**
+ * Adds a new block with the drawn bbox relative to the selected element: `prev`/`next` as a sibling,
+ * `child` as its last child, `parent` as a <group> that wraps it. Without a selection `next` appends to the page.
+ */
+async function addElement(coords, kind) {
+  if (!state || !editableEntry() || !canEditDocument()) return;
+  const root = state.docRoot;
+  const doc = root.ownerDocument;
+  const ns = root.namespaceURI;
+  const pageIdx = state.currentPage - 1;
+  const segment = state.segments[pageIdx] ?? [];
+  const selected = selectedElement();
+  /** Id of the new element once the page is re-parsed: ids follow document order within the page. */
+  const idOf = (created, replaced = null, topIndex = 0) => {
+    if (created.parentElement !== root && !replaced) return assignElementIds(segment).get(created);
+    const list = replaced
+      ? segment.map((n) => (n === replaced ? created : n))
+      : [...segment.slice(0, topIndex), created, ...segment.slice(topIndex)];
+    return assignElementIds(list).get(created);
+  };
+  let id;
+
+  if (kind === "child" && selected) {
+    const indent = childIndentOf(selected);
+    const created = newBlock(doc, ns, "text", coords, indent);
+    if (!selected.lastChild || !isWhitespaceText(selected.lastChild)) {
+      selected.appendChild(doc.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
+    }
+    selected.insertBefore(created, selected.lastChild);
+    selected.insertBefore(doc.createTextNode(`\n${indent}`), created);
+    id = idOf(created);
+  } else if (kind === "parent" && selected) {
+    const indent = indentBefore(selected);
+    const group = newBlock(doc, ns, "group", coords, indent);
+    const parent = selected.parentNode;
+    parent.insertBefore(group, selected);
+    group.insertBefore(selected, group.lastChild);
+    group.insertBefore(doc.createTextNode(`\n${indent}  `), selected);
+    indentMarkup(selected);
+    id = idOf(group, selected);
+  } else if ((kind === "prev" || kind === "next") && selected) {
+    const anchor = blockSibling(selected);
+    const parent = anchor.parentNode;
+    const indent = indentBefore(anchor);
+    const created = newBlock(doc, ns, "text", coords, indent);
+    if (kind === "prev") {
+      parent.insertBefore(created, anchor);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), anchor);
+    } else {
+      const ref = anchor.nextSibling;
+      parent.insertBefore(created, ref);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), created);
+      if (!ref) parent.appendChild(doc.createTextNode(`\n${parent === root ? "" : indent.slice(0, Math.max(0, indent.length - 2))}`));
+    }
+    id = idOf(created, null, segment.indexOf(anchor) + (kind === "next" ? 1 : 0));
+  } else {
+    const last = segment[segment.length - 1] ?? null;
+    const indent = indentBefore(last);
+    const created = newBlock(doc, ns, "text", coords, indent);
+    const ref = last
+      ? last.nextSibling
+      : childElements(root).filter((el) => localName(el) === "page_break")[pageIdx] ?? null;
+    root.insertBefore(created, ref);
+    root.insertBefore(doc.createTextNode(`\n${indent}`), created);
+    if (!ref) root.appendChild(doc.createTextNode("\n"));
+    id = idOf(created, null, segment.length);
+  }
+  focusInspectorTextUntil = Date.now() + 2000; // the views re-render a few times while the page image reloads
+  await commitMarkupText(serializeDocument(), { reselect: id });
+}
+
+// --- Drawing a rectangle on the page (new bbox or new element) ---
+
+/** @type {{ label: string, kind: string | null, onDone: (coords: number[]) => void } | null} */
+let drawing = null;
+let focusInspectorTextUntil = 0;
+
+function startDrawing(label, onDone, kind = null, { skippable = false, hint: hintText = null } = {}) {
+  if (!state?.hasPageView || !editableEntry()) return;
+  cancelDrawing();
+  drawing = { label, onDone, kind };
+  els.pagePane?.classList.add("drawing");
+  const hint = document.createElement("div");
+  hint.className = "draw-hint";
+  hint.append(hintText ?? `${label}: drag on the page. Esc to cancel.`);
+  if (skippable) {
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.textContent = "No bbox";
+    skip.title = "Create the element without a bounding box";
+    skip.addEventListener("click", () => {
+      const done = drawing?.onDone;
+      cancelDrawing();
+      done?.(null);
+    });
+    hint.append(skip);
+  }
+  els.pagePane?.parentElement?.appendChild(hint);
+  wireOverlayEditing();
+  syncEditUi();
+}
+
+function cancelDrawing() {
+  if (!drawing) return;
+  drawing = null;
+  els.pagePane?.classList.remove("drawing");
+  els.pagePane?.parentElement?.querySelector(".draw-hint")?.remove();
+  els.pagePane?.querySelector(".draw-rect, .draw-line")?.remove();
+  markPendingThread();
+  syncEditUi();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !drawing) return;
+  e.preventDefault();
+  e.stopPropagation();
+  cancelDrawing();
+}, true);
+
+function beginDraw(e) {
+  const svg = e.currentTarget;
+  const img = els.pagePane.querySelector(".page-view img");
+  const start = imageCoordsFromEvent(svg, e);
+  if (e.button !== 0 || !img || !start) return;
+  e.preventDefault();
+  e.stopPropagation();
+  svg.setPointerCapture(e.pointerId);
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.setAttribute("class", "draw-rect");
+  svg.appendChild(rect);
+  const res = state.defaultResolution;
+  const units = (p) => [
+    Math.min(Math.max(Math.round((p.x / img.naturalWidth) * res.width), 0), res.width),
+    Math.min(Math.max(Math.round((p.y / img.naturalHeight) * res.height), 0), res.height),
+  ];
+  const [sx, sy] = units(start);
+  let coords = null;
+  const onMove = (ev) => {
+    const p = imageCoordsFromEvent(svg, ev);
+    if (!p) return;
+    const [ex, ey] = units(p);
+    coords = [Math.min(sx, ex), Math.min(sy, ey), Math.max(sx, ex), Math.max(sy, ey)];
+    const px = boxPixelRect({ x0: coords[0], y0: coords[1], x1: coords[2], y1: coords[3], resW: res.width, resH: res.height }, img);
+    rect.setAttribute("x", String(px.x));
+    rect.setAttribute("y", String(px.y));
+    rect.setAttribute("width", String(px.w));
+    rect.setAttribute("height", String(px.h));
+  };
+  const onUp = () => {
+    svg.removeEventListener("pointermove", onMove);
+    svg.removeEventListener("pointerup", onUp);
+    svg.removeEventListener("pointercancel", onUp);
+    rect.remove();
+    pagePanSuppressClick = true;
+    setTimeout(() => { pagePanSuppressClick = false; }, 0);
+    if (!coords || coords[2] - coords[0] < 2 || coords[3] - coords[1] < 2) return; // too small: keep drawing
+    const done = drawing?.onDone;
+    cancelDrawing();
+    done?.(coords);
+  };
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerup", onUp);
+  svg.addEventListener("pointercancel", onUp);
+}
+
+function wireOverlayEditing() {
+  const svg = els.pagePane?.querySelector("svg.overlay");
+  if (!svg || svg.dataset.editWired || !editableEntry()) return;
+  svg.dataset.editWired = "1";
+  svg.addEventListener("pointerdown", onOverlayPointerDown);
+}
+
+
+// --- Threads: connect two bboxes so they continue one another (across columns or pages) ---
+
+/** Head children that come after <thread> in the schema's element_head order. */
+const AFTER_THREAD_TAGS = new Set(["xref", "href", "layer", "location", "caption", "description", "summary", "custom"]);
+
+/** The element's head children, wherever they sit (inside it, or after the token for a virtual unit). */
+function headElementsOf(el) {
+  if (isVirtualUnit(el)) {
+    const r = virtualRange(el);
+    return r.locs.length === 4 ? r.nodes.slice(r.idx + 1, r.headEnd).filter((n) => n.nodeType === Node.ELEMENT_NODE) : [];
+  }
+  return [...el.childNodes].slice(0, headEndIndex(el)).filter((n) => n.nodeType === Node.ELEMENT_NODE);
+}
+
+function threadIdOf(el) {
+  const t = headElementsOf(el).find((n) => localName(n) === "thread");
+  return t?.getAttribute("thread_id") ?? null;
+}
+
+/** Next unused thread id across the whole document (threads and the cross-references that point at them). */
+function nextThreadId() {
+  let max = 0;
+  for (const node of state.docRoot.getElementsByTagName("*")) {
+    if (!["thread", "xref"].includes(localName(node))) continue;
+    const n = parseInt(node.getAttribute("thread_id") ?? "", 10);
+    if (Number.isFinite(n)) max = Math.max(max, n);
+  }
+  return max + 1;
+}
+
+function addThreadTo(el, id) {
+  const doc = el.ownerDocument;
+  const thread = doc.createElementNS(el.namespaceURI, "thread");
+  thread.setAttribute("thread_id", String(id));
+  const ref = headElementsOf(el).find((n) => AFTER_THREAD_TAGS.has(localName(n))) ?? null;
+  const parent = ref ? ref.parentNode : el;
+  if (ref) {
+    const ws = ref.previousSibling && isWhitespaceText(ref.previousSibling) ? ref.previousSibling : null;
+    parent.insertBefore(thread, ref);
+    if (ws) parent.insertBefore(ws.cloneNode(), ref);
+  } else {
+    const first = el.firstChild;
+    el.insertBefore(doc.createTextNode(`\n${childIndentOf(el)}`), first);
+    el.insertBefore(thread, first);
+  }
+}
+
+/** Threads `a` and `b` per the rules: a fresh id if neither has one, the existing id if only one has, else nothing. */
+async function connectThread(a, b) {
+  if (!canEditDocument()) return;
+  const unthreadable = [a, b].find((el) => isVirtualUnit(el) && !headElementsOf(el).length);
+  if (unthreadable) {
+    setEditError("A list item or cell needs a bbox before it can be threaded.");
+    return;
+  }
+  const ta = threadIdOf(a);
+  const tb = threadIdOf(b);
+  if (ta && tb) {
+    setEditError(ta === tb ? `Already in thread ${ta}.` : "Both already belong to a thread: nothing to do.");
+    return;
+  }
+  const id = ta ?? tb ?? nextThreadId();
+  const keep = state.elementIds.get(b) ?? null; // ids are per page: only meaningful when b is on this page
+  if (!ta) addThreadTo(a, id);
+  if (!tb) addThreadTo(b, id);
+  cancelDrawing();
+  await commitMarkupText(serializeDocument(), { reselect: keep });
+}
+
+function toggleThread() {
+  const was = drawing?.kind;
+  cancelDrawing();
+  if (was === "thread") return;
+  startDrawing("Thread", null, "thread", {
+    hint: "Thread: drag from one bbox to another, or click one bbox, then (after changing page if needed) another. Esc to cancel.",
+  });
+}
+
+function removeNode(node) {
+  const prev = node.previousSibling;
+  if (prev && isWhitespaceText(prev)) prev.remove();
+  node.remove();
+}
+
+/** Thread ids carried by an element or anything nested inside it. */
+function threadIdsIn(el) {
+  const own = isVirtualUnit(el) ? headElementsOf(el) : [...el.getElementsByTagName("thread")];
+  return [...new Set(own.filter((n) => localName(n) === "thread").map((n) => n.getAttribute("thread_id")).filter(Boolean))];
+}
+
+/**
+ * Tidies the threads an edit touched: a lone fragment that nothing cross-references loses its thread. A lone
+ * fragment that is the target of an xref stays (a valid anchor), and xrefs are never removed, even when their
+ * thread is gone: the schema allows them to dangle.
+ */
+function cleanupThreads(ids) {
+  const all = (tag) => [...state.docRoot.getElementsByTagName(tag)];
+  for (const id of ids) {
+    const members = all("thread").filter((t) => t.getAttribute("thread_id") === id);
+    const referenced = all("xref").some((x) => x.getAttribute("thread_id") === id);
+    if (members.length === 1 && !referenced) removeNode(members[0]);
+  }
+}
+
+/** Takes just this element out of its thread; the other fragments keep it. */
+function unassignFromThread(el) {
+  const ids = threadIdsIn(el);
+  const t = headElementsOf(el).find((n) => localName(n) === "thread");
+  if (t) removeNode(t);
+  cleanupThreads(ids);
+}
+
+/** Deletes an element and tidies the threads it was part of. */
+function deleteElementAndTidy(el) {
+  const ids = threadIdsIn(el);
+  removeElementNode(el);
+  cleanupThreads(ids);
+}
+
+/** Removes the thread `id` from every fragment (cross-references to it are left alone). */
+function dissolveThread(id) {
+  for (const t of [...state.docRoot.getElementsByTagName("thread")]) {
+    if (t.getAttribute("thread_id") === id) removeNode(t);
+  }
+  cleanupThreads([id]);
+}
+
+function elementAtImagePoint(img, point) {
+  const hit = hitTestBoxes(state.currentBoxes, img, point.x, point.y);
+  return hit ? state.idToElement.get(hit.elementId) ?? null : null;
+}
+
+function setDrawHint(text) {
+  const hint = els.pagePane?.parentElement?.querySelector(".draw-hint");
+  if (hint) hint.firstChild.textContent = text;
+}
+
+/** Marks the first end of a click-click thread on the page, when it is on this one. */
+function markPendingThread() {
+  els.pagePane?.querySelectorAll(".bbox.thread-pending").forEach((r) => r.classList.remove("thread-pending"));
+  const pending = drawing?.pending;
+  const id = pending ? state?.elementIds?.get(pending) : null;
+  if (id) els.pagePane?.querySelector(`.bbox[data-element-id="${id}"]`)?.classList.add("thread-pending");
+}
+
+function pickThreadEnd(el) {
+  if (!drawing || !el) return;
+  if (!drawing.pending) {
+    drawing.pending = el;
+    setDrawHint(`Thread: now click the bbox it continues in (you can change page first). Esc to cancel.`);
+    markPendingThread();
+    return;
+  }
+  const first = drawing.pending;
+  if (first === el) return;
+  drawing.pending = null;
+  setDrawHint("Thread: drag from one bbox to another, or click one bbox, then (after changing page if needed) another. Esc to cancel.");
+  connectThread(first, el);
+}
+
+function beginThreadDrag(e) {
+  const svg = e.currentTarget;
+  const img = els.pagePane.querySelector(".page-view img");
+  const start = imageCoordsFromEvent(svg, e);
+  if (e.button !== 0 || !img || !start) return;
+  e.preventDefault();
+  e.stopPropagation();
+  svg.setPointerCapture(e.pointerId);
+  const from = elementAtImagePoint(img, start);
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("class", "draw-line");
+  line.setAttribute("x1", String(start.x));
+  line.setAttribute("y1", String(start.y));
+  line.setAttribute("x2", String(start.x));
+  line.setAttribute("y2", String(start.y));
+  svg.appendChild(line);
+  const origin = { x: e.clientX, y: e.clientY };
+  let moved = false;
+  const onMove = (ev) => {
+    const p = imageCoordsFromEvent(svg, ev);
+    if (!p) return;
+    moved = moved || Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > 6;
+    line.setAttribute("x2", String(p.x));
+    line.setAttribute("y2", String(p.y));
+  };
+  const onUp = (ev) => {
+    svg.removeEventListener("pointermove", onMove);
+    svg.removeEventListener("pointerup", onUp);
+    svg.removeEventListener("pointercancel", onUp);
+    line.remove();
+    pagePanSuppressClick = true;
+    setTimeout(() => { pagePanSuppressClick = false; }, 0);
+    if (!moved) {
+      pickThreadEnd(from);
+      return;
+    }
+    const end = imageCoordsFromEvent(svg, ev);
+    const to = end ? elementAtImagePoint(img, end) : null;
+    if (from && to && from !== to) {
+      if (drawing) drawing.pending = null;
+      connectThread(from, to);
+    }
+  };
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerup", onUp);
+  svg.addEventListener("pointercancel", onUp);
+}
+
+// --- Bbox resize on the page overlay (no free move: it is too easy to do by accident) ---
 
 const HANDLE_CURSORS = { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" };
 
@@ -2869,11 +3656,7 @@ function syncBboxHandles() {
   const el = state.idToElement?.get(selectedElementId);
   const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
   const img = els.pagePane.querySelector(".page-view img");
-  if (!el || !box || !img || headLocations(el).length !== 4) return;
-  if (!svg.dataset.editWired) {
-    svg.dataset.editWired = "1";
-    svg.addEventListener("pointerdown", onOverlayPointerDown);
-  }
+  if (!el || !box || !img || elementHeadLocations(el).length !== 4) return;
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("class", "bbox-handles");
   svg.appendChild(group);
@@ -2902,19 +3685,19 @@ function drawBboxHandles(group, box, img) {
 }
 
 function onOverlayPointerDown(e) {
+  if (drawing) {
+    if (drawing.kind === "thread") beginThreadDrag(e);
+    else beginDraw(e);
+    return;
+  }
   if (e.button !== 0 || !selectedElementId || markupEditor) return;
   const svg = e.currentTarget;
   const img = els.pagePane.querySelector(".page-view img");
   const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
   if (!img || !box) return;
-  let mode = e.target.closest?.(".bbox-handle")?.getAttribute("data-handle") ?? null;
+  const mode = e.target.closest?.(".bbox-handle")?.getAttribute("data-handle");
   const start = imageCoordsFromEvent(svg, e);
-  if (!start) return;
-  if (!mode) {
-    const hit = hitTestBoxes(state.currentBoxes, img, start.x, start.y);
-    if (hit?.elementId !== selectedElementId) return;
-    mode = "move";
-  }
+  if (!mode || !start) return;
   e.preventDefault();
   e.stopPropagation();
   svg.setPointerCapture(e.pointerId);
@@ -2931,16 +3714,10 @@ function onOverlayPointerDown(e) {
     const du = Math.round(((p.x - start.x) / img.naturalWidth) * box.resW);
     const dv = Math.round(((p.y - start.y) / img.naturalHeight) * box.resH);
     let { x0, y0, x1, y1 } = orig;
-    if (mode === "move") {
-      const dx = Math.min(Math.max(du, -x0), box.resW - x1);
-      const dy = Math.min(Math.max(dv, -y0), box.resH - y1);
-      x0 += dx; x1 += dx; y0 += dy; y1 += dy;
-    } else {
-      if (mode.includes("w")) x0 = Math.min(Math.max(x0 + du, 0), x1 - 1);
-      if (mode.includes("e")) x1 = Math.max(Math.min(x1 + du, box.resW), x0 + 1);
-      if (mode.includes("n")) y0 = Math.min(Math.max(y0 + dv, 0), y1 - 1);
-      if (mode.includes("s")) y1 = Math.max(Math.min(y1 + dv, box.resH), y0 + 1);
-    }
+    if (mode.includes("w")) x0 = Math.min(Math.max(x0 + du, 0), x1 - 1);
+    if (mode.includes("e")) x1 = Math.max(Math.min(x1 + du, box.resW), x0 + 1);
+    if (mode.includes("n")) y0 = Math.min(Math.max(y0 + dv, 0), y1 - 1);
+    if (mode.includes("s")) y1 = Math.max(Math.min(y1 + dv, box.resH), y0 + 1);
     Object.assign(live, { x0, y0, x1, y1 });
     moved = x0 !== orig.x0 || y0 !== orig.y0 || x1 !== orig.x1 || y1 !== orig.y1;
     const px = boxPixelRect(live, img);
@@ -4015,6 +4792,7 @@ function setPageIndicator(pageNum, pageCount) {
 
 function renderPage(pageNum) {
   if (!state) return;
+  if (drawing?.kind !== "thread") cancelDrawing(); // threading survives page changes: its two ends may be on different pages
   const { segments, pageImages, pageCount, defaultResolution } = state;
   const idx = pageNum - 1;
   const segment = segments[idx] ?? [];
@@ -4093,6 +4871,9 @@ function renderPage(pageNum) {
           );
         }
         syncPageViewChrome(img);
+        // The overlay is built once the image has loaded, which can be after a selection (e.g. one kept across an edit).
+        if (selectedElementId) applySelection();
+        else syncSelectionEditUi();
         const pending = state.pendingSelectElement;
         if (pending) {
           state.pendingSelectElement = null;

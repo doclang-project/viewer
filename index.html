@@ -350,6 +350,13 @@
           </button>
         </div>
       </div>
+      <div class="page-edit-bar" id="page-edit-bar" aria-label="Add elements and threads" hidden>
+          <button type="button" class="pane-action-btn" id="btn-add-parent" title="Draw a box on the page to wrap the selected element in a new group" hidden>+ Parent</button>
+          <button type="button" class="pane-action-btn" id="btn-add-prev" title="Draw a box on the page to add a new element right before the selected one" hidden>+ Prev</button>
+          <button type="button" class="pane-action-btn" id="btn-add-next" title="Draw a box on the page to add a new element right after the selected one" hidden>+ Next</button>
+          <button type="button" class="pane-action-btn" id="btn-add-child" title="Draw a box on the page to add a new element inside the selected one" hidden>+ Child</button>
+          <button type="button" class="pane-action-btn" id="btn-add-thread" title="Connect two bounding boxes with a thread (continuation across columns or pages)" hidden>+ Thread</button>
+      </div>
       <div class="pane-page-layout">
         <div class="pane-body" id="page-pane"></div>
         <div class="viewer-settings-layer" id="page-settings-layer" hidden>
@@ -619,12 +626,12 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
-          <button type="button" class="pane-action-btn" id="btn-edit" title="Edit the DocLang source" hidden>Edit</button>
+          <button type="button" class="pane-action-btn" id="btn-edit" title="Edit the raw DocLang source (pauses visual editing)" hidden>Edit source</button>
           <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
           <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
           <button type="button" class="pane-action-btn" id="btn-undo" title="Undo the last visual edit (Ctrl/Cmd+Z)" hidden>Undo</button>
           <button type="button" class="pane-action-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" hidden>Redo</button>
-          <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and restore the last saved version" hidden>Revert</button>
+          <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and restore the last saved version" hidden>Discard changes</button>
           <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the applied changes to the file" hidden>Save</button>
           <button
             type="button"

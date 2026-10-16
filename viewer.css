@@ -1755,6 +1755,11 @@ body.pane-drag-active .pane-splitter {
   outline-offset: 2px;
 }
 
+.pane-action-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .edit-error {
   flex-shrink: 0;
   padding: 0.35rem 0.75rem;
@@ -3459,4 +3464,84 @@ li.has-marker > .rendered-li-body {
   stroke: var(--accent);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+}
+
+.inspector-actions {
+  flex-basis: 100%;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.pane-action-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#page-pane.drawing svg.overlay,
+#page-pane.drawing svg.overlay * {
+  cursor: crosshair !important;
+}
+
+.overlay .draw-rect {
+  fill: color-mix(in srgb, var(--accent) 20%, transparent);
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.draw-hint {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.draw-hint button {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  cursor: pointer;
+}
+
+.overlay .draw-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.overlay rect.bbox.thread-pending {
+  stroke: var(--accent) !important;
+  stroke-width: 4;
+  stroke-dasharray: 6 4;
+}
+
+.page-edit-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.page-edit-bar[hidden] {
+  display: none;
 }
