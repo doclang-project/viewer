@@ -6463,7 +6463,8 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
  * binary-searching a CSS `zoom` factor (not `transform: scale`) so text re-wraps at
  * each candidate size instead of being scaled after wrapping at a fixed size — this
  * both shrinks content that overflows and grows content that has room to spare, up
- * to whatever the box's width and height allow without overflowing either.
+ * to whatever the box's width and height allow without overflowing either (including a
+ * single word that is wider than the box and so cannot wrap).
  */
 function fitSlotContent(slot) {
   const content = slot.firstElementChild;
@@ -6473,10 +6474,19 @@ function fitSlotContent(slot) {
   const targetH = slotRect.height;
   if (!(targetW > 0 && targetH > 0)) return;
 
+  // A block fills its slot's width however long its text is, so its own box never reveals horizontal overflow
+  // (a word wider than the box, e.g. a chart label). The extent of the text itself does.
+  const range = document.createRange();
+  range.selectNodeContents(content);
   const fitsAt = (zoom) => {
     content.style.zoom = String(zoom);
     const rect = content.getBoundingClientRect();
-    return rect.width <= targetW + 0.5 && rect.height <= targetH + 0.5;
+    const text = range.getBoundingClientRect();
+    return (
+      rect.height <= targetH + 0.5 &&
+      Math.max(rect.width, text.width) <= targetW + 0.5 &&
+      text.height <= targetH + 0.5
+    );
   };
 
   let lo = 0.02;
