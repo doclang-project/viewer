@@ -1532,9 +1532,9 @@ function initFilePaneCloseAll() {
 }
 
 /**
- * True when DocLang or Reading view is the pane the user is interacting with, so
+ * True when DocLang or Preview is the pane the user is interacting with, so
  * up/down/page-up/page-down should scroll it instead of flipping pages. Neither pane
- * has a focusable container (unlike Original page), so plain :focus never lands there
+ * has a focusable container (unlike Original), so plain :focus never lands there
  * on click — the browser instead scrolls whichever of them the pointer is over, so we
  * key off :hover (which also matches while hovering a descendant); :focus-within is
  * kept as a fallback for keyboard-only navigation onto a link inside either pane.
@@ -1639,7 +1639,7 @@ function initPageWheelNav() {
 
   els.pagePane.tabIndex = 0;
   els.pagePane.setAttribute("role", "region");
-  els.pagePane.setAttribute("aria-label", "Original page");
+  els.pagePane.setAttribute("aria-label", "Original");
 
   els.pagePane.addEventListener("pointerdown", (e) => {
     if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
@@ -3719,7 +3719,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
     continueEquationNumbering(canvas, segment);
-    // The page image (in the separate "Original page" pane) may have already
+    // The page image (in the separate "Original" pane) may have already
     // finished loading before this canvas existed to receive onImageReady's
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
     // or before the mode was ever switched to paged) — sync from it now rather
