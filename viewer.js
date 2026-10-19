@@ -742,6 +742,18 @@ document.addEventListener("keydown", (e) => {
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
 });
+// Esc deselects the element (and so closes the inspector) once nothing else is using the key.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented || !selectedElementId || markupEditor || drawing) return;
+  if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen) return;
+  if (els.paneMenu && !els.paneMenu.hidden) return;
+  const active = document.activeElement;
+  if (isTypingTarget(active)) {
+    active.blur(); // finish typing first; the next Esc deselects
+    return;
+  }
+  clearSelection();
+});
 document.addEventListener("keydown", (e) => {
   if (e.key !== "?") return;
   if (!hotkeysEnabled) return;
@@ -3046,10 +3058,20 @@ function renderInspector() {
   const ownHead = virtual ? elementHeadLocations(el).length === 4 : headLocations(el).length === 4 || firstHeadChild(el, "layer") != null;
   const parts = [];
 
+  const head = document.createElement("div");
+  head.className = "inspector-head";
   const title = document.createElement("div");
   title.className = "inspector-title";
   title.textContent = `<${tag}> ${selectedElementId}${threadIdOf(el) ? ` · thread ${threadIdOf(el)}` : ""}`;
-  parts.push(title);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "inspector-close";
+  close.textContent = "×";
+  close.title = "Close (Esc)";
+  close.setAttribute("aria-label", "Close");
+  close.addEventListener("click", clearSelection);
+  head.append(title, close);
+  parts.push(head);
 
   if (CONVERTIBLE_TYPES.includes(tag)) {
     parts.push(inspectorField("Type", inspectorSelect(CONVERTIBLE_TYPES, tag, (v) => {

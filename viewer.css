@@ -3434,10 +3434,39 @@ li.has-marker > .rendered-li-body {
   display: none;
 }
 
-.inspector-title {
+.inspector-head {
   flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.inspector-title {
+  min-width: 0;
   font-family: var(--font-mono);
   color: var(--muted);
+}
+
+.inspector-close {
+  appearance: none;
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.inspector-close:hover,
+.inspector-close:focus-visible {
+  color: var(--text);
+  background: var(--markup-hover);
 }
 
 .inspector-field {
