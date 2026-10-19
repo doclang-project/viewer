@@ -1633,17 +1633,9 @@ function initPageWheelNav() {
     { passive: false },
   );
 
-  for (const pane of [els.markupPane, els.renderedPane]) {
-    if (!pane) continue;
-    pane.addEventListener(
-      "wheel",
-      (e) => {
-        if (markupEditor && pane === els.markupPane) return; // the editor scrolls itself
-        onScrollPaneWheel(e, pane);
-      },
-      { passive: false },
-    );
-  }
+  // Scrolling past the end of the Preview flips the page, as in the Original pane. The DocLang pane does not: its
+  // scroll position is something to work in, and a stray wheel at its top or bottom must not change the page.
+  els.renderedPane?.addEventListener("wheel", (e) => onScrollPaneWheel(e, els.renderedPane), { passive: false });
 
   els.pagePane.tabIndex = 0;
   els.pagePane.setAttribute("role", "region");
