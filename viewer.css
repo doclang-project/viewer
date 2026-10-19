@@ -3599,6 +3599,77 @@ li.has-marker > .rendered-li-body {
   box-sizing: border-box;
 }
 
+/* Reading order: dragging elements in the source */
+.markup-el[draggable="true"].dragging {
+  opacity: 0.45;
+}
+
+/* A straight line on the element's top or bottom edge: the same line whether it is "after" the element above or
+   "before" the one below, so the two cannot be told apart. */
+.markup-el {
+  position: relative;
+}
+
+.markup-el.drop-before::before,
+.markup-el.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.markup-el.drop-before::before {
+  top: -1px;
+}
+
+.markup-el.drop-after::after {
+  bottom: -1px;
+}
+
+/* Dropping into an element highlights all of it. */
+.markup-el.drop-into {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Reading order: the grip that drags a row of the source, in a lane of its own at the left */
+.markup-line {
+  position: relative;
+}
+
+.markup.has-grips .markup-line {
+  padding-left: 1.3rem;
+}
+
+.markup-drag-handle {
+  position: absolute;
+  left: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  color: var(--muted);
+  opacity: 0.8;
+  cursor: grab;
+  user-select: none;
+}
+
+.markup-drag-handle:hover {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.markup-drag-handle:active {
+  cursor: grabbing;
+}
+
 /* Icon-only action buttons (undo / redo) */
 .pane-action-btn.icon-btn {
   display: inline-flex;

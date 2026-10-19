@@ -2123,7 +2123,7 @@ function initCursorHints() {
 }
 
 /** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
-const QUICK_HINT_SELECTOR = 'button, label.file-btn, select, summary';
+const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, label.file-btn, select, summary';
 
 /**
  * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
@@ -3896,6 +3896,57 @@ function dedentMarkup(el) {
   }
 }
 
+const INHERITED_HEAD = new Set(["label", "thread", "xref", "href", "layer", "location"]);
+
+/**
+ * The blocks a unit stands for once it is no longer a list item or cell: blocks in its body move up as they are,
+ * a <caption>-less run of text becomes a <text> that takes over the unit's head (layer, bbox, thread). A picture's
+ * <src> is dropped and its <tabular> becomes a <table>. `unit` is { head: Element[], body: Node[] }.
+ */
+function blocksFromUnit(unit, doc, ns, indent) {
+  const blocks = [];
+  let head = unit.head.filter((h) => INHERITED_HEAD.has(localName(h)));
+  let run = [];
+  const flush = () => {
+    if (run.some((n) => !isWhitespaceText(n))) {
+      const text = doc.createElementNS(ns, "text");
+      for (const h of head) {
+        text.appendChild(doc.createTextNode(`\n${indent}  `));
+        text.appendChild(h);
+      }
+      head = [];
+      const first = run[0];
+      const last = run[run.length - 1];
+      if (first.nodeType === Node.TEXT_NODE) first.nodeValue = first.nodeValue.replace(/^\s+/, "");
+      if (last.nodeType === Node.TEXT_NODE) last.nodeValue = last.nodeValue.replace(/\s+$/, "");
+      text.appendChild(doc.createTextNode(`\n${indent}  `));
+      for (const n of run) text.appendChild(n);
+      text.appendChild(doc.createTextNode(`\n${indent}`));
+      blocks.push(text);
+    }
+    run = [];
+  };
+  for (const n of unit.body) {
+    const tag = n.nodeType === Node.ELEMENT_NODE ? localName(n) : null;
+    if (tag === "src") continue;
+    if (tag === "tabular") {
+      flush();
+      const table = doc.createElementNS(ns, "table");
+      while (n.firstChild) table.appendChild(n.firstChild);
+      dedentMarkup(table);
+      blocks.push(table);
+    } else if (tag && TOP_LEVEL_TYPES.has(tag)) {
+      flush();
+      dedentMarkup(n);
+      blocks.push(n);
+    } else {
+      run.push(n);
+    }
+  }
+  flush();
+  return blocks;
+}
+
 /**
  * Replaces the parent of `el` by its content. Blocks inside it move up as they are. Text that sat directly in
  * the parent, in the parent itself or in a list item or table cell (a virtual <text>), becomes a <text> element
@@ -3956,51 +4007,12 @@ function unwrapParent(el) {
     dedentMarkup(text);
     out.push(text);
   }
-  const INHERITED_HEAD = new Set(["label", "thread", "xref", "href", "layer", "location"]);
   const note = (unit, node) => {
     out.push(node);
     if (!firstOf.has(unit)) firstOf.set(unit, node);
   };
   for (const unit of units) {
-    let head = unit.head.filter((h) => INHERITED_HEAD.has(localName(h)));
-    let run = [];
-    const flush = () => {
-      if (run.some((n) => !isWhitespaceText(n))) {
-        const text = doc.createElementNS(ns, "text");
-        for (const h of head) {
-          text.appendChild(doc.createTextNode(`\n${indent}  `));
-          text.appendChild(h);
-        }
-        head = [];
-        const first = run[0];
-        const last = run[run.length - 1];
-        if (first.nodeType === Node.TEXT_NODE) first.nodeValue = first.nodeValue.replace(/^\s+/, "");
-        if (last.nodeType === Node.TEXT_NODE) last.nodeValue = last.nodeValue.replace(/\s+$/, "");
-        text.appendChild(doc.createTextNode(`\n${indent}  `));
-        for (const n of run) text.appendChild(n);
-        text.appendChild(doc.createTextNode(`\n${indent}`));
-        note(unit, text);
-      }
-      run = [];
-    };
-    for (const n of unit.body) {
-      const tag = n.nodeType === Node.ELEMENT_NODE ? localName(n) : null;
-      if (tag === "src") continue;
-      if (tag === "tabular") {
-        flush();
-        const table = doc.createElementNS(ns, "table");
-        while (n.firstChild) table.appendChild(n.firstChild);
-        dedentMarkup(table);
-        note(unit, table);
-      } else if (tag && TOP_LEVEL_TYPES.has(tag)) {
-        flush();
-        dedentMarkup(n);
-        note(unit, n);
-      } else {
-        run.push(n);
-      }
-    }
-    flush();
+    for (const node of blocksFromUnit(unit, doc, ns, indent)) note(unit, node);
   }
 
   const ref = parent;
@@ -4033,6 +4045,349 @@ async function dissolveParentOfSelected() {
   const id = idOnCurrentPage(target);
   selectedFacet = "text";
   await commitMarkupText(serializeDocument(), { reselect: id });
+}
+
+
+// --- Reading order: drag an element in the source to a new place among its siblings ---
+
+/** Parents that hold blocks in reading order: the document, containers and pictures. */
+function holdsBlocks(parent) {
+  return !!parent && (parent === state.docRoot || CHILD_CONTAINER_TYPES.has(localName(parent)) || localName(parent) === "picture");
+}
+
+/** What can be dragged: blocks sitting in the document, a container or a picture, and list items and table cells. */
+function isMovable(el) {
+  if (isVirtualUnit(el)) return true;
+  return TOP_LEVEL_TYPES.has(localName(el)) && holdsBlocks(el.parentElement);
+}
+
+/**
+ * True when `moved` may go `pos` (before / after / into) `target`. Blocks and units convert as they cross a
+ * boundary: a unit dropped among blocks becomes a <text>, a block dropped among units becomes a wrapped item or cell.
+ */
+function canMoveTo(moved, target, pos) {
+  if (!moved || !target || moved === target || xmlContains(target, moved)) return false;
+  const movedUnit = isVirtualUnit(moved);
+  const targetUnit = isVirtualUnit(target);
+  const targetTag = localName(target);
+  if (pos === "into") {
+    if (targetTag === "list") return true;
+    return !targetUnit && holdsBlocks(target) && target !== state.docRoot;
+  }
+  if (targetUnit) return !movedUnit || (localName(moved) === "ldiv") === (targetTag === "ldiv");
+  return TOP_LEVEL_TYPES.has(targetTag) && holdsBlocks(target.parentElement);
+}
+
+/** Adds or removes `delta` spaces of indentation after every line break inside `node`, except in <content>. */
+function shiftIndent(node, delta) {
+  if (!delta) return;
+  if (node.nodeType === Node.TEXT_NODE) {
+    node.nodeValue = node.nodeValue.replace(/\n( *)/g, (m, spaces) => `\n${delta > 0 ? spaces + " ".repeat(delta) : spaces.slice(0, Math.max(0, spaces.length + delta))}`);
+  } else if (node.nodeType === Node.ELEMENT_NODE && localName(node) !== "content") {
+    for (const child of node.childNodes) shiftIndent(child, delta);
+  }
+}
+
+/** Inserts `nodes` (blocks, or a unit's nodes) before/after `target` among its siblings, each on its own line. */
+function insertBeside(target, pos, nodes) {
+  const doc = target.ownerDocument;
+  const parent = target.parentNode;
+  const indent = indentBefore(target);
+  if (pos === "before") {
+    for (const n of nodes) {
+      parent.insertBefore(n, target);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), target);
+    }
+    return indent;
+  }
+  const unit = isVirtualUnit(target);
+  const at = unit ? itemInsertPoint(target) : target.nextSibling;
+  for (const n of nodes) {
+    parent.insertBefore(doc.createTextNode(`\n${indent}`), at);
+    parent.insertBefore(n, at);
+  }
+  if (!unit && !at) parent.appendChild(doc.createTextNode(`\n${parent === state.docRoot ? "" : indent.slice(0, Math.max(0, indent.length - 2))}`));
+  return indent;
+}
+
+/** Appends `nodes` as the last children of `container`, each on its own line. */
+function insertInto(container, nodes) {
+  const doc = container.ownerDocument;
+  const indent = childIndentOf(container);
+  const closing = closingWhitespace(container, indent.slice(0, Math.max(0, indent.length - 2)));
+  for (const n of nodes) {
+    container.insertBefore(doc.createTextNode(`\n${indent}`), closing);
+    container.insertBefore(n, closing);
+  }
+  return indent;
+}
+
+/** Takes a block out of the document and re-indents it for a place `toIndent` deep (call after choosing the place). */
+function detachBlock(el) {
+  const fromIndent = indentBefore(el).length;
+  removeNode(el);
+  return fromIndent;
+}
+
+/** Takes a list item or table cell out of its list or table: its pieces, with the separators repaired. */
+function detachUnit(token) {
+  const isBoundary = localName(token) === "ldiv" ? (n) => localName(n) === "ldiv" : (n) => isCellToken(localName(n));
+  const fromIndent = indentBefore(token).length;
+  const point = itemInsertPoint(token); // splits off the unit's trailing whitespace, which stays behind as the separator
+  const r = virtualRange(token);
+  const nodes = [];
+  for (let n = token; n && n !== point; n = n.nextSibling) {
+    if (n !== token && n.nodeType === Node.ELEMENT_NODE && isBoundary(n)) break;
+    nodes.push(n);
+  }
+  const head = r.locs.length === 4 ? r.nodes.slice(r.idx + 1, r.headEnd).filter((n) => n.nodeType === Node.ELEMENT_NODE) : [];
+  const body = nodes.slice(r.headEnd - r.idx);
+  const before = token.previousSibling;
+  for (const n of nodes) n.remove();
+  if (before && isWhitespaceText(before)) {
+    before.remove();
+  } else if (before?.nodeType === Node.TEXT_NODE && point?.nodeType === Node.TEXT_NODE && point.parentNode) {
+    // The previous unit's text ends in the whitespace that preceded this one: let the trailing one replace it.
+    before.nodeValue = before.nodeValue.replace(/\n[ \t]*$/, point.nodeValue);
+    point.remove();
+  }
+  return { nodes, head, body, fromIndent };
+}
+
+function shiftAll(nodes, delta) {
+  for (const n of nodes) shiftIndent(n, delta);
+}
+
+/** A new empty list item or cell token of the kind `like` (an <ldiv/>, or a full cell for table targets). */
+function newUnitToken(like) {
+  return like.ownerDocument.createElementNS(like.namespaceURI, localName(like) === "ldiv" ? "ldiv" : "fcel");
+}
+
+/**
+ * Moves `moved` before/after/into `target`, converting where the two differ in kind: a block among list items or
+ * cells becomes a wrapped item or cell; a unit among blocks becomes a <text> (its token and marker dropped).
+ */
+function moveElement(moved, target, pos) {
+  const doc = moved.ownerDocument;
+  const ns = moved.namespaceURI;
+  if (isVirtualUnit(moved)) {
+    const { nodes, head, body, fromIndent } = detachUnit(moved);
+    const intoList = pos === "into" && localName(target) === "list";
+    const asUnit = intoList || (pos !== "into" && isVirtualUnit(target));
+    if (asUnit) {
+      if (intoList) {
+        const indent = childIndentOf(target);
+        shiftAll(nodes, indent.length - fromIndent);
+        const closing = closingWhitespace(target, indent.slice(0, Math.max(0, indent.length - 2)));
+        target.insertBefore(doc.createTextNode(`\n${indent}`), closing);
+        for (const n of nodes) target.insertBefore(n, closing);
+      } else if (pos === "before") {
+        const indent = indentBefore(target);
+        shiftAll(nodes, indent.length - fromIndent);
+        for (const n of nodes) target.parentNode.insertBefore(n, target);
+        target.parentNode.insertBefore(doc.createTextNode(`\n${indent}`), target);
+      } else {
+        const indent = indentBefore(target);
+        shiftAll(nodes, indent.length - fromIndent);
+        const at = itemInsertPoint(target);
+        target.parentNode.insertBefore(doc.createTextNode(`\n${indent}`), at);
+        for (const n of nodes) target.parentNode.insertBefore(n, at);
+      }
+      return moved;
+    }
+    const indent = pos === "into" ? childIndentOf(target) : indentBefore(target);
+    const blocks = blocksFromUnit({ head, body }, doc, ns, indent);
+    if (pos === "into") insertInto(target, blocks);
+    else insertBeside(target, pos, blocks);
+    return blocks[0] ?? null;
+  }
+  const fromIndent = detachBlock(moved);
+  if (pos === "into" && localName(target) === "list") {
+    const indent = childIndentOf(target);
+    shiftIndent(moved, indent.length - fromIndent);
+    insertInto(target, [doc.createElementNS(ns, "ldiv"), moved]);
+    return moved;
+  }
+  if (pos === "into") {
+    shiftIndent(moved, childIndentOf(target).length - fromIndent);
+    insertInto(target, [moved]);
+    return moved;
+  }
+  if (isVirtualUnit(target)) {
+    // The block becomes the content of a new item or cell next to the target.
+    const indent = indentBefore(target);
+    shiftIndent(moved, indent.length - fromIndent);
+    const token = newUnitToken(target);
+    const parent = target.parentNode;
+    if (pos === "before") {
+      parent.insertBefore(token, target);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), target);
+      parent.insertBefore(moved, target);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), target);
+    } else {
+      const at = itemInsertPoint(target);
+      for (const n of [doc.createTextNode(`\n${indent}`), token, doc.createTextNode(`\n${indent}`), moved]) parent.insertBefore(n, at);
+    }
+    return moved;
+  }
+  shiftIndent(moved, indentBefore(target).length - fromIndent);
+  insertBeside(target, pos, [moved]);
+  return moved;
+}
+
+async function moveElementTo(moved, target, pos) {
+  if (!canEditDocument() || !canMoveTo(moved, target, pos)) return;
+  const stillUnit = isVirtualUnit(moved) && (pos === "into" ? localName(target) === "list" : isVirtualUnit(target));
+  const focus = moveElement(moved, target, pos);
+  selectedFacet = stillUnit && localName(moved) === "ldiv" ? "item" : "text";
+  await commitMarkupText(serializeDocument(), { reselect: focus ? idOnCurrentPage(focus) : null });
+}
+
+/**
+ * Scrolls the source pane while a drag is held near (or beyond) its top or bottom edge, however long that takes, so
+ * an element can be carried across a long document. Returns a function that stops it.
+ */
+function startDragAutoscroll() {
+  const pane = els.markupPane;
+  if (!pane) return () => {};
+  const EDGE = 64;
+  let pointer = null;
+  let frame = 0;
+  const track = (e) => {
+    pointer = { x: e.clientX, y: e.clientY };
+  };
+  const tick = () => {
+    if (pointer) {
+      const rect = pane.getBoundingClientRect();
+      // Beyond the pane (e.g. over the header above it) counts as the fastest speed in that direction.
+      const inColumn = pointer.x >= rect.left - 40 && pointer.x <= rect.right + 40;
+      if (inColumn) {
+        const intoTop = rect.top + EDGE - pointer.y;
+        const intoBottom = pointer.y - (rect.bottom - EDGE);
+        if (intoTop > 0) pane.scrollTop -= 4 + Math.min(1, intoTop / EDGE) * 28;
+        else if (intoBottom > 0) pane.scrollTop += 4 + Math.min(1, intoBottom / EDGE) * 28;
+      }
+    }
+    frame = requestAnimationFrame(tick);
+  };
+  document.addEventListener("dragover", track, true);
+  frame = requestAnimationFrame(tick);
+  return () => {
+    document.removeEventListener("dragover", track, true);
+    cancelAnimationFrame(frame);
+  };
+}
+
+/** Makes the source's movable rows draggable and handles dropping them before, after or into other rows. */
+function wireMarkupDrag(root) {
+  // Rows are dragged by an explicit grip on their first line, so that dragging never competes with selecting text.
+  // The ghost <text> shown under a list item or cell stands for the same unit as its token: either grip moves it.
+  for (const row of root.querySelectorAll(".markup-el[data-element-id]")) {
+    const el = state.idToElement?.get(row.getAttribute("data-element-id"));
+    const line = row.querySelector(":scope > .markup-line");
+    if (!el || !line || !isMovable(el)) continue;
+    const handle = document.createElement("span");
+    handle.className = "markup-drag-handle";
+    handle.textContent = "⋮⋮";
+    handle.title = "Drag to change the reading order";
+    handle.setAttribute("aria-hidden", "true");
+    line.appendChild(handle);
+  }
+  root.classList.add("has-grips"); // reserves a lane at the left of every line
+  const lockRows = () => {
+    root.querySelectorAll('.markup-el[draggable="true"]').forEach((row) => {
+      row.draggable = false;
+    });
+  };
+  root.addEventListener("mousedown", (e) => {
+    const handle = e.target.closest?.(".markup-drag-handle");
+    if (!handle || e.button !== 0 || markupEditor) return;
+    lockRows();
+    handle.closest(".markup-el").draggable = true;
+    document.addEventListener("mouseup", lockRows, { once: true });
+  });
+  /** @type {Element | null} */
+  let moved = null;
+  let stopAutoscroll = () => {};
+  const clear = () => {
+    lockRows();
+    stopAutoscroll();
+    stopAutoscroll = () => {};
+    root.querySelectorAll(".drop-before, .drop-after, .drop-into, .dragging").forEach((n) => n.classList.remove("drop-before", "drop-after", "drop-into", "dragging"));
+  };
+  /**
+   * Where the pointer would drop. Starting from the innermost row under it (rows that are not valid targets, such as a
+   * marker or a location, defer to the element around them). For an element that can take children:
+   * - the top quarter of its opening tag is before it, the lower half of its closing tag is after it,
+   *   and everywhere else on it, including its body, is into it;
+   * - an element with nothing unfolded splits its single line in thirds instead.
+   * For one that cannot, the upper half is before it and the lower half after it.
+   */
+  const place = (e) => {
+    if (!moved) return null;
+    let row = e.target.closest?.(".markup-el[data-element-id]") ?? null;
+    while (row) {
+      const target = state.idToElement?.get(row.getAttribute("data-element-id"));
+      if (target) {
+        const ghost = row.classList.contains("markup-el-virtual-text");
+        const open = row.querySelector(":scope > .markup-line")?.getBoundingClientRect();
+        const close = row.querySelector(":scope > .markup-fold-body > .markup-line")?.getBoundingClientRect();
+        const whole = row.getBoundingClientRect();
+        const canInto = !ghost && canMoveTo(moved, target, "into");
+        const y = e.clientY;
+        let pos = "after";
+        if (!ghost && open) {
+          const unfolded = !!close && !row.classList.contains("markup-collapsed");
+          if (canInto && unfolded) {
+            pos = y < open.top + open.height * 0.25 ? "before" : close && y >= close.top + close.height * 0.5 ? "after" : "into";
+          } else if (canInto) {
+            const f = (y - open.top) / open.height;
+            pos = f < 0.3 ? "before" : f < 0.7 ? "into" : "after";
+          } else {
+            pos = y < whole.top + whole.height / 2 ? "before" : "after";
+          }
+        }
+        if (canMoveTo(moved, target, pos)) return { row, target, pos };
+      }
+      row = row.parentElement?.closest(".markup-el[data-element-id]") ?? null;
+    }
+    return null;
+  };
+  root.addEventListener("dragstart", (e) => {
+    const row = e.target.closest?.('.markup-el[draggable="true"]');
+    moved = row ? state.idToElement?.get(row.getAttribute("data-element-id")) ?? null : null;
+    if (!moved || markupEditor) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", row.getAttribute("data-element-id"));
+    e.stopPropagation();
+    row.classList.add("dragging");
+    stopAutoscroll();
+    stopAutoscroll = startDragAutoscroll();
+  });
+  root.addEventListener("dragover", (e) => {
+    const spot = place(e);
+    root.querySelectorAll(".drop-before, .drop-after, .drop-into").forEach((n) => n.classList.remove("drop-before", "drop-after", "drop-into"));
+    if (!spot) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    spot.row.classList.add(`drop-${spot.pos}`);
+  });
+  root.addEventListener("drop", (e) => {
+    const spot = place(e);
+    const dragged = moved;
+    clear();
+    moved = null;
+    if (!spot || !dragged) return;
+    e.preventDefault();
+    moveElementTo(dragged, spot.target, spot.pos);
+  });
+  root.addEventListener("dragend", () => {
+    clear();
+    moved = null;
+  });
 }
 
 // --- Bbox resize on the page overlay (no free move: it is too easy to do by accident) ---
@@ -7450,6 +7805,7 @@ function buildMarkupView(segment, elementIds) {
       seekTrackToElement(elementId);
     }
   });
+  if (editableEntry()) wireMarkupDrag(root);
   return root;
 }
 
