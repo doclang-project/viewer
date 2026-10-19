@@ -787,6 +787,7 @@ initPaneSplitters();
 initLayoutStackListener();
 initFileTypeHints();
 initCursorHints();
+initQuickHints();
 initFormulaRewriteHints();
 initBboxHints();
 initDragDrop();
@@ -2061,6 +2062,41 @@ function initCursorHints() {
     showCursorHint(available ? RELOAD_FILE_HINT : RELOAD_FILE_UNAVAILABLE_HINT, e.clientX, e.clientY);
   });
   reloadBtn?.addEventListener("mouseleave", hideCursorHint);
+}
+
+/** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
+const QUICK_HINT_SELECTOR = 'button, label.file-btn, select, summary';
+
+/**
+ * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
+ * delay and cannot be styled, so a title is moved to `data-hint` the first time the pointer reaches its control
+ * (and again whenever the code sets a new one), and displayed by the cursor hint.
+ */
+function initQuickHints() {
+  let owner = null;
+  document.addEventListener("mouseover", (e) => {
+    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
+    const title = el?.getAttribute("title");
+    if (title) {
+      el.dataset.hint = title;
+      el.removeAttribute("title");
+    }
+  }, true);
+  document.addEventListener("mousemove", (e) => {
+    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
+    if (el?.dataset.hint) {
+      owner = el;
+      showCursorHint(el.dataset.hint, e.clientX, e.clientY);
+    } else if (owner) {
+      owner = null;
+      hideCursorHint();
+    }
+  });
+  document.addEventListener("mousedown", () => {
+    if (!owner) return;
+    owner = null;
+    hideCursorHint();
+  }, true);
 }
 
 function initFormulaRewriteHints() {
