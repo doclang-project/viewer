@@ -2764,7 +2764,7 @@ function bodyNodesOf(el) {
 
 /** The element's body as a single <content> wrapper, or null. */
 function contentWrapper(el) {
-  const body = bodyNodesOf(el).filter((n) => !isWhitespaceText(n));
+  const body = bodyNodesOf(el).filter((n) => !isWhitespaceText(n) && n.nodeType !== Node.COMMENT_NODE);
   return body.length === 1 && body[0].nodeType === Node.ELEMENT_NODE && localName(body[0]) === "content" ? body[0] : null;
 }
 
@@ -2774,7 +2774,7 @@ function plainTextOf(el) {
   if (wrapper) return childElements(wrapper).length ? null : wrapper.textContent;
   const body = bodyNodesOf(el);
   if (body.some((n) => n.nodeType === Node.ELEMENT_NODE)) return null;
-  return body.map((n) => n.nodeValue ?? "").join("").replace(/\s+/g, " ").trim();
+  return body.filter((n) => n.nodeType !== Node.COMMENT_NODE).map((n) => n.nodeValue ?? "").join("").replace(/\s+/g, " ").trim();
 }
 
 /** Whitespace beyond single spaces between words only survives inside <content>. */
@@ -2808,7 +2808,7 @@ function setPlainText(el, text) {
       childIndent,
       closeIndent: r.nodes[r.end] ? childIndent : lastWs ?? childIndent.slice(0, Math.max(0, childIndent.length - 2)),
     };
-    for (const node of body) node.remove();
+    for (const node of body) if (node.nodeType !== Node.COMMENT_NODE) node.remove();
   } else {
     const first = [...el.childNodes][0];
     const last = el.lastChild;
@@ -2818,7 +2818,7 @@ function setPlainText(el, text) {
       childIndent: first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "",
       closeIndent: last?.nodeType === Node.TEXT_NODE ? last.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "",
     };
-    for (const node of bodyNodes(el)) node.remove();
+    for (const node of bodyNodes(el)) if (node.nodeType !== Node.COMMENT_NODE) node.remove(); // comments stay
   }
   const wrap = (virtual || CONTENT_WRAPPER_TYPES.has(localName(el))) && needsContentWrapper(text);
   const nodes = textNodesFor(doc, wrap ? text : text.trim());
