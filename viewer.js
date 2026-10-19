@@ -533,6 +533,8 @@ const els = {
   overlaysReset: document.getElementById("btn-overlays-reset"),
   validateBtn: document.getElementById("btn-validate"),
   editBtn: document.getElementById("btn-edit"),
+  paneMenuBtn: document.getElementById("btn-pane-menu"),
+  paneMenu: document.getElementById("pane-menu"),
   editApplyBtn: document.getElementById("btn-edit-apply"),
   editCancelBtn: document.getElementById("btn-edit-cancel"),
   saveBtn: document.getElementById("btn-save"),
@@ -680,7 +682,30 @@ els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
-els.editBtn?.addEventListener("click", startEditing);
+els.editBtn?.addEventListener("click", () => {
+  setPaneMenuOpen(false);
+  startEditing();
+});
+els.paneMenuBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setPaneMenuOpen(els.paneMenu?.hidden);
+});
+document.addEventListener("click", (e) => {
+  if (els.paneMenu && !els.paneMenu.hidden && !e.target.closest?.(".pane-menu-wrap")) setPaneMenuOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && els.paneMenu && !els.paneMenu.hidden) {
+    setPaneMenuOpen(false);
+    els.paneMenuBtn?.focus();
+  }
+});
+
+function setPaneMenuOpen(open) {
+  if (!els.paneMenu || !els.paneMenuBtn) return;
+  els.paneMenu.hidden = !open;
+  els.paneMenuBtn.setAttribute("aria-expanded", String(!!open));
+  if (open) els.editBtn?.focus();
+}
 els.editApplyBtn?.addEventListener("click", applyEdit);
 els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
 els.saveBtn?.addEventListener("click", saveActiveFile);
@@ -2463,7 +2488,10 @@ document.addEventListener("keydown", (e) => {
 function syncEditUi() {
   const entry = editableEntry();
   const editing = !!markupEditor;
-  if (els.editBtn) els.editBtn.hidden = !entry || editing;
+  if (els.paneMenuBtn) {
+    els.paneMenuBtn.hidden = !entry || editing;
+    if (els.paneMenuBtn.hidden) setPaneMenuOpen(false);
+  }
   if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
   if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
   syncAddButtons();
@@ -3834,7 +3862,7 @@ function applyValidationPanelOpen(open) {
 const VALIDATE_BTN_LABELS = {
   idle: "Validate XSD",
   running: "Validating…",
-  valid: "Valid XSD",
+  valid: "XSD",
   error: "Validation failed",
 };
 
@@ -3844,12 +3872,16 @@ function renderValidationUi(entry) {
   const v = entry?.validation ?? { status: "idle" };
   btn.dataset.status = v.status;
   btn.disabled = v.status === "running";
-  btn.textContent = v.status === "invalid"
-    ? `${v.issues.length} XSD ${v.issues.length === 1 ? "issue" : "issues"}`
+  // "XSD <version>", plus the issue count when there are issues; the colour says valid or not.
+  const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}`;
+  btn.textContent = v.status === "valid" ? xsd
+    : v.status === "invalid" ? `${xsd} · ${v.issues.length} ${v.issues.length === 1 ? "issue" : "issues"}`
     : VALIDATE_BTN_LABELS[v.status];
   btn.title = v.status === "idle" || v.status === "error"
     ? "Validate against the DocLang XSD"
-    : "Show validation results";
+    : v.status === "valid"
+      ? `Valid against DocLang XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}. Click for details`
+      : "Show validation results";
 
   if (!els.validationSummary || !els.validationIssues) return;
   const schema = v.schemaVersion ? `DocLang XSD ${v.schemaVersion}` : "DocLang XSD";

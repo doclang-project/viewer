@@ -626,24 +626,25 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
-          <button type="button" class="pane-action-btn" id="btn-edit" title="Edit the raw DocLang source (pauses visual editing)" hidden>Edit source</button>
           <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
           <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
-          <button type="button" class="pane-action-btn" id="btn-undo" title="Undo the last visual edit (Ctrl/Cmd+Z)" hidden>Undo</button>
-          <button type="button" class="pane-action-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" hidden>Redo</button>
-          <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and restore the last saved version" hidden>Discard changes</button>
+          <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
+          <button type="button" class="pane-action-btn icon-btn" id="btn-undo" title="Undo the last edit (Ctrl/Cmd+Z)" aria-label="Undo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
+          <button type="button" class="pane-action-btn icon-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" aria-label="Redo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button>
+          <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and go back to the last saved version" hidden>Discard</button>
           <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the applied changes to the file" hidden>Save</button>
-          <button
-            type="button"
-            class="validate-btn"
-            id="btn-validate"
-            data-status="idle"
-            aria-expanded="false"
-            aria-controls="validation-panel"
-            title="Validate against the DocLang XSD"
-          >Validate XSD</button>
+          <!-- Less-used actions live behind "more" (vertical ellipsis icon: Lucide, ISC license, see vendor/lucide/LICENSE). -->
+          <div class="pane-menu-wrap">
+            <button type="button" class="pane-action-btn icon-btn ghost-btn" id="btn-pane-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="pane-menu" aria-label="More actions" title="More actions" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+            <div class="pane-menu" id="pane-menu" role="menu" hidden>
+              <button type="button" class="pane-menu-item" role="menuitem" id="btn-edit" title="Edit the raw DocLang source (pauses visual editing)">Edit source</button>
+            </div>
+          </div>
         </div>
       </div>
+      <div class="edit-error" id="edit-error" role="alert" hidden></div>
+      <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
+      <div class="pane-body" id="markup-pane"></div>
       <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
         <div class="validation-panel-header">
           <span class="validation-panel-summary" id="validation-summary"></span>
@@ -651,9 +652,17 @@
         </div>
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
-      <div class="edit-error" id="edit-error" role="alert" hidden></div>
-      <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
-      <div class="pane-body" id="markup-pane"></div>
+      <div class="pane-statusbar">
+        <button
+          type="button"
+          class="validate-btn"
+          id="btn-validate"
+          data-status="idle"
+          aria-expanded="false"
+          aria-controls="validation-panel"
+          title="Validate against the DocLang XSD"
+        >Validate XSD</button>
+      </div>
     </section>
     <div
       class="pane-splitter"
