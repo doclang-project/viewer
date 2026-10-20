@@ -3650,6 +3650,9 @@ function renderPage(pageNum) {
       img.alt = `Page ${pageNum}`;
 
       const onImageReady = () => {
+        // An image that finishes loading after another page was rendered belongs to a page that is gone: it must
+        // not touch the current page's views, overlay data or pending selection.
+        if (!img.isConnected || state?.currentPage !== pageNum) return;
         if (img.dataset.layoutGeneration === String(pageNum)) return;
         img.dataset.layoutGeneration = String(pageNum);
 
@@ -4481,7 +4484,10 @@ function navigateThreadFragment(elementId, direction) {
   if (!page) return;
   if (page === state.currentPage) {
     const id = findElementIdOnPage(target);
-    if (id) selectElement(id);
+    if (id) {
+      state.pendingSelectElement = null;
+      selectElement(id);
+    }
     return;
   }
   state.pendingSelectElement = target;
@@ -4498,7 +4504,8 @@ function bboxNavTarget(direction) {
   if (!order || !order.length) return null;
   const step = direction === "prev" ? -1 : 1;
 
-  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : null;
+  // While a page is still loading, the element being navigated to is pending, not yet selected: continue from it.
+  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : state.pendingSelectElement;
   const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
   const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
 
@@ -4515,7 +4522,10 @@ function navigateBbox(direction) {
   if (!page) return;
   if (page === state.currentPage) {
     const id = findElementIdOnPage(target);
-    if (id) selectElement(id);
+    if (id) {
+      state.pendingSelectElement = null; // a pending selection from an earlier step must not override this one
+      selectElement(id);
+    }
     return;
   }
   state.pendingSelectElement = target;
