@@ -4553,8 +4553,6 @@ function captionPrecedesHost(caption, host) {
 /** @returns {Element[]} */
 function computeReadingOrder(docRoot) {
   const bodyChildren = childElements(docRoot).filter((el) => localName(el) !== "head");
-  const threadsById = buildThreadsById(docRoot);
-  const consumedViaXref = new Set();
   /** @type {Element[]} */
   const order = [];
 
@@ -4563,25 +4561,14 @@ function computeReadingOrder(docRoot) {
     order.push(el);
   }
 
-  function consumeThread(threadId) {
-    for (const target of threadsById.get(threadId) ?? []) {
-      if (consumedViaXref.has(target)) continue;
-      consumedViaXref.add(target);
-      visitElement(target);
-    }
-  }
-
+  // Document order. A cross-reference (<xref>) does not move what it points at into the flow: xrefs have
+  // arrows of their own, so the reading order stays what the document says.
   function walkChildren(parent, skip = null) {
     for (const child of parent.childNodes) {
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       if (skip?.has(child)) continue;
       const tag = localName(child);
-      if (tag === "xref") {
-        const threadId = child.getAttribute("thread_id");
-        if (threadId) consumeThread(threadId);
-        continue;
-      }
-      if (tag === "page_break" || tag === "custom") continue;
+      if (tag === "xref" || tag === "page_break" || tag === "custom") continue;
       visitElement(child);
     }
   }
@@ -4601,7 +4588,6 @@ function computeReadingOrder(docRoot) {
 
   for (const el of bodyChildren) {
     if (localName(el) === "page_break" || localName(el) === "custom") continue;
-    if (consumedViaXref.has(el)) continue;
     visitElement(el);
   }
 
