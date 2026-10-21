@@ -375,6 +375,11 @@ let pagePaneResizeObserver = null;
 let pagedPaneResizeObserver = null;
 /** @type {string | null} */
 let selectedElementId = null;
+/**
+ * A list item selects at two levels that share one element id (its <ldiv/>): the item itself ("item": marker, delete)
+ * and the virtual text that follows it ("text": content, bbox, layer, thread). Everything else is "text".
+ */
+let selectedFacet = "text";
 let showAllBboxes = true;
 let showLayoutBadges = true;
 let showCaptionLinks = false;
@@ -2612,12 +2617,13 @@ async function commitMarkupText(text, { record = true, reselect = null } = {}) {
   if (!entry.dirty) entry.savedSource = previousSource;
   entry.dirty = true;
   entry.validation = null;
+  const facet = selectedFacet; // renderPage clears the selection: keep the level the user was editing
   if (record) {
     (entry.undoStack ??= []).push(previousText);
     entry.redoStack = [];
   }
   await switchToFile(activeFileIndex);
-  if (reselect && state?.idToElement?.has(reselect)) selectElement(reselect);
+  if (reselect && state?.idToElement?.has(reselect)) selectElement(reselect, facet);
   return true;
 }
 
@@ -2694,7 +2700,7 @@ const TOP_LEVEL_TYPES = new Set([
   "text", "heading", "code", "formula", "page_header", "page_footer", "footnote", "list", "group", "field_region",
   "field_heading", "field_item", "key", "value", "picture", "table", "index", "track",
 ]);
-const CONVERTIBLE_TYPES = [...TEXT_BLOCK_TYPES, "group"];
+const CONVERTIBLE_TYPES = [...TEXT_BLOCK_TYPES, "group", "list"];
 /** Types whose schema content model allows a <content> wrapper (and so can keep whitespace). */
 const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula"]);
 /** Types that carry text of their own. Containers such as group and list only hold other elements. */
@@ -2713,13 +2719,30 @@ const ATTR_SPECS = {
 
 /** Why `el` cannot become `tag`, or null when it can. */
 function retypeBlocker(el, tag) {
-  if (!CONTENT_WRAPPER_TYPES.has(tag) && contentWrapper(el)) return `<${tag}> cannot hold <content>`;
-  if (tag === "group") {
-    const body = bodyNodes(el);
-    const onlyBlocks = body.every((n) => isWhitespaceText(n) || (n.nodeType === Node.ELEMENT_NODE && TOP_LEVEL_TYPES.has(localName(n))));
-    if (!onlyBlocks) return "<group> can only hold nested blocks, not text";
+  const from = localName(el);
+  if (from === "list") {
+    // A list turns into a single block only while it has at most one item.
+    if (childElements(el).filter((c) => localName(c) === "ldiv").length > 1) return "the list has several items";
+    if (tag === "group" && !onlyBlocks(listItemBody(el))) return "<group> can only hold nested blocks, not text";
+    return null;
   }
+  if (tag === "list") return null; // the whole body becomes the content of one list item
+  if (!CONTENT_WRAPPER_TYPES.has(tag) && contentWrapper(el)) return `<${tag}> cannot hold <content>`;
+  if (tag === "group" && !onlyBlocks(bodyNodes(el))) return "<group> can only hold nested blocks, not text";
   return null;
+}
+
+function onlyBlocks(nodes) {
+  return nodes.every((n) => isWhitespaceText(n) || (n.nodeType === Node.ELEMENT_NODE && TOP_LEVEL_TYPES.has(localName(n))));
+}
+
+/** The body of a list's single item (everything after its <ldiv/>). */
+function listItemBody(list) {
+  const nodes = [...list.childNodes];
+  const idx = nodes.findIndex((n) => n.nodeType === Node.ELEMENT_NODE && localName(n) === "ldiv");
+  if (idx < 0) return [];
+  const head = parseElementHeadAt(nodes, idx + 1);
+  return nodes.slice(head ? head.nextIndex : idx + 1);
 }
 const BBOX_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
@@ -2852,11 +2875,12 @@ function setPlainText(el, text) {
   } else {
     const first = [...el.childNodes][0];
     const last = el.lastChild;
+    const guess = childIndentOf(el);
     place = {
       parent: el,
       ref: null,
-      childIndent: first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "",
-      closeIndent: last?.nodeType === Node.TEXT_NODE ? last.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "",
+      childIndent: first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? guess : guess,
+      closeIndent: last?.nodeType === Node.TEXT_NODE ? last.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? guess.slice(0, Math.max(0, guess.length - 2)) : guess.slice(0, Math.max(0, guess.length - 2)),
     };
     for (const node of bodyNodes(el)) if (node.nodeType !== Node.COMMENT_NODE) node.remove(); // comments stay
   }
@@ -2927,7 +2951,21 @@ function setElementLayer(el, value) {
 
 /** Renames an element in place (same attributes and children) and fixes the attributes the new type owns. */
 function retypeElement(el, tag) {
-  if (localName(el) === tag) return;
+  const from = localName(el);
+  if (from === tag) return;
+  if (from === "list") {
+    const ldiv = childElements(el).find((c) => localName(c) === "ldiv");
+    if (ldiv) {
+      const prev = ldiv.previousSibling;
+      if (prev && isWhitespaceText(prev)) prev.remove();
+      ldiv.remove();
+    }
+  } else if (tag === "list") {
+    const doc = el.ownerDocument;
+    const ref = el.childNodes[headEndIndex(el)] ?? null;
+    el.insertBefore(doc.createTextNode(`\n${childIndentOf(el)}`), ref);
+    el.insertBefore(doc.createElementNS(el.namespaceURI, "ldiv"), ref);
+  }
   const next = el.ownerDocument.createElementNS(el.namespaceURI, tag);
   for (const attr of [...el.attributes]) next.setAttribute(attr.name, attr.value);
   while (el.firstChild) next.appendChild(el.firstChild);
@@ -3056,13 +3094,15 @@ function renderInspector() {
   const tag = localName(el);
   const virtual = isVirtualUnit(el);
   const ownHead = virtual ? elementHeadLocations(el).length === 4 : headLocations(el).length === 4 || firstHeadChild(el, "layer") != null;
+  const itemFacet = isListItem(el) && selectedFacet === "item";
   const parts = [];
 
   const head = document.createElement("div");
   head.className = "inspector-head";
   const title = document.createElement("div");
   title.className = "inspector-title";
-  title.textContent = `<${tag}> ${selectedElementId}${threadIdOf(el) ? ` · thread ${threadIdOf(el)}` : ""}`;
+  const level = !isListItem(el) ? "" : itemFacet ? " list item" : " item text";
+  title.textContent = `<${tag}>${level} ${selectedElementId}${!itemFacet && threadIdOf(el) ? ` · thread ${threadIdOf(el)}` : ""}`;
   const close = document.createElement("button");
   close.type = "button";
   close.className = "inspector-close";
@@ -3083,10 +3123,47 @@ function renderInspector() {
       editSelectedElement((node) => node.setAttribute(spec.name, v));
     })));
   }
-  if (ownHead) {
+  if (ownHead && !itemFacet) {
     parts.push(inspectorField("Layer", inspectorSelect([...ELEMENT_LAYERS], elementLayer(el), (v) => {
       editSelectedElement((node) => setElementLayer(node, v));
     })));
+  }
+  if (itemFacet) {
+    const marker = markerOf(el);
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "inspector-marker";
+    input.spellcheck = false;
+    input.placeholder = "none";
+    input.size = 8; // a usable width even if the stylesheet is stale
+    const none = document.createElement("button");
+    none.type = "button";
+    none.className = "pane-action-btn";
+    none.textContent = "None";
+    none.title = "No marker: leave it unspecified (<ldiv/>)";
+    none.disabled = !marker;
+    if (marker && childElements(marker).length) {
+      input.value = marker.textContent.trim();
+      input.disabled = true;
+      input.title = "This marker has its own bbox or a checkbox: edit it in the source";
+    } else {
+      input.value = marker?.textContent.trim() ?? "";
+      input.addEventListener("input", () => {
+        pendingTextEdit = () => editSelectedElement((node) => setMarker(node, input.value));
+        none.disabled = !input.value.trim();
+        syncEditUi();
+      });
+      input.addEventListener("change", flushPendingEdit);
+      none.addEventListener("click", () => {
+        input.value = "";
+        pendingTextEdit = null;
+        editSelectedElement((node) => setMarker(node, ""));
+      });
+    }
+    const row = document.createElement("div");
+    row.className = "inspector-marker-row";
+    row.append(input, none);
+    parts.push(inspectorField("Marker", row));
   }
   const note = (message) => {
     const div = document.createElement("div");
@@ -3094,7 +3171,7 @@ function renderInspector() {
     div.textContent = message;
     parts.push(div);
   };
-  const holdsText = virtual ? virtualUnitHoldsText(el) : TEXT_EDITABLE_TYPES.has(tag);
+  const holdsText = !itemFacet && (virtual ? virtualUnitHoldsText(el) : TEXT_EDITABLE_TYPES.has(tag));
   const text = holdsText ? plainTextOf(el) : null;
   if (text != null) {
     const area = document.createElement("textarea");
@@ -3112,6 +3189,8 @@ function renderInspector() {
     if (!virtual && !CONTENT_WRAPPER_TYPES.has(tag)) note(`Whitespace is not preserved in <${tag}>.`);
   } else if (holdsText) {
     note("Has nested or inline elements: select a child, or use the source, to edit the text.");
+  } else if (itemFacet) {
+    note("This is the item itself. Select its text (the <text> under the <ldiv/>) to edit the content, bbox, layer or thread.");
   } else if (BBOX_BLOCK_TYPES.has(tag) || virtual) {
     note(`<${tag}> holds no text of its own.`);
   } else {
@@ -3119,17 +3198,17 @@ function renderInspector() {
   }
   const actions = document.createElement("div");
   actions.className = "inspector-actions";
-  if (state.hasPageView && (BBOX_BLOCK_TYPES.has(tag) || virtual) && elementHeadLocations(el).length !== 4) {
+  if (!itemFacet && state.hasPageView && (BBOX_BLOCK_TYPES.has(tag) || virtual) && elementHeadLocations(el).length !== 4) {
     actions.appendChild(inspectorButton("+ BBOX", "Draw a bounding box for this element on the page", () => {
       startDrawing(`Draw the box for <${tag}>`, (coords) => editSelectedElement((node) => addBboxToElement(node, coords)));
     }));
   }
-  if ((BBOX_BLOCK_TYPES.has(tag) || virtual) && elementHeadLocations(el).length === 4) {
+  if (!itemFacet && (BBOX_BLOCK_TYPES.has(tag) || virtual) && elementHeadLocations(el).length === 4) {
     actions.appendChild(inspectorButton("− BBOX", "Drop the bounding box but keep the element (undoable)", () => {
       editSelectedElement(removeBboxFromElement);
     }));
   }
-  const threadId = threadIdOf(el);
+  const threadId = itemFacet ? null : threadIdOf(el);
   if (threadId) {
     actions.appendChild(inspectorButton("− THREAD", `Dissolve thread ${threadId}: every fragment loses it (cross-references to it are kept)`, () => {
       editSelectedElement((node) => dissolveThread(threadIdOf(node)));
@@ -3138,10 +3217,17 @@ function renderInspector() {
       editSelectedElement(unassignFromThread);
     }));
   }
-  if (DELETABLE_TYPES.has(tag) || tag === "ldiv") {
-    actions.appendChild(inspectorButton("DELETE", "Delete the whole element, including its text and children (undoable)", () => {
+  if (tag === "ldiv" ? itemFacet || !isListItem(el) : DELETABLE_TYPES.has(tag)) {
+    actions.appendChild(inspectorButton("DELETE", itemFacet ? "Delete the whole list item, including its text (undoable)" : "Delete the whole element, including its text and children (undoable)", () => {
       editSelectedElement(deleteElementAndTidy);
     }));
+  }
+  if (canDissolveParent(el)) {
+    const parentTag = localName(el.parentElement);
+    const what = ["list", "table", "index"].includes(parentTag)
+      ? `its ${parentTag === "list" ? "items" : "cells"} become plain blocks`
+      : "its content moves up one level";
+    actions.appendChild(inspectorButton("− PARENT", `Dissolve the parent <${parentTag}>: ${what} (undoable)`, dissolveParentOfSelected));
   }
   if (actions.childElementCount) parts.push(actions);
   host.replaceChildren(...parts);
@@ -3160,7 +3246,7 @@ function childIndentOf(el) {
   const own = first?.nodeType === Node.TEXT_NODE ? first.nodeValue.match(/^\s*\n([ \t]*)$/)?.[1] : null;
   if (own != null) return own;
   const prev = el.previousSibling;
-  const base = prev && isWhitespaceText(prev) ? prev.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "";
+  const base = prev?.nodeType === Node.TEXT_NODE ? prev.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "" : "";
   return `${base}  `;
 }
 
@@ -3238,6 +3324,11 @@ function canWrap(el) {
   return DELETABLE_TYPES.has(localName(el)) && !!parent && (parent === state.docRoot || CHILD_CONTAINER_TYPES.has(localName(parent)));
 }
 
+/** A list item: the <ldiv/> token together with everything that follows it up to the next item. */
+function isListItem(el) {
+  return localName(el) === "ldiv" && isVirtualUnit(el);
+}
+
 const ADD_KINDS = ["parent", "prev", "next", "child"];
 
 function addButton(kind) {
@@ -3252,7 +3343,7 @@ function syncAddButtons() {
     parent: !!selected && canWrap(selected),
     prev: !!selected,
     next: true,
-    child: !!selected && CHILD_CONTAINER_TYPES.has(localName(selected)),
+    child: !!selected && (CHILD_CONTAINER_TYPES.has(localName(selected)) || localName(selected) === "list" || isListItem(selected)),
   };
   if (els.addThreadBtn) {
     els.addThreadBtn.hidden = !show || !state.hasPageView;
@@ -3273,11 +3364,13 @@ function toggleAddElement(kind) {
   cancelDrawing();
   if (was === kind) return;
   const selectedTag = selectedElement() ? localName(selectedElement()) : null;
+  const asItem = selectedTag === "list" || selectedTag === "ldiv";
+  const noun = asItem && (kind !== "child" || selectedTag === "list") ? "list item" : "element";
   const label = {
-    parent: `Draw the box for the new group around <${selectedTag}>`,
-    prev: "Draw the box for the new element before the selection",
-    next: "Draw the box for the new element after the selection",
-    child: `Draw the box for the new child of <${selectedTag}>`,
+    parent: `Draw the box for the new wrapper around <${selectedTag}>`,
+    prev: `Draw the box for the new ${noun} before the selection`,
+    next: `Draw the box for the new ${noun} after the selection`,
+    child: `Draw the box for the new ${noun} inside <${selectedTag}>`,
   }[kind];
   if (!state.hasPageView) {
     addElement(null, kind); // nothing to draw on: the element is created without a bbox
@@ -3286,15 +3379,21 @@ function toggleAddElement(kind) {
   startDrawing(label, (coords) => addElement(coords, kind), kind, { skippable: true });
 }
 
-/** A block element holding only the four <location> head children (or, without a bbox, placeholder text). */
+/** One list item in the flat form: <ldiv/> and, when drawn, a head with the bbox. The text is left empty. */
+function listItemNodes(doc, ns, coords, indent) {
+  const nodes = [doc.createElementNS(ns, "ldiv")];
+  if (coords) nodes.push(...locationNodes(doc, ns, coords, indent));
+  return nodes;
+}
+
+/** A block element of type `tag` with the given bbox, and no text. */
 function newBlock(doc, ns, tag, coords, indent) {
   const created = doc.createElementNS(ns, tag);
+  if (tag === "heading") created.setAttribute("level", "1");
   if (coords) {
     for (const node of locationNodes(doc, ns, coords, `${indent}  `)) created.appendChild(node);
-  } else if (tag === "text") {
-    created.appendChild(doc.createTextNode(`\n${indent}  New text`)); // without a bbox there is nothing else to see or click
   }
-  created.appendChild(doc.createTextNode(`\n${indent}`));
+  if (created.firstChild) created.appendChild(doc.createTextNode(`\n${indent}`));
   return created;
 }
 
@@ -3309,14 +3408,52 @@ function indentMarkup(el, extra = "  ") {
   }
 }
 
+/** Indentation of the line `el` starts on, read from the text before it (which may also hold the previous line's text). */
 function indentBefore(el) {
   const prev = el?.previousSibling;
-  return prev && isWhitespaceText(prev) ? prev.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "  " : "  ";
+  return prev?.nodeType === Node.TEXT_NODE ? prev.nodeValue.match(/\n([ \t]*)$/)?.[1] ?? "  " : "  ";
+}
+
+/**
+ * Makes the whitespace that ends `container` a node of its own and returns it (adding one when missing).
+ * A parsed document merges it into the preceding text, so it has to be split off before inserting in front of it.
+ */
+function closingWhitespace(container, fallbackIndent) {
+  const doc = container.ownerDocument;
+  const last = container.lastChild;
+  if (last?.nodeType === Node.TEXT_NODE) {
+    const trailing = last.nodeValue.match(/\n[ \t]*$/)?.[0];
+    if (trailing) {
+      if (trailing.length === last.nodeValue.length) return last;
+      last.nodeValue = last.nodeValue.slice(0, -trailing.length);
+      return container.appendChild(doc.createTextNode(trailing));
+    }
+  }
+  return container.appendChild(doc.createTextNode(`\n${fallbackIndent}`));
+}
+
+/** Where a new node goes after a list item's content: before its trailing whitespace, so that stays the separator. */
+function itemInsertPoint(ldiv) {
+  const r = virtualRange(ldiv);
+  const last = r.nodes[r.end - 1];
+  if (r.end - 1 > r.idx && last?.nodeType === Node.TEXT_NODE) {
+    const trailing = last.nodeValue.match(/\n[ \t]*$/)?.[0];
+    if (trailing) {
+      if (trailing.length === last.nodeValue.length) return last;
+      last.nodeValue = last.nodeValue.slice(0, -trailing.length);
+      const ws = last.ownerDocument.createTextNode(trailing);
+      last.parentNode.insertBefore(ws, last.nextSibling);
+      return ws;
+    }
+  }
+  return r.nodes[r.end] ?? null;
 }
 
 /**
  * Adds a new block with the drawn bbox relative to the selected element: `prev`/`next` as a sibling,
- * `child` as its last child, `parent` as a <group> that wraps it. Without a selection `next` appends to the page.
+ * `child` as its last child, `parent` as a wrapper. New blocks are `<text>` (change the type in the inspector). On a list `child`
+ * adds an item, and on a list item `prev`/`next` add items while `child` nests a new block inside it.
+ * Without a selection `next` appends to the page.
  */
 async function addElement(coords, kind) {
   if (!state || !editableEntry() || !canEditDocument()) return;
@@ -3326,6 +3463,7 @@ async function addElement(coords, kind) {
   const pageIdx = state.currentPage - 1;
   const segment = state.segments[pageIdx] ?? [];
   const selected = selectedElement();
+  const selectedIsItem = !!selected && localName(selected) === "ldiv" && isVirtualUnit(selected);
   /** Id of the new element once the page is re-parsed: ids follow document order within the page. */
   const idOf = (created, replaced = null, topIndex = 0) => {
     if (created.parentElement !== root && !replaced) return assignElementIds(segment).get(created);
@@ -3336,24 +3474,50 @@ async function addElement(coords, kind) {
   };
   let id;
 
-  if (kind === "child" && selected) {
+  if (kind === "child" && selected && localName(selected) === "list") {
+    const indent = childIndentOf(selected);
+    const closing = closingWhitespace(selected, indent.slice(0, Math.max(0, indent.length - 2)));
+    const nodes = listItemNodes(doc, ns, coords, indent);
+    selected.insertBefore(doc.createTextNode(`\n${indent}`), closing);
+    for (const node of nodes) selected.insertBefore(node, closing);
+    id = idOf(nodes[0]);
+  } else if (kind === "child" && selectedIsItem) {
+    const indent = indentBefore(selected);
+    const created = newBlock(doc, ns, "text", coords, indent);
+    const point = itemInsertPoint(selected);
+    selected.parentNode.insertBefore(doc.createTextNode(`\n${indent}`), point);
+    selected.parentNode.insertBefore(created, point);
+    id = idOf(created);
+  } else if (kind === "child" && selected) {
     const indent = childIndentOf(selected);
     const created = newBlock(doc, ns, "text", coords, indent);
-    if (!selected.lastChild || !isWhitespaceText(selected.lastChild)) {
-      selected.appendChild(doc.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
-    }
-    selected.insertBefore(created, selected.lastChild);
+    const closing = closingWhitespace(selected, indent.slice(0, Math.max(0, indent.length - 2)));
+    selected.insertBefore(created, closing);
     selected.insertBefore(doc.createTextNode(`\n${indent}`), created);
     id = idOf(created);
   } else if (kind === "parent" && selected) {
     const indent = indentBefore(selected);
     const group = newBlock(doc, ns, "group", coords, indent);
+    if (!group.lastChild || !isWhitespaceText(group.lastChild)) group.appendChild(doc.createTextNode(`\n${indent}`));
     const parent = selected.parentNode;
     parent.insertBefore(group, selected);
     group.insertBefore(selected, group.lastChild);
     group.insertBefore(doc.createTextNode(`\n${indent}  `), selected);
     indentMarkup(selected);
     id = idOf(group, selected);
+  } else if ((kind === "prev" || kind === "next") && selectedIsItem) {
+    const indent = indentBefore(selected);
+    const parent = selected.parentNode;
+    const nodes = listItemNodes(doc, ns, coords, indent);
+    if (kind === "prev") {
+      for (const node of nodes) parent.insertBefore(node, selected);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), selected);
+    } else {
+      const point = itemInsertPoint(selected);
+      parent.insertBefore(doc.createTextNode(`\n${indent}`), point);
+      for (const node of nodes) parent.insertBefore(node, point);
+    }
+    id = idOf(nodes[0]);
   } else if ((kind === "prev" || kind === "next") && selected) {
     const anchor = blockSibling(selected);
     const parent = anchor.parentNode;
@@ -3382,6 +3546,7 @@ async function addElement(coords, kind) {
     id = idOf(created, null, segment.length);
   }
   focusInspectorTextUntil = Date.now() + 2000; // the views re-render a few times while the page image reloads
+  selectedFacet = "text";
   await commitMarkupText(serializeDocument(), { reselect: id });
 }
 
@@ -3565,6 +3730,23 @@ function toggleThread() {
   });
 }
 
+function markerOf(ldiv) {
+  return childElements(ldiv).find((c) => localName(c) === "marker") ?? null;
+}
+
+/** Sets, changes or clears the marker (bullet, number, ...) held by an <ldiv>. */
+function setMarker(ldiv, text) {
+  const value = text.trim();
+  const marker = markerOf(ldiv);
+  if (!value) {
+    if (marker && !childElements(marker).length) marker.remove();
+    return;
+  }
+  const doc = ldiv.ownerDocument;
+  const target = marker ?? ldiv.appendChild(doc.createElementNS(ldiv.namespaceURI, "marker"));
+  target.replaceChildren(...textNodesFor(doc, value));
+}
+
 function removeNode(node) {
   const prev = node.previousSibling;
   if (prev && isWhitespaceText(prev)) prev.remove();
@@ -3695,6 +3877,164 @@ function beginThreadDrag(e) {
   svg.addEventListener("pointercancel", onUp);
 }
 
+
+// --- Dissolving a parent: its content moves up one level ---
+
+/** Parents that can be dissolved: containers of blocks, lists and tables (whose items and cells become blocks), and pictures. */
+const DISSOLVABLE_PARENTS = new Set([...CHILD_CONTAINER_TYPES, "list", "table", "index", "picture"]);
+
+function canDissolveParent(el) {
+  const parent = el.parentElement;
+  return !!parent && parent !== state.docRoot && DISSOLVABLE_PARENTS.has(localName(parent));
+}
+
+/** Removes up to two leading spaces from every line of an element's markup, except inside whitespace-preserving <content>. */
+function dedentMarkup(el) {
+  for (const node of [...el.childNodes]) {
+    if (node.nodeType === Node.TEXT_NODE) node.nodeValue = node.nodeValue.replace(/\n {2}/g, "\n");
+    else if (node.nodeType === Node.ELEMENT_NODE && localName(node) !== "content") dedentMarkup(node);
+  }
+}
+
+/**
+ * Replaces the parent of `el` by its content. Blocks inside it move up as they are. Text that sat directly in
+ * the parent, in the parent itself or in a list item or table cell (a virtual <text>), becomes a <text> element
+ * that takes over the head (layer, bbox, thread) it had. A caption in the parent's head becomes a <text> of its
+ * own, a picture's chart data (<tabular>) becomes a <table>. The <ldiv/> and cell tokens, markers, the image
+ * reference (<src>) and the rest of the parent's head (its bbox, description, summary) disappear.
+ * Returns the node to select afterwards.
+ */
+function unwrapParent(el) {
+  const parent = el.parentElement;
+  const grand = parent.parentNode;
+  const doc = parent.ownerDocument;
+  const ns = parent.namespaceURI;
+  const parentTag = localName(parent);
+  const indent = indentBefore(parent);
+  const nodes = [...parent.childNodes];
+  const headEnd = headEndIndex(parent);
+  const headIds = threadIdsIn(parent).filter((id) => headElementsOf(parent).some((n) => localName(n) === "thread" && n.getAttribute("thread_id") === id));
+
+  const isToken = (n) => n.nodeType === Node.ELEMENT_NODE && (parentTag === "list" ? localName(n) === "ldiv" : isCellToken(localName(n)));
+  const virtual = ["list", "table", "index"].includes(parentTag);
+
+  // Units: a token with its head and body, or (without tokens) the parent's own head and body.
+  /** @type {{ token: Element | null, head: Element[], body: Node[] }[]} */
+  const units = [];
+  if (virtual) {
+    let i = headEnd;
+    while (i < nodes.length) {
+      if (!isToken(nodes[i])) {
+        i += 1;
+        continue;
+      }
+      const head = parseElementHeadAt(nodes, i + 1);
+      const bodyStart = head ? head.nextIndex : i + 1;
+      let end = bodyStart;
+      while (end < nodes.length && !isToken(nodes[end])) end += 1;
+      units.push({
+        token: nodes[i],
+        head: head ? nodes.slice(i + 1, head.nextIndex).filter((n) => n.nodeType === Node.ELEMENT_NODE) : [],
+        body: nodes.slice(bodyStart, end),
+      });
+      i = end;
+    }
+  } else {
+    units.push({
+      token: null,
+      head: nodes.slice(0, headEnd).filter((n) => n.nodeType === Node.ELEMENT_NODE),
+      body: nodes.slice(headEnd),
+    });
+  }
+
+  const out = [];
+  const firstOf = new Map();
+  // Captions of the parent become texts of their own, ahead of its content (as in the source).
+  for (const caption of headElementsOf(parent).filter((n) => localName(n) === "caption")) {
+    const text = doc.createElementNS(ns, "text");
+    while (caption.firstChild) text.appendChild(caption.firstChild);
+    dedentMarkup(text);
+    out.push(text);
+  }
+  const INHERITED_HEAD = new Set(["label", "thread", "xref", "href", "layer", "location"]);
+  const note = (unit, node) => {
+    out.push(node);
+    if (!firstOf.has(unit)) firstOf.set(unit, node);
+  };
+  for (const unit of units) {
+    let head = unit.head.filter((h) => INHERITED_HEAD.has(localName(h)));
+    let run = [];
+    const flush = () => {
+      if (run.some((n) => !isWhitespaceText(n))) {
+        const text = doc.createElementNS(ns, "text");
+        for (const h of head) {
+          text.appendChild(doc.createTextNode(`\n${indent}  `));
+          text.appendChild(h);
+        }
+        head = [];
+        const first = run[0];
+        const last = run[run.length - 1];
+        if (first.nodeType === Node.TEXT_NODE) first.nodeValue = first.nodeValue.replace(/^\s+/, "");
+        if (last.nodeType === Node.TEXT_NODE) last.nodeValue = last.nodeValue.replace(/\s+$/, "");
+        text.appendChild(doc.createTextNode(`\n${indent}  `));
+        for (const n of run) text.appendChild(n);
+        text.appendChild(doc.createTextNode(`\n${indent}`));
+        note(unit, text);
+      }
+      run = [];
+    };
+    for (const n of unit.body) {
+      const tag = n.nodeType === Node.ELEMENT_NODE ? localName(n) : null;
+      if (tag === "src") continue;
+      if (tag === "tabular") {
+        flush();
+        const table = doc.createElementNS(ns, "table");
+        while (n.firstChild) table.appendChild(n.firstChild);
+        dedentMarkup(table);
+        note(unit, table);
+      } else if (tag && TOP_LEVEL_TYPES.has(tag)) {
+        flush();
+        dedentMarkup(n);
+        note(unit, n);
+      } else {
+        run.push(n);
+      }
+    }
+    flush();
+  }
+
+  const ref = parent;
+  out.forEach((node, i) => {
+    if (i) grand.insertBefore(doc.createTextNode(`\n${indent}`), ref);
+    grand.insertBefore(node, ref);
+  });
+  if (!out.length) {
+    const prev = parent.previousSibling;
+    if (prev && isWhitespaceText(prev)) prev.remove();
+  }
+  parent.remove();
+  cleanupThreads(headIds);
+  return (virtual && units.find((u) => u.token === el) && firstOf.get(units.find((u) => u.token === el))) || (out.includes(el) ? el : out[0] ?? null);
+}
+
+/** Id (on the current page) of a node that now sits somewhere on it, after the document was restructured. */
+function idOnCurrentPage(node) {
+  const root = state.docRoot;
+  const segments = state.markupOnly
+    ? [childElements(root).filter((e) => localName(e) !== "head")]
+    : splitIntoSegments(root);
+  return node ? assignElementIds(segments[state.currentPage - 1] ?? []).get(node) ?? null : null;
+}
+
+async function dissolveParentOfSelected() {
+  const el = selectedElement();
+  if (!el || !canDissolveParent(el) || !canEditDocument()) return;
+  const target = unwrapParent(el);
+  const id = idOnCurrentPage(target);
+  selectedFacet = "text";
+  await commitMarkupText(serializeDocument(), { reselect: id });
+}
+
 // --- Bbox resize on the page overlay (no free move: it is too easy to do by accident) ---
 
 const HANDLE_CURSORS = { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" };
@@ -3707,6 +4047,7 @@ function syncBboxHandles() {
   const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
   const img = els.pagePane.querySelector(".page-view img");
   if (!el || !box || !img || elementHeadLocations(el).length !== 4) return;
+  if (isListItem(el) && selectedFacet === "item") return; // the bbox belongs to the item's text
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("class", "bbox-handles");
   svg.appendChild(group);
@@ -5373,6 +5714,8 @@ function findTrackSelectionHost(xmlEl) {
 
 function resolveSelectionElement(xmlEl) {
   if (!xmlEl) return null;
+  // The marker of a list item is edited with the item itself.
+  if (localName(xmlEl) === "marker" && xmlEl.parentElement && localName(xmlEl.parentElement) === "ldiv") return xmlEl.parentElement;
   const trackHost = findTrackSelectionHost(xmlEl);
   if (trackHost) return trackHost;
   if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
@@ -5418,6 +5761,18 @@ function resolveMarkupClickTarget(eventTarget) {
   const markupEl = eventTarget.closest(".markup-el[data-element-id]");
   if (!markupEl) return null;
   return resolveSelectionElementId(markupEl.getAttribute("data-element-id"));
+}
+
+/**
+ * Which level of a list item a click is on: its virtual text (the ghost <text> in the source, the text in the
+ * reading view) or the item itself (the <ldiv/> line, its <marker>, the rendered bullet).
+ */
+function clickFacet(eventTarget, ghostSelector, itemSelector) {
+  if (eventTarget.closest(ghostSelector)) return "text";
+  const host = eventTarget.closest(`${itemSelector}[data-element-id]`);
+  const el = host ? state?.idToElement?.get(host.getAttribute("data-element-id")) : null;
+  const resolved = el ? resolveSelectionElement(el) : null;
+  return resolved && isListItem(resolved) ? "item" : "text";
 }
 
 function resolveRenderedClickTarget(eventTarget) {
@@ -6810,9 +7165,10 @@ function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrde
   return svg;
 }
 
-function selectElement(elementId) {
+function selectElement(elementId, facet = "text") {
   if (!elementId) return;
   selectedElementId = elementId;
+  selectedFacet = facet;
   applySelection();
 }
 
@@ -6995,6 +7351,8 @@ function revealReadingLayerForSelection(renderedEl) {
 function applySelection() {
   applySelectionCore();
   syncSelectionEditUi();
+  // The inspector appears above the source and moves it: scroll to the selection again, now that the layout has settled.
+  if (selectedElementId) findMarkupElementForSelection(selectedElementId)?.scrollIntoView({ block: "nearest" });
 }
 
 function applySelectionCore() {
@@ -7088,7 +7446,7 @@ function buildMarkupView(segment, elementIds) {
     }
     const elementId = resolveMarkupClickTarget(e.target);
     if (elementId) {
-      selectElement(elementId);
+      selectElement(elementId, clickFacet(e.target, ".markup-el-virtual-text", ".markup-el"));
       seekTrackToElement(elementId);
     }
   });
@@ -7508,7 +7866,7 @@ function buildRenderedView(segment, elementIds) {
   }
   root.addEventListener("click", (e) => {
     const elementId = resolveRenderedClickTarget(e.target);
-    if (elementId) selectElement(elementId);
+    if (elementId) selectElement(elementId, clickFacet(e.target, ".rendered-el-virtual-text", ".rendered-marker"));
   });
   applyReadingLayerClasses(root);
   return root;
