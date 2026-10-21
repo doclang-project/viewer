@@ -787,6 +787,7 @@ initPaneSplitters();
 initLayoutStackListener();
 initFileTypeHints();
 initCursorHints();
+initQuickHints();
 initFormulaRewriteHints();
 initBboxHints();
 initDragDrop();
@@ -1532,9 +1533,9 @@ function initFilePaneCloseAll() {
 }
 
 /**
- * True when DocLang or Reading view is the pane the user is interacting with, so
+ * True when DocLang or Preview is the pane the user is interacting with, so
  * up/down/page-up/page-down should scroll it instead of flipping pages. Neither pane
- * has a focusable container (unlike Original page), so plain :focus never lands there
+ * has a focusable container (unlike Original), so plain :focus never lands there
  * on click — the browser instead scrolls whichever of them the pointer is over, so we
  * key off :hover (which also matches while hovering a descendant); :focus-within is
  * kept as a fallback for keyboard-only navigation onto a link inside either pane.
@@ -1633,21 +1634,13 @@ function initPageWheelNav() {
     { passive: false },
   );
 
-  for (const pane of [els.markupPane, els.renderedPane]) {
-    if (!pane) continue;
-    pane.addEventListener(
-      "wheel",
-      (e) => {
-        if (markupEditor && pane === els.markupPane) return; // the editor scrolls itself
-        onScrollPaneWheel(e, pane);
-      },
-      { passive: false },
-    );
-  }
+  // Scrolling past the end of the Preview flips the page, as in the Original pane. The DocLang pane does not: its
+  // scroll position is something to work in, and a stray wheel at its top or bottom must not change the page.
+  els.renderedPane?.addEventListener("wheel", (e) => onScrollPaneWheel(e, els.renderedPane), { passive: false });
 
   els.pagePane.tabIndex = 0;
   els.pagePane.setAttribute("role", "region");
-  els.pagePane.setAttribute("aria-label", "Original page");
+  els.pagePane.setAttribute("aria-label", "Original");
 
   els.pagePane.addEventListener("pointerdown", (e) => {
     if (state?.hasPageView) els.pagePane.focus({ preventScroll: true });
@@ -2069,6 +2062,41 @@ function initCursorHints() {
     showCursorHint(available ? RELOAD_FILE_HINT : RELOAD_FILE_UNAVAILABLE_HINT, e.clientX, e.clientY);
   });
   reloadBtn?.addEventListener("mouseleave", hideCursorHint);
+}
+
+/** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
+const QUICK_HINT_SELECTOR = 'button, label.file-btn, select, summary';
+
+/**
+ * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
+ * delay and cannot be styled, so a title is moved to `data-hint` the first time the pointer reaches its control
+ * (and again whenever the code sets a new one), and displayed by the cursor hint.
+ */
+function initQuickHints() {
+  let owner = null;
+  document.addEventListener("mouseover", (e) => {
+    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
+    const title = el?.getAttribute("title");
+    if (title) {
+      el.dataset.hint = title;
+      el.removeAttribute("title");
+    }
+  }, true);
+  document.addEventListener("mousemove", (e) => {
+    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
+    if (el?.dataset.hint) {
+      owner = el;
+      showCursorHint(el.dataset.hint, e.clientX, e.clientY);
+    } else if (owner) {
+      owner = null;
+      hideCursorHint();
+    }
+  });
+  document.addEventListener("mousedown", () => {
+    if (!owner) return;
+    owner = null;
+    hideCursorHint();
+  }, true);
 }
 
 function initFormulaRewriteHints() {
@@ -3650,6 +3678,9 @@ function renderPage(pageNum) {
       img.alt = `Page ${pageNum}`;
 
       const onImageReady = () => {
+        // An image that finishes loading after another page was rendered belongs to a page that is gone: it must
+        // not touch the current page's views, overlay data or pending selection.
+        if (!img.isConnected || state?.currentPage !== pageNum) return;
         if (img.dataset.layoutGeneration === String(pageNum)) return;
         img.dataset.layoutGeneration = String(pageNum);
 
@@ -3724,7 +3755,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
     continueEquationNumbering(canvas, segment);
-    // The page image (in the separate "Original page" pane) may have already
+    // The page image (in the separate "Original" pane) may have already
     // finished loading before this canvas existed to receive onImageReady's
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
     // or before the mode was ever switched to paged) — sync from it now rather
@@ -4481,7 +4512,10 @@ function navigateThreadFragment(elementId, direction) {
   if (!page) return;
   if (page === state.currentPage) {
     const id = findElementIdOnPage(target);
-    if (id) selectElement(id);
+    if (id) {
+      state.pendingSelectElement = null;
+      selectElement(id);
+    }
     return;
   }
   state.pendingSelectElement = target;
@@ -4498,7 +4532,8 @@ function bboxNavTarget(direction) {
   if (!order || !order.length) return null;
   const step = direction === "prev" ? -1 : 1;
 
-  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : null;
+  // While a page is still loading, the element being navigated to is pending, not yet selected: continue from it.
+  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : state.pendingSelectElement;
   const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
   const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
 
@@ -4515,7 +4550,10 @@ function navigateBbox(direction) {
   if (!page) return;
   if (page === state.currentPage) {
     const id = findElementIdOnPage(target);
-    if (id) selectElement(id);
+    if (id) {
+      state.pendingSelectElement = null; // a pending selection from an earlier step must not override this one
+      selectElement(id);
+    }
     return;
   }
   state.pendingSelectElement = target;
@@ -4553,8 +4591,6 @@ function captionPrecedesHost(caption, host) {
 /** @returns {Element[]} */
 function computeReadingOrder(docRoot) {
   const bodyChildren = childElements(docRoot).filter((el) => localName(el) !== "head");
-  const threadsById = buildThreadsById(docRoot);
-  const consumedViaXref = new Set();
   /** @type {Element[]} */
   const order = [];
 
@@ -4563,25 +4599,14 @@ function computeReadingOrder(docRoot) {
     order.push(el);
   }
 
-  function consumeThread(threadId) {
-    for (const target of threadsById.get(threadId) ?? []) {
-      if (consumedViaXref.has(target)) continue;
-      consumedViaXref.add(target);
-      visitElement(target);
-    }
-  }
-
+  // Document order. A cross-reference (<xref>) does not move what it points at into the flow: xrefs have
+  // arrows of their own, so the reading order stays what the document says.
   function walkChildren(parent, skip = null) {
     for (const child of parent.childNodes) {
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       if (skip?.has(child)) continue;
       const tag = localName(child);
-      if (tag === "xref") {
-        const threadId = child.getAttribute("thread_id");
-        if (threadId) consumeThread(threadId);
-        continue;
-      }
-      if (tag === "page_break" || tag === "custom") continue;
+      if (tag === "xref" || tag === "page_break" || tag === "custom") continue;
       visitElement(child);
     }
   }
@@ -4601,7 +4626,6 @@ function computeReadingOrder(docRoot) {
 
   for (const el of bodyChildren) {
     if (localName(el) === "page_break" || localName(el) === "custom") continue;
-    if (consumedViaXref.has(el)) continue;
     visitElement(el);
   }
 
@@ -6463,7 +6487,8 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
  * binary-searching a CSS `zoom` factor (not `transform: scale`) so text re-wraps at
  * each candidate size instead of being scaled after wrapping at a fixed size — this
  * both shrinks content that overflows and grows content that has room to spare, up
- * to whatever the box's width and height allow without overflowing either.
+ * to whatever the box's width and height allow without overflowing either (including a
+ * single word that is wider than the box and so cannot wrap).
  */
 function fitSlotContent(slot) {
   const content = slot.firstElementChild;
@@ -6473,10 +6498,19 @@ function fitSlotContent(slot) {
   const targetH = slotRect.height;
   if (!(targetW > 0 && targetH > 0)) return;
 
+  // A block fills its slot's width however long its text is, so its own box never reveals horizontal overflow
+  // (a word wider than the box, e.g. a chart label). The extent of the text itself does.
+  const range = document.createRange();
+  range.selectNodeContents(content);
   const fitsAt = (zoom) => {
     content.style.zoom = String(zoom);
     const rect = content.getBoundingClientRect();
-    return rect.width <= targetW + 0.5 && rect.height <= targetH + 0.5;
+    const text = range.getBoundingClientRect();
+    return (
+      rect.height <= targetH + 0.5 &&
+      Math.max(rect.width, text.width) <= targetW + 0.5 &&
+      text.height <= targetH + 0.5
+    );
   };
 
   let lo = 0.02;
