@@ -3727,6 +3727,7 @@ function listItemBody(list) {
   return nodes.slice(head ? head.nextIndex : idx + 1);
 }
 const BBOX_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const BBOX_HANDLE_SCREEN_PX = 9;
 
 function serializeDocument() {
   let xml = new XMLSerializer().serializeToString(state.docRoot.ownerDocument);
@@ -5434,7 +5435,8 @@ function syncBboxHandles() {
 function drawBboxHandles(group, box, img) {
   group.replaceChildren();
   const { x, y, w, h } = boxPixelRect(box, img);
-  const size = Math.max(8, img.naturalWidth * 0.01);
+  // A fixed size on screen, whatever the zoom: image pixels per screen pixel times the screen size.
+  const size = BBOX_HANDLE_SCREEN_PX * (img.naturalWidth / (img.getBoundingClientRect().width || img.naturalWidth));
   const pos = {
     nw: [x, y], n: [x + w / 2, y], ne: [x + w, y], e: [x + w, y + h / 2],
     se: [x + w, y + h], s: [x + w / 2, y + h], sw: [x, y + h], w: [x, y + h / 2],
@@ -7058,6 +7060,7 @@ function syncPageViewChrome(img) {
   syncTokenLayer(img);
   updatePagePanePanCursor();
   applyBboxVisibility();
+  syncBboxHandles(); // their size is set in screen pixels: redraw for the new zoom
 }
 
 function applyPageLayout(img, pane = els.pagePane) {
