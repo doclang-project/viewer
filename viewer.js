@@ -811,6 +811,20 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   toggleOverlayCheckbox(els[elsKey]);
 });
+// 1–4 show or hide the panes, numbered left to right.
+const PANE_SHORTCUT_KEYS = {
+  1: "toggleFilePane",
+  2: "togglePagePane",
+  3: "toggleMarkupPane",
+  4: "toggleReadingPane",
+};
+document.addEventListener("keydown", (e) => {
+  const elsKey = PANE_SHORTCUT_KEYS[e.key];
+  if (!elsKey || !hotkeysEnabled || !state) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  toggleOverlayCheckbox(els[elsKey]); // the pane checkbox keeps at least one pane visible
+});
 els.showReadingFurniture?.addEventListener("change", () => {
   showReadingFurniture = els.showReadingFurniture.checked;
   syncReadingLayerVisibility();
