@@ -333,6 +333,7 @@ const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
+const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
@@ -375,6 +376,9 @@ let pagePaneResizeObserver = null;
 let pagedPaneResizeObserver = null;
 /** @type {string | null} */
 let selectedElementId = null;
+const tokenLens = { active: true, cursor: -Infinity, playing: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
+/** @type {{ svg: SVGSVGElement, range: { start: number, end: number }, items: object[], current: object | null } | null} */
+let tokenLayer = null;
 /**
  * A list item selects at two levels that share one element id (its <ldiv/>): the item itself ("item": marker, delete)
  * and the virtual text that follows it ("text": content, bbox, layer, thread). Everything else is "text".
@@ -457,6 +461,10 @@ const els = {
   pageNumberInput: document.getElementById("page-number-input"),
   pageCountIndicator: document.getElementById("page-count-indicator"),
   layoutNav: document.getElementById("layout-nav"),
+  tokenNav: document.getElementById("token-nav"),
+  tokenStartBtn: document.getElementById("btn-token-start"),
+  tokenPrevBtn: document.getElementById("btn-token-prev"),
+  tokenNextBtn: document.getElementById("btn-token-next"),
   btnBboxPrev: document.getElementById("btn-bbox-prev"),
   btnBboxNext: document.getElementById("btn-bbox-next"),
   btnPrev: document.getElementById("btn-prev"),
@@ -509,8 +517,16 @@ const els = {
   emptyStateLoading: document.getElementById("empty-state-loading"),
   emptyStatePrompt: document.getElementById("empty-state-prompt"),
   markupPane: document.getElementById("markup-pane"),
-  markupTokensToggle: document.getElementById("btn-markup-tokens-toggle"),
-  markupTokensView: document.getElementById("markup-tokens-view"),
+  tokenLensToggle: document.getElementById("btn-token-lens"),
+  tokenBar: document.getElementById("token-bar"),
+  tokenPlayBtn: document.getElementById("btn-token-play"),
+  tokenScrub: document.getElementById("token-scrub"),
+  tokenSpeed: document.getElementById("token-speed"),
+  tokenCounter: document.getElementById("token-counter"),
+  tokenHeatToggle: document.getElementById("token-heat"),
+  tokenCountsToggle: document.getElementById("token-counts"),
+  tokenScanToggle: document.getElementById("token-scan"),
+  tokenOverlayOptions: document.getElementById("token-overlay-options"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
   paneFile: document.querySelector(".pane-file"),
@@ -682,7 +698,6 @@ els.showReadingOrder?.addEventListener("change", () => {
 });
 els.settingsToggle?.addEventListener("click", () => setPageSettingsOpen(!pageSettingsOpen));
 els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpen(!readingSettingsOpen));
-els.markupTokensToggle?.addEventListener("click", () => setMarkupTokensViewActive(!state?.tokensViewActive));
 els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
 els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
@@ -864,7 +879,7 @@ initFileTypeHints();
 initCursorHints();
 initQuickHints();
 initFormulaRewriteHints();
-initMarkupTokensHover();
+initTokenLens();
 initBboxHints();
 initDragDrop();
 initFilePaneCloseAll();
@@ -2118,13 +2133,22 @@ function initFileTypeHints() {
 
 function initCursorHints() {
   els.markupPane?.addEventListener("mousemove", (e) => {
+    const tokenSpan = e.target.closest(".token-span");
+    setHoveredMarkupToken(tokenSpan);
+    if (tokenSpan) {
+      showCursorHint(markupTokenHint(tokenSpan), e.clientX, e.clientY);
+      return;
+    }
     if (!e.target.closest(".markup-ghost-tag-part")) {
       hideCursorHint();
       return;
     }
     showCursorHint(VIRTUAL_TEXT_TAG_HINT, e.clientX, e.clientY);
   });
-  els.markupPane?.addEventListener("mouseleave", hideCursorHint);
+  els.markupPane?.addEventListener("mouseleave", () => {
+    setHoveredMarkupToken(null);
+    hideCursorHint();
+  });
 
   els.openFileBtn?.addEventListener("mousemove", (e) => {
     showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY);
@@ -2210,27 +2234,17 @@ function initFormulaRewriteHints() {
   els.renderedPane?.addEventListener("mouseleave", hideCursorHint);
 }
 
-/* ---- DocLang pane: tokenized view ------------------------------------ *
- * Toggles the DocLang source pane to a view of the same markup as tokens
- * from the custom DocLang tokenizer (tokenizer.js). The markup is first
- * reduced to its dense form — whitespace that sits purely between two
- * tags (the newlines and indentation of pretty-printing) is dropped,
- * while whitespace inside CDATA or inside element text is untouched —
- * so the token stream reflects how DocLang is actually meant to be used.
+/* ---- DocLang tokenization -------------------------------------------- *
+ * Tokenizes the markup with the custom DocLang tokenizer (tokenizer.js).
+ * The markup is first reduced to its dense form — whitespace that sits
+ * purely between two tags (the newlines and indentation of pretty-printing)
+ * is dropped, while whitespace inside CDATA or inside element text is
+ * untouched — so the token stream reflects how DocLang is meant to be used.
  * ------------------------------------------------------------------- */
 
 const TOKEN_SPAN_COLOR_COUNT = 6;
 // Elements that flow inside a line of text rather than getting their own line.
 const TOKENS_INLINE_TAGS = new Set([...RENDER_FORMAT_TAGS, "marker", "xref", "href"]);
-
-function setMarkupTokensViewActive(active) {
-  if (!state || !els.markupTokensView || !els.markupPane) return;
-  state.tokensViewActive = active;
-  els.markupTokensToggle?.setAttribute("aria-pressed", String(active));
-  els.markupPane.hidden = active;
-  els.markupTokensView.hidden = !active;
-  if (active) renderMarkupTokensView();
-}
 
 /** Split well-formed DocLang XML into a flat list of lexical pieces. */
 function scanMarkupPieces(src) {
@@ -2259,6 +2273,10 @@ function scanMarkupPieces(src) {
       const e = src.indexOf("?>", i);
       end = e < 0 ? n : e + 2;
       type = "pi";
+    } else if (src.startsWith("<!", i)) {
+      const e = src.indexOf(">", i);
+      end = e < 0 ? n : e + 1;
+      type = "decl";
     } else {
       const e = src.indexOf(">", i);
       end = e < 0 ? n : e + 1;
@@ -2325,10 +2343,10 @@ function canonicalizeMarkup(root) {
         if (s) parts.push({ code: s });
         continue;
       }
-      parts.push({ code: c.piece.raw });
+      parts.push({ code: c.piece.raw, opens: c });
       if (c.piece.type === "open") {
         emitInline(c, false);
-        parts.push({ code: `</${c.name}>` });
+        parts.push({ code: `</${c.name}>`, closes: c });
       }
     }
   }
@@ -2348,16 +2366,16 @@ function canonicalizeMarkup(root) {
       if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
       atStart = false;
       if (t === "open" && markupNodeIsBlock(c)) {
-        parts.push({ code: c.piece.raw });
+        parts.push({ code: c.piece.raw, opens: c });
         walk(c, depth + 1, false);
         parts.push({ ws: `\n${indent(depth)}` });
-        parts.push({ code: `</${c.name}>` });
+        parts.push({ code: `</${c.name}>`, closes: c });
       } else if (t === "open") {
-        parts.push({ code: c.piece.raw });
+        parts.push({ code: c.piece.raw, opens: c });
         emitInline(c, true);
-        parts.push({ code: `</${c.name}>` });
+        parts.push({ code: `</${c.name}>`, closes: c });
       } else {
-        parts.push({ code: c.piece.raw });
+        parts.push({ code: c.piece.raw, opens: c });
       }
     }
   }
@@ -2366,94 +2384,669 @@ function canonicalizeMarkup(root) {
   return parts;
 }
 
-async function renderMarkupTokensView() {
-  const docState = state;
-  if (!docState || !els.markupTokensView) return;
+/**
+ * Tokenizes the document once, for the token lens (page and source view). Besides the
+ * token stream, maps every element to the tokens of its markup: the k-th element tag in the
+ * source is the k-th element of the parsed document, leaving out what alternatives inserted.
+ */
+function ensureTokenData(docState) {
+  docState.tokenDataPromise ??= (async () => {
+    const { stdExt } = await window.DoclangTokenizers.loadTokenizerAssets();
+    const srcXml = docState.markupXml.replace(/\r\n/g, "\n");
+    const tree = buildMarkupPieceTree(scanMarkupPieces(srcXml));
+    const parts = canonicalizeMarkup(tree);
 
-  if (!docState.tokensViewData) {
-    els.markupTokensView.innerHTML = `<div class="tokens-view-loading">Loading tokenizer&hellip;</div>`;
-    // Let the loading placeholder paint before the (synchronous) tokenize pass runs.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    try {
-      const { stdExt } = await window.DoclangTokenizers.loadTokenizerAssets();
-      if (state !== docState) return;
-      const srcXml = docState.markupXml.replace(/\r\n/g, "\n");
-      const parts = canonicalizeMarkup(buildMarkupPieceTree(scanMarkupPieces(srcXml)));
+    // dense = markup with no pretty-printing whitespace (what we tokenize).
+    let dense = "";
+    for (const part of parts) {
+      if (part.ws != null) continue;
+      const base = dense.length;
+      dense += part.code;
+      if (part.opens) part.opens.denseStart = base;
+      if (part.closes) part.closes.closeStart = base;
+      const node = part.opens ?? part.closes;
+      if (node) node.denseEnd = dense.length;
+    }
 
-      // dense = markup with no pretty-printing whitespace (what we tokenize);
-      // canon = the displayed text, with synthetic indentation woven back in.
-      let dense = "";
-      let canon = "";
-      const canonToDense = [];
-      for (const part of parts) {
-        if (part.ws != null) {
-          for (const ch of part.ws) { canon += ch; canonToDense.push(-1); }
-        } else {
-          const base = dense.length;
-          for (let k = 0; k < part.code.length; k += 1) { canon += part.code[k]; canonToDense.push(base + k); }
-          dense += part.code;
-        }
+    const tokens = stdExt.encode(dense).filter((t) => t.end > t.start);
+    const denseToToken = new Int32Array(dense.length).fill(-1);
+    tokens.forEach((t, ti) => {
+      for (let d = t.start; d < t.end; d += 1) denseToToken[d] = ti;
+    });
+
+    const nodes = [];
+    (function collect(node) {
+      for (const c of node.children) {
+        if (c.piece.type !== "open" && c.piece.type !== "selfclose") continue;
+        nodes.push(c);
+        collect(c);
       }
-
-      const tokens = stdExt.encode(dense).filter((t) => t.end > t.start);
-      const denseToToken = new Int32Array(dense.length).fill(-1);
-      tokens.forEach((t, ti) => {
-        for (let d = t.start; d < t.end; d += 1) denseToToken[d] = ti;
-      });
-
-      docState.tokensViewData = { canon, canonToDense, denseToToken, tokens };
-    } catch (err) {
-      if (state !== docState) return;
-      console.error("Failed to load/tokenize with the DocLang tokenizer", err);
-      els.markupTokensView.innerHTML = `<div class="tokens-view-loading">Couldn&rsquo;t load the tokenizer.</div>`;
-      return;
+    })(tree);
+    const elements = [];
+    (function collect(el) {
+      if (docState.altReplacements?.has(el)) return;
+      if (!docState.altInactive?.has(el)) elements.push(el);
+      for (const c of childElements(el)) collect(c);
+    })(docState.docRoot);
+    if (nodes.length !== elements.length) {
+      console.warn(`Token map: ${nodes.length} tags in the source vs ${elements.length} elements`);
     }
-  }
-  if (state !== docState || !docState.tokensViewActive) return;
+    /** @type {Map<Element, { start: number, end: number, closeStart: number }>} token index ranges */
+    const elementTokens = new Map();
+    nodes.forEach((node, k) => {
+      if (k >= elements.length || node.denseStart == null) return;
+      const start = denseToToken[node.denseStart];
+      const end = denseToToken[node.denseEnd - 1] + 1;
+      const closeStart = node.closeStart != null ? denseToToken[node.closeStart] : end;
+      elementTokens.set(elements[k], { start, end, closeStart });
+    });
 
-  const { canon, canonToDense, denseToToken, tokens } = docState.tokensViewData;
-  const tokenAt = (pos) => {
-    const d = canonToDense[pos];
-    return d < 0 ? -1 : denseToToken[d];
-  };
-  let html = "";
-  let i = 0;
-  while (i < canon.length) {
-    const tk = tokenAt(i);
-    let j = i + 1;
-    while (j < canon.length && tokenAt(j) === tk) j += 1;
-    const piece = escapeHtml(canon.slice(i, j));
-    if (tk === -1) {
-      html += piece;
-    } else {
-      const t = tokens[tk];
-      const cls = `token-span token-span-c${tk % TOKEN_SPAN_COLOR_COUNT}${t.special ? " token-span-special" : ""}`;
-      html += `<span class="${cls}" data-token-id="${t.id}">${piece}</span>`;
-    }
-    i = j;
-  }
-
-  els.markupTokensView.innerHTML = `
-    <div class="tokens-stats">
-      <span>custom DocLang tokenizer</span>
-      <span><strong>${tokens.length.toLocaleString()}</strong> tokens</span>
-      <span>indentation shown for readability, not counted</span>
-    </div>
-    <div class="tokens-body"><pre class="tokens-ruler-text">${html}</pre></div>
-  `;
+    return { tokenizer: stdExt, tokens, elementTokens };
+  })();
+  return docState.tokenDataPromise.then(
+    (data) => {
+      docState.tokenData = data;
+      return data;
+    },
+    (err) => {
+      docState.tokenDataPromise = null; // let a later call try again
+      throw err;
+    },
+  );
 }
 
-function initMarkupTokensHover() {
-  els.markupTokensView?.addEventListener("mousemove", (e) => {
-    const span = e.target.closest(".token-span");
-    if (!span) {
-      hideCursorHint();
-      return;
+/** Token range of an element; a list item or table cell runs from its token up to the next one. */
+function elementTokenSpan(data, el) {
+  const own = data.elementTokens.get(el);
+  if (!own || !isVirtualUnit(el)) return own ?? null;
+  const { nodes, end } = virtualRange(el);
+  const next = nodes.slice(end).find((n) => n.nodeType === Node.ELEMENT_NODE);
+  const stop = next ? data.elementTokens.get(next)?.start : data.elementTokens.get(el.parentElement)?.closeStart;
+  return { start: own.start, end: stop ?? own.end };
+}
+
+/* ---- DocLang pane: tokens in place ------------------------------------ *
+ * While the token lens is on, every line of the source view shows its
+ * tokens as coloured spans. Each line is tokenized on its own (DocLang tags
+ * are single tokens, so boundaries match the document's stream) and pinned
+ * to its place in that stream by its element's start or closing tokens,
+ * which lets a replay dim what is not written yet.
+ * --------------------------------------------------------------------- */
+
+// Source-view text that is not markup: tag hints of virtual text, the "...</tag>" of a folded element, size chips.
+const TOKENS_SKIPPED_MARKUP = ".markup-ghost-tag-part, .markup-fold-suffix, .xml-attr-value-chip";
+
+/** Token index a source line starts at, when the line opens or closes an element; null otherwise. */
+function markupLineTokenAnchor(line, data) {
+  const closing = line.parentElement?.classList.contains("markup-fold-body");
+  const block = closing ? line.parentElement.parentElement : line.parentElement;
+  if (!block?.matches(".markup-el[data-element-id]:not(.markup-el-virtual-text):not(.markup-el-cue)")) return null;
+  if (!closing && block.firstElementChild !== line) return null;
+  const el = state.idToElement?.get(block.dataset.elementId);
+  const span = el && data.elementTokens.get(el);
+  if (!span) return null;
+  return closing ? span.closeStart : span.start;
+}
+
+function decorateMarkupTokens() {
+  const root = els.markupPane?.querySelector(".markup");
+  const data = state?.tokenData;
+  if (!root || !data || root.dataset.tokens === "on") return;
+  root.dataset.tokens = "on";
+  let pos = 0;
+  for (const line of root.querySelectorAll(".markup-line")) {
+    const body = line.querySelector(".markup-line-body");
+    if (!body || line.classList.contains("markup-embedded-uri-panel")) continue;
+    pos = markupLineTokenAnchor(line, data) ?? pos;
+    const textNodes = [];
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.parentElement.closest(TOKENS_SKIPPED_MARKUP)) textNodes.push(n);
     }
-    const id = span.getAttribute("data-token-id");
-    showCursorHint(`id ${id} · ${JSON.stringify(span.textContent)}`, e.clientX, e.clientY);
+    const text = textNodes.map((n) => n.nodeValue).join("");
+    const tokens = data.tokenizer.encode(text).filter((t) => t.end > t.start);
+    line.dataset.tokenStart = String(pos);
+    let offset = 0;
+    let ti = 0;
+    for (const node of textNodes) {
+      const a = offset;
+      const b = offset + node.nodeValue.length;
+      offset = b;
+      const frag = document.createDocumentFragment();
+      // A token can run across text nodes (e.g. ` value` = the space before an attribute and its name).
+      while (ti < tokens.length && tokens[ti].start < b) {
+        const t = tokens[ti];
+        const span = document.createElement("span");
+        span.className = `token-span token-span-c${(pos + ti) % TOKEN_SPAN_COLOR_COUNT}${t.special ? " token-span-special" : ""}`;
+        if (t.start < a) span.classList.add("token-cont-l");
+        if (t.end > b) span.classList.add("token-cont-r");
+        span.dataset.tokenId = String(t.id);
+        span.dataset.tokenIndex = String(pos + ti);
+        span.textContent = text.slice(Math.max(a, t.start), Math.min(b, t.end));
+        frag.appendChild(span);
+        if (t.end > b) break;
+        ti += 1;
+      }
+      node.replaceWith(frag);
+    }
+    pos += tokens.length;
+  }
+  syncMarkupReplay();
+}
+
+function undecorateMarkupTokens() {
+  const root = els.markupPane?.querySelector('.markup[data-tokens="on"]');
+  if (!root) return;
+  delete root.dataset.tokens;
+  delete root.dataset.replayAt;
+  root.classList.remove("token-replay");
+  for (const span of root.querySelectorAll(".token-span")) span.replaceWith(...span.childNodes);
+  for (const line of root.querySelectorAll(".markup-line")) {
+    line.classList.remove("token-future");
+    delete line.dataset.tokenStart;
+  }
+  root.normalize();
+}
+
+/** Shows or hides the tokens of the source view to match the lens; called whenever the view is rebuilt. */
+function syncMarkupTokens() {
+  if (!tokenLens.active || !state) return undecorateMarkupTokens();
+  if (state.tokenData) return decorateMarkupTokens();
+  const docState = state;
+  ensureTokenData(docState)
+    .then(() => {
+      if (state !== docState || !tokenLens.active) return;
+      decorateMarkupTokens();
+      updateTokenReplay();
+    })
+    .catch(() => {}); // the token bar reports it
+}
+
+/** During a replay: dims the source lines and tokens not written yet and keeps the current one in view. */
+function syncMarkupReplay(range = currentTokenRange()) {
+  const root = els.markupPane?.querySelector('.markup[data-tokens="on"]');
+  if (!root) return;
+  const replaying = isReplayShown(range);
+  const at = replaying ? Math.floor(tokenLens.cursor) : Infinity;
+  const key = `${at}${tokenLens.effects ? "+" : ""}`;
+  if (root.dataset.replayAt === key) return;
+  root.dataset.replayAt = key;
+  // Greying out what is not written yet is a trace effect: only playing or scrubbing turns it on.
+  root.classList.toggle("token-replay", replaying && tokenLens.effects);
+  let current = null;
+  for (const line of root.querySelectorAll(".markup-line[data-token-start]")) {
+    const future = Number(line.dataset.tokenStart) >= at;
+    line.classList.toggle("token-future", future);
+    if (!future) current = line;
+  }
+  root.querySelectorAll(".token-span.is-cursor, .token-span.token-future").forEach((el) => {
+    el.classList.remove("is-cursor", "token-future");
   });
-  els.markupTokensView?.addEventListener("mouseleave", hideCursorHint);
+  if (!replaying || !current) return;
+  for (const span of current.querySelectorAll(".token-span")) {
+    const i = Number(span.dataset.tokenIndex);
+    if (i >= at) span.classList.add("token-future");
+    else if (i === at - 1) span.classList.add("is-cursor");
+  }
+  current.scrollIntoView({ block: "nearest" });
+}
+
+function markupTokenPieces(span) {
+  const line = span.closest(".markup-line");
+  return line ? [...line.querySelectorAll(`.token-span[data-token-index="${span.dataset.tokenIndex}"]`)] : [span];
+}
+
+/** Hover text for a token in the source view: its id and full text (a token can span several pieces). */
+function markupTokenHint(span) {
+  const text = markupTokenPieces(span).map((s) => s.textContent).join("");
+  return `id ${span.dataset.tokenId} · ${JSON.stringify(text)}`;
+}
+
+/** Outlines every piece of the hovered token, or none. */
+function setHoveredMarkupToken(span) {
+  els.markupPane?.querySelectorAll(".token-span.is-hover").forEach((el) => el.classList.remove("is-hover"));
+  if (span) markupTokenPieces(span).forEach((el) => el.classList.add("is-hover"));
+}
+
+/* ---- Token lens: replay and page layer -------------------------------- *
+ * Replays the current page's markup token by token: the element being
+ * written becomes the selection, the source view dims what is not written
+ * yet and, when the document has page images, the page stays veiled except
+ * where the tokens written so far have described it. The page layer can
+ * also shade each leaf bbox by its token density (tokens per page area).
+ * --------------------------------------------------------------------- */
+
+const TOKEN_BADGE_MIN_SCREEN_PX = { w: 70, h: 13 };
+
+function setTokenLensActive(active) {
+  tokenLens.active = active;
+  tokenLens.cursor = -Infinity;
+  tokenLens.effects = false;
+  highlightReplayElement(null);
+  if (!active) stopTokenReplay();
+  els.tokenLensToggle?.setAttribute("aria-pressed", String(active));
+  els.pagePane?.classList.toggle("token-lens", active);
+  syncTokenLensControls();
+  refreshPageViewLayout();
+  syncMarkupTokens();
+}
+
+function pageTokenRange(data) {
+  let start = Infinity;
+  let end = -Infinity;
+  for (const el of state?.currentSegment ?? []) {
+    const span = data.elementTokens.get(el);
+    if (!span) continue;
+    start = Math.min(start, span.start);
+    end = Math.max(end, span.end);
+  }
+  return start < end ? { start, end } : null;
+}
+
+/** The current page's token range, or null while the tokenizer loads or the page holds no markup. */
+function currentTokenRange() {
+  const data = state?.tokenData;
+  return tokenLens.active && data ? pageTokenRange(data) : null;
+}
+
+/**
+ * True while a replay is under way: playing, or paused somewhere inside the page. At either end the
+ * page shows as usual, so a fresh page (cursor at its start) is not veiled until it plays.
+ */
+function isReplayShown(range) {
+  return !!range && (tokenLens.playing || (tokenLens.cursor > range.start && tokenLens.cursor < range.end));
+}
+
+/** Brings every token view (page layer, highlight, controls, source view) in line with the replay cursor. */
+function updateTokenReplay() {
+  const range = currentTokenRange();
+  if (range && !(tokenLens.cursor >= range.start && tokenLens.cursor <= range.end)) {
+    tokenLens.cursor = range.start;
+  }
+  updateTokenLayer(range);
+  syncReplaySelection(range);
+  syncTokenBar(range);
+  syncMarkupReplay(range);
+}
+
+/** The replay highlights the element being written in every pane, the way a selection does. */
+function syncReplaySelection(range) {
+  const last = Math.floor(tokenLens.cursor) - 1; // the token written last
+  if (!isReplayShown(range) || last < range.start || !state.idToElement) {
+    highlightReplayElement(null);
+    return;
+  }
+  let innermost = null;
+  let innermostLength = Infinity;
+  for (const [id, el] of state.idToElement) {
+    const span = elementTokenSpan(state.tokenData, el);
+    if (!span || last < span.start || last >= span.end || span.end - span.start >= innermostLength) continue;
+    innermost = id;
+    innermostLength = span.end - span.start;
+  }
+  const id = resolveSelectionElementId(innermost);
+  if (!id) return;
+  if (tokenLens.playing) {
+    // While playing, the traced element is only highlighted: the inspector would flicker open and closed.
+    if (id !== tokenLens.currentId) highlightReplayElement(id);
+    return;
+  }
+  // Paused: the traced element is the selection. A selected element that holds the cursor (e.g. the list around
+  // the traced item) already agrees with the trace and stays.
+  highlightReplayElement(null);
+  const selected = selectedElementId && state.idToElement.get(selectedElementId);
+  const span = selected && elementTokenSpan(state.tokenData, selected);
+  if (span && last >= span.start && last < span.end) return;
+  tokenLens.syncing = true;
+  try {
+    selectElement(id);
+  } finally {
+    tokenLens.syncing = false;
+  }
+}
+
+/** With tokens on, selecting an element seeks the trace to the element's first token. */
+function seekTraceToElement(elementId) {
+  const range = currentTokenRange();
+  if (!range) return;
+  const el = state.idToElement?.get(elementId);
+  const span = el && elementTokenSpan(state.tokenData, el);
+  if (!span || span.start < range.start || span.start >= range.end) return;
+  tokenLens.cursor = span.start + 1;
+  if (!tokenLens.playing) tokenLens.effects = false; // a selection moves the trace without its effects
+  // While playing, the trace's highlight stands in for the selection, as from the start of the trace.
+  if (tokenLens.playing) clearSelection();
+  updateTokenReplay();
+}
+
+/**
+ * Marks an element like a selection (same look, kept in view) without selecting it, so the inspector
+ * and edit handles stay closed during a replay.
+ */
+function highlightReplayElement(id) {
+  if (id === tokenLens.currentId) return;
+  // An element that is also the actual selection keeps its selected look.
+  const keepSelected = tokenLens.currentId === selectedElementId;
+  tokenLens.currentId = id;
+  document.querySelectorAll(".token-current").forEach((el) => {
+    el.classList.remove("token-current");
+    if (!keepSelected) el.classList.remove("selected");
+  });
+  if (!id) return applyBboxVisibility();
+  const markupEl = findMarkupElementForSelection(id);
+  const renderedEl = findRenderedElementForSelection(id);
+  if (renderedEl) revealRenderedSelectionContext(renderedEl);
+  const targets = [
+    markupEl,
+    renderedEl,
+    els.renderedPane?.querySelector(`.paged-el-slot[data-element-id="${id}"]`),
+    ...(els.pagePane?.querySelectorAll(`.bbox[data-element-id="${id}"]`) ?? []),
+  ];
+  for (const el of targets) el?.classList.add("selected", "token-current");
+  renderedEl?.scrollIntoView({ block: "nearest" });
+  applyBboxVisibility();
+}
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  return el;
+}
+
+/** Rebuilds the token layer for the current page; called whenever the page view is laid out. */
+function syncTokenLayer(img) {
+  img.parentElement?.querySelector("svg.token-layer")?.remove();
+  tokenLayer = null;
+  if (!tokenLens.active || !state?.hasPageView || !img.naturalWidth) return syncTokenBar();
+  const docState = state;
+  const data = docState.tokenData;
+  if (!data) {
+    syncTokenBar();
+    ensureTokenData(docState)
+      .then(() => { if (state === docState) refreshPageViewLayout(); })
+      .catch((err) => console.error("Failed to load/tokenize with the DocLang tokenizer", err));
+    return;
+  }
+  const pageRange = pageTokenRange(data);
+  if (!pageRange) return syncTokenBar();
+  const pageTokens = pageRange.end - pageRange.start;
+
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+  const items = [];
+  for (const b of state.pageViewOverlay?.boxes ?? []) {
+    const el = state.idToElement?.get(b.elementId);
+    const span = el && elementTokenSpan(data, el);
+    if (!span || span.end <= span.start) continue;
+    const r = boxPixelRect(b, img);
+    if (!(r.w > 0 && r.h > 0)) continue;
+    items.push({ box: b, el, ...r, start: span.start, end: span.end, count: span.end - span.start });
+  }
+  // Heat goes on leaf boxes only: a container's tokens are mostly its children's.
+  for (const it of items) {
+    it.leaf = !items.some((o) => o !== it && o.area < it.area * 0.95
+      && o.x + o.w / 2 >= it.x && o.x + o.w / 2 <= it.x + it.w && o.y + o.h / 2 >= it.y && o.y + o.h / 2 <= it.y + it.h);
+    it.density = it.count / (it.area / (W * H));
+  }
+  const logs = items.filter((it) => it.leaf).map((it) => Math.log(it.density));
+  const lo = Math.min(...logs);
+  const hi = Math.max(...logs);
+
+  const svg = svgEl("svg", { class: "token-layer", viewBox: `0 0 ${W} ${H}` });
+  const mask = svgEl("mask", { id: "token-veil-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: W, height: H });
+  mask.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "white" }));
+  const defs = svgEl("defs");
+  defs.appendChild(mask);
+  svg.appendChild(defs);
+  svg.appendChild(svgEl("rect", { class: "token-veil", x: 0, y: 0, width: W, height: H, mask: "url(#token-veil-mask)" }));
+  const heatGroup = svgEl("g", { class: "token-heat" });
+  svg.appendChild(heatGroup);
+  const badgeGroup = svgEl("g", { class: "token-badges" });
+
+  const unit = W / (img.getBoundingClientRect().width || W); // image pixels per screen pixel
+  const fontSize = 10 * unit;
+  for (const it of [...items].sort((a, b) => b.area - a.area)) {
+    it.hole = svgEl("rect", { x: it.x, y: it.y, width: it.w, height: 0, fill: "black" });
+    mask.appendChild(it.hole);
+    if (!it.leaf) continue;
+    const t = hi > lo ? (Math.log(it.density) - lo) / (hi - lo) : 0.5;
+    it.heat = svgEl("rect", { class: "token-heat-cell", x: it.x, y: it.y, width: it.w, height: 0 });
+    it.heat.style.fillOpacity = String(0.08 + 0.5 * t);
+    heatGroup.appendChild(it.heat);
+    if (it.w / unit >= TOKEN_BADGE_MIN_SCREEN_PX.w && it.h / unit >= TOKEN_BADGE_MIN_SCREEN_PX.h) {
+      it.badge = svgEl("text", {
+        class: "token-badge",
+        x: it.x + it.w - 3 * unit,
+        y: it.y + 2 * unit,
+        "font-size": fontSize,
+        "stroke-width": 3 * unit,
+      });
+      const share = (100 * it.count) / pageTokens;
+      it.badge.textContent = `${it.count.toLocaleString()} (${share < 1 ? share.toFixed(1) : Math.round(share)}%)`;
+      badgeGroup.appendChild(it.badge);
+    }
+  }
+  svg.appendChild(badgeGroup);
+
+  // Above the bbox overlay, so the veil darkens it too; clicks pass through to the overlay.
+  img.parentElement.appendChild(svg);
+  tokenLayer = { svg, items };
+  const highlighted = tokenLens.currentId;
+  tokenLens.currentId = null; // the page's bboxes are new: highlight them again
+  highlightReplayElement(highlighted);
+  updateTokenReplay();
+}
+
+/** Uncovers each page box top-down as its tokens are written. */
+function updateTokenLayer(range) {
+  const layer = tokenLayer;
+  if (!layer?.svg.isConnected || !range) return;
+  // Without Reveal the page keeps the overlay's own look; the replay only highlights the element being written.
+  const shown = isReplayShown(range) && tokenLens.effects && !!els.tokenScanToggle?.checked;
+  const c = shown ? tokenLens.cursor : range.end;
+  layer.svg.classList.toggle("is-replaying", shown);
+  for (const it of layer.items) {
+    const progress = Math.min(1, Math.max(0, (c - it.start) / it.count));
+    const h = String(it.h * progress);
+    it.hole.setAttribute("height", h);
+    it.heat?.setAttribute("height", h);
+    it.badge?.classList.toggle("is-shown", progress >= 1);
+  }
+}
+
+function syncTokenBar(range = currentTokenRange()) {
+  const bar = els.tokenBar;
+  if (!bar || bar.hidden) return;
+  const data = state?.tokenData;
+  if (els.tokenStartBtn) els.tokenStartBtn.disabled = !range || (tokenLens.cursor <= range.start && !tokenLens.playing);
+  if (els.tokenPrevBtn) els.tokenPrevBtn.disabled = !range || tokenLens.cursor <= range.start;
+  if (els.tokenNextBtn) els.tokenNextBtn.disabled = !range || tokenLens.cursor >= range.end;
+  if (els.tokenPlayBtn) {
+    els.tokenPlayBtn.disabled = !range;
+    const icon = tokenLens.playing ? "pause" : "play";
+    if (els.tokenPlayBtn.dataset.icon !== icon) {
+      els.tokenPlayBtn.dataset.icon = icon;
+      els.tokenPlayBtn.innerHTML = tokenLens.playing ? TOKEN_PAUSE_ICON : TOKEN_PLAY_ICON;
+    }
+    const hint = tokenLens.playing
+      ? "Pause the trace"
+      : "Trace DocLang, token by token";
+    els.tokenPlayBtn.dataset.hint = hint; // shown at once by the quick hints
+    els.tokenPlayBtn.setAttribute("aria-label", hint);
+  }
+  if (els.tokenScrub) {
+    els.tokenScrub.disabled = !range;
+    if (range) {
+      els.tokenScrub.min = String(range.start);
+      els.tokenScrub.max = String(range.end);
+      els.tokenScrub.value = String(Math.floor(tokenLens.cursor));
+    }
+  }
+  if (els.tokenCounter) {
+    // The replay position shows only while a replay is under way.
+    const written = isReplayShown(range) ? `<strong>${(Math.floor(tokenLens.cursor) - range.start).toLocaleString()}</strong> / ` : "";
+    els.tokenCounter.innerHTML = !data
+      ? "Loading tokenizer&hellip;"
+      : !range
+        ? `${data.tokens.length.toLocaleString()} tokens in document`
+        : `${written}${(range.end - range.start).toLocaleString()} tokens on page · ${data.tokens.length.toLocaleString()} in document`;
+  }
+}
+
+const TOKEN_PLAY_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>';
+const TOKEN_PAUSE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4.5 3.5h2.5v9H4.5zM9 3.5h2.5v9H9z" fill="currentColor"/></svg>';
+
+/** Steps the replay by single tokens; stepping back from the full page starts a replay at its last token. */
+function stepTokenReplay(delta) {
+  const range = currentTokenRange();
+  if (!range) return;
+  if (tokenLens.playing) stopTokenReplay();
+  tokenLens.cursor = Math.min(range.end, Math.max(range.start, Math.floor(tokenLens.cursor) + delta));
+  updateTokenReplay();
+}
+
+function startTokenReplay() {
+  const range = currentTokenRange();
+  if (!range) return;
+  if (tokenLens.cursor >= range.end) tokenLens.cursor = range.start;
+  clearSelection(); // the replay's highlight takes the selection's place
+  tokenLens.effects = true;
+  tokenLens.playing = true;
+  tokenLens.lastTs = 0;
+  cancelAnimationFrame(tokenLens.frame);
+  tokenLens.frame = requestAnimationFrame(tokenReplayTick);
+  updateTokenReplay();
+}
+
+function stopTokenReplay() {
+  tokenLens.playing = false;
+  tokenLens.effects = false; // the trace's greying and darkening show only while playing or scrubbing
+  cancelAnimationFrame(tokenLens.frame);
+  updateTokenReplay();
+}
+
+function toggleTokenReplay() {
+  if (tokenLens.playing) stopTokenReplay();
+  else startTokenReplay();
+}
+
+
+
+function tokenReplayTick(ts) {
+  if (!tokenLens.playing) return;
+  const dt = tokenLens.lastTs ? Math.min(0.1, (ts - tokenLens.lastTs) / 1000) : 0;
+  tokenLens.lastTs = ts;
+  tokenLens.frame = requestAnimationFrame(tokenReplayTick);
+  const range = currentTokenRange();
+  if (!range) return;
+  tokenLens.cursor = Math.min(range.end, tokenLens.cursor + dt * tokenLens.speed);
+  updateTokenReplay();
+  if (tokenLens.cursor < range.end) return;
+  if (state.currentPage < state.pageCount) {
+    tokenLens.cursor = -1; // updateTokenReplay starts the next page from its first token
+    goToPage(state.currentPage + 1);
+  } else {
+    stopTokenReplay();
+  }
+}
+
+function initTokenLens() {
+  els.tokenLensToggle?.setAttribute("aria-pressed", String(tokenLens.active));
+  els.pagePane?.classList.toggle("token-lens", tokenLens.active);
+  els.tokenLensToggle?.addEventListener("click", () => setTokenLensActive(!tokenLens.active));
+  els.tokenPlayBtn?.addEventListener("click", toggleTokenReplay);
+  els.tokenStartBtn?.addEventListener("click", () => {
+    const range = currentTokenRange();
+    if (!range) return;
+    if (tokenLens.playing) stopTokenReplay();
+    tokenLens.cursor = range.start;
+    updateTokenReplay();
+  });
+  els.tokenPrevBtn?.addEventListener("click", () => stepTokenReplay(-1));
+  els.tokenNextBtn?.addEventListener("click", () => stepTokenReplay(1));
+  els.tokenScrub?.addEventListener("input", () => {
+    if (tokenLens.playing) stopTokenReplay();
+    tokenLens.cursor = Number(els.tokenScrub.value);
+    tokenLens.effects = true;
+    updateTokenReplay();
+  });
+  els.tokenScrub?.addEventListener("change", () => {
+    tokenLens.effects = false; // released: paused, like after a pause
+    updateTokenReplay();
+  });
+  loadTokenPrefs();
+  els.tokenHeatToggle?.addEventListener("change", () => {
+    els.pagePane?.classList.toggle("token-heat", els.tokenHeatToggle.checked);
+    persistTokenPrefs();
+  });
+  els.tokenScanToggle?.addEventListener("change", () => {
+    updateTokenReplay();
+    persistTokenPrefs();
+  });
+  // Clicking a token in the source seeks the trace to it (that token written last); a playing trace plays on.
+  els.markupPane?.addEventListener("click", (e) => {
+    const span = e.target.closest?.(".token-span");
+    const range = span && currentTokenRange();
+    if (!range) return;
+    tokenLens.cursor = Math.min(range.end, Number(span.dataset.tokenIndex) + 1);
+    if (!tokenLens.playing) tokenLens.effects = false; // a click moves the trace without its effects
+    updateTokenReplay();
+  });
+  els.tokenCountsToggle?.addEventListener("change", () => {
+    els.pagePane?.classList.toggle("token-counts", els.tokenCountsToggle.checked);
+    persistTokenPrefs();
+  });
+  els.tokenSpeed?.addEventListener("change", () => {
+    tokenLens.speed = Number(els.tokenSpeed.value) || 100; // tokens per second
+    persistTokenPrefs();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (!tokenLens.active || !state || !hotkeysEnabled) return;
+    if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+    switch (e.key) {
+      case ",": stepTokenReplay(-1); break;
+      case ".": stepTokenReplay(1); break;
+      case " ":
+        // A focused control handles Space itself.
+        if (document.activeElement?.closest?.("button, select, input, a")) return;
+        toggleTokenReplay();
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  });
+}
+
+/** Restores the heatmap, counts, reveal and speed choices. */
+function loadTokenPrefs() {
+  let prefs = {};
+  try {
+    prefs = JSON.parse(localStorage.getItem(TOKEN_PREFS_STORAGE_KEY) ?? "{}") ?? {};
+  } catch {
+    /* ignore invalid stored token prefs */
+  }
+  if (els.tokenHeatToggle) els.tokenHeatToggle.checked = prefs.heatmap === true;
+  if (els.tokenCountsToggle) els.tokenCountsToggle.checked = prefs.counts === true;
+  if (els.tokenScanToggle) els.tokenScanToggle.checked = prefs.reveal === true;
+  els.pagePane?.classList.toggle("token-heat", !!els.tokenHeatToggle?.checked);
+  els.pagePane?.classList.toggle("token-counts", !!els.tokenCountsToggle?.checked);
+  const speed = String(prefs.speed);
+  if (els.tokenSpeed && [...els.tokenSpeed.options].some((o) => o.value === speed)) els.tokenSpeed.value = speed;
+  tokenLens.speed = Number(els.tokenSpeed?.value) || 100;
+}
+
+function persistTokenPrefs() {
+  try {
+    localStorage.setItem(TOKEN_PREFS_STORAGE_KEY, JSON.stringify({
+      heatmap: !!els.tokenHeatToggle?.checked,
+      counts: !!els.tokenCountsToggle?.checked,
+      reveal: !!els.tokenScanToggle?.checked,
+      speed: tokenLens.speed,
+    }));
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 function initBboxHints() {
@@ -2663,8 +3256,8 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
     readingOrder,
     readingOrderIndexByElement: new Map(readingOrder.map((el, i) => [el, i])),
     pageViewOverlay: null,
-    tokensViewActive: false,
-    tokensViewData: null,
+    tokenData: null,
+    tokenDataPromise: null,
   };
 }
 
@@ -2723,8 +3316,10 @@ function activateDocument(docState, entry) {
   }
 
   stopEditing({ render: false });
+  stopTokenReplay();
+  tokenLens.cursor = -Infinity;
+  tokenLens.effects = false;
   setDocLabel(entry.label);
-  setMarkupTokensViewActive(false);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
   syncReadingLayoutButtons();
@@ -2778,7 +3373,6 @@ function syncEditUi() {
   }
   if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
   if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
-  if (els.markupTokensToggle) els.markupTokensToggle.hidden = editing;
   syncAddButtons();
   // The history/commit buttons keep their place and only toggle enabled, so a click never lands on a moved button.
   const showHistory = !!entry && !editing;
@@ -2798,7 +3392,6 @@ function syncEditUi() {
 
 function startEditing() {
   if (markupEditor || !editableEntry() || !els.markupPane) return;
-  setMarkupTokensViewActive(false); // the editor lives in the source view
   markupEditor = document.createElement("textarea");
   markupEditor.className = "markup-editor";
   markupEditor.spellcheck = false;
@@ -5107,6 +5700,7 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   updateBboxNavButtons();
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
+  syncTokenLensControls();
 }
 
 function applyReadingLayerClasses(root) {
@@ -5148,6 +5742,8 @@ function updatePageZoomResetButton() {
 function resetViewer() {
   setDemoLoading(false);
   stopEditing({ render: false });
+  stopTokenReplay();
+  tokenLayer = null;
   clearFileCatalog();
   filePaneUserToggled = false;
   selectedElementId = null;
@@ -5163,15 +5759,7 @@ function resetViewer() {
   closeAllSettings();
   setToolbarOptionsOpen(false);
   syncValidationForActiveDocument();
-  if (els.markupPane) {
-    els.markupPane.innerHTML = "";
-    els.markupPane.hidden = false;
-  }
-  if (els.markupTokensView) {
-    els.markupTokensView.innerHTML = "";
-    els.markupTokensView.hidden = true;
-  }
-  els.markupTokensToggle?.setAttribute("aria-pressed", "false");
+  if (els.markupPane) els.markupPane.innerHTML = "";
   if (els.renderedPane) els.renderedPane.innerHTML = "";
   if (els.pagePane) els.pagePane.innerHTML = "";
   setPageIndicator(1, 1);
@@ -5189,6 +5777,16 @@ function setPageViewVisible(visible) {
   if (!visible) setPageSettingsOpen(false);
   applyPaneLayout();
   syncLayoutSubtoggles();
+}
+
+function syncTokenLensControls() {
+  const open = !!state && document.body.classList.contains("viewer-loaded");
+  if (els.tokenLensToggle) els.tokenLensToggle.hidden = !open;
+  if (els.tokenBar) els.tokenBar.hidden = !open || !tokenLens.active;
+  if (els.tokenNav) els.tokenNav.hidden = !open || !tokenLens.active;
+  // Heatmap, counts and reveal draw on page images.
+  if (els.tokenOverlayOptions) els.tokenOverlayOptions.hidden = !open || !tokenLens.active || !state.hasPageView;
+  syncTokenBar();
 }
 
 function syncPagePaneControls() {
@@ -5991,6 +6589,7 @@ function renderPage(pageNum) {
     // The editor holds the whole document and stays put while paging.
   } else if (segmentHasMarkup(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
+    syncMarkupTokens();
   } else {
     els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
   }
@@ -5998,6 +6597,8 @@ function renderPage(pageNum) {
   renderReadingPane(segment, elementIds, boxes, defaultResolution);
 
   els.pagePane.innerHTML = "";
+  tokenLayer = null;
+  tokenLens.currentId = null; // the panes are rebuilt: nothing is highlighted any more
   if (state.hasPageView) {
     const imageUrl = pageImages.get(pageNum);
     if (imageUrl) {
@@ -6239,6 +6840,7 @@ function applyPageImageSize(img, pane = els.pagePane) {
 
 function syncPageViewChrome(img) {
   syncOverlayBadges(img);
+  syncTokenLayer(img);
   updatePagePanePanCursor();
   applyBboxVisibility();
 }
@@ -6881,7 +7483,9 @@ function bboxNavTarget(direction) {
   const step = direction === "prev" ? -1 : 1;
 
   // While a page is still loading, the element being navigated to is pending, not yet selected: continue from it.
-  const currentEl = selectedElementId ? state.idToElement?.get(selectedElementId) : state.pendingSelectElement;
+  // While a trace plays, nothing is selected: continue from the element it is on.
+  const currentId = selectedElementId ?? tokenLens.currentId;
+  const currentEl = currentId ? state.idToElement?.get(currentId) : state.pendingSelectElement;
   const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
   const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
 
@@ -7949,6 +8553,7 @@ function selectElement(elementId, facet = "text") {
   selectedElementId = elementId;
   selectedFacet = facet;
   applySelection();
+  if (!tokenLens.syncing) seekTraceToElement(elementId);
 }
 
 function clearSelection() {
@@ -7985,7 +8590,9 @@ function applyBboxVisibility() {
   for (const el of els.pagePane.querySelectorAll(".bbox")) {
     el.classList.remove("related");
     const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
+    // The element a token trace is on shows like a selection.
+    const traced = elementId === tokenLens.currentId;
+    const clickVisible = elementId === selectedElementId || traced || peerIds.has(elementId);
     if (showAllBboxes) {
       if (isContentsOptionHidden(elementId, clickVisible)) {
         el.classList.add("bbox-hidden");
@@ -7997,7 +8604,7 @@ function applyBboxVisibility() {
       }
       continue;
     }
-    if (elementId === selectedElementId) {
+    if (elementId === selectedElementId || traced) {
       el.classList.remove("bbox-hidden");
     } else if (peerIds.has(elementId)) {
       el.classList.remove("bbox-hidden");

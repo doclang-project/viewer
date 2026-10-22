@@ -219,6 +219,23 @@
           </div>
         </section>
         <section class="help-shortcut-group">
+          <h3>Tokens (in token mode)</h3>
+          <div class="help-shortcut-list">
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>,</kbd></span>
+              <span class="help-shortcut-desc">Previous token</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>.</kbd></span>
+              <span class="help-shortcut-desc">Next token</span>
+            </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>Space</kbd></span>
+              <span class="help-shortcut-desc">Play / pause the trace</span>
+            </div>
+          </div>
+        </section>
+        <section class="help-shortcut-group">
           <h3>Overlays</h3>
           <div class="help-shortcut-list">
             <div class="help-shortcut-row">
@@ -627,6 +644,25 @@
                 </label>
               </div>
 
+              <div id="token-overlay-options" hidden>
+                <div class="settings-divider" role="separator"></div>
+                <span class="settings-option settings-option-primary settings-option-heading">Tokens</span>
+                <div class="settings-subgroup">
+                  <label class="settings-option settings-option-sub" title="Shade each element by its tokens per page area">
+                    <input type="checkbox" id="token-heat">
+                    <span>Heatmap</span>
+                  </label>
+                  <label class="settings-option settings-option-sub" title="Show each element's token count">
+                    <input type="checkbox" id="token-counts">
+                    <span>Counts</span>
+                  </label>
+                  <label class="settings-option settings-option-sub" title="While tracing, darken the page and uncover each element as its tokens are written">
+                    <input type="checkbox" id="token-scan">
+                    <span>Reveal while tracing</span>
+                  </label>
+                </div>
+              </div>
+
               <div class="settings-divider" role="separator"></div>
               <button type="button" class="overlays-reset" id="btn-overlays-reset">Reset all</button>
             </div>
@@ -647,7 +683,7 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
-          <button type="button" class="pane-header-toggle-btn" id="btn-markup-tokens-toggle" aria-pressed="false">Tokens</button>
+          <button type="button" class="pane-header-toggle-btn" id="btn-token-lens" aria-pressed="false" title="Show tokens using an indicative DocLang-aware tokenizer based on Granite-Docling" hidden>Tokens</button>
           <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
           <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
           <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
@@ -667,7 +703,6 @@
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
       <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
       <div class="pane-body" id="markup-pane"></div>
-      <div class="pane-body markup-tokens-view" id="markup-tokens-view" hidden></div>
       <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
         <div class="validation-panel-header">
           <span class="validation-panel-summary" id="validation-summary"></span>
@@ -676,6 +711,38 @@
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
       <div class="pane-statusbar">
+        <div class="token-bar" id="token-bar" aria-label="Token stats" hidden>
+          <div class="token-nav" id="token-nav">
+            <div class="page-nav-btns">
+              <button type="button" id="btn-token-start" class="page-nav-btn" aria-label="Back to the page's first token" title="Back to the page's first token">
+                <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                  <path d="M4.5 3.5v9M12 3.5 7 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+              <button type="button" id="btn-token-prev" class="page-nav-btn" aria-label="Previous token" title="Previous token">
+                <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                  <path d="M10.5 3.5 5.5 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+              <button type="button" id="btn-token-next" class="page-nav-btn" aria-label="Next token" title="Next token">
+                <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                  <path d="M5.5 3.5 10.5 8l-5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+            </div>
+            <button type="button" class="page-nav-btn token-play-btn" id="btn-token-play" aria-label="Trace DocLang, token by token"></button>
+            <input type="range" class="token-scrub" id="token-scrub" min="0" max="0" value="0" aria-label="Tokens written">
+            <select class="token-speed" id="token-speed" aria-label="Trace speed in tokens per second" title="Trace speed">
+              <option value="5">5 tok/s</option>
+              <option value="10">10 tok/s</option>
+              <option value="50">50 tok/s</option>
+              <option value="100" selected>100 tok/s</option>
+              <option value="500">500 tok/s</option>
+              <option value="1000">1000 tok/s</option>
+            </select>
+          </div>
+          <span class="token-counter" id="token-counter"></span>
+        </div>
         <button
           type="button"
           class="validate-btn"

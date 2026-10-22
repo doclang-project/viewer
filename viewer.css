@@ -60,6 +60,9 @@
   --token-bg3: rgba(236, 72, 153, 0.22);
   --token-bg4: rgba(139, 92, 246, 0.22);
   --token-bg5: rgba(249, 115, 22, 0.22);
+  /* Drawn over the page image (paper), so the same in both themes. */
+  --token-heat: #f97316;
+  --token-veil: rgba(9, 9, 11, 0.72);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -178,6 +181,16 @@ header h1 {
   justify-self: center;
   min-width: 0;
   text-align: center;
+}
+
+.token-nav .token-speed {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.15rem;
+}
+
+.token-nav .page-nav-btn {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .doc-label {
@@ -1918,11 +1931,7 @@ button.validation-issue:focus-visible {
   margin: 1rem;
 }
 
-/* ---- DocLang pane: tokenized view ------------------------------- */
-
-.pane-markup-header {
-  justify-content: space-between;
-}
+/* ---- Tokens (DocLang pane and token lens) ----------------------- */
 
 .pane-header-toggle-btn {
   appearance: none;
@@ -1957,67 +1966,31 @@ button.validation-issue:focus-visible {
   outline-offset: 2px;
 }
 
-.markup-tokens-view {
-  padding: 0;
-  background: var(--markup-bg);
-  color: var(--markup-fg);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.markup-tokens-view[hidden] {
-  display: none !important;
-}
-
-.tokens-view-loading {
-  margin: 1rem;
-  color: var(--muted);
-  font-family: var(--font-ui);
-  font-size: 0.8125rem;
-}
-
-.tokens-stats {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.3rem 1.25rem;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-ui);
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.tokens-stats strong {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.tokens-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 0.75rem 1rem 1rem;
-}
-
-.tokens-ruler-text {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  line-height: 1.9;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
+/* A token that runs across several syntax-coloured pieces is drawn as one box: the pieces
+   that continue it (.token-cont-l / -r) leave out their inner edges. */
 .token-span {
+  --tok-edge: color-mix(in srgb, var(--text) 8%, transparent);
+  --tok-w: 1px;
+  --tok-l: 1;
+  --tok-r: 1;
   border-radius: 0.15rem;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+  box-shadow:
+    inset calc(var(--tok-l) * var(--tok-w)) 0 0 var(--tok-edge),
+    inset calc(var(--tok-r) * -1 * var(--tok-w)) 0 0 var(--tok-edge),
+    inset 0 var(--tok-w) 0 var(--tok-edge),
+    inset 0 calc(-1 * var(--tok-w)) 0 var(--tok-edge);
 }
 
-.token-span:hover {
-  box-shadow: 0 0 0 1.5px var(--accent);
+.token-span.token-cont-l {
+  --tok-l: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.token-span.token-cont-r {
+  --tok-r: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .token-span-c0 { background: var(--token-bg0); }
@@ -2028,8 +2001,120 @@ button.validation-issue:focus-visible {
 .token-span-c5 { background: var(--token-bg5); }
 
 .token-span-special {
-  box-shadow: 0 0 0 1.5px var(--accent);
   font-weight: 700;
+}
+
+.token-span.token-span-special {
+  --tok-edge: color-mix(in srgb, var(--text) 45%, transparent);
+  --tok-w: 1.5px;
+}
+
+.token-span.is-hover {
+  --tok-edge: var(--accent);
+  --tok-w: 2px;
+}
+
+.markup.token-replay .markup-line.token-future,
+.markup.token-replay .token-span.token-future {
+  opacity: 0.25;
+}
+
+.token-span.is-cursor {
+  --tok-edge: var(--token-heat);
+  --tok-w: 2px;
+}
+
+/* ---- Original pane: token lens ---------------------------------- */
+
+.page-view svg.token-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* With the heatmap on, the regular overlay steps back to thin outlines so the heat reads. */
+#page-pane.token-lens.token-heat .overlay rect.bbox:not(.selected) {
+  fill: none !important;
+  stroke-width: 1;
+  stroke-opacity: 0.45;
+}
+
+.token-veil {
+  fill: var(--token-veil);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.token-layer.is-replaying .token-veil {
+  opacity: 1;
+}
+
+.token-heat-cell {
+  fill: var(--token-heat);
+}
+
+.token-badge {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  fill: #7c2d12;
+  stroke: rgba(255, 255, 255, 0.9);
+  paint-order: stroke;
+  text-anchor: end;
+  dominant-baseline: text-before-edge;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.token-badge.is-shown {
+  opacity: 1;
+}
+
+/* In the DocLang pane's footer, left of the XSD badge. */
+.token-bar {
+  margin-right: auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.75rem;
+  font-family: var(--font-ui);
+}
+
+.token-bar[hidden] {
+  display: none;
+}
+
+.token-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.token-scrub {
+  width: 4.5rem;
+  accent-color: var(--token-heat);
+}
+
+.token-speed {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+
+.token-counter strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+#page-pane:not(.token-heat) .token-heat,
+#page-pane:not(.token-counts) .token-badges {
+  display: none;
 }
 
 #page-pane {
