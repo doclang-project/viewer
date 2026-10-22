@@ -810,7 +810,8 @@ label.file-btn input {
   margin: 0;
   height: 1.875rem;
   box-sizing: border-box;
-  width: calc(var(--page-num-digits, 1) * 1ch + 0.75rem);
+  width: calc(var(--page-num-digits, 1) * 1ch + 1.4rem); /* digits + padding + border, with some air */
+  min-width: 2.25rem;
   line-height: 1;
   cursor: text;
 }
@@ -1556,8 +1557,9 @@ body.pane-drag-active .pane-splitter {
 }
 
 .paged-el-slot.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Inline wrappers (formula/code/marker nested in running text) must stay inline, as in
