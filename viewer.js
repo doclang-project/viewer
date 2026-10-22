@@ -1854,7 +1854,7 @@ function initPageWheelNav() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (!state?.hasPageView) return;
+    if (!state) return;
     if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
 
     if (hotkeysEnabled && (e.key === "n" || e.key === "N")) {
@@ -1867,6 +1867,7 @@ function initPageWheelNav() {
       navigateBbox("prev");
       return;
     }
+    if (!state.hasPageView) return;
 
     let dir = 0;
     switch (e.key) {
@@ -5883,7 +5884,7 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
   if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
-  if (els.layoutNav) els.layoutNav.hidden = !open || !state?.hasPageView;
+  if (els.layoutNav) els.layoutNav.hidden = !open;
   updateBboxNavButtons();
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
@@ -6802,6 +6803,14 @@ function renderPage(pageNum) {
 
   renderReadingPane(segment, elementIds, boxes, defaultResolution);
 
+  // Without page images nothing waits for an image to load: select what navigation went to right away.
+  if (!state.hasPageView && state.pendingSelectElement) {
+    const pending = state.pendingSelectElement;
+    state.pendingSelectElement = null;
+    const id = findElementIdOnPage(pending);
+    if (id) selectElement(id);
+  }
+
   els.pagePane.innerHTML = "";
   tokenLayer = null;
   tokenLens.currentId = null; // the panes are rebuilt: nothing is highlighted any more
@@ -7693,10 +7702,21 @@ function bboxNavTarget(direction) {
   const currentId = selectedElementId ?? tokenLens.currentId;
   const currentEl = currentId ? state.idToElement?.get(currentId) : state.pendingSelectElement;
   const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
-  const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
+  // With nothing selected, navigation starts just before the current page's first element, so it never wraps
+  // around: on the first page there is nothing before, on the last page "next" goes to its first element.
+  let startIndex = currentIndex;
+  if (startIndex === undefined) {
+    const firstOnPage = order.findIndex((el) => (state.elementPageByEl.get(el) ?? 0) >= state.currentPage);
+    const pageStart = firstOnPage < 0 ? order.length : firstOnPage;
+    startIndex = direction === "prev" ? pageStart : pageStart - 1;
+  }
 
   for (let i = startIndex + step; i >= 0 && i < order.length; i += step) {
-    if (hasOverlayBox(order[i]) && !isElementOverlayHidden(order[i])) return order[i];
+    // With page images, the steps are the bboxes the overlay shows; without, the elements that select as themselves.
+    const stops = state.hasPageView
+      ? hasOverlayBox(order[i]) && !isElementOverlayHidden(order[i])
+      : resolveSelectionElement(order[i]) === order[i];
+    if (stops) return order[i];
   }
   return null;
 }
@@ -7719,8 +7739,8 @@ function navigateBbox(direction) {
 }
 
 function updateBboxNavButtons() {
-  if (els.btnBboxPrev) els.btnBboxPrev.disabled = !state?.hasPageView || !bboxNavTarget("prev");
-  if (els.btnBboxNext) els.btnBboxNext.disabled = !state?.hasPageView || !bboxNavTarget("next");
+  if (els.btnBboxPrev) els.btnBboxPrev.disabled = !bboxNavTarget("prev");
+  if (els.btnBboxNext) els.btnBboxNext.disabled = !bboxNavTarget("next");
 }
 
 /** @returns {{ l: number, t: number, r: number, b: number } | null} bbox normalized by location resolution */
