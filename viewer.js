@@ -6549,6 +6549,7 @@ function initToolbarOptions() {
   onToggle("page", els.togglePagePane);
   onToggle("markup", els.toggleMarkupPane);
   onToggle("reading", els.toggleReadingPane);
+  document.getElementById("btn-reset-all-settings")?.addEventListener("click", resetAllSettings);
   els.resetPaneLayoutBtn?.addEventListener("click", () => {
     if (!state) return;
     resetPaneLayout();
@@ -6562,6 +6563,25 @@ function initToolbarOptions() {
     setHelpOverlayOpen(true);
   });
   syncToolbarPaneCheckboxes();
+}
+
+const SETTINGS_STORAGE_PREFIX = "doclang-viewer-";
+
+/** Clears every saved setting (all panes, all deployments on this site) and reloads with the defaults. */
+function resetAllSettings() {
+  const ok = confirm(
+    "Reset all settings?\n\nThis clears the saved settings of every pane, for every deployment of the viewer on this site, "
+      + "and reloads the page. Open files will be closed.",
+  );
+  if (!ok) return;
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(SETTINGS_STORAGE_PREFIX)) localStorage.removeItem(key);
+    }
+  } catch {
+    /* storage not accessible: nothing saved to clear */
+  }
+  location.reload();
 }
 
 function initPaneSplitters() {
