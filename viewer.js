@@ -556,7 +556,7 @@ let paneRatios = [...DEFAULT_PANE_RATIOS];
 /** @type {number | null} */
 let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
-let hotkeysEnabled = false;
+let hotkeysEnabled = true;
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
@@ -6254,7 +6254,7 @@ function resetOverlayPrefs() {
 
 function loadHotkeysPref() {
   try {
-    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) === "true";
+    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) !== "false"; // on unless switched off
   } catch {
     /* ignore invalid stored hotkeys pref */
   }
