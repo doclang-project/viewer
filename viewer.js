@@ -1,5 +1,109 @@
 /* DocLang Archive Viewer — archive format: github.com/doclang-project/doclang spec.md#doclang-archive-format */
 
+/*
+ * Each feature is in one of four modes, the same words for the built-in defaults, config.js and the URL:
+ *   on     — starts on, the user can switch it      always — on, the user cannot switch it
+ *   off    — starts off, the user can switch it     never  — off for good: the feature is not there
+ * The viewer decides each feature (FEATURE_DEFAULTS); a deployment's optional config.js (loaded before this
+ * script) overrides what it mentions:
+ *   window.DOCLANG_CONFIG = { features: { tokens: "always", "editing.ocr": "never" } };
+ * A switchable feature (on/off) then starts as the user last chose (saved per deployment path), and for one visit as
+ * the URL says (?tokens=on|off|always|never). The URL cannot change an `always` except to `never`, nor a `never`.
+ * Only features with a switch in the UI (SWITCHABLE_FEATURES) can be on/off; for the others on means always and
+ * off means never. A dotted name is a child: "editing.ocr" only counts while editing is there (and, at runtime, on).
+ * Markup marked data-requires="…" is removed when its feature is not there; data-switch="…" marks a feature's
+ * switch in Settings, removed when the feature cannot be switched.
+ */
+const FEATURE_MODES = ["on", "off", "always", "never"];
+const FEATURE_DEFAULTS = {
+  editing: "on",
+  "editing.ocr": "always",
+  tokens: "off", // opt-in
+};
+const SWITCHABLE_FEATURES = new Set(["editing", "tokens"]);
+// Saved per deployment path, so deployments under different paths of one domain keep their own choices.
+const FEATURE_CHOICES_STORAGE_KEY = `doclang-viewer-feature-choices:${location.pathname.replace(/[^/]*$/, "")}`;
+const resolvedFeatures = resolveFeatures();
+
+/** @returns {Record<string, { present: boolean, fixed: boolean, on: boolean }>} */
+function resolveFeatures() {
+  const configured = window.DOCLANG_CONFIG?.features ?? {};
+  const url = new URLSearchParams(location.search);
+  const saved = loadFeatureChoices();
+  const resolved = {};
+  for (const [name, builtIn] of Object.entries(FEATURE_DEFAULTS)) {
+    const mode = FEATURE_MODES.includes(configured[name]) ? configured[name] : builtIn;
+    let fixed = mode === "always" || mode === "never" || !SWITCHABLE_FEATURES.has(name);
+    let on = mode === "on" || mode === "always";
+    const fromUrl = url.get(name);
+    if (fromUrl === "never") {
+      fixed = true;
+      on = false;
+    } else if (!fixed) {
+      if (typeof saved[name] === "boolean") on = saved[name];
+      if (fromUrl === "on" || fromUrl === "off") on = fromUrl === "on";
+      if (fromUrl === "always") fixed = on = true;
+    }
+    const parent = name.includes(".") ? resolved[name.slice(0, name.lastIndexOf("."))] : null;
+    const present = (!fixed || on) && (!parent || parent.present);
+    resolved[name] = { present, fixed, on: present && on };
+  }
+  return resolved;
+}
+
+/** Whether the feature is there at all (for a child: and its parent). */
+function isAvailable(name) {
+  return resolvedFeatures[name]?.present === true;
+}
+
+/** Whether the feature starts on. */
+function startsOn(name) {
+  return resolvedFeatures[name]?.on === true;
+}
+
+/** Whether the user can switch the feature. */
+function isSwitchable(name) {
+  return isAvailable(name) && !resolvedFeatures[name].fixed;
+}
+
+function loadFeatureChoices() {
+  try {
+    return JSON.parse(localStorage.getItem(FEATURE_CHOICES_STORAGE_KEY) ?? "{}") ?? {};
+  } catch {
+    return {}; // invalid or inaccessible storage
+  }
+}
+
+/**
+ * Saves a choice the user made in Settings (the URL's overrides are never saved), and drops the feature's URL
+ * parameter: the link decided how the visit started, the user's own choice decides from now on, also on reload.
+ * Only the address is rewritten (no request, no reload, no new history entry).
+ */
+function saveFeatureChoice(name, on) {
+  try {
+    localStorage.setItem(FEATURE_CHOICES_STORAGE_KEY, JSON.stringify({ ...loadFeatureChoices(), [name]: on }));
+  } catch {
+    /* ignore quota / private mode */
+  }
+  const url = new URL(location.href);
+  if (url.searchParams.has(name)) {
+    url.searchParams.delete(name);
+    history.replaceState(history.state, "", url);
+  }
+}
+
+function removeUnavailableMarkup() {
+  for (const el of document.querySelectorAll("[data-requires]")) {
+    if (!isAvailable(el.dataset.requires)) el.remove();
+  }
+  for (const el of document.querySelectorAll("[data-switch]")) {
+    if (!isSwitchable(el.dataset.switch)) el.remove();
+  }
+  // The group of switches in Settings goes when none is left.
+  const group = document.getElementById("toolbar-options-features");
+  if (group && !group.querySelector("input")) group.remove();
+}
+
 const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
 const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
 const RELOAD_FILE_HINT = "Re-read the active file from disk";
@@ -376,7 +480,9 @@ let pagePaneResizeObserver = null;
 let pagedPaneResizeObserver = null;
 /** @type {string | null} */
 let selectedElementId = null;
-const tokenLens = { active: true, cursor: -Infinity, playing: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
+/** Whether editing is switched on (Settings > Editing); never on when the deployment lacks it. */
+let editingOn = startsOn("editing");
+const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
 /** @type {{ svg: SVGSVGElement, range: { start: number, end: number }, items: object[], current: object | null } | null} */
 let tokenLayer = null;
 /**
@@ -517,7 +623,8 @@ const els = {
   emptyStateLoading: document.getElementById("empty-state-loading"),
   emptyStatePrompt: document.getElementById("empty-state-prompt"),
   markupPane: document.getElementById("markup-pane"),
-  tokenLensToggle: document.getElementById("btn-token-lens"),
+  tokenLensToggle: document.getElementById("toggle-tokens"),
+  editingToggle: document.getElementById("toggle-editing"),
   tokenBar: document.getElementById("token-bar"),
   tokenPlayBtn: document.getElementById("btn-token-play"),
   tokenScrub: document.getElementById("token-scrub"),
@@ -866,6 +973,8 @@ els.layoutTypesFields?.addEventListener("change", (e) => {
 });
 loadLayoutPrefs();
 loadOverlayPrefs();
+removeUnavailableMarkup();
+initEditingToggle();
 loadHotkeysPref();
 loadReadingLayoutMode();
 syncReadingLayoutButtons();
@@ -2619,12 +2728,13 @@ function setHoveredMarkupToken(span) {
 const TOKEN_BADGE_MIN_SCREEN_PX = { w: 70, h: 13 };
 
 function setTokenLensActive(active) {
+  if (active && !isAvailable("tokens")) return;
   tokenLens.active = active;
   tokenLens.cursor = -Infinity;
   tokenLens.effects = false;
   highlightReplayElement(null);
   if (!active) stopTokenReplay();
-  els.tokenLensToggle?.setAttribute("aria-pressed", String(active));
+  if (els.tokenLensToggle) els.tokenLensToggle.checked = active;
   els.pagePane?.classList.toggle("token-lens", active);
   syncTokenLensControls();
   refreshPageViewLayout();
@@ -2951,9 +3061,12 @@ function tokenReplayTick(ts) {
 }
 
 function initTokenLens() {
-  els.tokenLensToggle?.setAttribute("aria-pressed", String(tokenLens.active));
+  if (els.tokenLensToggle) els.tokenLensToggle.checked = tokenLens.active;
   els.pagePane?.classList.toggle("token-lens", tokenLens.active);
-  els.tokenLensToggle?.addEventListener("click", () => setTokenLensActive(!tokenLens.active));
+  els.tokenLensToggle?.addEventListener("change", () => {
+    setTokenLensActive(els.tokenLensToggle.checked);
+    saveFeatureChoice("tokens", tokenLens.active);
+  });
   els.tokenPlayBtn?.addEventListener("click", toggleTokenReplay);
   els.tokenStartBtn?.addEventListener("click", () => {
     const range = currentTokenRange();
@@ -3346,6 +3459,7 @@ function setDocLabel(label) {
 let markupEditor = null;
 
 function editableEntry() {
+  if (!editingOn) return null; // every editing control goes through here
   const entry = fileCatalog[activeFileIndex];
   return entry && state && (entry.kind === "markup" || entry.kind === "archive") ? entry : null;
 }
@@ -3388,6 +3502,37 @@ function syncEditUi() {
   }
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
   if (!editing) setEditError(null);
+}
+
+function setEditingOn(on) {
+  if (on === editingOn || !isSwitchable("editing")) return;
+  const entry = fileCatalog[activeFileIndex];
+  if (!on && markupEditor && !confirmDiscardEditor()) {
+    if (els.editingToggle) els.editingToggle.checked = true;
+    return;
+  }
+  if (!on && entry?.dirty && !confirm("This file has unsaved changes. With editing off, Save and Discard are hidden until you turn editing back on.\n\nTurn editing off?")) {
+    if (els.editingToggle) els.editingToggle.checked = true;
+    return;
+  }
+  markupEditor = null;
+  els.markupPane?.classList.remove("editing");
+  editingOn = on;
+  if (els.editingToggle) els.editingToggle.checked = on;
+  if (!state) return syncEditUi();
+  // Rebuild the views, so drag grips and handles come or go, and keep the selection.
+  const keep = selectedElementId;
+  renderPage(state.currentPage);
+  if (keep && state.idToElement?.has(keep)) selectElement(keep);
+  syncEditUi();
+}
+
+function initEditingToggle() {
+  if (els.editingToggle) els.editingToggle.checked = editingOn;
+  els.editingToggle?.addEventListener("change", () => {
+    setEditingOn(els.editingToggle.checked);
+    saveFeatureChoice("editing", editingOn); // as it ended up: turning editing off can be cancelled
+  });
 }
 
 function startEditing() {
@@ -4070,7 +4215,7 @@ function renderInspector() {
       editSelectedElement(removeBboxFromElement);
     }));
   }
-  if (text != null && state.hasPageView && elementHeadLocations(el).length === 4) {
+  if (isAvailable("editing.ocr") && text != null && state.hasPageView && elementHeadLocations(el).length === 4) {
     const ocr = inspectorButton("READ FROM PAGE", "Read the text under this bbox with an in-browser vision model (Granite-Docling) and put it in the text box", () => ocrSelectedElement(ocr));
     actions.appendChild(ocr);
   }
@@ -5780,8 +5925,7 @@ function setPageViewVisible(visible) {
 }
 
 function syncTokenLensControls() {
-  const open = !!state && document.body.classList.contains("viewer-loaded");
-  if (els.tokenLensToggle) els.tokenLensToggle.hidden = !open;
+  const open = isAvailable("tokens") && !!state && document.body.classList.contains("viewer-loaded");
   if (els.tokenBar) els.tokenBar.hidden = !open || !tokenLens.active;
   if (els.tokenNav) els.tokenNav.hidden = !open || !tokenLens.active;
   // Heatmap, counts and reveal draw on page images.

@@ -109,6 +109,16 @@
               </button>
             </div>
             <div class="toolbar-options-divider" role="separator"></div>
+            <div class="toolbar-options-features" id="toolbar-options-features">
+              <label class="toolbar-options-item" data-switch="editing" title="Edit the document: inspector, bbox handles, add and remove elements, drag to reorder, edit the source">
+                <input type="checkbox" id="toggle-editing" role="menuitemcheckbox">
+                <span>Editing</span>
+              </label>
+              <label class="toolbar-options-item" data-switch="tokens" title="Show tokens using an indicative DocLang-aware tokenizer based on Granite-Docling">
+                <input type="checkbox" id="toggle-tokens" role="menuitemcheckbox">
+                <span>Tokens</span>
+              </label>
+            </div>
             <div class="toolbar-options-row">
               <label class="toolbar-options-item toolbar-options-item-flex" id="toggle-hotkeys-label">
                 <input type="checkbox" id="toggle-hotkeys" role="menuitemcheckbox">
@@ -218,7 +228,7 @@
             </div>
           </div>
         </section>
-        <section class="help-shortcut-group">
+        <section class="help-shortcut-group" data-requires="tokens">
           <h3>Tokens (in token mode)</h3>
           <div class="help-shortcut-list">
             <div class="help-shortcut-row">
@@ -288,7 +298,7 @@
             </div>
           </div>
         </section>
-        <section class="help-shortcut-group">
+        <section class="help-shortcut-group" data-requires="editing">
           <h3>Actions</h3>
           <div class="help-shortcut-list">
             <div class="help-shortcut-row">
@@ -644,7 +654,7 @@
                 </label>
               </div>
 
-              <div id="token-overlay-options" hidden>
+              <div id="token-overlay-options" data-requires="tokens" hidden>
                 <div class="settings-divider" role="separator"></div>
                 <span class="settings-option settings-option-primary settings-option-heading">Tokens</span>
                 <div class="settings-subgroup">
@@ -683,7 +693,6 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
-          <button type="button" class="pane-header-toggle-btn" id="btn-token-lens" aria-pressed="false" title="Show tokens using an indicative DocLang-aware tokenizer based on Granite-Docling" hidden>Tokens</button>
           <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
           <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
           <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
@@ -711,7 +720,7 @@
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
       <div class="pane-statusbar">
-        <div class="token-bar" id="token-bar" aria-label="Token stats" hidden>
+        <div class="token-bar" id="token-bar" data-requires="tokens" aria-label="Token stats" hidden>
           <div class="token-nav" id="token-nav">
             <div class="page-nav-btns">
               <button type="button" id="btn-token-start" class="page-nav-btn" aria-label="Back to the page's first token" title="Back to the page's first token">
@@ -832,6 +841,8 @@
     </section>
   </main>
 
+  <!-- Per deployment: which features are available and how they start (see the top of viewer.js). -->
+  <script src="config.js"></script>
   <script src="demo-data.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
   <script src="tokenizer.js"></script>
