@@ -3028,7 +3028,7 @@ function loadTokenPrefs() {
   }
   if (els.tokenHeatToggle) els.tokenHeatToggle.checked = prefs.heatmap === true;
   if (els.tokenCountsToggle) els.tokenCountsToggle.checked = prefs.counts === true;
-  if (els.tokenScanToggle) els.tokenScanToggle.checked = prefs.reveal === true;
+  if (els.tokenScanToggle) els.tokenScanToggle.checked = prefs.reveal !== false; // on unless switched off
   els.pagePane?.classList.toggle("token-heat", !!els.tokenHeatToggle?.checked);
   els.pagePane?.classList.toggle("token-counts", !!els.tokenCountsToggle?.checked);
   const speed = String(prefs.speed);
