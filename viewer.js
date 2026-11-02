@@ -3833,9 +3833,29 @@ function textNodesFor(doc, text) {
   });
 }
 
+/**
+ * Whether `el` sits in the running text of a text block: whitespace around it then reads as a space (DocLang 0.9),
+ * so an edit must neither add any for layout nor remove any that is there.
+ */
+function isInTextFlow(el) {
+  const parent = el?.parentElement;
+  if (!parent) return false;
+  return isInlineInTextBlock(el) || (WS_RAW_TEXT_TAGS.has(localName(parent)) && !WS_HEAD_TAGS.has(localName(el)));
+}
+
+/** Removes the whitespace before `node` when it is only layout, or when whitespace right after it takes its place. */
+function dropWhitespaceBefore(node) {
+  const prev = node.previousSibling;
+  if (!prev || !isWhitespaceText(prev)) return;
+  const next = node.nextSibling;
+  const counts = isInTextFlow(node) || isInTextFlow(node.parentElement);
+  if (!counts || (next && isTextLikeNode(next) && /^\s/.test(next.textContent))) prev.remove();
+}
+
 function setPlainText(el, text) {
   const doc = el.ownerDocument;
   const virtual = isVirtualUnit(el);
+  const flowEdges = !virtual && isInTextFlow(el) ? textEdgeSpaces(el) : null;
   /** @type {{ parent: Node, ref: Node | null, childIndent: string, closeIndent: string }} */
   let place;
   if (virtual) {
@@ -3870,9 +3890,10 @@ function setPlainText(el, text) {
     content.append(...nodes);
     inner = [content];
   }
-  for (const node of [doc.createTextNode(`\n${place.childIndent}`), ...inner, doc.createTextNode(`\n${place.closeIndent}`)]) {
-    place.parent.insertBefore(node, place.ref);
-  }
+  const lead = flowEdges ? (flowEdges.start ? " " : "") : `\n${place.childIndent}`;
+  const trail = flowEdges ? (flowEdges.end ? " " : "") : `\n${place.closeIndent}`;
+  const framed = [lead && doc.createTextNode(lead), ...inner, trail && doc.createTextNode(trail)].filter(Boolean);
+  for (const node of framed) place.parent.insertBefore(node, place.ref);
 }
 
 function insertHeadChild(el, child) {
@@ -3913,8 +3934,7 @@ function setElementLayer(el, value) {
   const layerEl = firstHeadChild(el, "layer");
   if (value === "body") {
     if (!layerEl) return;
-    const prev = layerEl.previousSibling;
-    if (prev && isWhitespaceText(prev)) prev.remove();
+    dropWhitespaceBefore(layerEl);
     layerEl.remove();
     return;
   }
@@ -4236,7 +4256,7 @@ function locationNodes(doc, ns, coords, indent) {
   return coords.flatMap((v) => {
     const loc = doc.createElementNS(ns, "location");
     loc.setAttribute("value", String(v));
-    return [doc.createTextNode(`\n${indent}`), loc];
+    return indent == null ? [loc] : [doc.createTextNode(`\n${indent}`), loc];
   });
 }
 
@@ -4248,11 +4268,11 @@ function addBboxToElement(el, coords) {
     for (const node of locationNodes(el.ownerDocument, el.namespaceURI, coords, indentBefore(el))) parent.insertBefore(node, ref);
     return;
   }
-  const indent = childIndentOf(el);
+  const indent = isInTextFlow(el) ? null : childIndentOf(el);
   const wasEmpty = !el.firstChild;
   const ref = el.childNodes[headEndIndex(el)] ?? null;
   for (const node of locationNodes(el.ownerDocument, el.namespaceURI, coords, indent)) el.insertBefore(node, ref);
-  if (wasEmpty) el.appendChild(el.ownerDocument.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
+  if (wasEmpty && indent != null) el.appendChild(el.ownerDocument.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
 }
 
 function removeBboxFromElement(el) {
@@ -4263,8 +4283,7 @@ function removeBboxFromElement(el) {
     return;
   }
   for (const loc of elementHeadLocations(el)) {
-    const prev = loc.previousSibling;
-    if (prev && isWhitespaceText(prev)) prev.remove();
+    dropWhitespaceBefore(loc);
     loc.remove();
   }
 }
@@ -4282,8 +4301,7 @@ function removeElementNode(el) {
     for (const node of doomed) node.remove();
     return;
   }
-  const prev = el.previousSibling;
-  if (prev && isWhitespaceText(prev)) prev.remove();
+  dropWhitespaceBefore(el);
   el.remove();
 }
 
@@ -4373,9 +4391,9 @@ function newBlock(doc, ns, tag, coords, indent) {
   const created = doc.createElementNS(ns, tag);
   if (tag === "heading") created.setAttribute("level", "1");
   if (coords) {
-    for (const node of locationNodes(doc, ns, coords, `${indent}  `)) created.appendChild(node);
+    for (const node of locationNodes(doc, ns, coords, indent == null ? null : `${indent}  `)) created.appendChild(node);
   }
-  if (created.firstChild) created.appendChild(doc.createTextNode(`\n${indent}`));
+  if (created.firstChild && indent != null) created.appendChild(doc.createTextNode(`\n${indent}`));
   return created;
 }
 
@@ -4503,9 +4521,12 @@ async function addElement(coords, kind) {
   } else if ((kind === "prev" || kind === "next") && selected) {
     const anchor = blockSibling(selected);
     const parent = anchor.parentNode;
+    const inFlow = isInTextFlow(anchor);
     const indent = indentBefore(anchor);
-    const created = newBlock(doc, ns, "text", coords, indent);
-    if (kind === "prev") {
+    const created = newBlock(doc, ns, "text", coords, inFlow ? null : indent);
+    if (inFlow) {
+      parent.insertBefore(created, kind === "prev" ? anchor : anchor.nextSibling);
+    } else if (kind === "prev") {
       parent.insertBefore(created, anchor);
       parent.insertBefore(doc.createTextNode(`\n${indent}`), anchor);
     } else {
@@ -4676,7 +4697,7 @@ function addThreadTo(el, id) {
     if (ws) parent.insertBefore(ws.cloneNode(), ref);
   } else {
     const first = el.firstChild;
-    el.insertBefore(doc.createTextNode(`\n${childIndentOf(el)}`), first);
+    if (!isInTextFlow(el)) el.insertBefore(doc.createTextNode(`\n${childIndentOf(el)}`), first);
     el.insertBefore(thread, first);
   }
 }
@@ -4730,8 +4751,7 @@ function setMarker(ldiv, text) {
 }
 
 function removeNode(node) {
-  const prev = node.previousSibling;
-  if (prev && isWhitespaceText(prev)) prev.remove();
+  dropWhitespaceBefore(node);
   node.remove();
 }
 
@@ -5075,6 +5095,11 @@ function insertBeside(target, pos, nodes) {
   const doc = target.ownerDocument;
   const parent = target.parentNode;
   const indent = indentBefore(target);
+  if (isInTextFlow(target)) {
+    const ref = pos === "before" ? target : target.nextSibling;
+    for (const n of nodes) parent.insertBefore(n, ref);
+    return indent;
+  }
   if (pos === "before") {
     for (const n of nodes) {
       parent.insertBefore(n, target);
@@ -10156,7 +10181,7 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
 
   if (tag === "code" || tag === "formula") {
     // A formula's source goes to KaTeX, so the space at its edges has to go around it.
-    const edges = tag === "formula" && isTextBlockBody(node.parentElement) ? formulaEdgeSpaces(node) : null;
+    const edges = tag === "formula" && isTextBlockBody(node.parentElement) ? textEdgeSpaces(node) : null;
     if (edges?.start && !ctx.trimLeading) parent.appendChild(document.createTextNode(" "));
     const rendered = renderBlockElement(node, elementIds, { inline: true });
     if (rendered) parent.appendChild(rendered);
@@ -10289,8 +10314,8 @@ function formulaSourceText(el) {
   return text.trim();
 }
 
-/** Whether the formula's body starts or ends with whitespace, also around its element head. */
-function formulaEdgeSpaces(el) {
+/** Whether the element's body starts or ends with whitespace, also around its element head. */
+function textEdgeSpaces(el) {
   const nodes = [...el.childNodes];
   const bodyStart = skipElementHeadNodes(nodes, 0);
   const first = nodes[bodyStart];
