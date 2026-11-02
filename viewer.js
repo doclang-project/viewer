@@ -3709,7 +3709,7 @@ const TOP_LEVEL_TYPES = new Set([
 ]);
 const CONVERTIBLE_TYPES = [...TEXT_BLOCK_TYPES, "group", "list"];
 /** Types whose schema content model allows a <content> wrapper (and so can keep whitespace). */
-const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula"]);
+const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "field_heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula"]);
 /** Types that carry text of their own. Containers such as group and list only hold other elements. */
 const TEXT_EDITABLE_TYPES = new Set([...TEXT_BLOCK_TYPES, "code", "formula"]);
 /** Types that may hold nested block elements (the schema's top_level_cat group). */
