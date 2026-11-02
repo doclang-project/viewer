@@ -3341,9 +3341,9 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
   const segments = markupOnly
     ? [childElements(root).filter((el) => localName(el) !== "head")]
     : splitIntoSegments(root);
-  const hasPageView = !markupOnly && pageImages.size > 0;
-  const maxImagePage = hasPageView ? Math.max(...pageImages.keys()) : 0;
-  const pageCount = markupOnly ? 1 : Math.max(segments.length, maxImagePage, 1);
+  // The markup defines the pages (spec, Annex B); an image beyond them is not shown, but reported by archiveIssues().
+  const pageCount = markupOnly ? 1 : segments.length;
+  const hasPageView = !markupOnly && [...pageImages.keys()].some((page) => page <= pageCount);
   const readingOrder = computeReadingOrder(root);
   const elementPageByEl = buildElementPageMap(segments);
 
@@ -5682,14 +5682,40 @@ function requestValidation(markup) {
   });
 }
 
+/** Archive parts beyond what the markup defines (spec, Annex B): page images past its pages, media past its tracks. */
+function archiveIssues(docState) {
+  const issues = [];
+  const report = (part, limit, unit) => issues.push({
+    kind: "archive",
+    message: `${part} is out of bounds: the markup defines ${limit} ${unit}${limit === 1 ? "" : "s"}`,
+    line: null,
+    col: null,
+    xpath: null,
+  });
+  for (const page of [...docState.pageImages.keys()].sort((a, b) => a - b)) {
+    if (page > docState.pageCount) report(`pages/${page}.*`, docState.pageCount, "page");
+  }
+  let trackCount = 0;
+  walkElements(childElements(docState.docRoot), (el) => {
+    if (localName(el) === "track") trackCount += 1;
+  });
+  for (const path of docState.assetUrls.keys()) {
+    const ordinal = path.match(/^(?:audio|video)\/(\d+)\./)?.[1];
+    if (ordinal && Number(ordinal) > trackCount) report(path, trackCount, "track");
+  }
+  return issues;
+}
+
 async function validateActiveDocument() {
   const entry = fileCatalog[activeFileIndex];
   if (!entry || !state) return;
   entry.validation = { status: "running" };
   renderValidationUi(entry);
+  const fromArchive = archiveIssues(state);
   const result = await requestValidation(state.markupXml);
+  const issues = result.ok ? [...result.issues, ...fromArchive] : [];
   entry.validation = result.ok
-    ? { status: result.issues.length ? "invalid" : "valid", issues: result.issues, schemaVersion: result.schemaVersion, versionAssumed: !!result.versionAssumed }
+    ? { status: issues.length ? "invalid" : "valid", issues, schemaVersion: result.schemaVersion, versionAssumed: !!result.versionAssumed }
     : { status: "error", error: result.error };
   if (fileCatalog[activeFileIndex] === entry) renderValidationUi(entry);
 }
@@ -5749,8 +5775,12 @@ function renderValidationUi(entry) {
   // A document that declares no version is validated against the latest: "(assumed)" tells the two apart.
   const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (assumed)" : ""}`;
   const schema = `DocLang XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (no version declared, so the latest was assumed)" : ""}`;
+  const countOf = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
+  const archiveCount = v.issues?.filter((issue) => issue.kind === "archive").length ?? 0;
+  const xsdCount = (v.issues?.length ?? 0) - archiveCount;
+  const issueCounts = [xsdCount && countOf(xsdCount, "issue"), archiveCount && countOf(archiveCount, "archive issue")].filter(Boolean);
   btn.textContent = v.status === "valid" ? xsd
-    : v.status === "invalid" ? `${xsd} · ${v.issues.length} ${v.issues.length === 1 ? "issue" : "issues"}`
+    : v.status === "invalid" ? [xsd, ...issueCounts].join(" · ")
     : VALIDATE_BTN_LABELS[v.status];
   btn.title = v.status === "idle" || v.status === "error"
     ? "Validate against the DocLang XSD"
@@ -5762,8 +5792,8 @@ function renderValidationUi(entry) {
   if (v.status === "valid") {
     els.validationSummary.textContent = `Valid against ${schema}`;
   } else if (v.status === "invalid") {
-    const n = v.issues.length;
-    els.validationSummary.textContent = `${n} ${n === 1 ? "issue" : "issues"} against ${schema}`;
+    const againstSchema = xsdCount ? `${countOf(xsdCount, "issue")} against ${schema}` : `Valid against ${schema}`;
+    els.validationSummary.textContent = archiveCount ? `${againstSchema}; ${countOf(archiveCount, "archive issue")}` : againstSchema;
   } else if (v.status === "error") {
     els.validationSummary.textContent = `Could not validate: ${v.error}`;
   } else {
@@ -5789,7 +5819,7 @@ function buildValidationIssueItem(issue) {
   }
   const loc = document.createElement("span");
   loc.className = "validation-issue-loc";
-  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "policy" || issue.kind === "version" ? "Document" : "—";
+  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "archive" ? "Archive" : issue.kind === "policy" || issue.kind === "version" ? "Document" : "—";
   const msg = document.createElement("span");
   msg.className = "validation-issue-msg";
   msg.textContent = issue.message.replaceAll(DOCLANG_NS_CLARK, "");
