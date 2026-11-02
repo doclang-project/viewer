@@ -2260,7 +2260,7 @@ function initCursorHints() {
 }
 
 /** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
-const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, .markup-glue-mark, label.file-btn, select, summary';
+const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, .markup-glue-mark, label.file-btn, label[title], label[data-hint], select, summary';
 
 /**
  * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
