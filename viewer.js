@@ -7766,9 +7766,12 @@ function computeReadingOrder(docRoot) {
     const captions = childElements(el).filter((c) => localName(c) === "caption");
     const before = captions.filter((c) => captionPrecedesHost(c, el));
     const after = captions.filter((c) => !before.includes(c));
+    // A list item's marker (bullet, number) is read before the item it labels.
+    const marker = localName(el) === "ldiv" ? markerOf(el) : null;
+    if (marker) visitElement(marker);
     before.forEach(visitElement);
     record(el);
-    walkChildren(el, new Set(captions));
+    walkChildren(el, new Set(marker ? [...captions, marker] : captions));
     after.forEach(visitElement);
   }
 
