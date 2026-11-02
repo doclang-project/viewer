@@ -406,13 +406,20 @@ function appendMarkupTextLine(parent, depth, text) {
   parent.appendChild(line);
 }
 
+/** Text as DocLang 0.9 reads it: whitespace collapsed, with a space at an edge only where `kept` says it counts. */
+function canonicalWhitespace(text, kept) {
+  const core = text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "").replace(/[ \t\r\n]+/g, " ");
+  if (!core) return kept?.only ? " " : "";
+  return `${kept?.lead ? " " : ""}${core}${kept?.trail ? " " : ""}`;
+}
+
 function formatMarkupTextNode(node) {
   if (node.nodeType === Node.CDATA_SECTION_NODE) {
     return `<![CDATA[${node.textContent ?? ""}]]>`;
   }
   // <content> has xml:space="preserve" semantics: its whitespace is significant.
   if (node.parentElement && localName(node.parentElement) === "content") return node.textContent;
-  return node.textContent.trim();
+  return canonicalWhitespace(node.textContent, markupSpaces.get(node));
 }
 
 function serializeMarkupTextNodes(nodes) {
@@ -2345,15 +2352,14 @@ function initFormulaRewriteHints() {
 
 /* ---- DocLang tokenization -------------------------------------------- *
  * Tokenizes the markup with the custom DocLang tokenizer (tokenizer.js).
- * The markup is first reduced to its dense form — whitespace that sits
- * purely between two tags (the newlines and indentation of pretty-printing)
- * is dropped, while whitespace inside CDATA or inside element text is
- * untouched — so the token stream reflects how DocLang is meant to be used.
+ * The markup is first reduced to its dense form, which reads the same under
+ * the DocLang 0.9 whitespace rules: whitespace they ignore (pretty-printing,
+ * the edges of a text block) is dropped, other runs become a single space,
+ * and <content> and CDATA stay as written. So the token stream reflects how
+ * DocLang is meant to be used.
  * ------------------------------------------------------------------- */
 
 const TOKEN_SPAN_COLOR_COUNT = 6;
-// Elements that flow inside a line of text rather than getting their own line.
-const TOKENS_INLINE_TAGS = new Set([...RENDER_FORMAT_TAGS, "marker", "xref", "href"]);
 
 /** Split well-formed DocLang XML into a flat list of lexical pieces. */
 function scanMarkupPieces(src) {
@@ -2423,73 +2429,35 @@ function buildMarkupPieceTree(pieces) {
   return root;
 }
 
-/** A node gets block layout (children on their own lines) if it holds a non-inline child element. */
-function markupNodeIsBlock(node) {
-  return node.children.some((c) => {
-    const t = c.piece.type;
-    return (t === "open" || t === "selfclose") && !TOKENS_INLINE_TAGS.has(c.piece.name);
+/** Pairs the text and element pieces of `node` with the nodes of its parsed element, in source order. */
+function pairMarkupPieces(node, el) {
+  const isPaired = (c) => ["text", "cdata", "open", "selfclose"].includes(c.piece.type);
+  const pieces = node.children.filter(isPaired);
+  const nodes = [...el.childNodes].filter((n) => isTextLikeNode(n) || n.nodeType === Node.ELEMENT_NODE);
+  if (pieces.length !== nodes.length) return;
+  pieces.forEach((c, i) => {
+    c.node = nodes[i];
+    if (c.piece.type === "open" && nodes[i].nodeType === Node.ELEMENT_NODE) pairMarkupPieces(c, nodes[i]);
   });
 }
 
-/**
- * Re-serialize the piece tree the way the DocLang pane lays it out: every element
- * on its own depth-indented line, text-only elements kept inline. Returns an
- * ordered list of `{ code }` (real markup, tokenized) and `{ ws }` (synthetic
- * newline + indentation, shown but not tokenized) parts.
- */
-function canonicalizeMarkup(root) {
+/** The dense form of the piece tree: an ordered list of the `{ code }` parts to tokenize. `spaces` as in computeMarkupGlue. */
+function canonicalizeMarkup(root, spaces) {
   const parts = [];
-  const indent = (d) => "  ".repeat(d);
-
-  function emitInline(node, atEdge) {
-    const kids = node.children;
-    for (let idx = 0; idx < kids.length; idx += 1) {
-      const c = kids[idx];
+  (function emit(node) {
+    for (const c of node.children) {
       if (c.piece.type === "text") {
-        let s = c.piece.raw.replace(/\s+/g, " ");
-        if (atEdge && idx === 0) s = s.replace(/^ /, "");
-        if (idx === kids.length - 1) s = s.replace(/ $/, "");
-        if (s) parts.push({ code: s });
+        const code = node.name === "content" ? c.piece.raw : canonicalWhitespace(c.piece.raw, c.node && spaces.get(c.node));
+        if (code) parts.push({ code });
         continue;
       }
       parts.push({ code: c.piece.raw, opens: c });
       if (c.piece.type === "open") {
-        emitInline(c, false);
+        emit(c);
         parts.push({ code: `</${c.name}>`, closes: c });
       }
     }
-  }
-
-  function walk(node, depth, first) {
-    let atStart = first;
-    for (const c of node.children) {
-      const t = c.piece.type;
-      if (t === "text") {
-        const trimmed = c.piece.raw.replace(/^\s+/u, "").replace(/\s+$/u, "");
-        if (!trimmed) continue;
-        if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
-        parts.push({ code: trimmed });
-        atStart = false;
-        continue;
-      }
-      if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
-      atStart = false;
-      if (t === "open" && markupNodeIsBlock(c)) {
-        parts.push({ code: c.piece.raw, opens: c });
-        walk(c, depth + 1, false);
-        parts.push({ ws: `\n${indent(depth)}` });
-        parts.push({ code: `</${c.name}>`, closes: c });
-      } else if (t === "open") {
-        parts.push({ code: c.piece.raw, opens: c });
-        emitInline(c, true);
-        parts.push({ code: `</${c.name}>`, closes: c });
-      } else {
-        parts.push({ code: c.piece.raw, opens: c });
-      }
-    }
-  }
-
-  walk(root, 0, true);
+  })(root);
   return parts;
 }
 
@@ -2503,12 +2471,15 @@ function ensureTokenData(docState) {
     const { stdExt } = await window.DoclangTokenizers.loadTokenizerAssets();
     const srcXml = docState.markupXml.replace(/\r\n/g, "\n");
     const tree = buildMarkupPieceTree(scanMarkupPieces(srcXml));
-    const parts = canonicalizeMarkup(tree);
+    // Read from the source as written: the document in `docState` may have alternatives swapped in.
+    const written = new DOMParser().parseFromString(srcXml, "application/xml").documentElement;
+    const rootPiece = tree.children.find((c) => c.piece.type === "open");
+    if (rootPiece) pairMarkupPieces(rootPiece, written);
+    const parts = canonicalizeMarkup(tree, computeMarkupGlue([written]).spaces);
 
-    // dense = markup with no pretty-printing whitespace (what we tokenize).
+    // dense = what we tokenize.
     let dense = "";
     for (const part of parts) {
-      if (part.ws != null) continue;
       const base = dense.length;
       dense += part.code;
       if (part.opens) part.opens.denseStart = base;
@@ -8993,7 +8964,7 @@ function applySelectionCore() {
 function buildMarkupView(segment, elementIds) {
   const root = document.createElement("div");
   root.className = "markup";
-  markupGlue = computeMarkupGlue(segment);
+  ({ glue: markupGlue, spaces: markupSpaces } = computeMarkupGlue(segment));
   for (const el of segment) {
     if (el.nodeType === Node.ELEMENT_NODE) {
       root.appendChild(buildMarkupElement(el, 0, elementIds));
@@ -9157,12 +9128,16 @@ function isTextOnlyMarkup(el) {
 }
 
 /**
- * The display-only line breaks of `segment`: for a source node and its line ("whole", "open" or "close"),
- * whether the break after it ("end") or before it ("start") has no whitespace in the source.
- * @returns {WeakMap<Node, Record<string, { end?: boolean, start?: boolean }>>}
+ * How the text blocks of `segment` read. `glue` holds the display-only line breaks: for a source node and its line
+ * ("whole", "open" or "close"), whether the break after it ("end") or before it ("start") has no whitespace in the
+ * source. `spaces` holds, for a text node, which of its edges has the space a run of whitespace reads as ("lead",
+ * "trail", or "only" for a node of just whitespace): the run's first character, as the spec attributes it.
+ * @returns {{ glue: WeakMap<Node, Record<string, { end?: boolean, start?: boolean }>>, spaces: WeakMap<Node, { lead?: boolean, trail?: boolean, only?: boolean }> }}
  */
 function computeMarkupGlue(segment) {
   const glue = new WeakMap();
+  const spaces = new WeakMap();
+  const keepSpace = ({ node, at }) => spaces.set(node, { ...spaces.get(node), [at]: true });
   const mark = ([node, part], side) => {
     if (!glue.has(node)) glue.set(node, {});
     const lines = glue.get(node);
@@ -9178,23 +9153,31 @@ function computeMarkupGlue(segment) {
         if (gap && prev) gap.breaks.push({ from: prev.last, to: token.first, weight: prev.depth + token.depth });
         prev = token;
       } else if (token.kind === "space") {
-        if (gap) gap.space = true;
+        if (gap) gap.space ??= token;
       } else {
-        if (gap && !gap.space && gap.breaks.length) {
+        if (gap?.space) {
+          keepSpace(gap.space);
+        } else if (gap?.breaks.length) {
           const shallowest = gap.breaks.reduce((a, b) => (b.weight < a.weight ? b : a));
           mark(shallowest.from, "end");
           mark(shallowest.to, "start");
         }
-        gap = { space: false, breaks: [] };
+        gap = { space: null, breaks: [] };
       }
     }
     tokens.length = 0;
   };
 
-  const pushText = (tokens, text) => {
-    if (/^[ \t\r\n]/.test(text)) tokens.push({ kind: "space" });
-    if (text.trim()) tokens.push({ kind: "char" });
-    if (/[ \t\r\n]$/.test(text)) tokens.push({ kind: "space" });
+  const pushText = (tokens, node) => {
+    const text = node.textContent ?? "";
+    if (!text) return;
+    if (/^[ \t\r\n]+$/.test(text)) {
+      tokens.push({ kind: "space", node, at: "only" });
+      return;
+    }
+    if (/^[ \t\r\n]/.test(text)) tokens.push({ kind: "space", node, at: "lead" });
+    tokens.push({ kind: "char" });
+    if (/[ \t\r\n]$/.test(text)) tokens.push({ kind: "space", node, at: "trail" });
   };
   const pushLine = (tokens, node, part, depth) => {
     tokens.push({ kind: "line", first: [node, part], last: [node, part], depth });
@@ -9209,7 +9192,7 @@ function computeMarkupGlue(segment) {
     for (const child of el.childNodes) {
       if (isTextLikeNode(child)) {
         if (!isWhitespaceOnlyText(child)) pushLine(tokens, child, "whole", depth);
-        pushText(tokens, child.textContent ?? "");
+        pushText(tokens, child);
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const tag = localName(child);
         if (isInlineInTextBlock(child)) {
@@ -9218,7 +9201,7 @@ function computeMarkupGlue(segment) {
             tokens.push({ kind: "char" });
           } else if (isSingleLineMarkup(child)) {
             pushLine(tokens, child, "whole", depth);
-            pushText(tokens, child.textContent ?? "");
+            for (const text of child.childNodes) if (isTextLikeNode(text)) pushText(tokens, text);
           } else {
             pushLine(tokens, child, "open", depth);
             walk(child, tokens, depth + 1);
@@ -9251,10 +9234,18 @@ function computeMarkupGlue(segment) {
   };
 
   for (const el of segment) if (el.nodeType === Node.ELEMENT_NODE) visit(el);
-  return glue;
+  return { glue, spaces };
 }
 
 let markupGlue = new WeakMap();
+let markupSpaces = new WeakMap();
+
+/** A space read from a node of just whitespace has no line of its own: it goes at the end of the line before. */
+function appendMarkupLoneSpace(container, fallbackLine) {
+  const lines = container.querySelectorAll(".markup-line");
+  const line = lines[lines.length - 1] ?? fallbackLine;
+  line?.querySelector(".markup-line-body")?.appendChild(document.createTextNode(" "));
+}
 
 function appendGlueMark(parent, className, hint) {
   const mark = document.createElement("span");
@@ -9275,7 +9266,9 @@ function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
   for (const child of nodes) {
     if (isTextLikeNode(child)) {
       const text = formatMarkupTextNode(child);
-      if (text) {
+      if (text === " ") {
+        appendMarkupLoneSpace(parent);
+      } else if (text) {
         appendMarkupTextLine(parent, depth, text);
         markGlueLine(parent.lastElementChild, child, "whole");
       }
@@ -9517,7 +9510,9 @@ function buildMarkupElement(el, depth, elementIds) {
   for (const child of el.childNodes) {
     if (isTextLikeNode(child)) {
       const text = formatMarkupTextNode(child);
-      if (text) {
+      if (text === " " && localName(el) !== "content") {
+        appendMarkupLoneSpace(children, block.firstElementChild);
+      } else if (text) {
         appendMarkupTextLine(children, depth + 1, text);
         markGlueLine(children.lastElementChild, child, "whole");
       }
