@@ -3,7 +3,7 @@
 # To add a release, append its tag to TAGS (oldest first) and re-run; the last tag becomes the default.
 set -euo pipefail
 
-TAGS=(v0.7.3 v0.8.0)
+TAGS=(v0.7.4 v0.8.1 v0.9.0)
 BASE="https://raw.githubusercontent.com/doclang-project/doclang/refs/tags"
 
 mkdir -p "$(dirname "$0")/../schema"
