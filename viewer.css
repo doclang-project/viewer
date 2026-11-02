@@ -2260,10 +2260,46 @@ pre.markup {
 }
 
 .markup-line-content {
+  position: relative;
   display: flex;
   align-items: baseline;
   min-width: 0;
   padding-left: calc(var(--markup-depth, 0) * var(--markup-indent));
+}
+
+/* A line break with no whitespace in the source: an arrow leaves this line, dots fill the next one's indent. */
+.markup-glue-end {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-left: 0.2em;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  --markup-glue-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4'%3E%3Cpath d='M1 3H8.5V10.5M6 8L8.5 10.5L11 8'/%3E%3C/svg%3E");
+  -webkit-mask: var(--markup-glue-glyph) center / contain no-repeat;
+  mask: var(--markup-glue-glyph) center / contain no-repeat;
+}
+
+/* Up to the tag, or to the fold toggle where there is one. */
+.markup-glue-start {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--markup-depth, 0) * var(--markup-indent) + var(--markup-gutter-width));
+  height: 1.3em;
+}
+
+.markup-line-open .markup-glue-start {
+  width: calc(var(--markup-depth, 0) * var(--markup-indent));
+}
+
+.markup-glue-start::before {
+  content: "";
+  position: absolute;
+  top: 0.65em;
+  left: 0;
+  right: 0;
+  border-top: 1px dotted var(--muted);
 }
 
 .markup-gutter {

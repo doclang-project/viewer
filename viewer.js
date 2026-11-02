@@ -2274,7 +2274,7 @@ function initCursorHints() {
 }
 
 /** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
-const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, label.file-btn, select, summary';
+const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, .markup-glue-mark, label.file-btn, select, summary';
 
 /**
  * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
@@ -8959,6 +8959,7 @@ function applySelectionCore() {
 function buildMarkupView(segment, elementIds) {
   const root = document.createElement("div");
   root.className = "markup";
+  markupGlue = computeMarkupGlue(segment);
   for (const el of segment) {
     if (el.nodeType === Node.ELEMENT_NODE) {
       root.appendChild(buildMarkupElement(el, 0, elementIds));
@@ -9056,11 +9057,194 @@ function appendRenderedSliceContent(container, hostEl, contentNodes, elementIds)
   }
 }
 
+/* ---- Display-only line breaks of the source view ---------------------- *
+ * The source view puts elements on lines of their own, but a line break in a
+ * text block reads as a space (DocLang 0.9, whitespace handling). So a gap of
+ * the text (between two characters, across tags and element heads) that has no
+ * whitespace in the source but spans lines gets one mark, on the line break
+ * between siblings where possible. Classification as in the doclang toolkit
+ * (migration/_steps/v0_8_to_0_9.py).
+ * ------------------------------------------------------------------- */
+
+const WS_RAW_TEXT_TAGS = new Set([
+  "text", "heading", "footnote", "page_header", "page_footer", "formula", "code", "marker", "field_heading", "key", "value",
+  "hint", "caption", "description", "summary", "classification", "content", "bold", "italic", "underline", "strikethrough",
+  "superscript", "subscript", "handwriting", "rtl", "voice", "chapter",
+]);
+const WS_VIRTUAL_TEXT_TAGS = new Set(["list", "table", "index", "tabular", "track"]);
+const WS_NEVER_INLINE_TAGS = new Set(["caption", "description", "summary", "voice", "chapter"]);
+const WS_SEMANTIC_TAGS = new Set([
+  "text", "heading", "footnote", "page_header", "page_footer", "formula", "code", "field_heading", "key", "value", "marker", "hint",
+]);
+const WS_TEXT_LEVEL_TAGS = new Set([...RENDER_FORMAT_TAGS, "checkbox"]);
+const WS_HEAD_TAGS = new Set(["label", "thread", "h_thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom"]);
+const WS_DELIMITER_TAGS = new Set([
+  "ldiv", "fcel", "ecel", "ched", "rhed", "corn", "srow", "lcel", "ucel", "xcel", "nl", "bdiv", "hours", "minutes", "seconds",
+  "msecs", "voice", "chapter", "frame", "audio", "cover",
+]);
+
+/** Whether `el`, in a list item, a cell or a transcript turn, is part of a virtual <text>. */
+function isInVirtualText(el) {
+  const parent = el.parentElement;
+  if (localName(parent) === "track") return true;
+  const nodes = [...parent.childNodes];
+  const isDelimiter = (n) => n.nodeType === Node.ELEMENT_NODE && WS_DELIMITER_TAGS.has(localName(n));
+  let start = nodes.indexOf(el);
+  let end = start;
+  while (start > 0 && !isDelimiter(nodes[start - 1])) start -= 1;
+  while (end + 1 < nodes.length && !isDelimiter(nodes[end + 1])) end += 1;
+  return nodes.slice(start, end + 1).some((n) => (isTextLikeNode(n)
+    ? !isWhitespaceOnlyText(n)
+    : n.nodeType === Node.ELEMENT_NODE && WS_TEXT_LEVEL_TAGS.has(localName(n))));
+}
+
+/** Whether `el` is part of the text block around it, rather than a block of its own. */
+function isInlineInTextBlock(el) {
+  const tag = localName(el);
+  const parent = el.parentElement;
+  if (!parent || !WS_RAW_TEXT_TAGS.has(tag) || WS_NEVER_INLINE_TAGS.has(tag)) return false;
+  const parentTag = localName(parent);
+  const inBody = WS_RAW_TEXT_TAGS.has(parentTag)
+    || (WS_VIRTUAL_TEXT_TAGS.has(parentTag) && (!WS_SEMANTIC_TAGS.has(tag) || isInVirtualText(el)));
+  if (!inBody) return false;
+  for (let a = parent; a; a = a.parentElement) if (localName(a) === "head") return false;
+  return true;
+}
+
+/** Whether the source view shows `el` on a single line, tags and text together. */
+function isSingleLineMarkup(el) {
+  const tag = localName(el);
+  if (tag === "list" || tag === "track" || OTSL_CONTAINER_TAGS.has(tag)) return false;
+  return !el.childNodes.length || isTextOnlyMarkup(el);
+}
+
+function isTextOnlyMarkup(el) {
+  return !childElements(el).length && [...el.childNodes].some((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
+}
+
+/**
+ * The display-only line breaks of `segment`: for a source node and its line ("whole", "open" or "close"),
+ * whether the break after it ("end") or before it ("start") has no whitespace in the source.
+ * @returns {WeakMap<Node, Record<string, { end?: boolean, start?: boolean }>>}
+ */
+function computeMarkupGlue(segment) {
+  const glue = new WeakMap();
+  const mark = ([node, part], side) => {
+    if (!glue.has(node)) glue.set(node, {});
+    const lines = glue.get(node);
+    lines[part] = { ...lines[part], [side]: true };
+  };
+
+  /** Goes through a text block's lines, whitespace and characters: one mark for each gap without whitespace. */
+  const flush = (tokens) => {
+    let prev = null;
+    let gap = null;
+    for (const token of tokens) {
+      if (token.kind === "line") {
+        if (gap && prev) gap.breaks.push({ from: prev.last, to: token.first, weight: prev.depth + token.depth });
+        prev = token;
+      } else if (token.kind === "space") {
+        if (gap) gap.space = true;
+      } else {
+        if (gap && !gap.space && gap.breaks.length) {
+          const shallowest = gap.breaks.reduce((a, b) => (b.weight < a.weight ? b : a));
+          mark(shallowest.from, "end");
+          mark(shallowest.to, "start");
+        }
+        gap = { space: false, breaks: [] };
+      }
+    }
+    tokens.length = 0;
+  };
+
+  const pushText = (tokens, text) => {
+    if (/^[ \t\r\n]/.test(text)) tokens.push({ kind: "space" });
+    if (text.trim()) tokens.push({ kind: "char" });
+    if (/[ \t\r\n]$/.test(text)) tokens.push({ kind: "space" });
+  };
+  const pushLine = (tokens, node, part, depth) => {
+    tokens.push({ kind: "line", first: [node, part], last: [node, part], depth });
+  };
+  /** An element shown on its lines, whose inside does not matter to the text around it. */
+  const pushOpaque = (tokens, el, depth) => {
+    const single = isSingleLineMarkup(el);
+    tokens.push({ kind: "line", first: [el, single ? "whole" : "open"], last: [el, single ? "whole" : "close"], depth });
+  };
+
+  const walk = (el, tokens, depth) => {
+    for (const child of el.childNodes) {
+      if (isTextLikeNode(child)) {
+        if (!isWhitespaceOnlyText(child)) pushLine(tokens, child, "whole", depth);
+        pushText(tokens, child.textContent ?? "");
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const tag = localName(child);
+        if (isInlineInTextBlock(child)) {
+          if (tag === "content") {
+            pushOpaque(tokens, child, depth);
+            tokens.push({ kind: "char" });
+          } else if (isSingleLineMarkup(child)) {
+            pushLine(tokens, child, "whole", depth);
+            pushText(tokens, child.textContent ?? "");
+          } else {
+            pushLine(tokens, child, "open", depth);
+            walk(child, tokens, depth + 1);
+            pushLine(tokens, child, "close", depth);
+          }
+        } else if (WS_HEAD_TAGS.has(tag)) {
+          pushOpaque(tokens, child, depth); // disregarded here: its text blocks are read on their own
+          visit(child);
+        } else if (WS_SEMANTIC_TAGS.has(tag) || WS_DELIMITER_TAGS.has(tag)) {
+          flush(tokens);
+          visit(child);
+        } else {
+          pushOpaque(tokens, child, depth); // e.g. a checkbox or picture: part of the text
+          tokens.push({ kind: "char" });
+          visit(child);
+        }
+      }
+    }
+  };
+
+  const visit = (el) => {
+    const tag = localName(el);
+    if (WS_RAW_TEXT_TAGS.has(tag) || WS_VIRTUAL_TEXT_TAGS.has(tag)) {
+      const tokens = [];
+      walk(el, tokens, 1);
+      flush(tokens);
+    } else {
+      for (const child of childElements(el)) visit(child);
+    }
+  };
+
+  for (const el of segment) if (el.nodeType === Node.ELEMENT_NODE) visit(el);
+  return glue;
+}
+
+let markupGlue = new WeakMap();
+
+function appendGlueMark(parent, className, hint) {
+  const mark = document.createElement("span");
+  mark.className = `markup-glue-mark ${className}`;
+  mark.setAttribute("aria-hidden", "true");
+  mark.dataset.hint = hint;
+  parent.appendChild(mark);
+}
+
+function markGlueLine(line, node, part) {
+  const glued = markupGlue.get(node)?.[part];
+  if (!line || !glued) return;
+  if (glued.end) appendGlueMark(line.querySelector(".markup-line-body"), "markup-glue-end", "This line break is not in the source; only used for display");
+  if (glued.start) appendGlueMark(line.querySelector(".markup-line-content"), "markup-glue-start", "This spacing is not in the source; only used for display");
+}
+
 function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
   for (const child of nodes) {
     if (isTextLikeNode(child)) {
       const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(parent, depth, text);
+      if (text) {
+        appendMarkupTextLine(parent, depth, text);
+        markGlueLine(parent.lastElementChild, child, "whole");
+      }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       parent.appendChild(buildMarkupElement(child, depth, elementIds));
     }
@@ -9101,6 +9285,7 @@ function buildMarkupFoldableElement(el, depth, elementIds, buildBody) {
 
   const attributes = markupAttributes(el);
   appendMarkupFoldableOpen(block, depth, tag, attributes);
+  markGlueLine(block.lastElementChild, el, "open");
   block.classList.add("markup-el-foldable");
 
   const foldBody = document.createElement("div");
@@ -9110,6 +9295,7 @@ function buildMarkupFoldableElement(el, depth, elementIds, buildBody) {
   buildBody(children, depth + 1);
   foldBody.appendChild(children);
   appendMarkupCloseTag(foldBody, depth, tag);
+  markGlueLine(foldBody.lastElementChild, el, "close");
   block.appendChild(foldBody);
   return block;
 }
@@ -9273,20 +9459,21 @@ function buildMarkupElement(el, depth, elementIds) {
 
   if (!el.childNodes.length) {
     appendMarkupSelfClosingTag(block, depth, tag, attributes);
+    markGlueLine(block.lastElementChild, el, "whole");
     return block;
   }
 
-  const meaningfulText = [...el.childNodes].filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
-  const textOnly = meaningfulText.length > 0 && meaningfulText.every(isTextLikeNode) && !childElements(el).length;
-  if (textOnly) {
+  if (isTextOnlyMarkup(el)) {
     const text = serializeMarkupTextNodes(el.childNodes);
     if (text) {
       appendMarkupInlineElement(block, depth, tag, attributes, text);
+      markGlueLine(block.lastElementChild, el, "whole");
       return block;
     }
   }
 
   appendMarkupFoldableOpen(block, depth, tag, attributes);
+  markGlueLine(block.lastElementChild, el, "open");
   block.classList.add("markup-el-foldable");
 
   const foldBody = document.createElement("div");
@@ -9296,13 +9483,17 @@ function buildMarkupElement(el, depth, elementIds) {
   for (const child of el.childNodes) {
     if (isTextLikeNode(child)) {
       const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(children, depth + 1, text);
+      if (text) {
+        appendMarkupTextLine(children, depth + 1, text);
+        markGlueLine(children.lastElementChild, child, "whole");
+      }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       children.appendChild(buildMarkupElement(child, depth + 1, elementIds));
     }
   }
   foldBody.appendChild(children);
   appendMarkupCloseTag(foldBody, depth, tag);
+  markGlueLine(foldBody.lastElementChild, el, "close");
   block.appendChild(foldBody);
   return block;
 }
