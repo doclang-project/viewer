@@ -5689,7 +5689,7 @@ async function validateActiveDocument() {
   renderValidationUi(entry);
   const result = await requestValidation(state.markupXml);
   entry.validation = result.ok
-    ? { status: result.issues.length ? "invalid" : "valid", issues: result.issues, schemaVersion: result.schemaVersion }
+    ? { status: result.issues.length ? "invalid" : "valid", issues: result.issues, schemaVersion: result.schemaVersion, versionAssumed: !!result.versionAssumed }
     : { status: "error", error: result.error };
   if (fileCatalog[activeFileIndex] === entry) renderValidationUi(entry);
 }
@@ -5746,18 +5746,19 @@ function renderValidationUi(entry) {
   btn.dataset.status = v.status;
   btn.disabled = v.status === "running";
   // "XSD <version>", plus the issue count when there are issues; the colour says valid or not.
-  const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}`;
+  // A document that declares no version is validated against the latest: "(assumed)" tells the two apart.
+  const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (assumed)" : ""}`;
+  const schema = `DocLang XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (no version declared, so the latest was assumed)" : ""}`;
   btn.textContent = v.status === "valid" ? xsd
     : v.status === "invalid" ? `${xsd} · ${v.issues.length} ${v.issues.length === 1 ? "issue" : "issues"}`
     : VALIDATE_BTN_LABELS[v.status];
   btn.title = v.status === "idle" || v.status === "error"
     ? "Validate against the DocLang XSD"
     : v.status === "valid"
-      ? `Valid against DocLang XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}. Click for details`
+      ? `Valid against ${schema}. Click for details`
       : "Show validation results";
 
   if (!els.validationSummary || !els.validationIssues) return;
-  const schema = v.schemaVersion ? `DocLang XSD ${v.schemaVersion}` : "DocLang XSD";
   if (v.status === "valid") {
     els.validationSummary.textContent = `Valid against ${schema}`;
   } else if (v.status === "invalid") {

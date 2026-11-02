@@ -58,12 +58,13 @@ function loadSchema(minor, file) {
 /**
  * The schema to validate a document declaring `declared` against: its `major.minor`, or the default
  * when it declares none or something that is not a version at all (the schema reports that itself).
- * @returns {{ minor: string, file: string } | { unsupported: string, supported: string[] }}
+ * @returns {{ minor: string, file: string, assumed: boolean } | { unsupported: string, supported: string[] }}
  */
 function pickSchema(versions, declared) {
-  const minor = declared == null ? versions.default : declared.trim().match(/^(\d+)\.(\d+)/)?.slice(1, 3).join(".") ?? versions.default;
+  const declaredMinor = declared?.trim().match(/^(\d+)\.(\d+)/)?.slice(1, 3).join(".");
+  const minor = declaredMinor ?? versions.default;
   const entry = versions.versions[minor];
-  return entry ? { minor, file: entry.file } : { unsupported: minor, supported: Object.keys(versions.versions) };
+  return entry ? { minor, file: entry.file, assumed: !declaredMinor } : { unsupported: minor, supported: Object.keys(versions.versions) };
 }
 
 /**
@@ -114,10 +115,10 @@ async function validate(markup) {
     ensureNamespace(doc);
     try {
       validator.validate(doc);
-      return { schemaVersion, issues: [] };
+      return { schemaVersion, versionAssumed: picked.assumed, issues: [] };
     } catch (err) {
       if (err instanceof XmlValidateError) {
-        return { schemaVersion, issues: err.details.map((d) => toIssue(d, "schema")) };
+        return { schemaVersion, versionAssumed: picked.assumed, issues: err.details.map((d) => toIssue(d, "schema")) };
       }
       throw err;
     }
