@@ -183,7 +183,6 @@
       <location value="467"/>
       <location value="192"/>
 <![CDATA[Figure 1: Sketch of Docling's pipelines and usage model. Both PDF pipeline and simple pipeline build up a DoclingDocument representation, which can be further enriched. Downstream applications can utilize Docling's API to inspect, export, or chunk the document for various purposes.]]>    </caption>
-    <src uri="assets/image_000000_b4006d9eb2c6546911ca53843a45246f4003231d6c1f712629c127990e4658ce.png"/>
     <text>
       <location value="194"/>
       <location value="112"/>
@@ -1008,7 +1007,6 @@
       <location value="323"/>
       Figure 2: Dataset categories and sample counts for documents and pages.
     </caption>
-    <src uri="assets/image_000001_7a0b579719892eff18e8cc53084e0f39c6d625c36c899784be0bd19353edbdba.png"/>
     <text>
       <location value="61"/>
       <location value="156"/>
@@ -1348,7 +1346,6 @@
       <location value="331"/>
       Figure 3: Distribution of conversion times for all documents, ordered by number of pages in a document, on all system configurations. Every dot represents one document. Log/log scale is used to even the spacing, since both number of pages and conversion times have long-tail distributions.
     </caption>
-    <src uri="assets/image_000002_16ee5868f96a86a05ecf81f4373b0f503ceba1cf482995b21e6fb1acf4ddcea8.png"/>
     <text>
       <location value="318"/>
       <location value="279"/>
@@ -1581,7 +1578,6 @@
       <location value="199"/>
       Figure 4: Contributions of PDF backend and AI models to the conversion time of a page (in seconds per page). Lower is better. Left: Ranges of time contributions for each model to pages it was applied on (i.e., OCR was applied only on pages with bitmaps, table structure was applied only on pages with tables). Right: Average time contribution to a page in the benchmark dataset (factoring in zero-time contribution for OCR and table structure models on pages without bitmaps or tables).
     </caption>
-    <src uri="assets/image_000003_aae387b4ac174e0c353410a6154f33e32888ef949db88e5f3a2bcdcf9ce49d2b.png"/>
     <text>
       <location value="103"/>
       <location value="138"/>
@@ -1791,7 +1787,6 @@
       <location value="384"/>
       Figure 5: Conversion time in seconds per page on our dataset in three scenarios, across all assets and system configurations. Lower bars are better. The configuration includes OCR and table structure recognition (fast table option on Docling and MinerU, hi_res in unstructured, as shown in table 1).
     </caption>
-    <src uri="assets/image_000004_93026c6b54abfcd0b86e224af53fb690627cf3b973cafeccfda64b11b907dc00.png"/>
     <text>
       <location value="84"/>
       <location value="313"/>
@@ -1931,7 +1926,6 @@
       <location value="312"/>
       Figure 6: Ecosystem of Docling integrations contributed by the Docling team or the broader community. Docling is already used for RAG, model fine-tuning, large-scale datasets creation, information extraction and agentic workflows.
     </caption>
-    <src uri="assets/image_000005_c6aecc4dd377a18fbe7e0ac553f4e8a87cb4648b7c64b7baf4535bdf4a3e65c8.png"/>
     <text>
       <location value="347"/>
       <location value="271"/>
