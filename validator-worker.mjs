@@ -13,7 +13,8 @@ const SCHEMA_DIR = new URL("./schema/", import.meta.url);
 const DTD_REJECTED_MESSAGE = "DTD declarations and entity references are not allowed in DocLang documents";
 
 async function fetchSchemaFile(name) {
-  const res = await fetch(new URL(name, SCHEMA_DIR));
+  // Revalidated: a stale versions.json would report a newly added version as unsupported.
+  const res = await fetch(new URL(name, SCHEMA_DIR), { cache: "no-cache" });
   if (!res.ok) throw new Error(`Failed to load ${name} (${res.status})`);
   return new Uint8Array(await res.arrayBuffer());
 }

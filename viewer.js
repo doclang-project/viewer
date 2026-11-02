@@ -5661,7 +5661,8 @@ function failPendingValidations(message) {
 /** @returns {Promise<{ ok: true, issues: object[], schemaVersion: string | null } | { ok: false, error: string }>} */
 function requestValidation(markup) {
   if (!validatorWorker) {
-    validatorWorker = new Worker("validator-worker.mjs", { type: "module" });
+    // A unique URL: even a hard reload can leave a cached worker script running, and that one its cached schema list.
+    validatorWorker = new Worker(`validator-worker.mjs?t=${Date.now()}`, { type: "module" });
     validatorWorker.addEventListener("message", (e) => {
       const { id, ...result } = e.data;
       validatorPending.get(id)?.(result);
