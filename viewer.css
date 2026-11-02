@@ -1561,6 +1561,10 @@ body.pane-drag-active .pane-splitter {
   outline-offset: -1px;
 }
 
+.paged-el-slot-fitting .katex-mathml {
+  display: none;
+}
+
 .paged-el-slot.selected {
   outline: 3px solid var(--accent);
   outline-offset: -3px;
@@ -3037,9 +3041,10 @@ body.demo-loading .empty-state-prompt {
   margin-right: 0.35rem;
 }
 
-/* <content> is read literally; other whitespace collapses, also in code. */
+/* <content> is read literally; other whitespace collapses, also in code.
+   Not pre-wrap: spaces hanging past the line's end would count as overflow when a paged slot fits its content. */
 .rendered-content {
-  white-space: pre-wrap;
+  white-space: break-spaces;
 }
 
 pre .rendered-content {

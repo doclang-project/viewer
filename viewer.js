@@ -10490,7 +10490,9 @@ function fitSlotContent(slot) {
   if (!(targetW > 0 && targetH > 0)) return;
 
   // A block fills its slot's width however long its text is, so its own box never reveals horizontal overflow
-  // (a word wider than the box, e.g. a chart label). The extent of the text itself does.
+  // (a word wider than the box, e.g. a chart label). The extent of the text itself does, but only what is
+  // visible counts: KaTeX's hidden MathML can run past the box next to a formula at the end of a line.
+  slot.classList.add("paged-el-slot-fitting");
   const range = document.createRange();
   range.selectNodeContents(content);
   const fitsAt = (zoom) => {
@@ -10512,6 +10514,7 @@ function fitSlotContent(slot) {
     else hi = mid;
   }
   fitsAt(lo);
+  slot.classList.remove("paged-el-slot-fitting");
 }
 
 function wrapRendered(el, node, elementId, extraClass) {
