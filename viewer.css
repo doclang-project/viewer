@@ -1599,11 +1599,6 @@ body.pane-drag-active .pane-splitter {
   line-height: 1.6;
 }
 
-/* Newlines inside <content> are meaningful in the paged view; spaces still collapse. */
-.paged-canvas .rendered-content {
-  white-space: pre-line;
-}
-
 .paged-canvas h1,
 .paged-canvas h2,
 .paged-canvas h3,
@@ -2952,8 +2947,23 @@ body.demo-loading .empty-state-prompt {
   margin-top: 0;
 }
 
-.rendered-marker {
+/* A marker within text is spaced as the text says; only a list item's marker is set apart from the item. */
+.rendered-list-marker {
   margin-right: 0.35rem;
+}
+
+/* <content> is read literally; other whitespace collapses, also in code. */
+.rendered-content {
+  white-space: pre-wrap;
+}
+
+pre .rendered-content {
+  white-space: pre;
+}
+
+.rendered-doc pre code,
+.paged-canvas pre code {
+  white-space: normal;
 }
 
 li.has-marker {

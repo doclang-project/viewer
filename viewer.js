@@ -9682,7 +9682,9 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
           if (markerEl && firstSlot) {
             // Inside the first text block (not before it) so the marker stays on its line.
             const host = firstSlot.querySelector("p, h1, h2, h3, h4, h5, h6") ?? firstSlot.firstChild;
-            host?.prepend(renderMarkerElement(markerEl, elementIds, { inline: true }));
+            const marker = renderMarkerElement(markerEl, elementIds, { inline: true });
+            marker.classList.add("rendered-list-marker");
+            host?.prepend(marker);
           }
           return;
         }
@@ -9992,9 +9994,20 @@ function renderEmbeddedCaption(captionEl, elementIds, tagName) {
   return node;
 }
 
+/** Whether raw text in `el`'s body belongs to a text block, where whitespace between inline pieces reads as a space. */
+function isTextBlockBody(el) {
+  if (!el) return false;
+  const tag = localName(el);
+  return WS_RAW_TEXT_TAGS.has(tag) || WS_VIRTUAL_TEXT_TAGS.has(tag);
+}
+
 function appendRenderedBody(parent, el, elementIds, ctx) {
   const nodes = [...el.childNodes];
   let i = skipElementHeadNodes(nodes, 0);
+  // The element head is read as if removed: the whitespace around it is still there.
+  if (ctx.inline && !ctx.trimLeading && isTextBlockBody(el) && nodes.slice(0, i).some(isWhitespaceOnlyText)) {
+    parent.appendChild(document.createTextNode(" "));
+  }
   while (i < nodes.length) {
     appendRenderedNode(parent, nodes[i], elementIds, ctx);
     i += 1;
@@ -10089,11 +10102,15 @@ const INLINE_NESTABLE_TAGS = new Set([
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
     let text = node.textContent;
-    if (!text || !text.trim()) return;
+    if (!text) return;
+    if (!text.trim()) {
+      // Between inline pieces of a text block it reads as a space; CSS collapses it with its neighbours and at the edges.
+      if (!ctx.trimLeading && isTextBlockBody(node.parentElement)) parent.appendChild(document.createTextNode(" "));
+      return;
+    }
     if (ctx.trimLeading) {
       text = text.replace(/^\s+/u, "");
       ctx.trimLeading = false;
-      if (!text) return;
     }
     parent.appendChild(document.createTextNode(text));
     return;
@@ -10109,8 +10126,12 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
   }
 
   if (tag === "code" || tag === "formula") {
+    // A formula's source goes to KaTeX, so the space at its edges has to go around it.
+    const edges = tag === "formula" && isTextBlockBody(node.parentElement) ? formulaEdgeSpaces(node) : null;
+    if (edges?.start && !ctx.trimLeading) parent.appendChild(document.createTextNode(" "));
     const rendered = renderBlockElement(node, elementIds, { inline: true });
     if (rendered) parent.appendChild(rendered);
+    if (edges?.end) parent.appendChild(document.createTextNode(" "));
     return;
   }
 
@@ -10237,6 +10258,18 @@ function formulaSourceText(el) {
     text += nodes[i].textContent ?? "";
   }
   return text.trim();
+}
+
+/** Whether the formula's body starts or ends with whitespace, also around its element head. */
+function formulaEdgeSpaces(el) {
+  const nodes = [...el.childNodes];
+  const bodyStart = skipElementHeadNodes(nodes, 0);
+  const first = nodes[bodyStart];
+  const last = nodes[nodes.length - 1];
+  return {
+    start: nodes.slice(0, bodyStart).some(isWhitespaceOnlyText) || (!!first && isTextLikeNode(first) && /^\s/.test(first.textContent)),
+    end: bodyStart < nodes.length && isTextLikeNode(last) && /\s$/.test(last.textContent),
+  };
 }
 
 // KaTeX has no eqnarray; align is its closest (numbered) equivalent.
@@ -11122,7 +11155,9 @@ function collectListItems(el, elementIds) {
         // An explicit marker replaces the browser's own list numbering/bullet.
         li.classList.add("has-marker");
         li.style.listStyle = "none";
-        li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
+        const marker = renderMarkerElement(child, elementIds, { inline: true });
+        marker.classList.add("rendered-list-marker");
+        li.appendChild(marker);
       } else if (childTag === "checkbox") {
         li.appendChild(renderCheckboxElement(child, elementIds));
       }
