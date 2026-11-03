@@ -3671,7 +3671,7 @@ async function revertActiveFile() {
 /** Block types that share one content model in the schema, so any of them can become another. */
 /** Types that carry text and may nest blocks; they convert freely into each other. */
 const TEXT_BLOCK_TYPES = [
-  "text", "heading", "footnote", "page_header", "page_footer", "field_region", "field_item", "field_heading", "key", "value",
+  "text", "heading", "footnote", "page_header", "page_footer", "field_region", "field_item", "field_heading", "key", "value", "marker",
 ];
 /** The schema's top_level_cat: the only elements a <group> may hold. */
 const TOP_LEVEL_TYPES = new Set([
@@ -3680,13 +3680,13 @@ const TOP_LEVEL_TYPES = new Set([
 ]);
 const CONVERTIBLE_TYPES = [...TEXT_BLOCK_TYPES, "group", "list"];
 /** Types whose schema content model allows a <content> wrapper (and so can keep whitespace). */
-const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "field_heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula"]);
+const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "field_heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula", "marker"]);
 /** Types that carry text of their own. Containers such as group and list only hold other elements. */
 const TEXT_EDITABLE_TYPES = new Set([...TEXT_BLOCK_TYPES, "code", "formula"]);
 /** Types that may hold nested block elements (the schema's top_level_cat group). */
 const CHILD_CONTAINER_TYPES = new Set(["group", ...TEXT_BLOCK_TYPES]);
 /** Blocks with a bbox of their own that can be added to, drawn or deleted. */
-const BBOX_BLOCK_TYPES = new Set([...RENDER_BLOCK_TAGS, "key", "value"]);
+const BBOX_BLOCK_TYPES = new Set([...RENDER_BLOCK_TAGS, "key", "value", "marker"]);
 /** Type-specific attributes, as enumerated by the schema. */
 const ATTR_SPECS = {
   heading: [{ name: "level", label: "Level", options: ["1", "2", "3", "4", "5", "6"], def: "1" }],
@@ -3698,6 +3698,9 @@ const ATTR_SPECS = {
 /** Why `el` cannot become `tag`, or null when it can. */
 function retypeBlocker(el, tag) {
   const from = localName(el);
+  const parentTag = localName(el.parentElement);
+  if (parentTag === "ldiv" && tag !== "marker") return "<ldiv> can only hold a <marker>";
+  if (tag === "marker" && from !== "marker" && !isTextBlockBody(el.parentElement)) return "<marker> only goes inside text or a list item";
   if (from === "list") {
     // A list turns into a single block only while it has at most one item.
     if (childElements(el).filter((c) => localName(c) === "ldiv").length > 1) return "the list has several items";
@@ -4141,9 +4144,11 @@ function renderInspector() {
     none.title = "No marker: leave it unspecified (<ldiv/>)";
     none.disabled = !marker;
     if (marker && childElements(marker).length) {
-      input.value = marker.textContent.trim();
+      input.value = plainTextOf(marker)?.trim() ?? "";
+      if (!input.value) input.placeholder = "nested elements";
       input.disabled = true;
-      input.title = "This marker has its own bbox or a checkbox: edit it in the source";
+      none.disabled = true;
+      input.title = "This marker has elements of its own: select the marker to edit it";
     } else {
       input.value = marker?.textContent.trim() ?? "";
       input.addEventListener("input", () => {
@@ -4321,6 +4326,7 @@ function blockSibling(el) {
 /** True when `el` sits where a wrapper group is allowed (the root or a container). */
 function canWrap(el) {
   const parent = el.parentElement;
+  if (localName(el) === "marker") return false;
   return DELETABLE_TYPES.has(localName(el)) && !!parent && (parent === state.docRoot || CHILD_CONTAINER_TYPES.has(localName(parent)));
 }
 
@@ -4487,6 +4493,10 @@ async function addElement(coords, kind) {
     const point = itemInsertPoint(selected);
     selected.parentNode.insertBefore(doc.createTextNode(`\n${indent}`), point);
     selected.parentNode.insertBefore(created, point);
+    id = idOf(created);
+  } else if (kind === "child" && selected && isInTextFlow(selected)) {
+    const created = newBlock(doc, ns, "text", coords, null);
+    selected.appendChild(created);
     id = idOf(created);
   } else if (kind === "child" && selected) {
     const indent = childIndentOf(selected);
@@ -5121,6 +5131,10 @@ function insertBeside(target, pos, nodes) {
 function insertInto(container, nodes) {
   const doc = container.ownerDocument;
   const indent = childIndentOf(container);
+  if (isInTextFlow(container)) {
+    for (const n of nodes) container.appendChild(n);
+    return indent;
+  }
   const closing = closingWhitespace(container, indent.slice(0, Math.max(0, indent.length - 2)));
   for (const n of nodes) {
     container.insertBefore(doc.createTextNode(`\n${indent}`), closing);
@@ -7287,8 +7301,8 @@ function findTrackSelectionHost(xmlEl) {
 
 function resolveSelectionElement(xmlEl) {
   if (!xmlEl) return null;
-  // The marker of a list item is edited with the item itself.
-  if (localName(xmlEl) === "marker" && xmlEl.parentElement && localName(xmlEl.parentElement) === "ldiv") return xmlEl.parentElement;
+  // A plain marker of a list item is edited with the item itself; one with elements of its own on its own.
+  if (localName(xmlEl) === "marker" && !childElements(xmlEl).length && xmlEl.parentElement && localName(xmlEl.parentElement) === "ldiv") return xmlEl.parentElement;
   const trackHost = findTrackSelectionHost(xmlEl);
   if (trackHost) return trackHost;
   if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
