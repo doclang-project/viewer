@@ -1801,20 +1801,50 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
-.markup-editor {
-  display: block;
+.markup-editor-wrap {
+  position: relative;
+  height: 100%;
+}
+
+.markup-editor,
+.markup-editor-backdrop {
   box-sizing: border-box;
+  border: 0;
+  padding: 1rem;
+  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markup-editor {
+  position: relative;
+  display: block;
   width: 100%;
   height: 100%;
   resize: none;
-  border: 0;
-  padding: 1rem;
   background: transparent;
   color: var(--text);
-  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  tab-size: 2;
-  white-space: pre;
-  overflow: auto;
+  overflow: hidden auto;
+}
+
+.markup-editor-backdrop {
+  position: absolute;
+  inset: 0 auto 0 0;
+  /* Room to scroll on: browsers differ in how far a textarea scrolls, and it must never stop short of the editor's position. */
+  padding-bottom: 100vh;
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+.markup-editor-current-line {
+  background: var(--markup-selected);
+}
+
+.markup-editor-no-current-line {
+  background: none;
 }
 
 .markup-editor:focus {

@@ -3503,6 +3503,7 @@ function setEditingOn(on) {
 }
 
 function initEditingToggle() {
+  document.addEventListener("selectionchange", syncEditorCurrentLine);
   if (els.editingToggle) els.editingToggle.checked = editingOn;
   els.editingToggle?.addEventListener("change", () => {
     setEditingOn(els.editingToggle.checked);
@@ -3525,13 +3526,49 @@ function startEditing() {
       applyEdit();
     }
   });
+  markupEditor.addEventListener("input", syncEditorCurrentLine);
+  markupEditor.addEventListener("scroll", syncEditorCurrentLine);
+  const backdrop = document.createElement("div");
+  backdrop.className = "markup-editor-backdrop";
+  backdrop.setAttribute("aria-hidden", "true");
+  const wrap = document.createElement("div");
+  wrap.className = "markup-editor-wrap";
+  wrap.append(backdrop, markupEditor);
   els.markupPane.classList.add("editing");
-  els.markupPane.replaceChildren(markupEditor);
+  els.markupPane.replaceChildren(wrap);
+  new ResizeObserver(syncEditorCurrentLine).observe(markupEditor);
   markupEditor.focus();
   markupEditor.setSelectionRange(0, 0); // setting the value parks the caret (and the scroll) at the end
   markupEditor.scrollTop = 0;
+  syncEditorCurrentLine();
   syncEditUi();
   syncSelectionEditUi(); // source editing and visual editing are exclusive: hide the inspector and handles
+}
+
+/**
+ * Highlights the line the caret is on, over all the screen lines it wraps to: a textarea cannot, so a copy of its text
+ * behind it, wrapped the same way, holds the highlight.
+ */
+function syncEditorCurrentLine() {
+  const backdrop = markupEditor?.previousElementSibling;
+  if (!backdrop) return;
+  const { value, selectionStart, selectionEnd } = markupEditor;
+  const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+  const newline = value.indexOf("\n", selectionStart);
+  const lineEnd = newline < 0 ? value.length : newline;
+  const shown = backdrop.shown;
+  if (shown?.value !== value || shown.lineStart !== lineStart || shown.lineEnd !== lineEnd) {
+    backdrop.shown = { value, lineStart, lineEnd };
+    const current = document.createElement("div");
+    current.className = "markup-editor-current-line";
+    current.textContent = value.slice(lineStart, lineEnd) || "​"; // an empty line still has its height
+    // Unlike in a textarea, a final newline would not start another line.
+    const rest = newline < 0 ? "" : `${value.slice(newline + 1)}​`;
+    backdrop.replaceChildren(value.slice(0, lineStart), current, rest);
+  }
+  backdrop.firstElementChild.classList.toggle("markup-editor-no-current-line", selectionStart !== selectionEnd);
+  backdrop.style.width = `${markupEditor.clientWidth}px`;
+  backdrop.scrollTop = markupEditor.scrollTop;
 }
 
 function stopEditing({ render }) {
@@ -3572,6 +3609,7 @@ async function applyEdit() {
     markupEditor = null;
     startEditing();
     markupEditor.value = text;
+    syncEditorCurrentLine();
   }
 }
 
