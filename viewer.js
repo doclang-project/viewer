@@ -446,6 +446,7 @@ const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
 const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
+const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -511,6 +512,8 @@ let showReadingFurniture = true;
 let showReadingBackground = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "pageless";
+/** The DocLang pane's view of choice; it applies to any document that can be edited. @type {"visual" | "raw"} */
+let markupViewMode = "visual";
 let showLayoutBody = true;
 let showLayoutFurniture = true;
 let showLayoutBackground = true;
@@ -819,7 +822,7 @@ els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false))
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
 els.viewVisualBtn?.addEventListener("click", () => applyEdit());
-els.viewRawBtn?.addEventListener("click", startEditing);
+els.viewRawBtn?.addEventListener("click", openRawView);
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
 els.addParentBtn?.addEventListener("click", () => toggleAddElement("parent"));
@@ -958,6 +961,7 @@ removeUnavailableMarkup();
 initEditingToggle();
 loadHotkeysPref();
 loadReadingLayoutMode();
+loadMarkupViewMode();
 syncReadingLayoutButtons();
 syncOverlayPrefControls();
 normalizePaneRatios();
@@ -3389,6 +3393,7 @@ function activateDocument(docState, entry) {
   updateFileView();
   syncValidationForActiveDocument();
   syncEditUi();
+  resumeRawView();
 }
 
 function setDocLabel(label) {
@@ -3436,9 +3441,9 @@ function setEditError(message) {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "e" || e.defaultPrevented || e.repeat || !hotkeysEnabled) return;
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
-  if (markupEditor || !editableEntry()) return;
+  if (!editableEntry()) return;
   e.preventDefault();
-  startEditing();
+  openRawView();
 });
 
 function syncEditUi() {
@@ -3484,6 +3489,7 @@ function setEditingOn(on) {
     if (els.editingToggle) els.editingToggle.checked = true;
     return;
   }
+  cancelLiveEdit();
   markupEditor = null;
   els.markupPane?.classList.remove("editing");
   editingOn = on;
@@ -3494,6 +3500,7 @@ function setEditingOn(on) {
   renderPage(state.currentPage);
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
   syncEditUi();
+  if (on) resumeRawView();
 }
 
 function initEditingToggle() {
@@ -3505,7 +3512,40 @@ function initEditingToggle() {
   });
 }
 
-function startEditing() {
+function loadMarkupViewMode() {
+  try {
+    if (localStorage.getItem(MARKUP_VIEW_MODE_STORAGE_KEY) === "raw") markupViewMode = "raw";
+  } catch {
+    /* ignore unavailable storage */
+  }
+}
+
+function setMarkupViewMode(mode) {
+  markupViewMode = mode;
+  try {
+    localStorage.setItem(MARKUP_VIEW_MODE_STORAGE_KEY, mode);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function openRawView() {
+  setMarkupViewMode("raw");
+  if (markupEditor) focusEditor();
+  else startEditing();
+}
+
+/** A document opens in the view of choice; the keyboard stays with the viewer's shortcuts until asked for. */
+function resumeRawView() {
+  if (markupViewMode === "raw") startEditing({ focus: false });
+}
+
+function focusEditor() {
+  markupEditor.focus({ preventScroll: true });
+  scrollEditorToCaret();
+}
+
+function startEditing({ focus = true } = {}) {
   if (markupEditor || !editableEntry() || !els.markupPane) return;
   markupEditor = document.createElement("textarea");
   markupEditor.className = "markup-editor";
@@ -3514,6 +3554,7 @@ function startEditing() {
   markupEditor.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
+      setMarkupViewMode("visual");
       stopEditing({ render: true });
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -3542,7 +3583,7 @@ function startEditing() {
   els.markupPane.classList.add("editing");
   els.markupPane.replaceChildren(wrap);
   new ResizeObserver(syncEditorCurrentLine).observe(markupEditor);
-  markupEditor.focus();
+  if (focus) markupEditor.focus();
   markupEditor.setSelectionRange(0, 0); // setting the value parks the caret (and the scroll) at the end
   markupEditor.scrollTop = 0;
   syncEditorCurrentLine();
@@ -3876,7 +3917,8 @@ function parkEditor() {
 /** Brings a parked editor back where it was. */
 function reopenEditor(parked) {
   if (!parked) return;
-  startEditing();
+  startEditing(); // the document may have reopened it already
+  markupEditor.focus({ preventScroll: true });
   markupEditor.setSelectionRange(parked.selectionStart, parked.selectionEnd);
   markupEditor.scrollTop = parked.scrollTop;
   syncEditorCurrentLine();
@@ -3900,7 +3942,10 @@ async function applyEdit({ stay = false } = {}) {
     if (!(await commitMarkupText(markupEditor.value))) return false;
   }
   setEditError(null);
-  if (!stay) stopEditing({ render: true });
+  if (!stay) {
+    setMarkupViewMode("visual");
+    stopEditing({ render: true });
+  }
   return true;
 }
 
@@ -11430,12 +11475,7 @@ els.markupPane?.addEventListener("copy", onMarkupCopy);
 // A click on the bar of the pane goes to its content, showing where the caret or the selection is.
 document.querySelector(".pane-markup-header")?.addEventListener("click", (e) => {
   if (e.target.closest?.("button, input, select, label, a")) return;
-  if (markupEditor) {
-    markupEditor.focus({ preventScroll: true });
-    syncEditorCurrentLine();
-    scrollEditorToCaret();
-    return;
-  }
+  if (markupEditor) return focusEditor();
   els.markupPane?.focus({ preventScroll: true });
   if (selectedElementId) findMarkupElementForSelection(selectedElementId)?.scrollIntoView({ block: "nearest" });
 });
