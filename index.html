@@ -307,7 +307,7 @@
           <div class="help-shortcut-list">
             <div class="help-shortcut-row">
               <span class="help-shortcut-keys"><kbd>E</kbd></span>
-              <span class="help-shortcut-desc">Edit source</span>
+              <span class="help-shortcut-desc">Edit the raw source</span>
             </div>
           </div>
         </section>
@@ -697,13 +697,15 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
-          <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
+          <div class="view-toggle" id="markup-view-toggle" role="group" aria-label="DocLang view" hidden>
+            <button type="button" class="view-toggle-btn" id="btn-view-visual" aria-pressed="true" title="Edit visually; leaving Raw applies its text (Ctrl/Cmd+Enter), Esc drops it">Visual</button>
+            <button type="button" class="view-toggle-btn" id="btn-view-raw" aria-pressed="false" title="Edit the raw DocLang source (E)">Raw</button>
+          </div>
+            <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
           <button type="button" class="pane-action-btn icon-btn" id="btn-undo" title="Undo the last edit (Ctrl/Cmd+Z)" aria-label="Undo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
           <button type="button" class="pane-action-btn icon-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" aria-label="Redo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button>
           <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and go back to the last saved version" hidden>Discard</button>
           <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the changes to the file" hidden>Save</button>
-          <!-- Source editing toggle (code icon: Lucide, ISC license, see vendor/lucide/LICENSE). -->
-          <button type="button" class="pane-action-btn icon-btn ghost-btn" id="btn-edit" aria-label="Edit source" aria-pressed="false" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg></button>
         </div>
       </div>
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
@@ -773,21 +775,21 @@
       <div class="pane-header pane-reading-header">
         <span class="pane-header-title">Preview</span>
         <div class="pane-header-actions">
-          <div class="reading-layout-toggle" role="group" aria-label="Reading layout">
+          <div class="view-toggle" role="group" aria-label="Reading layout">
             <button
               type="button"
-              class="reading-layout-btn"
+              class="view-toggle-btn"
               id="btn-reading-layout-pageless"
               aria-pressed="true"
             >Pageless</button>
             <button
               type="button"
-              class="reading-layout-btn"
+              class="view-toggle-btn"
               id="btn-reading-layout-paged"
               aria-pressed="false"
             >Paged</button>
           </div>
-          <button
+            <button
             type="button"
             class="pane-settings-toggle"
             id="btn-reading-settings-toggle"

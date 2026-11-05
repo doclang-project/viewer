@@ -669,7 +669,9 @@ const els = {
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
   validateBtn: document.getElementById("btn-validate"),
-  editBtn: document.getElementById("btn-edit"),
+  markupViewToggle: document.getElementById("markup-view-toggle"),
+  viewVisualBtn: document.getElementById("btn-view-visual"),
+  viewRawBtn: document.getElementById("btn-view-raw"),
   saveBtn: document.getElementById("btn-save"),
   revertBtn: document.getElementById("btn-revert"),
   pageEditBar: document.getElementById("page-edit-bar"),
@@ -815,7 +817,8 @@ els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
-els.editBtn?.addEventListener("click", () => (markupEditor ? applyEdit() : startEditing()));
+els.viewVisualBtn?.addEventListener("click", () => applyEdit());
+els.viewRawBtn?.addEventListener("click", startEditing);
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
 els.addParentBtn?.addEventListener("click", () => toggleAddElement("parent"));
@@ -3426,11 +3429,9 @@ document.addEventListener("keydown", (e) => {
 function syncEditUi() {
   const entry = editableEntry();
   const editing = !!markupEditor;
-  if (els.editBtn) {
-    els.editBtn.hidden = !entry;
-    els.editBtn.setAttribute("aria-pressed", String(editing));
-    els.editBtn.title = editing ? "Apply the source and go back to visual editing (Ctrl/Cmd+Enter); Esc drops the unapplied text" : "Edit the raw DocLang source (E)";
-  }
+  if (els.markupViewToggle) els.markupViewToggle.hidden = !entry;
+  els.viewVisualBtn?.setAttribute("aria-pressed", String(!editing));
+  els.viewRawBtn?.setAttribute("aria-pressed", String(editing));
   syncHistoryButtons();
   syncAddButtons();
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);

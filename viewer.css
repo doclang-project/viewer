@@ -835,10 +835,6 @@ label.file-btn input {
   justify-content: space-between;
 }
 
-.pane-reading-header {
-  justify-content: space-between;
-}
-
 .pane-page-controls,
 .pane-header-actions {
   display: flex;
@@ -847,14 +843,23 @@ label.file-btn input {
   flex-shrink: 0;
 }
 
-.reading-layout-toggle {
+/* A pane's title is on the left, its view switch and what acts on it are on the right. */
+.pane-header-actions {
+  margin-left: auto;
+}
+
+.view-toggle {
   display: flex;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
   overflow: hidden;
 }
 
-.reading-layout-btn {
+.view-toggle[hidden] {
+  display: none;
+}
+
+.view-toggle-btn {
   appearance: none;
   border: none;
   background: transparent;
@@ -867,26 +872,26 @@ label.file-btn input {
   transition: color 0.12s ease, background 0.12s ease;
 }
 
-.reading-layout-btn + .reading-layout-btn {
+.view-toggle-btn + .view-toggle-btn {
   border-left: 1px solid var(--border);
 }
 
-.reading-layout-btn:hover:not(:disabled) {
+.view-toggle-btn:hover:not(:disabled) {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
-.reading-layout-btn:disabled {
+.view-toggle-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.reading-layout-btn[aria-pressed="true"] {
+.view-toggle-btn[aria-pressed="true"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
 }
 
-.reading-layout-btn:focus-visible {
+.view-toggle-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -1706,7 +1711,6 @@ body.pane-drag-active .pane-splitter {
 
 /* The source header carries the edit actions: when they do not fit next to the title they wrap onto further lines. */
 .pane-markup-header {
-  justify-content: space-between;
   flex-wrap: wrap;
   height: auto;
   min-height: 2.125rem;
@@ -1716,10 +1720,9 @@ body.pane-drag-active .pane-splitter {
 }
 
 .pane-markup-header .pane-header-actions {
-  flex: 1 1 0;
+  flex-shrink: 1;
   flex-wrap: wrap;
   min-width: 0;
-  margin-left: auto;
   justify-content: flex-end;
   row-gap: 0.25rem;
 }
@@ -3955,19 +3958,4 @@ li.has-marker > .rendered-li-body {
   color: var(--muted);
   border-top: 1px solid var(--border);
   background: var(--panel);
-}
-
-/* A borderless icon button (the source editing toggle): quiet, as visual editing is the primary way to edit */
-.pane-action-btn.ghost-btn {
-  border-color: transparent;
-  background: transparent;
-  min-width: 1.5rem;
-  padding: 0.2rem 0.2rem;
-}
-
-.pane-action-btn.ghost-btn:not(:disabled):hover,
-.pane-action-btn.ghost-btn[aria-pressed="true"] {
-  background: var(--markup-hover);
-  border-color: transparent;
-  color: var(--text);
 }
