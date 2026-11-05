@@ -3644,8 +3644,13 @@ async function commitMarkupText(text, { record = true, reselect = null } = {}) {
     setEditError(`Could not apply: ${err.message}`);
     return false;
   }
-  if (!entry.dirty) entry.savedSource = previousSource;
-  entry.dirty = true;
+  if (!entry.dirty) {
+    entry.savedSource = previousSource;
+    entry.savedText = previousText;
+  }
+  // Getting back to the saved text, by undo or redo say, leaves nothing to save.
+  entry.dirty = text !== entry.savedText;
+  if (!entry.dirty) entry.savedSource = null;
   entry.validation = null;
   const facet = selectedFacet; // renderPage clears the selection: keep the level the user was editing
   if (record) {
@@ -4060,10 +4065,6 @@ async function stepHistory(from, to) {
     return;
   }
   (entry[to] ??= []).push(current);
-  if (!entry.undoStack?.length) {
-    entry.dirty = false;
-    entry.savedSource = null;
-  }
   syncEditUi();
 }
 
