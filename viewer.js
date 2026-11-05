@@ -7145,7 +7145,13 @@ function refreshPageViewLayout() {
   });
 }
 
+/** Measuring text forces a layout, and a page can have hundreds of badges with a few different labels. */
+const overlayBadgeSizes = new Map();
+
 function overlayBadgeLayout(svg, text, fontSizeUser) {
+  const key = `${fontSizeUser}|${text}`;
+  const known = overlayBadgeSizes.get(key);
+  if (known) return known;
   const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X);
   const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y);
   const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -7164,6 +7170,7 @@ function overlayBadgeLayout(svg, text, fontSizeUser) {
     const bbox = probe.getBBox();
     width = bbox.width + padXUser * 2;
     height = bbox.height + padYUser * 2;
+    if (bbox.width > 0) overlayBadgeSizes.set(key, { width, height }); // nothing to measure while hidden
   } catch {
     const label = String(text);
     width = overlayUserLength(label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2);
@@ -7173,7 +7180,7 @@ function overlayBadgeLayout(svg, text, fontSizeUser) {
   return { width, height };
 }
 
-function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }) {
+function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId, into = svg }) {
   const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
   const { width, height } = overlayBadgeLayout(svg, text, fontSize);
   const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX);
@@ -7200,7 +7207,7 @@ function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId
   label.textContent = String(text);
   badge.appendChild(label);
 
-  svg.appendChild(badge);
+  into.appendChild(badge);
   return badge;
 }
 
@@ -7214,13 +7221,16 @@ function syncOverlayBadges(img) {
 
   const boxes = sortedOverlayBoxes(meta.boxes ?? []);
 
+  const badges = document.createDocumentFragment(); // added all at once, so that no badge forces a layout for the next
   for (const b of boxes) {
     const { x, y } = boxPixelRect(b, img);
     appendOverlayBadge(svg, x, y, b.tag, {
       extraClass: `element-badge ${kindClassForTag(b.kind)}`,
       elementId: b.elementId,
+      into: badges,
     });
   }
+  svg.appendChild(badges);
 }
 
 function splitIntoSegments(root) {
