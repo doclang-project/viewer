@@ -2422,7 +2422,10 @@ function buildMarkupPieceTree(pieces) {
       top.children.push(node);
       stack.push(node);
     } else if (piece.type === "close") {
-      if (stack.length > 1) stack.pop();
+      if (stack.length > 1) {
+        top.close = piece;
+        stack.pop();
+      }
     } else {
       top.children.push({ piece, children: [] });
     }
@@ -9301,6 +9304,8 @@ function computeMarkupGlue(segment) {
 
 let markupGlue = new WeakMap();
 let markupSpaces = new WeakMap();
+/** Which node, and which part of it ("whole", "open" or "close"), each line of the source view shows. */
+const markupLineSources = new WeakMap();
 
 /** A space read from a node of just whitespace has no line of its own: it goes at the end of the line before. */
 function appendMarkupLoneSpace(container, fallbackLine) {
@@ -9318,10 +9323,152 @@ function appendGlueMark(parent, className, hint) {
 }
 
 function markGlueLine(line, node, part) {
+  if (line) markupLineSources.set(line, { node, part });
   const glued = markupGlue.get(node)?.[part];
   if (!line || !glued) return;
   if (glued.end) appendGlueMark(line.querySelector(".markup-line-body"), "markup-glue-end", "This line break is not in the source; only used for display");
   if (glued.start) appendGlueMark(line.querySelector(".markup-line-content"), "markup-glue-start", "This spacing is not in the source; only used for display");
+}
+
+/** The source view's text as spans, whichever way it is split (a CDATA section, the tokens of the token lens). */
+const MARKUP_TEXT_SPANS = ".xml-text, .xml-cdata, .xml-cdata-delimiter";
+
+/** Where each node of the current document is in its source, as parsed (nothing while an alternative is swapped in). */
+function markupSourceSpans() {
+  if (state.markupSpans?.xml === state.markupXml) return state.markupSpans.spans;
+  const spans = new Map();
+  const pieces = scanMarkupPieces(state.markupXml);
+  let at = 0;
+  for (const piece of pieces) {
+    piece.start = at;
+    at += piece.raw.length;
+  }
+  const tree = buildMarkupPieceTree(pieces);
+  const rootPiece = tree.children.find((c) => c.piece.type === "open");
+  if (rootPiece) {
+    rootPiece.node = state.docRoot;
+    pairMarkupPieces(rootPiece, state.docRoot);
+  }
+  (function collect(node) {
+    for (const c of node.children) {
+      if (!c.node) continue;
+      const openEnd = c.piece.start + c.piece.raw.length;
+      const closeStart = c.close?.start ?? openEnd;
+      spans.set(c.node, { start: c.piece.start, openEnd, closeStart, end: closeStart + (c.close?.raw.length ?? 0) });
+      collect(c);
+    }
+  })(tree);
+  state.markupSpans = { xml: state.markupXml, spans };
+  return spans;
+}
+
+/** The characters of `text` that positions in text count: all but whitespace, which can be shown differently, or in <content> (`literal`) all but CR. */
+function countedMarkupChars(text, literal) {
+  return text.replace(literal ? /\r/g : /[ \t\r\n]/g, "").length;
+}
+
+/**
+ * The source offset in [from, to) of the shown text's `count`th character: where it starts ("start") or where the one
+ * before it ends ("end"). Whitespace aside, the source view shows the text as written, with entities decoded.
+ */
+function sourceTextOffset(from, to, count, side, literal) {
+  const xml = state.markupXml;
+  const entity = /&(?:#(\d+)|#x([\da-f]+)|\w+);/iy;
+  let seen = 0;
+  let lastEnd = from;
+  let cdataEnd = -1;
+  let i = from;
+  while (i < to) {
+    if (i >= cdataEnd && xml.startsWith("<!--", i)) {
+      i = xml.indexOf("-->", i) + 3;
+      continue;
+    }
+    if (i >= cdataEnd && xml.startsWith("<![CDATA[", i)) cdataEnd = xml.indexOf("]]>", i) + 3;
+    let shown = xml[i];
+    let length = 1;
+    if (i >= cdataEnd) {
+      entity.lastIndex = i;
+      const m = entity.exec(xml);
+      if (m) {
+        const code = m[1] ? Number(m[1]) : m[2] ? parseInt(m[2], 16) : null;
+        shown = code === null ? "x" : String.fromCodePoint(code);
+        length = m[0].length;
+      }
+    }
+    const counted = countedMarkupChars(shown, literal);
+    if (counted) {
+      if (side === "start" && seen >= count) return i;
+      seen += counted;
+      lastEnd = i + length;
+      if (side === "end" && seen >= count) return lastEnd;
+    }
+    i += length;
+  }
+  return side === "start" ? to : lastEnd;
+}
+
+/** The source offset of a selection's end in a line: `point` when it is inside the line's text, else the line's edge. */
+function sourceOffsetInLine(line, point, side) {
+  const { node, part } = markupLineSources.get(line);
+  const span = markupSourceSpans().get(node);
+  const body = line.querySelector(".markup-line-body");
+  const isText = isTextLikeNode(node);
+  const hasText = isText || (part === "whole" && Boolean(body.querySelector(MARKUP_TEXT_SPANS)));
+  if (!hasText) {
+    if (part === "open") return side === "start" ? span.start : line.parentElement.classList.contains("markup-collapsed") ? span.end : span.openEnd;
+    if (part === "close") return side === "start" ? span.closeStart : span.end;
+    return side === "start" ? span.start : span.end;
+  }
+
+  const [from, to] = isText ? [span.start, span.end] : [span.openEnd, span.closeStart];
+  const literal = localName(isText ? node.parentElement : node) === "content";
+  // Before the first or after the last character, an element has its tags to go, a text node its whitespace to leave out.
+  const edge = (atStart) => {
+    if (!isText) return atStart ? (side === "start" ? span.start : span.openEnd) : side === "start" ? span.closeStart : span.end;
+    return sourceTextOffset(from, to, atStart ? 0 : Infinity, side, literal);
+  };
+  if (!point) return edge(side === "start");
+
+  const before = document.createRange();
+  before.setStart(body, 0);
+  before.setEnd(point.container, point.offset);
+  const shown = [...before.cloneContents().querySelectorAll(MARKUP_TEXT_SPANS)].map((s) => s.textContent).join("");
+  const anchor = point.container.nodeType === Node.ELEMENT_NODE ? point.container : point.container.parentElement;
+  if (!anchor.closest(MARKUP_TEXT_SPANS)) return edge(!shown);
+  return sourceTextOffset(from, to, countedMarkupChars(shown, literal), side, literal);
+}
+
+/** The part of the source that the selection in the source view spans: null if it has no source (only ghost tags, say). */
+function markupSourceForSelection(root, range) {
+  const spans = markupSourceSpans();
+  const lines = [...root.querySelectorAll(".markup-line")].filter((line) => {
+    if (!spans.has(markupLineSources.get(line)?.node) || !range.intersectsNode(line)) return false;
+    const inLine = document.createRange();
+    inLine.selectNodeContents(line.querySelector(".markup-line-body"));
+    if (range.compareBoundaryPoints(Range.START_TO_START, inLine) > 0) inLine.setStart(range.startContainer, range.startOffset);
+    if (range.compareBoundaryPoints(Range.END_TO_END, inLine) < 0) inLine.setEnd(range.endContainer, range.endOffset);
+    return inLine.toString().trim() !== "";
+  });
+  if (!lines.length) return null;
+  const pointIn = (line, container, offset) => (line.querySelector(".markup-line-body").contains(container) ? { container, offset } : null);
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  const start = sourceOffsetInLine(first, pointIn(first, range.startContainer, range.startOffset), "start");
+  const end = sourceOffsetInLine(last, pointIn(last, range.endContainer, range.endOffset), "end");
+  return start < end ? state.markupXml.slice(start, end) : null;
+}
+
+/** Copying from the source view gives the source the selection spans. With an alternative swapped in, the document no longer matches the source. */
+function onMarkupCopy(e) {
+  const root = els.markupPane?.querySelector(".markup");
+  const selection = window.getSelection();
+  if (!root || !selection?.rangeCount || selection.isCollapsed || state?.altInactive?.size) return;
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return;
+  const source = markupSourceForSelection(root, range);
+  if (source === null) return;
+  e.clipboardData.setData("text/plain", source);
+  e.preventDefault();
 }
 
 function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
@@ -9489,6 +9636,7 @@ function buildMarkupOtslContainer(el, depth, elementIds) {
       const tag = localName(node);
       if (tag === "nl") {
         appendMarkupSelfClosingTag(children, childDepth, "nl", []);
+        markGlueLine(children.lastElementChild, node, "whole");
         i += 1;
         continue;
       }
@@ -10896,6 +11044,8 @@ function wireActiveTranscriptRow(media, entries, scrollBox) {
   media.addEventListener("timeupdate", update);
   media.addEventListener("seeked", update);
 }
+
+els.markupPane?.addEventListener("copy", onMarkupCopy);
 
 let markupUserScrolledAt = 0;
 {
