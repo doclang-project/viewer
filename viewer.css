@@ -1847,8 +1847,49 @@ body.pane-drag-active .pane-splitter {
   height: 100vh;
 }
 
+/* Neutral, as in code editors: blue is for the selected element. */
 .markup-editor-current-line {
-  background: var(--markup-selected);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Stronger than a selection elsewhere: it has to stand out from the tint of the line, which can be the whole view. */
+.markup-editor-element {
+  background: color-mix(in srgb, var(--accent) 17%, transparent);
+}
+
+.markup-editor-flash .markup-editor-element {
+  animation: markup-editor-flash 1s ease-out;
+}
+
+@keyframes markup-editor-flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 80%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markup-editor-flash .markup-editor-element {
+    animation: none;
+  }
+}
+
+/* A textarea hides its caret without focus: this one stays, and does not blink. */
+.markup-editor-caret {
+  position: relative;
+}
+
+.markup-editor-caret::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 1.5em;
+  background: var(--text);
+}
+
+.markup-editor-hide-caret .markup-editor-caret::before {
+  display: none;
 }
 
 .markup-editor-no-current-line {
@@ -1856,6 +1897,10 @@ body.pane-drag-active .pane-splitter {
 }
 
 .markup-editor:focus {
+  outline: none;
+}
+
+#markup-pane:focus {
   outline: none;
 }
 
@@ -3958,4 +4003,18 @@ li.has-marker > .rendered-li-body {
   color: var(--muted);
   border-top: 1px solid var(--border);
   background: var(--panel);
+}
+
+/* Takes the room it has and no more, so that the pane does not move while typing. */
+.edit-draft-problem {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--status-error);
+}
+
+.edit-draft-problem[hidden] {
+  display: none;
 }

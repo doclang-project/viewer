@@ -684,6 +684,7 @@ const els = {
   redoBtn: document.getElementById("btn-redo"),
   inspector: document.getElementById("inspector"),
   editError: document.getElementById("edit-error"),
+  draftProblem: document.getElementById("edit-draft-problem"),
   validationPanel: document.getElementById("validation-panel"),
   validationSummary: document.getElementById("validation-summary"),
   validationIssues: document.getElementById("validation-issues"),
@@ -3405,6 +3406,20 @@ function setDocLabel(label) {
 
 /** @type {HTMLTextAreaElement | null} */
 let markupEditor = null;
+const LIVE_EDIT_DELAY_MS = 150;
+const LIVE_VALIDATION_DELAY_MS = 500;
+const DRAFT_PROBLEM_DELAY_MS = 1000;
+const RAW_UNDO_GROUP_MS = 1000;
+const EDITOR_CARET_SYNC_MS = 120;
+const EDITOR_FLASH_MS = 1000;
+let liveEditTimer = null;
+let liveEditRun = null;
+let liveValidationTimer;
+let draftProblemTimer;
+let editorCaretTimer;
+let editorFlashTimer;
+/** Until when what is typed in the source editor belongs to the undo step already open. */
+let rawUndoGroupUntil = 0;
 
 function editableEntry() {
   if (!editingOn) return null; // every editing control goes through here
@@ -3455,7 +3470,7 @@ function syncHistoryButtons() {
 }
 
 function hasUnappliedEditorText() {
-  return !!markupEditor && markupEditor.value !== state?.markupXml;
+  return !!markupEditor && markupEditor.value !== editorTextOf(state?.markupXml ?? "");
 }
 
 function setEditingOn(on) {
@@ -3482,7 +3497,7 @@ function setEditingOn(on) {
 }
 
 function initEditingToggle() {
-  document.addEventListener("selectionchange", syncEditorCurrentLine);
+  document.addEventListener("selectionchange", onEditorSelectionChange);
   if (els.editingToggle) els.editingToggle.checked = editingOn;
   els.editingToggle?.addEventListener("change", () => {
     setEditingOn(els.editingToggle.checked);
@@ -3503,13 +3518,21 @@ function startEditing() {
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       applyEdit();
+    } else if (e.key.toLowerCase() === "z" && (e.metaKey || e.ctrlKey)) {
+      // One history: the same steps as the buttons, not the textarea's own.
+      e.preventDefault();
+      if (e.shiftKey) redoLastEdit();
+      else undoLastEdit();
     }
   });
   markupEditor.addEventListener("input", () => {
     syncEditorCurrentLine();
     syncHistoryButtons();
+    scheduleLiveEdit();
   });
   markupEditor.addEventListener("scroll", syncEditorCurrentLine);
+  markupEditor.addEventListener("focus", syncEditorCurrentLine);
+  markupEditor.addEventListener("blur", syncEditorCurrentLine);
   const backdrop = document.createElement("div");
   backdrop.className = "markup-editor-backdrop";
   backdrop.setAttribute("aria-hidden", "true");
@@ -3525,11 +3548,49 @@ function startEditing() {
   syncEditorCurrentLine();
   syncEditUi();
   syncSelectionEditUi(); // source editing and visual editing are exclusive: hide the inspector and handles
+  rawUndoGroupUntil = 0;
+  revealSelectionInEditor();
+}
+
+/** Where the selected element is in the editor's text, if that is known: not while the text differs from the document. */
+function editorSelectionSpan() {
+  if (!selectedElementId || !state || hasUnappliedEditorText() || state.altInactive?.size) return null;
+  const el = state.idToElement?.get(selectedElementId);
+  const span = el && markupSourceSpans().get(el);
+  return span ? { start: editorOffsetOfSource(span.start), end: editorOffsetOfSource(span.end) } : null;
+}
+
+/** Appends [from, to) of the editor's text to `parent`, marking what is in `element`, and the caret if it is at `caret`. */
+function appendEditorBackdropText(parent, value, from, to, element, caret = -1) {
+  const inside = (at) => Math.min(Math.max(at, from), to);
+  const cuts = [from, to];
+  if (element) cuts.push(inside(element.start), inside(element.end));
+  if (caret >= 0) cuts.push(caret);
+  const points = [...new Set(cuts)].sort((x, y) => x - y);
+  const addCaret = (at) => {
+    if (at !== caret) return;
+    const mark = document.createElement("span");
+    mark.className = "markup-editor-caret";
+    parent.append(mark);
+  };
+  for (let i = 0; i < points.length - 1; i += 1) {
+    addCaret(points[i]);
+    const text = value.slice(points[i], points[i + 1]);
+    if (element && points[i] >= element.start && points[i + 1] <= element.end) {
+      const mark = document.createElement("span");
+      mark.className = "markup-editor-element";
+      mark.textContent = text;
+      parent.append(mark);
+    } else {
+      parent.append(text);
+    }
+  }
+  addCaret(points[points.length - 1]);
 }
 
 /**
- * Highlights the line the caret is on, over all the screen lines it wraps to: a textarea cannot, so a copy of its text
- * behind it, wrapped the same way, holds the highlight.
+ * What a textarea cannot show itself goes in a copy of its text behind it, wrapped the same way: the line of the caret
+ * over all its screen lines, the selected element, and the caret while the editor has no focus.
  */
 function syncEditorCurrentLine() {
   const backdrop = markupEditor?.previousElementSibling;
@@ -3538,89 +3599,308 @@ function syncEditorCurrentLine() {
   const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
   const newline = value.indexOf("\n", selectionStart);
   const lineEnd = newline < 0 ? value.length : newline;
+  const element = editorSelectionSpan();
   const shown = backdrop.shown;
-  if (shown?.value !== value || shown.lineStart !== lineStart || shown.lineEnd !== lineEnd) {
-    backdrop.shown = { value, lineStart, lineEnd };
+  if (
+    shown?.value !== value || shown.caret !== selectionStart ||
+    shown.elementStart !== element?.start || shown.elementEnd !== element?.end
+  ) {
+    backdrop.shown = { value, caret: selectionStart, elementStart: element?.start, elementEnd: element?.end };
     const current = document.createElement("div");
     current.className = "markup-editor-current-line";
-    current.textContent = value.slice(lineStart, lineEnd) || "​"; // an empty line still has its height
-    // Unlike in a textarea, a final newline would not start another line.
-    const rest = newline < 0 ? "" : `${value.slice(newline + 1)}​`;
-    backdrop.replaceChildren(value.slice(0, lineStart), current, rest);
+    appendEditorBackdropText(current, value, lineStart, lineEnd, element, selectionStart);
+    if (lineStart === lineEnd) current.append("\u200b"); // an empty line still has its height
+    backdrop.replaceChildren();
+    appendEditorBackdropText(backdrop, value, 0, lineStart, element);
+    backdrop.append(current);
+    if (newline >= 0) {
+      appendEditorBackdropText(backdrop, value, newline + 1, value.length, element);
+      backdrop.append("\u200b"); // unlike in a textarea, a final newline would not start another line
+    }
   }
-  backdrop.firstElementChild.classList.toggle("markup-editor-no-current-line", selectionStart !== selectionEnd);
+  backdrop.querySelector(".markup-editor-current-line").classList.toggle("markup-editor-no-current-line", selectionStart !== selectionEnd);
+  backdrop.classList.toggle("markup-editor-hide-caret", selectionStart !== selectionEnd || document.activeElement === markupEditor);
   backdrop.style.width = `${markupEditor.clientWidth}px`;
   backdrop.scrollTop = markupEditor.scrollTop;
 }
 
+/** Draws the eye to the selected element when it got there from elsewhere. */
+function flashEditorSelection() {
+  const backdrop = markupEditor?.previousElementSibling;
+  if (!backdrop) return;
+  backdrop.classList.remove("markup-editor-flash");
+  void backdrop.offsetWidth; // restarts the animation
+  backdrop.classList.add("markup-editor-flash");
+  clearTimeout(editorFlashTimer);
+  editorFlashTimer = setTimeout(() => backdrop.classList.remove("markup-editor-flash"), EDITOR_FLASH_MS);
+}
+
+/** The editor's text for a source text: a textarea reads every line break as a newline. */
+function editorTextOf(xml) {
+  return xml.includes("\r") ? xml.replace(/\r\n?/g, "\n") : xml;
+}
+
+function editorOffsetOfSource(offset) {
+  const xml = state.markupXml;
+  return xml.includes("\r") ? editorTextOf(xml.slice(0, offset)).length : offset;
+}
+
+function sourceOffsetOfEditor(offset) {
+  const xml = state.markupXml;
+  if (!xml.includes("\r")) return offset;
+  let source = 0;
+  for (let i = 0; i < offset && source < xml.length; i += 1) source += xml.startsWith("\r\n", source) ? 2 : 1;
+  return source;
+}
+
+/** The innermost element at a source offset; right after an element's end, that element rather than what holds it. */
+function elementAtSourceOffset(offset) {
+  const spans = markupSourceSpans();
+  const innermostAt = (at) => {
+    let found = null;
+    let foundLength = Infinity;
+    for (const [node, span] of spans) {
+      if (node.nodeType !== Node.ELEMENT_NODE || at < span.start || at >= span.end) continue;
+      if (span.end - span.start < foundLength) {
+        found = node;
+        foundLength = span.end - span.start;
+      }
+    }
+    return found;
+  };
+  const inside = innermostAt(offset);
+  const before = offset > 0 ? innermostAt(offset - 1) : null;
+  return before && before !== inside && spans.get(before).end === offset && (!inside || inside.contains(before)) ? before : inside;
+}
+
+/** Brings the caret into view; in a long line, as in minimized source, that is not the same as bringing the line into view. */
+function scrollEditorToCaret() {
+  syncEditorCurrentLine();
+  const backdrop = markupEditor?.previousElementSibling;
+  const caret = backdrop?.querySelector(".markup-editor-caret");
+  if (!caret) return;
+  const y = caret.getBoundingClientRect().top - backdrop.getBoundingClientRect().top + backdrop.scrollTop;
+  const view = markupEditor.clientHeight;
+  const top = markupEditor.scrollTop;
+  const lineHeight = parseFloat(getComputedStyle(markupEditor).lineHeight) || 0;
+  if (y < top || y + lineHeight > top + view) {
+    markupEditor.scrollTop = Math.max(0, y - view / 3);
+    syncEditorCurrentLine();
+  }
+}
+
+/** Shows the selected element in the source editor: the caret goes to its start, unless it is in the element already. */
+function revealSelectionInEditor() {
+  if (!markupEditor || !selectedElementId || !state || hasUnappliedEditorText() || state.altInactive?.size) return;
+  const el = state.idToElement?.get(selectedElementId);
+  const span = el && markupSourceSpans().get(el);
+  if (!span) return;
+  const atCaret = elementAtSourceOffset(sourceOffsetOfEditor(markupEditor.selectionStart));
+  const fromElsewhere = !atCaret || !el.contains(atCaret) || document.activeElement !== markupEditor;
+  if (!atCaret || !el.contains(atCaret)) {
+    const offset = editorOffsetOfSource(span.start);
+    markupEditor.setSelectionRange(offset, offset);
+  }
+  scrollEditorToCaret();
+  if (fromElsewhere) flashEditorSelection();
+}
+
+/** Selects the element at the editor's caret in the other views, going to its page if needed. */
+function selectElementAtEditorCaret() {
+  if (!markupEditor || !state || hasUnappliedEditorText() || state.altInactive?.size) return;
+  const el = elementAtSourceOffset(sourceOffsetOfEditor(markupEditor.selectionStart));
+  const target = el && resolveSelectionElement(el);
+  if (!target) return;
+  let onPage = target;
+  while (onPage && !state.elementPageByEl.has(onPage)) onPage = onPage.parentElement;
+  const page = onPage && state.elementPageByEl.get(onPage);
+  if (!page) return;
+  if (page !== state.currentPage) {
+    state.pendingSelectElement = target;
+    goToPage(page);
+    return;
+  }
+  const id = findElementIdOnPage(target);
+  if (id && id !== selectedElementId) {
+    state.pendingSelectElement = null;
+    selectElement(id);
+  }
+}
+
+function onEditorSelectionChange() {
+  syncEditorCurrentLine();
+  if (!markupEditor || document.activeElement !== markupEditor) return;
+  clearTimeout(editorCaretTimer);
+  editorCaretTimer = setTimeout(selectElementAtEditorCaret, EDITOR_CARET_SYNC_MS);
+}
+
+/** Puts `xml` in the editor, with the caret where it first differs from what was there. */
+function setEditorText(xml) {
+  const text = editorTextOf(xml);
+  const old = markupEditor.value;
+  if (text === old) return;
+  let at = 0;
+  while (at < text.length && text[at] === old[at]) at += 1;
+  markupEditor.value = text;
+  markupEditor.setSelectionRange(at, at);
+  syncEditorCurrentLine();
+  scrollEditorToCaret();
+}
+
+/** Why `text` cannot be a document, if so. */
+function markupTextProblem(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) {
+    const detail = parseError.querySelector("div")?.textContent ?? parseError.textContent;
+    return `Not well-formed XML: ${detail.trim().split("\n")[0]}`;
+  }
+  return localName(doc.documentElement) === "doclang" ? null : "The root element must be <doclang>.";
+}
+
+/** Says, without moving anything in the pane, that the text in the editor is not reflected in the views. */
+function setDraftProblem(message) {
+  clearTimeout(draftProblemTimer);
+  if (!els.draftProblem) return;
+  els.draftProblem.textContent = message ?? "";
+  els.draftProblem.title = message ?? "";
+  els.draftProblem.hidden = !message;
+}
+
+function scheduleLiveEdit() {
+  clearTimeout(liveEditTimer);
+  liveEditTimer = setTimeout(runLiveEdit, LIVE_EDIT_DELAY_MS);
+}
+
+function runLiveEdit() {
+  liveEditTimer = null;
+  const run = (liveEditRun ?? Promise.resolve()).then(applyLiveEdit).finally(() => {
+    if (liveEditRun === run) liveEditRun = null;
+  });
+  liveEditRun = run;
+}
+
+/** Brings the document up to date with the editor, as far as its text allows. */
+async function flushLiveEdit() {
+  if (liveEditTimer !== null) {
+    clearTimeout(liveEditTimer);
+    runLiveEdit();
+  }
+  await liveEditRun;
+}
+
+function cancelLiveEdit() {
+  clearTimeout(liveEditTimer);
+  liveEditTimer = null;
+  clearTimeout(editorCaretTimer);
+  setDraftProblem(null);
+}
+
+/** What is typed reaches the views once it is well-formed. A pause starts a new undo step. */
+async function applyLiveEdit() {
+  if (!markupEditor) return;
+  if (!hasUnappliedEditorText()) return setDraftProblem(null);
+  const text = markupEditor.value;
+  const problem = markupTextProblem(text);
+  if (problem) {
+    // Most of typing a tag is not well-formed: only say so once the typing has stopped there.
+    clearTimeout(draftProblemTimer);
+    draftProblemTimer = setTimeout(() => setDraftProblem(problem), DRAFT_PROBLEM_DELAY_MS);
+    return;
+  }
+  setDraftProblem(null);
+  const now = Date.now();
+  const record = now >= rawUndoGroupUntil;
+  rawUndoGroupUntil = now + RAW_UNDO_GROUP_MS;
+  if (await commitMarkupText(text, { record })) setEditError(null);
+}
+
+/** Rebuilds the views from `text` around the open source editor, reusing the page images and leaving the scroll where it is. */
+function rebuildDocumentInPlace(entry, text) {
+  const prev = state;
+  const next = buildDocumentState(text, prev.pageImages, entry.label, prev.assetUrls, { markupOnly: prev.markupOnly, altChoices: entry.altChoices });
+  if (!next) return;
+  for (const m of prev.trackMedia?.values() ?? []) {
+    if (m.vttUrl?.startsWith("blob:")) URL.revokeObjectURL(m.vttUrl);
+  }
+  next.currentPage = Math.min(prev.currentPage, next.pageCount);
+  stopTokenReplay();
+  tokenLens.cursor = -Infinity;
+  tokenLens.effects = false;
+  const readingScroll = els.renderedPane?.scrollTop ?? 0;
+  const oldPort = pageViewScrollPane();
+  const pageScroll = oldPort ? [oldPort.scrollLeft, oldPort.scrollTop] : null;
+  state = next;
+  entry.snapshot = next;
+  setPageViewVisible(next.hasPageView);
+  syncReadingLayoutButtons();
+  renderPage(next.currentPage);
+  if (els.renderedPane) els.renderedPane.scrollTop = readingScroll;
+  const port = pageViewScrollPane();
+  if (port && pageScroll) [port.scrollLeft, port.scrollTop] = pageScroll;
+  syncEditUi();
+  selectElementAtEditorCaret();
+  clearTimeout(liveValidationTimer);
+  liveValidationTimer = setTimeout(() => validateActiveDocument({ quiet: true }), LIVE_VALIDATION_DELAY_MS);
+}
+
 function stopEditing({ render }) {
   if (!markupEditor) return;
+  cancelLiveEdit();
+  const keep = selectedElementId;
   markupEditor = null;
   els.markupPane?.classList.remove("editing");
-  if (render && state) renderPage(state.currentPage);
+  if (render && state) {
+    renderPage(state.currentPage);
+    if (keep && state.idToElement?.has(keep)) selectElement(keep);
+  }
   syncEditUi();
 }
 
 /** True unless the user keeps unapplied editor text they would otherwise lose. */
 function confirmDiscardEditor() {
-  if (!markupEditor || !state || markupEditor.value === state.markupXml) return true;
+  if (!hasUnappliedEditorText()) return true;
   return confirm("Discard the unapplied edits in the editor?");
 }
 
-/** Takes the editor out while the document is rebuilt (switchToFile must not prompt about it); returns what `reopenEditor` needs. */
+/** Takes the editor out while the document is reloaded (switchToFile must not prompt about it); returns what `reopenEditor` needs. */
 function parkEditor() {
   if (!markupEditor) return null;
-  const { value, selectionStart, selectionEnd, scrollTop } = markupEditor;
+  cancelLiveEdit();
+  const { selectionStart, selectionEnd, scrollTop } = markupEditor;
   markupEditor = null;
   els.markupPane?.classList.remove("editing");
-  return { value, selectionStart, selectionEnd, scrollTop };
+  return { selectionStart, selectionEnd, scrollTop };
 }
 
-/** Brings a parked editor back where it was, on the document's text or on `text`. */
-function reopenEditor(parked, text) {
+/** Brings a parked editor back where it was. */
+function reopenEditor(parked) {
   if (!parked) return;
   startEditing();
-  if (text != null) markupEditor.value = text;
   markupEditor.setSelectionRange(parked.selectionStart, parked.selectionEnd);
   markupEditor.scrollTop = parked.scrollTop;
   syncEditorCurrentLine();
-  syncHistoryButtons();
 }
 
 /**
- * Re-parses the editor text and, when it is well-formed, rebuilds every derived view from it.
- * @param {{ stay?: boolean }} [opts] stay: keep the editor open, for an action that goes on from the applied text
+ * Makes the editor's text the document's, if it can be one.
+ * @param {{ stay?: boolean }} [opts] stay: keep the editor open, for an action that goes on from the text
  * @returns {Promise<boolean>} whether the editor's text is now the document's
  */
 async function applyEdit({ stay = false } = {}) {
-  const entry = editableEntry();
-  if (!markupEditor || !entry) return false;
-  const text = markupEditor.value;
-  if (text === state.markupXml) {
-    setEditError(null);
-    if (!stay) stopEditing({ render: true });
-    return true;
-  }
-
-  const doc = new DOMParser().parseFromString(text, "application/xml");
-  const parseError = doc.querySelector("parsererror");
-  if (parseError) {
-    setEditError(`Not well-formed XML: ${parseError.textContent.trim().split("\n")[0]}`);
-    return false;
-  }
-  if (localName(doc.documentElement) !== "doclang") {
-    setEditError("The root element must be <doclang>.");
-    return false;
-  }
-
-  const parked = parkEditor();
-  const ok = await commitMarkupText(text);
-  if (!ok) {
-    reopenEditor(parked, text);
-    return false;
+  if (!markupEditor || !editableEntry()) return false;
+  await flushLiveEdit();
+  if (!markupEditor) return false;
+  if (hasUnappliedEditorText()) {
+    const problem = markupTextProblem(markupEditor.value);
+    if (problem) {
+      setEditError(problem);
+      return false;
+    }
+    if (!(await commitMarkupText(markupEditor.value))) return false;
   }
   setEditError(null);
-  if (stay) reopenEditor(parked);
+  if (!stay) stopEditing({ render: true });
   return true;
 }
 
@@ -3652,13 +3932,14 @@ async function commitMarkupText(text, { record = true, reselect = null } = {}) {
   // Getting back to the saved text, by undo or redo say, leaves nothing to save.
   entry.dirty = text !== entry.savedText;
   if (!entry.dirty) entry.savedSource = null;
-  entry.validation = null;
+  if (!markupEditor) entry.validation = null; // with the editor open, the last result stays until the next one
   const facet = selectedFacet; // renderPage clears the selection: keep the level the user was editing
   if (record) {
     (entry.undoStack ??= []).push(previousText);
     entry.redoStack = [];
   }
-  await switchToFile(activeFileIndex);
+  if (markupEditor) rebuildDocumentInPlace(entry, text);
+  else await switchToFile(activeFileIndex);
   if (reselect && state?.idToElement?.has(reselect)) selectElement(reselect, facet);
   return true;
 }
@@ -3678,6 +3959,7 @@ function downloadBlob(blob, name) {
 async function saveActiveFile() {
   await flushPendingEdit();
   if (markupEditor && !(await applyEdit({ stay: true }))) return;
+  rawUndoGroupUntil = 0;
   const entry = editableEntry();
   if (!entry?.dirty) return;
   const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
@@ -3711,12 +3993,13 @@ async function saveActiveFile() {
 /** Drops every change, also any text not applied from the source editor, and goes back to the last saved (or opened) bytes. */
 async function revertActiveFile() {
   await flushPendingEdit();
+  await flushLiveEdit();
   const entry = editableEntry();
   if (!entry?.dirty || !entry.savedSource) {
     if (!hasUnappliedEditorText() || !confirmDiscardEditor()) return;
-    markupEditor.value = state.markupXml;
+    setEditorText(state.markupXml);
+    setDraftProblem(null);
     setEditError(null);
-    syncEditorCurrentLine();
     syncHistoryButtons();
     return;
   }
@@ -4053,14 +4336,29 @@ function setElementLocations(el, [x0, y0, x1, y1]) {
 /** Moves the document one step along the undo (`from`) or redo stack, pushing the current text onto the other. */
 async function stepHistory(from, to) {
   await flushPendingEdit();
-  if (markupEditor && !(await applyEdit({ stay: true }))) return;
+  if (markupEditor) {
+    await flushLiveEdit();
+    rawUndoGroupUntil = 0;
+    if (hasUnappliedEditorText()) {
+      // Text that is not well-formed is no step of the history: undoing goes back to the last that was.
+      if (from === "undoStack") {
+        setEditorText(state.markupXml);
+        setDraftProblem(null);
+        setEditError(null);
+        syncHistoryButtons();
+      }
+      return;
+    }
+  }
   const entry = editableEntry();
   const target = entry?.[from]?.pop();
   if (target == null) return;
   const current = state.markupXml;
-  const parked = parkEditor();
-  const ok = await commitMarkupText(target, { record: false, reselect: selectedElementId });
-  reopenEditor(parked);
+  const ok = await commitMarkupText(target, { record: false, reselect: markupEditor ? null : selectedElementId });
+  if (ok && markupEditor) {
+    setEditorText(target);
+    selectElementAtEditorCaret();
+  }
   if (!ok) {
     entry[from].push(target);
     return;
@@ -5784,13 +6082,20 @@ function archiveIssues(docState) {
   return issues;
 }
 
-async function validateActiveDocument() {
+/** @param {{ quiet?: boolean }} [opts] quiet: the last result stays up until this one is in */
+async function validateActiveDocument({ quiet = false } = {}) {
   const entry = fileCatalog[activeFileIndex];
   if (!entry || !state) return;
-  entry.validation = { status: "running" };
-  renderValidationUi(entry);
+  if (quiet) {
+    entry.validationPanelOpen ??= !els.validationPanel?.hidden; // the badge tells: the panel must not open while typing
+  } else {
+    entry.validation = { status: "running" };
+    renderValidationUi(entry);
+  }
   const fromArchive = archiveIssues(state);
-  const result = await requestValidation(state.markupXml);
+  const xml = state.markupXml;
+  const result = await requestValidation(xml);
+  if (fileCatalog[activeFileIndex] === entry && state?.markupXml !== xml) return; // the text has moved on: a later run reports
   const issues = result.ok ? [...result.issues, ...fromArchive] : [];
   entry.validation = result.ok
     ? { status: issues.length ? "invalid" : "valid", issues, schemaVersion: result.schemaVersion, versionAssumed: !!result.versionAssumed }
@@ -6860,7 +7165,8 @@ function renderPage(pageNum) {
   state.currentBoxes = boxes;
 
   if (markupEditor) {
-    // The editor holds the whole document and stays put while paging.
+    // The editor holds the whole document and stays put while paging; the selection is gone.
+    syncEditorCurrentLine();
   } else if (segmentHasMarkup(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
     syncMarkupTokens();
@@ -8860,12 +9166,14 @@ function selectElement(elementId, facet = "text") {
   selectedElementId = elementId;
   selectedFacet = facet;
   applySelection();
+  revealSelectionInEditor();
   if (!tokenLens.syncing) seekTraceToElement(elementId);
 }
 
 function clearSelection() {
   selectedElementId = null;
   applySelection();
+  syncEditorCurrentLine();
 }
 
 function isLayoutLayerHidden(layer) {
@@ -11118,6 +11426,19 @@ function wireActiveTranscriptRow(media, entries, scrollBox) {
 }
 
 els.markupPane?.addEventListener("copy", onMarkupCopy);
+
+// A click on the bar of the pane goes to its content, showing where the caret or the selection is.
+document.querySelector(".pane-markup-header")?.addEventListener("click", (e) => {
+  if (e.target.closest?.("button, input, select, label, a")) return;
+  if (markupEditor) {
+    markupEditor.focus({ preventScroll: true });
+    syncEditorCurrentLine();
+    scrollEditorToCaret();
+    return;
+  }
+  els.markupPane?.focus({ preventScroll: true });
+  if (selectedElementId) findMarkupElementForSelection(selectedElementId)?.scrollIntoView({ block: "nearest" });
+});
 
 let markupUserScrolledAt = 0;
 {

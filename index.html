@@ -698,7 +698,7 @@
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
           <div class="view-toggle" id="markup-view-toggle" role="group" aria-label="DocLang view" hidden>
-            <button type="button" class="view-toggle-btn" id="btn-view-visual" aria-pressed="true" title="Edit visually; leaving Raw applies its text (Ctrl/Cmd+Enter), Esc drops it">Visual</button>
+            <button type="button" class="view-toggle-btn" id="btn-view-visual" aria-pressed="true" title="Edit visually (from Raw: Ctrl/Cmd+Enter); Esc also goes back, dropping text that is not well-formed">Visual</button>
             <button type="button" class="view-toggle-btn" id="btn-view-raw" aria-pressed="false" title="Edit the raw DocLang source (E)">Raw</button>
           </div>
             <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
@@ -710,7 +710,7 @@
       </div>
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
       <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
-      <div class="pane-body" id="markup-pane"></div>
+      <div class="pane-body" id="markup-pane" tabindex="-1"></div>
       <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
         <div class="validation-panel-header">
           <span class="validation-panel-summary" id="validation-summary"></span>
@@ -719,6 +719,7 @@
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
       <div class="pane-statusbar">
+        <span class="edit-draft-problem" id="edit-draft-problem" role="status" hidden></span>
         <div class="token-bar" id="token-bar" data-requires="tokens" aria-label="Token stats" hidden>
           <div class="token-nav" id="token-nav">
             <div class="page-nav-btns">
