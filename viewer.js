@@ -670,10 +670,6 @@ const els = {
   overlaysReset: document.getElementById("btn-overlays-reset"),
   validateBtn: document.getElementById("btn-validate"),
   editBtn: document.getElementById("btn-edit"),
-  paneMenuBtn: document.getElementById("btn-pane-menu"),
-  paneMenu: document.getElementById("pane-menu"),
-  editApplyBtn: document.getElementById("btn-edit-apply"),
-  editCancelBtn: document.getElementById("btn-edit-cancel"),
   saveBtn: document.getElementById("btn-save"),
   revertBtn: document.getElementById("btn-revert"),
   pageEditBar: document.getElementById("page-edit-bar"),
@@ -819,32 +815,7 @@ els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
-els.editBtn?.addEventListener("click", () => {
-  setPaneMenuOpen(false);
-  startEditing();
-});
-els.paneMenuBtn?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  setPaneMenuOpen(els.paneMenu?.hidden);
-});
-document.addEventListener("click", (e) => {
-  if (els.paneMenu && !els.paneMenu.hidden && !e.target.closest?.(".pane-menu-wrap")) setPaneMenuOpen(false);
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && els.paneMenu && !els.paneMenu.hidden) {
-    setPaneMenuOpen(false);
-    els.paneMenuBtn?.focus();
-  }
-});
-
-function setPaneMenuOpen(open) {
-  if (!els.paneMenu || !els.paneMenuBtn) return;
-  els.paneMenu.hidden = !open;
-  els.paneMenuBtn.setAttribute("aria-expanded", String(!!open));
-  if (open) els.editBtn?.focus();
-}
-els.editApplyBtn?.addEventListener("click", applyEdit);
-els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
+els.editBtn?.addEventListener("click", () => (markupEditor ? applyEdit() : startEditing()));
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
 els.addParentBtn?.addEventListener("click", () => toggleAddElement("parent"));
@@ -883,7 +854,6 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented || !selectedElementId || markupEditor || drawing) return;
   if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen) return;
-  if (els.paneMenu && !els.paneMenu.hidden) return;
   const active = document.activeElement;
   if (isTypingTarget(active)) {
     active.blur(); // finish typing first; the next Esc deselects
@@ -3456,27 +3426,35 @@ document.addEventListener("keydown", (e) => {
 function syncEditUi() {
   const entry = editableEntry();
   const editing = !!markupEditor;
-  if (els.paneMenuBtn) {
-    els.paneMenuBtn.hidden = !entry || editing;
-    if (els.paneMenuBtn.hidden) setPaneMenuOpen(false);
+  if (els.editBtn) {
+    els.editBtn.hidden = !entry;
+    els.editBtn.setAttribute("aria-pressed", String(editing));
+    els.editBtn.title = editing ? "Apply the source and go back to visual editing (Ctrl/Cmd+Enter); Esc drops the unapplied text" : "Edit the raw DocLang source (E)";
   }
-  if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
-  if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
+  syncHistoryButtons();
   syncAddButtons();
-  // The history/commit buttons keep their place and only toggle enabled, so a click never lands on a moved button.
-  const showHistory = !!entry && !editing;
-  for (const [btn, enabled] of [
-    [els.undoBtn, entry?.undoStack?.length],
-    [els.redoBtn, entry?.redoStack?.length],
-    [els.revertBtn, entry?.dirty || pendingTextEdit],
-    [els.saveBtn, entry?.dirty || pendingTextEdit],
-  ]) {
-    if (!btn) continue;
-    btn.hidden = !showHistory;
-    btn.disabled = !enabled;
-  }
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
   if (!editing) setEditError(null);
+}
+
+/** The history/commit buttons keep their place in both modes and only toggle enabled, so a click never lands on a moved button. */
+function syncHistoryButtons() {
+  const entry = editableEntry();
+  const unapplied = hasUnappliedEditorText();
+  for (const [btn, enabled] of [
+    [els.undoBtn, entry?.undoStack?.length || unapplied],
+    [els.redoBtn, entry?.redoStack?.length && !unapplied], // new text ends the redo history
+    [els.revertBtn, entry?.dirty || pendingTextEdit || unapplied],
+    [els.saveBtn, entry?.dirty || pendingTextEdit || unapplied],
+  ]) {
+    if (!btn) continue;
+    btn.hidden = !entry;
+    btn.disabled = !enabled;
+  }
+}
+
+function hasUnappliedEditorText() {
+  return !!markupEditor && markupEditor.value !== state?.markupXml;
 }
 
 function setEditingOn(on) {
@@ -3526,7 +3504,10 @@ function startEditing() {
       applyEdit();
     }
   });
-  markupEditor.addEventListener("input", syncEditorCurrentLine);
+  markupEditor.addEventListener("input", () => {
+    syncEditorCurrentLine();
+    syncHistoryButtons();
+  });
   markupEditor.addEventListener("scroll", syncEditorCurrentLine);
   const backdrop = document.createElement("div");
   backdrop.className = "markup-editor-backdrop";
@@ -3585,32 +3566,61 @@ function confirmDiscardEditor() {
   return confirm("Discard the unapplied edits in the editor?");
 }
 
-/** Re-parses the editor text and, when it is well-formed, rebuilds every derived view from it. */
-async function applyEdit() {
+/** Takes the editor out while the document is rebuilt (switchToFile must not prompt about it); returns what `reopenEditor` needs. */
+function parkEditor() {
+  if (!markupEditor) return null;
+  const { value, selectionStart, selectionEnd, scrollTop } = markupEditor;
+  markupEditor = null;
+  els.markupPane?.classList.remove("editing");
+  return { value, selectionStart, selectionEnd, scrollTop };
+}
+
+/** Brings a parked editor back where it was, on the document's text or on `text`. */
+function reopenEditor(parked, text) {
+  if (!parked) return;
+  startEditing();
+  if (text != null) markupEditor.value = text;
+  markupEditor.setSelectionRange(parked.selectionStart, parked.selectionEnd);
+  markupEditor.scrollTop = parked.scrollTop;
+  syncEditorCurrentLine();
+  syncHistoryButtons();
+}
+
+/**
+ * Re-parses the editor text and, when it is well-formed, rebuilds every derived view from it.
+ * @param {{ stay?: boolean }} [opts] stay: keep the editor open, for an action that goes on from the applied text
+ * @returns {Promise<boolean>} whether the editor's text is now the document's
+ */
+async function applyEdit({ stay = false } = {}) {
   const entry = editableEntry();
-  if (!markupEditor || !entry) return;
+  if (!markupEditor || !entry) return false;
   const text = markupEditor.value;
-  if (text === state.markupXml) return stopEditing({ render: true });
+  if (text === state.markupXml) {
+    setEditError(null);
+    if (!stay) stopEditing({ render: true });
+    return true;
+  }
 
   const doc = new DOMParser().parseFromString(text, "application/xml");
   const parseError = doc.querySelector("parsererror");
   if (parseError) {
     setEditError(`Not well-formed XML: ${parseError.textContent.trim().split("\n")[0]}`);
-    return;
+    return false;
   }
   if (localName(doc.documentElement) !== "doclang") {
     setEditError("The root element must be <doclang>.");
-    return;
+    return false;
   }
 
-  markupEditor = null; // the discard prompt in switchToFile must not fire for applied text
-  els.markupPane?.classList.remove("editing");
-  if (!(await commitMarkupText(text))) {
-    markupEditor = null;
-    startEditing();
-    markupEditor.value = text;
-    syncEditorCurrentLine();
+  const parked = parkEditor();
+  const ok = await commitMarkupText(text);
+  if (!ok) {
+    reopenEditor(parked, text);
+    return false;
   }
+  setEditError(null);
+  if (stay) reopenEditor(parked);
+  return true;
 }
 
 /**
@@ -3661,6 +3671,7 @@ function downloadBlob(blob, name) {
 /** Writes the applied bytes back through the file's handle, or downloads them when there is none. */
 async function saveActiveFile() {
   await flushPendingEdit();
+  if (markupEditor && !(await applyEdit({ stay: true }))) return;
   const entry = editableEntry();
   if (!entry?.dirty) return;
   const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
@@ -3691,11 +3702,18 @@ async function saveActiveFile() {
   syncEditUi();
 }
 
-/** Drops every applied change and goes back to the last saved (or opened) bytes. */
+/** Drops every change, also any text not applied from the source editor, and goes back to the last saved (or opened) bytes. */
 async function revertActiveFile() {
   await flushPendingEdit();
   const entry = editableEntry();
-  if (!entry?.dirty || !entry.savedSource) return;
+  if (!entry?.dirty || !entry.savedSource) {
+    if (!hasUnappliedEditorText() || !confirmDiscardEditor()) return;
+    markupEditor.value = state.markupXml;
+    setEditError(null);
+    syncEditorCurrentLine();
+    syncHistoryButtons();
+    return;
+  }
   if (!confirm(`Discard the unsaved changes to ${entry.label} and restore its last saved version?`)) return;
   entry.source = entry.savedSource;
   entry.savedSource = null;
@@ -3703,9 +3721,10 @@ async function revertActiveFile() {
   entry.undoStack = [];
   entry.redoStack = [];
   entry.validation = null;
-  markupEditor = null;
-  els.markupPane?.classList.remove("editing");
+  const parked = parkEditor();
+  setEditError(null);
   await switchToFile(activeFileIndex);
+  reopenEditor(parked);
 }
 
 // --- Visual editing: select an element, then change it from the inspector or the page overlay ---
@@ -4028,11 +4047,14 @@ function setElementLocations(el, [x0, y0, x1, y1]) {
 /** Moves the document one step along the undo (`from`) or redo stack, pushing the current text onto the other. */
 async function stepHistory(from, to) {
   await flushPendingEdit();
+  if (markupEditor && !(await applyEdit({ stay: true }))) return;
   const entry = editableEntry();
   const target = entry?.[from]?.pop();
   if (target == null) return;
   const current = state.markupXml;
+  const parked = parkEditor();
   const ok = await commitMarkupText(target, { record: false, reselect: selectedElementId });
+  reopenEditor(parked);
   if (!ok) {
     entry[from].push(target);
     return;

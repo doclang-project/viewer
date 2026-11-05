@@ -3938,53 +3938,6 @@ li.has-marker > .rendered-li-body {
   flex: none;
 }
 
-/* "More actions" menu of the source pane */
-.pane-menu-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.pane-menu {
-  position: absolute;
-  top: calc(100% + 0.25rem);
-  right: 0;
-  z-index: 20;
-  min-width: 9rem;
-  padding: 0.25rem;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.pane-menu[hidden] {
-  display: none;
-}
-
-.pane-menu-item {
-  appearance: none;
-  display: block;
-  width: 100%;
-  padding: 0.35rem 0.6rem;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: left;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: 0.25rem;
-  cursor: pointer;
-}
-
-.pane-menu-item:hover,
-.pane-menu-item:focus-visible {
-  background: var(--markup-hover);
-  outline: none;
-}
-
 /* Status bar at the bottom of the source pane: XSD validation */
 .pane-statusbar {
   flex-shrink: 0;
@@ -3999,7 +3952,7 @@ li.has-marker > .rendered-li-body {
   background: var(--panel);
 }
 
-/* A borderless icon button (the "more" menu), as is idiomatic for a kebab menu */
+/* A borderless icon button (the source editing toggle): quiet, as visual editing is the primary way to edit */
 .pane-action-btn.ghost-btn {
   border-color: transparent;
   background: transparent;
@@ -4008,7 +3961,7 @@ li.has-marker > .rendered-li-body {
 }
 
 .pane-action-btn.ghost-btn:not(:disabled):hover,
-.pane-action-btn.ghost-btn[aria-expanded="true"] {
+.pane-action-btn.ghost-btn[aria-pressed="true"] {
   background: var(--markup-hover);
   border-color: transparent;
   color: var(--text);
