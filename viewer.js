@@ -10198,11 +10198,9 @@ function findLastTextNode(node) {
 function trimParentTrailingForFragmentJoin(parent) {
   const lastText = findLastTextNode(parent);
   if (!lastText) return;
-  // Preserved <content> text keeps its trailing whitespace (and any hyphen) across the join.
+  // Preserved <content> text keeps its trailing whitespace across the join.
   if (lastText.parentElement?.closest(".rendered-content")) return;
-  let value = lastText.textContent ?? "";
-  value = value.replace(/\s+$/u, "");
-  if (value.endsWith("-")) value = value.slice(0, -1);
+  const value = (lastText.textContent ?? "").replace(/\s+$/u, "");
   if (!value) {
     lastText.parentNode?.removeChild(lastText);
     trimParentTrailingForFragmentJoin(parent);
