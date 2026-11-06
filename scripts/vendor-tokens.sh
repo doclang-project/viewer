@@ -5,7 +5,7 @@
 # To update, bump TAG and re-run.
 set -euo pipefail
 
-TAG=v0.8.0
+TAG=v0.9.0
 URL="https://raw.githubusercontent.com/doclang-project/doclang/refs/tags/${TAG}/doclang/tokenization.py"
 
 cd "$(dirname "$0")/../assets"
