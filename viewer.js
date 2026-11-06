@@ -7419,35 +7419,39 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
 }
 
 const RTL_BLOCKS = "p, h1, h2, h3, h4, h5, h6, li, td, th, figcaption";
+/** Inline pieces with no direction of their own, which neither set nor follow the direction of the text around them. */
+const DIRECTION_NEUTRAL = ".rendered-formula-inline, code, .rendered-marker, .rendered-checkbox-wrap, img";
 
 /**
- * <rtl> marks right-to-left text, rendered as an isolated run within its line. A block whose text is all right-to-left
- * reads right-to-left as a whole: aligned to the right, with its list number or bullet on the right.
+ * <rtl> marks right-to-left text, rendered as an isolated run within its line. A block reads in the direction of its
+ * first piece of text that has one, as in Unicode's paragraph direction: right to left when that is an <rtl> run (the
+ * block is aligned to the right, with its list number or bullet on the right), else left to right. Formulas and code
+ * keep their own left-to-right order inside a right-to-left block.
  */
 function applyRtlBlocks(root) {
   for (const block of root.querySelectorAll(RTL_BLOCKS)) {
-    if (rtlOnly(block) === true) block.dir = "rtl";
+    const direction = firstTextDirection(block);
+    if (direction === "rtl") block.dir = "rtl";
+    else if (direction === "ltr" && block.parentElement?.closest("[dir=rtl]")) block.dir = "ltr";
+  }
+  for (const neutral of root.querySelectorAll(".rendered-formula-inline, code")) {
+    if (neutral.closest("[dir=rtl]")) neutral.dir = "ltr";
   }
 }
 
-/** true when all the text in `node` is in <rtl> runs, false when some is not, null when it has none. */
-function rtlOnly(node) {
-  let found = null;
+/** "rtl" or "ltr" after the first piece of text in `node` that has a direction; null when none has. */
+function firstTextDirection(node) {
   for (const child of node.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
-      if (child.textContent.trim()) return false;
+      if (/\p{L}/u.test(child.textContent)) return "ltr"; // text outside <rtl> reads left to right; digits and punctuation do not decide
     } else if (child.nodeType === Node.ELEMENT_NODE) {
-      if (child.matches(".rendered-marker")) continue; // a list item's own marker follows the item's direction
-      if (child.localName === "bdi" && child.dir === "rtl") {
-        found = true;
-        continue;
-      }
-      const inside = rtlOnly(child);
-      if (inside === false) return false;
-      if (inside) found = true;
+      if (child.localName === "bdi" && child.dir === "rtl") return "rtl";
+      if (child.matches(DIRECTION_NEUTRAL)) continue;
+      const inside = firstTextDirection(child);
+      if (inside) return inside;
     }
   }
-  return found;
+  return null;
 }
 
 /** Pages render one at a time, so continue KaTeX's equation numbering from earlier pages. */
