@@ -3533,7 +3533,7 @@ li.has-marker > .rendered-li-body {
   border: 1px solid var(--border);
   padding: 0.35rem 0.5rem;
   vertical-align: top;
-  text-align: left;
+  text-align: start; /* right in a cell of right-to-left text */
 }
 
 .rendered-table th {

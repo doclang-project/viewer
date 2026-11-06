@@ -7391,6 +7391,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
     continueEquationNumbering(canvas, segment);
+    applyRtlBlocks(canvas);
     // The page image (in the separate "Original" pane) may have already
     // finished loading before this canvas existed to receive onImageReady's
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
@@ -7412,8 +7413,41 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     els.renderedPane.classList.remove("reading-mode-paged");
     const view = buildRenderedView(segment, elementIds);
     continueEquationNumbering(view, segment);
+    applyRtlBlocks(view);
     els.renderedPane.appendChild(view);
   }
+}
+
+const RTL_BLOCKS = "p, h1, h2, h3, h4, h5, h6, li, td, th, figcaption";
+
+/**
+ * <rtl> marks right-to-left text, rendered as an isolated run within its line. A block whose text is all right-to-left
+ * reads right-to-left as a whole: aligned to the right, with its list number or bullet on the right.
+ */
+function applyRtlBlocks(root) {
+  for (const block of root.querySelectorAll(RTL_BLOCKS)) {
+    if (rtlOnly(block) === true) block.dir = "rtl";
+  }
+}
+
+/** true when all the text in `node` is in <rtl> runs, false when some is not, null when it has none. */
+function rtlOnly(node) {
+  let found = null;
+  for (const child of node.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      if (child.textContent.trim()) return false;
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      if (child.matches(".rendered-marker")) continue; // a list item's own marker follows the item's direction
+      if (child.localName === "bdi" && child.dir === "rtl") {
+        found = true;
+        continue;
+      }
+      const inside = rtlOnly(child);
+      if (inside === false) return false;
+      if (inside) found = true;
+    }
+  }
+  return found;
 }
 
 /** Pages render one at a time, so continue KaTeX's equation numbering from earlier pages. */
