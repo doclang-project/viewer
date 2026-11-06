@@ -1216,6 +1216,11 @@ kbd {
   font-weight: 600;
 }
 
+.settings-subgroup + .settings-option-primary,
+.settings-option-primary + .settings-option-primary {
+  margin-top: 0.65rem;
+}
+
 .settings-option-heading {
   cursor: default;
 }
@@ -1628,6 +1633,17 @@ body.pane-drag-active .pane-splitter {
   max-width: 100%;
   height: auto;
   display: block;
+}
+
+.paged-canvas figure img.rendered-picture-unavailable {
+  width: 2rem;
+  height: 2rem;
+}
+
+.paged-el-slot:has(.rendered-picture-unavailable) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .paged-canvas figcaption {
@@ -2989,6 +3005,12 @@ body.demo-loading .empty-state-prompt {
   outline: none;
 }
 
+/* A picture is its own affordance: no ring around it, nor around what holds it. */
+.rendered-picture:not(.selected):hover,
+.rendered-el:not(.selected):hover:has(figure img:hover) {
+  outline: none;
+}
+
 .rendered-el.selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -3580,6 +3602,10 @@ li.has-marker > .rendered-li-body {
 
 .rendered-doc:not(.show-reading-background) .rendered-el[data-doclang-layer="background"] {
   display: none;
+}
+
+.paged-canvas:not(.show-reading-bboxes) .paged-el-slot:not(.selected) {
+  outline: none;
 }
 
 .paged-canvas:not(.show-reading-furniture) .paged-el-slot[data-doclang-layer="furniture"] {

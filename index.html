@@ -798,7 +798,7 @@
             aria-expanded="false"
               aria-controls="reading-settings"
             >
-              Layers
+              Overlays
             </button>
         </div>
       </div>
@@ -810,7 +810,7 @@
             class="viewer-settings-scrim"
             id="reading-settings-scrim"
             tabindex="-1"
-            aria-label="Close layers"
+            aria-label="Close overlays"
           ></button>
           <aside
             class="viewer-settings"
@@ -820,11 +820,15 @@
             aria-labelledby="reading-settings-title"
           >
             <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
-              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">×</button>
+              <h2 class="viewer-settings-title" id="reading-settings-title">Overlays</h2>
+              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close overlays">×</button>
             </div>
             <div class="viewer-settings-body">
-              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-settings-title">
+              <label class="settings-option settings-option-primary" title="Select or deselect all layers">
+                <input type="checkbox" id="show-reading-layers" checked>
+                <span>Layers</span>
+              </label>
+              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-label="Layers">
                 <label class="settings-option settings-option-sub" id="show-reading-furniture-label">
                   <input type="checkbox" id="show-reading-furniture" checked>
                   <span>Furniture</span>
@@ -834,6 +838,14 @@
                   <span>Background</span>
                 </label>
               </div>
+              <label class="settings-option settings-option-primary" id="show-reading-bboxes-label" title="Outline the box of each element in the Paged layout">
+                <input type="checkbox" id="show-reading-bboxes" checked>
+                <span>Bounding boxes</span>
+              </label>
+              <label class="settings-option settings-option-primary" id="crop-pictures-label" title="Show a picture that has a bbox but no image of its own as a crop of the page image; otherwise, as a placeholder">
+                <input type="checkbox" id="crop-pictures" checked>
+                <span>Picture crops</span>
+              </label>
             </div>
           </aside>
         </div>

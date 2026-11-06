@@ -122,7 +122,8 @@ const NO_MARKUP = "(No markup to be shown.)";
 const NO_IMAGE = "(No page image available.)";
 const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
-const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
+// "image" icon: Lucide (ISC license, see vendor/lucide/LICENSE).
+const PICTURE_UNAVAILABLE_SRC = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>')}`;
 /** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
 const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
 const MAX_DATA_IMAGE_URI_LENGTH = 2 * 1024 * 1024; // 2 MiB
@@ -447,6 +448,7 @@ const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
 const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
+const READING_OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-reading-overlay-prefs";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -510,6 +512,8 @@ let showKeyValueLinks = false;
 let showReadingOrder = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
+let showReadingBboxes = true;
+let cropPictures = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "pageless";
 /** The DocLang pane's view of choice; it applies to any document that can be edited. @type {"visual" | "raw"} */
@@ -603,6 +607,11 @@ const els = {
   showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
   showReadingBackground: document.getElementById("show-reading-background"),
   showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
+  showReadingLayers: document.getElementById("show-reading-layers"),
+  showReadingBboxes: document.getElementById("show-reading-bboxes"),
+  showReadingBboxesLabel: document.getElementById("show-reading-bboxes-label"),
+  cropPictures: document.getElementById("crop-pictures"),
+  cropPicturesLabel: document.getElementById("crop-pictures-label"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   layoutLayersLabel: document.getElementById("layout-layers-label"),
@@ -931,13 +940,29 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   toggleOverlayCheckbox(els[elsKey]); // the pane checkbox keeps at least one pane visible
 });
+els.showReadingLayers?.addEventListener("change", () => {
+  showReadingFurniture = showReadingBackground = els.showReadingLayers.checked;
+  onReadingLayersChanged();
+});
 els.showReadingFurniture?.addEventListener("change", () => {
   showReadingFurniture = els.showReadingFurniture.checked;
-  syncReadingLayerVisibility();
+  onReadingLayersChanged();
 });
 els.showReadingBackground?.addEventListener("change", () => {
   showReadingBackground = els.showReadingBackground.checked;
-  syncReadingLayerVisibility();
+  onReadingLayersChanged();
+});
+els.showReadingBboxes?.addEventListener("change", () => {
+  showReadingBboxes = els.showReadingBboxes.checked;
+  onReadingLayersChanged();
+});
+els.cropPictures?.addEventListener("change", () => {
+  cropPictures = els.cropPictures.checked;
+  persistReadingOverlayPrefs();
+  if (!state?.currentSegment || !els.renderedPane) return;
+  const scroll = els.renderedPane.scrollTop;
+  renderReadingPane(state.currentSegment, state.elementIds, state.currentBoxes, state.defaultResolution);
+  els.renderedPane.scrollTop = scroll;
 });
 els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMode("pageless"));
 els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
@@ -962,6 +987,8 @@ initEditingToggle();
 loadHotkeysPref();
 loadReadingLayoutMode();
 loadMarkupViewMode();
+loadReadingOverlayPrefs();
+syncReadingLayerCheckboxes();
 syncReadingLayoutButtons();
 syncOverlayPrefControls();
 normalizePaneRatios();
@@ -2056,6 +2083,38 @@ function applyElementLayerAttr(sourceEl, domEl) {
 function syncReadingLayerCheckboxes() {
   if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
   if (els.showReadingBackground) els.showReadingBackground.checked = showReadingBackground;
+  if (els.showReadingLayers) {
+    els.showReadingLayers.checked = showReadingFurniture && showReadingBackground;
+    els.showReadingLayers.indeterminate = showReadingFurniture !== showReadingBackground;
+  }
+  if (els.showReadingBboxes) els.showReadingBboxes.checked = showReadingBboxes;
+  if (els.cropPictures) els.cropPictures.checked = cropPictures;
+}
+
+function onReadingLayersChanged() {
+  syncReadingLayerCheckboxes();
+  syncReadingLayerVisibility();
+  persistReadingOverlayPrefs();
+}
+
+function loadReadingOverlayPrefs() {
+  try {
+    const data = JSON.parse(localStorage.getItem(READING_OVERLAY_PREFS_STORAGE_KEY) ?? "null");
+    if (typeof data?.furniture === "boolean") showReadingFurniture = data.furniture;
+    if (typeof data?.background === "boolean") showReadingBackground = data.background;
+    if (typeof data?.bboxes === "boolean") showReadingBboxes = data.bboxes;
+    if (typeof data?.cropPictures === "boolean") cropPictures = data.cropPictures;
+  } catch {
+    /* ignore invalid stored prefs */
+  }
+}
+
+function persistReadingOverlayPrefs() {
+  try {
+    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, cropPictures }));
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 /** @returns {{ key: string, value: string, isDefault: boolean }[]} */
@@ -6316,6 +6375,7 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
 function applyReadingLayerClasses(root) {
   root.classList.toggle("show-reading-furniture", showReadingFurniture);
   root.classList.toggle("show-reading-background", showReadingBackground);
+  root.classList.toggle("show-reading-bboxes", showReadingBboxes);
 }
 
 function syncReadingLayerVisibility() {
@@ -6359,9 +6419,6 @@ function resetViewer() {
   selectedElementId = null;
   pagePanDrag = null;
   pagePanSuppressClick = false;
-  showReadingFurniture = true;
-  showReadingBackground = true;
-  syncReadingLayerCheckboxes();
   resetPageZoom();
   setDocLabel(null);
   setDocumentOpen(false);
@@ -6717,6 +6774,12 @@ function syncReadingLayoutButtons() {
   if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.disabled = state?.hasPageView === false;
   if (els.readingLayoutPagelessBtn) els.readingLayoutPagelessBtn.setAttribute("aria-pressed", String(!paged));
   if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.setAttribute("aria-pressed", String(paged));
+  // Only the Paged layout draws boxes; the choice is kept for when it is back.
+  if (els.showReadingBboxes) els.showReadingBboxes.disabled = !paged;
+  els.showReadingBboxesLabel?.classList.toggle("settings-option-disabled", !paged);
+  // Crops come out of the page image: without one the option has nothing to do, and is kept for the next document.
+  if (els.cropPictures) els.cropPictures.disabled = state?.hasPageView === false;
+  els.cropPicturesLabel?.classList.toggle("settings-option-disabled", state?.hasPageView === false);
 }
 
 function setReadingLayoutMode(mode) {
@@ -10505,7 +10568,7 @@ function fitSlotContent(slot) {
   };
 
   let lo = 0.02;
-  let hi = 8;
+  let hi = content.querySelector(".rendered-picture-unavailable") ? 1 : 8; // an icon stays its size, whatever the room
   for (let i = 0; i < 16; i++) {
     const mid = (lo + hi) / 2;
     if (fitsAt(mid)) lo = mid;
@@ -11093,7 +11156,7 @@ function cropPageRegionToDataUrl(pageImg, box) {
  * placeholder itself when no page image or bbox is available for this element.
  */
 async function applyPictureCropFallback(img, el, elementIds) {
-  const elementId = el ? elementIds.get(el) : null;
+  const elementId = el && cropPictures ? elementIds.get(el) : null;
   const box = elementId ? state?.currentBoxes?.find((b) => b.elementId === elementId) : null;
   const pageUrl = box ? state?.pageImages?.get(state.currentPage) : null;
   const pageImg = pageUrl ? await loadPageImageElement(pageUrl) : null;
@@ -11101,7 +11164,7 @@ async function applyPictureCropFallback(img, el, elementIds) {
 
   if (!dataUrl) {
     markPictureUnavailable(img);
-    img.src = INVALID_PICTURE_SRC;
+    img.src = PICTURE_UNAVAILABLE_SRC;
     return;
   }
 
