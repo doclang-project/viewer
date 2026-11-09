@@ -1846,9 +1846,15 @@ function initPageWheelNav() {
     { passive: false },
   );
 
-  // Scrolling past the end of the Preview flips the page, as in the Original pane. The DocLang pane does not: its
-  // scroll position is something to work in, and a stray wheel at its top or bottom must not change the page.
-  els.renderedPane?.addEventListener("wheel", (e) => onScrollPaneWheel(e, els.renderedPane), { passive: false });
+  // Scrolling past the end of the Paged Preview flips the page, as in the Original pane. The DocLang pane and the
+  // Pageless Preview do not: they are read or worked in by scrolling, and a stray wheel at the end must not change the page.
+  els.renderedPane?.addEventListener(
+    "wheel",
+    (e) => {
+      if (effectiveReadingLayoutMode() === "paged") onScrollPaneWheel(e, els.renderedPane);
+    },
+    { passive: false },
+  );
 
   els.pagePane.tabIndex = 0;
   els.pagePane.setAttribute("role", "region");
