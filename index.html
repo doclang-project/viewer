@@ -842,10 +842,36 @@
                   <span>Background</span>
                 </label>
               </div>
-              <label class="settings-option settings-option-primary" id="show-reading-bboxes-label" title="Outline the box of each element in the Paged layout">
-                <input type="checkbox" id="show-reading-bboxes" checked>
-                <span>Bounding boxes</span>
-              </label>
+              <div class="arrow-layer-row">
+                <label class="settings-option settings-option-primary" id="show-reading-bboxes-label" title="Outline the box of each element in the Paged layout">
+                  <input type="checkbox" id="show-reading-bboxes" checked>
+                  <span>Bounding boxes</span>
+                </label>
+                <button
+                  type="button"
+                  class="arrow-style-btn"
+                  id="btn-reading-bbox-style"
+                  aria-expanded="false"
+                  aria-controls="reading-bbox-fields"
+                  aria-label="Bounding box style"
+                  title="Box style"
+                ></button>
+              </div>
+              <div class="arrow-style-fields" id="reading-bbox-fields" hidden>
+                <label>Color
+                  <input type="color" data-reading-bbox="color">
+                </label>
+                <label>Thickness
+                  <input type="range" min="0.5" max="6" step="0.5" data-reading-bbox="width">
+                </label>
+                <label>Line
+                  <select data-reading-bbox="style">
+                    <option value="solid">Solid</option>
+                    <option value="dashed">Dashed</option>
+                    <option value="dotted">Dotted</option>
+                  </select>
+                </label>
+              </div>
               <label class="settings-option settings-option-primary" id="crop-pictures-label" title="Show a picture that has a bbox but no image of its own as a crop of the page image; otherwise, as a placeholder">
                 <input type="checkbox" id="crop-pictures" checked>
                 <span>Picture crops</span>

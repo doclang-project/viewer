@@ -1215,6 +1215,9 @@ kbd {
   font-weight: 600;
 }
 
+#reading-settings .settings-subgroup + .arrow-layer-row,
+#reading-settings .arrow-layer-row + .settings-option-primary,
+#reading-settings .arrow-style-fields + .settings-option-primary,
 .settings-subgroup + .settings-option-primary,
 .settings-option-primary + .settings-option-primary {
   margin-top: 0.65rem;
@@ -1561,8 +1564,8 @@ body.pane-drag-active .pane-splitter {
   position: absolute;
   overflow: hidden;
   transform-origin: top left;
-  outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
-  outline-offset: -1px;
+  outline: var(--reading-bbox-width, 1px) var(--reading-bbox-line, dashed) var(--reading-bbox-color, color-mix(in srgb, var(--accent) 70%, transparent));
+  outline-offset: calc(-1 * var(--reading-bbox-width, 1px));
 }
 
 .paged-el-slot-fitting .katex-mathml {

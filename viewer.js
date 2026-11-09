@@ -513,6 +513,8 @@ let showReadingOrder = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
 let showReadingBboxes = true;
+/** The look of the Paged Preview's boxes: what is left out follows the theme. @type {{ color?: string, width?: number, style?: string }} */
+let readingBboxStyle = {};
 let cropPictures = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "pageless";
@@ -609,6 +611,8 @@ const els = {
   showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
   showReadingLayers: document.getElementById("show-reading-layers"),
   showReadingBboxes: document.getElementById("show-reading-bboxes"),
+  readingBboxStyleBtn: document.getElementById("btn-reading-bbox-style"),
+  readingBboxFields: document.getElementById("reading-bbox-fields"),
   showReadingBboxesLabel: document.getElementById("show-reading-bboxes-label"),
   cropPictures: document.getElementById("crop-pictures"),
   cropPicturesLabel: document.getElementById("crop-pictures-label"),
@@ -957,6 +961,12 @@ els.showReadingBboxes?.addEventListener("change", () => {
   showReadingBboxes = els.showReadingBboxes.checked;
   onReadingLayersChanged();
 });
+els.readingBboxStyleBtn?.addEventListener("click", () => {
+  const open = !!els.readingBboxFields?.hidden;
+  if (els.readingBboxFields) els.readingBboxFields.hidden = !open;
+  els.readingBboxStyleBtn.setAttribute("aria-expanded", String(open));
+});
+for (const type of ["input", "change"]) els.readingBboxFields?.addEventListener(type, onReadingBboxStyleInput);
 els.cropPictures?.addEventListener("change", () => {
   cropPictures = els.cropPictures.checked;
   persistReadingOverlayPrefs();
@@ -990,6 +1000,7 @@ loadReadingLayoutMode();
 loadMarkupViewMode();
 loadReadingOverlayPrefs();
 syncReadingLayerCheckboxes();
+initReadingBboxStyle();
 syncReadingLayoutButtons();
 syncOverlayPrefControls();
 normalizePaneRatios();
@@ -2099,6 +2110,35 @@ function syncReadingLayerCheckboxes() {
   if (els.cropPictures) els.cropPictures.checked = cropPictures;
 }
 
+function applyReadingBboxStyle() {
+  const root = document.documentElement.style;
+  setCssVar(root, "--reading-bbox-color", readingBboxStyle.color);
+  setCssVar(root, "--reading-bbox-width", readingBboxStyle.width != null ? `${readingBboxStyle.width}px` : null);
+  setCssVar(root, "--reading-bbox-line", readingBboxStyle.style);
+}
+
+function initReadingBboxStyle() {
+  if (!els.readingBboxFields) return;
+  enhanceArrowRangeInputs(els.readingBboxFields);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+  const values = { color: readingBboxStyle.color ?? toHexColor(accent), width: readingBboxStyle.width ?? 1, style: readingBboxStyle.style ?? "dashed" };
+  for (const input of els.readingBboxFields.querySelectorAll("[data-reading-bbox]")) {
+    input.value = String(values[input.dataset.readingBbox]);
+    if (input.type === "range") updateArrowRangeReadout(input);
+  }
+  applyReadingBboxStyle();
+}
+
+function onReadingBboxStyleInput(e) {
+  const input = e.target.closest?.("[data-reading-bbox]");
+  if (!input) return;
+  const field = input.dataset.readingBbox;
+  readingBboxStyle[field] = field === "width" ? Number(input.value) : input.value;
+  if (input.type === "range") updateArrowRangeReadout(input);
+  applyReadingBboxStyle();
+  persistReadingOverlayPrefs();
+}
+
 function onReadingLayersChanged() {
   syncReadingLayerCheckboxes();
   syncReadingLayerVisibility();
@@ -2111,6 +2151,7 @@ function loadReadingOverlayPrefs() {
     if (typeof data?.furniture === "boolean") showReadingFurniture = data.furniture;
     if (typeof data?.background === "boolean") showReadingBackground = data.background;
     if (typeof data?.bboxes === "boolean") showReadingBboxes = data.bboxes;
+    if (data?.bboxStyle && typeof data.bboxStyle === "object") readingBboxStyle = data.bboxStyle;
     if (typeof data?.cropPictures === "boolean") cropPictures = data.cropPictures;
   } catch {
     /* ignore invalid stored prefs */
@@ -2119,7 +2160,7 @@ function loadReadingOverlayPrefs() {
 
 function persistReadingOverlayPrefs() {
   try {
-    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, cropPictures }));
+    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures }));
   } catch {
     /* ignore quota / private mode */
   }
@@ -8943,8 +8984,8 @@ function collapseDisabledArrowFields() {
 }
 
 /** Give each thickness/arrowhead range slider a live numeric readout beside it. */
-function enhanceArrowRangeInputs() {
-  const ranges = els.pageSettingsPanel?.querySelectorAll('input[type="range"][data-arrow-layer]');
+function enhanceArrowRangeInputs(panel = els.pageSettingsPanel) {
+  const ranges = panel?.querySelectorAll('input[type="range"]');
   if (!ranges) return;
   for (const input of ranges) {
     if (input.parentElement?.classList.contains("arrow-field-control")) continue;
