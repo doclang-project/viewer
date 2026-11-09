@@ -3547,6 +3547,7 @@ function focusEditor() {
 
 function startEditing({ focus = true } = {}) {
   if (markupEditor || !editableEntry() || !els.markupPane) return;
+  cancelDrawing(); // what was being drawn is a visual edit
   markupEditor = document.createElement("textarea");
   markupEditor.className = "markup-editor";
   markupEditor.spellcheck = false;
@@ -4752,8 +4753,8 @@ function addButton(kind) {
 }
 
 function syncAddButtons() {
-  const entry = editableEntry();
-  const show = !!entry && !markupEditor;
+  const show = !!editableEntry();
+  const raw = !!markupEditor; // they draw on the page and edit visually: unavailable in Raw, but they keep their place
   const selected = selectedElement();
   const enabled = {
     parent: !!selected && canWrap(selected),
@@ -4763,14 +4764,18 @@ function syncAddButtons() {
   };
   if (els.addThreadBtn) {
     els.addThreadBtn.hidden = !show || !state.hasPageView;
+    els.addThreadBtn.disabled = raw;
     els.addThreadBtn.classList.toggle("active", drawing?.kind === "thread");
   }
-  if (els.pageEditBar) els.pageEditBar.hidden = !show;
+  if (els.pageEditBar) {
+    els.pageEditBar.hidden = !show;
+    els.pageEditBar.title = raw ? "Switch to Visual to add elements and threads" : "";
+  }
   for (const kind of ADD_KINDS) {
     const btn = addButton(kind);
     if (!btn) continue;
     btn.hidden = !show;
-    btn.disabled = !enabled[kind] && drawing?.kind !== kind;
+    btn.disabled = raw || (!enabled[kind] && drawing?.kind !== kind);
     btn.classList.toggle("active", drawing?.kind === kind);
   }
 }
