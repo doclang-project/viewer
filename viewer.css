@@ -1569,6 +1569,15 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
+.paged-canvas.token-rendering .paged-el-slot.token-unwritten {
+  visibility: hidden;
+}
+
+/* Hidden, not removed: a slot keeps the layout of its whole text while it is written. */
+::highlight(token-unwritten) {
+  color: transparent;
+}
+
 .paged-el-slot.selected {
   outline: 3px solid var(--accent);
   outline-offset: -3px;

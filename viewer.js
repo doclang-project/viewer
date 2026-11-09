@@ -652,6 +652,7 @@ const els = {
   tokenHeatToggle: document.getElementById("token-heat"),
   tokenCountsToggle: document.getElementById("token-counts"),
   tokenScanToggle: document.getElementById("token-scan"),
+  tokenRenderToggle: document.getElementById("token-render"),
   tokenOverlayOptions: document.getElementById("token-overlay-options"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
@@ -2800,6 +2801,7 @@ function updateTokenReplay() {
     tokenLens.cursor = range.start;
   }
   updateTokenLayer(range);
+  syncPagedTraceRender(range);
   syncReplaySelection(range);
   syncTokenBar(range);
   syncMarkupReplay(range);
@@ -2990,6 +2992,86 @@ function updateTokenLayer(range) {
   }
 }
 
+/** Where the Paged Preview's slots are in the token stream, built once for each rendering of the page. */
+let pagedTraceRender = null;
+
+function pagedTraceItems(canvas) {
+  if (pagedTraceRender?.canvas === canvas) return pagedTraceRender.items;
+  const data = state.tokenData;
+  const items = [];
+  for (const slot of canvas.querySelectorAll(".paged-el-slot[data-element-id]")) {
+    const el = state.idToElement?.get(slot.getAttribute("data-element-id"));
+    const span = el && elementTokenSpan(data, el);
+    if (!span) continue;
+    // The head is written first: what shows on the page starts after it.
+    const nodes = [...el.childNodes];
+    const head = nodes.slice(0, skipElementHeadNodes(nodes, 0)).filter((n) => n.nodeType === Node.ELEMENT_NODE);
+    const start = Math.max(span.start, ...head.map((n) => data.elementTokens.get(n)?.end ?? 0));
+    const end = Math.max(start + 1, span.closeStart ?? span.end);
+    const texts = [];
+    let total = 0;
+    const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.nodeValue.trim() || node.parentElement.closest(".katex-mathml, .formula-rewrite-badge")) continue;
+      texts.push(node);
+      total += node.length;
+    }
+    items.push({ slot, start, end, texts, total, wipe: !total || !!slot.querySelector("img"), shown: null });
+  }
+  pagedTraceRender = { canvas, items };
+  return items;
+}
+
+/** A range over what is not written yet of a slot's text, when `written` of its characters are. */
+function unwrittenTextRange(item, written) {
+  let left = written;
+  for (const node of item.texts) {
+    if (left < node.length) {
+      const range = new Range();
+      range.setStart(node, left);
+      const last = item.texts[item.texts.length - 1];
+      range.setEnd(last, last.length);
+      return range;
+    }
+    left -= node.length;
+  }
+  return null;
+}
+
+/** While tracing, the Paged Preview is built up in reading order: each slot appears as its tokens are written. */
+function syncPagedTraceRender(range) {
+  const canvas = els.renderedPane?.querySelector(".paged-canvas");
+  const active = !!canvas && isReplayShown(range) && tokenLens.effects && !!els.tokenRenderToggle?.checked;
+  const wasActive = canvas?.classList.contains("token-rendering");
+  if (!active) {
+    if (!wasActive) return;
+    canvas.classList.remove("token-rendering");
+    for (const item of pagedTraceItems(canvas)) {
+      item.slot.classList.remove("token-unwritten");
+      item.slot.style.clipPath = "";
+      item.shown = null;
+    }
+    CSS.highlights?.delete("token-unwritten");
+    return;
+  }
+  canvas.classList.add("token-rendering");
+  const ranges = [];
+  for (const item of pagedTraceItems(canvas)) {
+    const progress = Math.min(1, Math.max(0, (tokenLens.cursor - item.start) / (item.end - item.start)));
+    if (progress !== item.shown) {
+      item.slot.classList.toggle("token-unwritten", progress <= 0);
+      item.slot.style.clipPath = item.wipe && progress > 0 && progress < 1 ? `inset(0 0 ${(1 - progress) * 100}% 0)` : "";
+      item.shown = progress;
+    }
+    if (!item.wipe && progress > 0 && progress < 1) {
+      const unwritten = unwrittenTextRange(item, Math.floor(progress * item.total));
+      if (unwritten) ranges.push(unwritten);
+    }
+  }
+  if (typeof Highlight !== "undefined") CSS.highlights.set("token-unwritten", new Highlight(...ranges));
+}
+
 function syncTokenBar(range = currentTokenRange()) {
   const bar = els.tokenBar;
   if (!bar || bar.hidden) return;
@@ -3122,6 +3204,10 @@ function initTokenLens() {
     updateTokenReplay();
     persistTokenPrefs();
   });
+  els.tokenRenderToggle?.addEventListener("change", () => {
+    updateTokenReplay();
+    persistTokenPrefs();
+  });
   // Clicking a token in the source seeks the trace to it (that token written last); a playing trace plays on.
   els.markupPane?.addEventListener("click", (e) => {
     const span = e.target.closest?.(".token-span");
@@ -3168,6 +3254,7 @@ function loadTokenPrefs() {
   if (els.tokenHeatToggle) els.tokenHeatToggle.checked = prefs.heatmap === true;
   if (els.tokenCountsToggle) els.tokenCountsToggle.checked = prefs.counts === true;
   if (els.tokenScanToggle) els.tokenScanToggle.checked = prefs.reveal !== false; // on unless switched off
+  if (els.tokenRenderToggle) els.tokenRenderToggle.checked = prefs.render !== false;
   els.pagePane?.classList.toggle("token-heat", !!els.tokenHeatToggle?.checked);
   els.pagePane?.classList.toggle("token-counts", !!els.tokenCountsToggle?.checked);
   const speed = String(prefs.speed);
@@ -3181,6 +3268,7 @@ function persistTokenPrefs() {
       heatmap: !!els.tokenHeatToggle?.checked,
       counts: !!els.tokenCountsToggle?.checked,
       reveal: !!els.tokenScanToggle?.checked,
+      render: !!els.tokenRenderToggle?.checked,
       speed: tokenLens.speed,
     }));
   } catch {
@@ -7419,6 +7507,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     }
     els.renderedPane.appendChild(canvas);
     fitPagedCanvas();
+    if (state.tokenData) syncPagedTraceRender(currentTokenRange()); // a new page starts out unwritten while tracing
     if (!pagedPaneResizeObserver) {
       pagedPaneResizeObserver = new ResizeObserver(() => fitPagedCanvas());
       pagedPaneResizeObserver.observe(els.renderedPane);
