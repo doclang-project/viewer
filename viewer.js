@@ -2325,27 +2325,34 @@ function initCursorHints() {
   reloadBtn?.addEventListener("mouseleave", hideCursorHint);
 }
 
-/** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
-const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, .markup-glue-mark, label.file-btn, label[title], label[data-hint], select, summary';
-
 /**
- * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
- * delay and cannot be styled, so a title is moved to `data-hint` the first time the pointer reaches its control
- * (and again whenever the code sets a new one), and displayed by the cursor hint.
+ * Shows every `title` immediately, next to the cursor. The native tooltip appears only after a long delay and cannot be
+ * styled, so the titles from the pointer's element up to the root are moved to `data-hint` as the pointer reaches them
+ * (and again whenever the code sets a new one), all of them, or the browser would show an outer title as well.
  */
+function moveTitlesToHints(target) {
+  for (let el = target; el?.getAttribute; el = el.parentElement) {
+    const title = el.getAttribute("title");
+    if (title === null) continue;
+    if (title) el.dataset.hint = title;
+    else delete el.dataset.hint;
+    el.removeAttribute("title");
+  }
+}
+
+/** The hint for what the pointer is on: a disabled control gives way to the hint of what holds it, which says why. */
+function quickHintOwner(target) {
+  const el = target.closest?.("[data-hint]");
+  return el?.disabled ? (el.parentElement.closest("[data-hint]") ?? el) : el;
+}
+
 function initQuickHints() {
   let owner = null;
-  document.addEventListener("mouseover", (e) => {
-    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
-    const title = el?.getAttribute("title");
-    if (title) {
-      el.dataset.hint = title;
-      el.removeAttribute("title");
-    }
-  }, true);
+  document.addEventListener("mouseover", (e) => moveTitlesToHints(e.target), true);
   document.addEventListener("mousemove", (e) => {
-    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
-    if (el?.dataset.hint) {
+    moveTitlesToHints(e.target); // a title set while the pointer was already there
+    const el = quickHintOwner(e.target);
+    if (el) {
       owner = el;
       showCursorHint(el.dataset.hint, e.clientX, e.clientY);
     } else if (owner) {
