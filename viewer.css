@@ -943,7 +943,6 @@ label.file-btn input {
 
 .page-zoom-reset:disabled {
   opacity: 0.55;
-  cursor: default;
 }
 
 .pane-header-title {
@@ -1808,7 +1807,6 @@ body.pane-drag-active .pane-splitter {
 
 .pane-action-btn:disabled {
   opacity: 0.45;
-  cursor: default;
 }
 
 .edit-error {
@@ -3378,7 +3376,6 @@ li.has-marker > .rendered-li-body {
 }
 
 .rendered-track-chapter:disabled {
-  cursor: default;
   opacity: 0.7;
 }
 
@@ -3415,10 +3412,6 @@ li.has-marker > .rendered-li-body {
 .rendered-track-time-btn:hover:not(:disabled) {
   border-color: var(--border);
   color: var(--text);
-}
-
-.rendered-track-time-btn:disabled {
-  cursor: default;
 }
 
 .rendered-track-chapter-name {
