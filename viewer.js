@@ -1031,7 +1031,8 @@ async function loadDemo() {
     const urls = typeof DEMO_ARCHIVE_URLS !== "undefined" && DEMO_ARCHIVE_URLS.length
       ? DEMO_ARCHIVE_URLS
       : [DEMO_ARCHIVE_URL];
-    const primary = await fetch(urls[0]);
+    // Always asks the server: a cached demo can otherwise stay stale for days after the file changes.
+    const primary = await fetch(urls[0], { cache: "no-cache" });
     if (!primary.ok) throw new Error(`HTTP ${primary.status}`);
     const primaryBuffer = await primary.arrayBuffer();
     // A document may have arrived while the demo was downloading; don't replace it.
@@ -1044,7 +1045,7 @@ async function loadDemo() {
     for (const url of urls.slice(1)) {
       if (suppressDemoLoad) return;
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: "no-cache" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buffer = await res.arrayBuffer();
         if (suppressDemoLoad) return;
