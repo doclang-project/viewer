@@ -830,13 +830,13 @@
               type="button"
               class="view-toggle-btn"
               id="btn-reading-layout-pageless"
-              aria-pressed="true"
+              aria-pressed="false"
             >Flowing</button>
             <button
               type="button"
               class="view-toggle-btn"
               id="btn-reading-layout-paged"
-              aria-pressed="false"
+              aria-pressed="true"
             >Paged</button>
           </div>
             <button
@@ -920,6 +920,10 @@
               <label class="settings-option settings-option-primary" id="crop-pictures-label" title="Show a picture that has a bbox but no image of its own as a crop of the page image; otherwise, as a placeholder">
                 <input type="checkbox" id="crop-pictures" checked>
                 <span>Picture crops</span>
+              </label>
+              <label class="settings-option settings-option-primary" title="Open a link's target when clicking it; otherwise, a click only selects">
+                <input type="checkbox" id="clickable-links">
+                <span>Link navigation</span>
               </label>
             </div>
           </aside>

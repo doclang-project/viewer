@@ -528,8 +528,10 @@ let showReadingBboxes = true;
 /** The look of the Paged Preview's boxes: what is left out follows the theme. @type {{ color?: string, width?: number, style?: string }} */
 let readingBboxStyle = {};
 let cropPictures = true;
+/** Whether a click on a Preview link opens its target. */
+let clickableLinks = false;
 /** @type {"pageless" | "paged"} */
-let readingLayoutMode = "pageless";
+let readingLayoutMode = "paged";
 /** The DocLang pane's view of choice; it applies to any document that can be edited. @type {"visual" | "raw"} */
 let markupViewMode = "visual";
 let showLayoutBody = true;
@@ -646,6 +648,7 @@ const els = {
   showReadingBboxesLabel: document.getElementById("show-reading-bboxes-label"),
   cropPictures: document.getElementById("crop-pictures"),
   cropPicturesLabel: document.getElementById("crop-pictures-label"),
+  clickableLinks: document.getElementById("clickable-links"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   layoutLayersLabel: document.getElementById("layout-layers-label"),
@@ -1012,6 +1015,17 @@ els.cropPictures?.addEventListener("change", () => {
   renderReadingPane(state.currentSegment, state.elementIds, state.currentBoxes, state.defaultResolution);
   els.renderedPane.scrollTop = scroll;
 });
+els.clickableLinks?.addEventListener("change", () => {
+  clickableLinks = els.clickableLinks.checked;
+  els.renderedPane?.classList.toggle("links-clickable", clickableLinks);
+  persistReadingOverlayPrefs();
+});
+// Unless links are clickable, a click on one only selects (any button, any modifier).
+for (const type of ["click", "auxclick"]) {
+  els.renderedPane?.addEventListener(type, (e) => {
+    if (!clickableLinks && e.target.closest?.("a.rendered-link")) e.preventDefault();
+  });
+}
 els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMode("pageless"));
 els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
 els.pageLayoutSingleBtn?.addEventListener("click", () => setPageLayoutMode("single"));
@@ -2167,6 +2181,8 @@ function syncReadingLayerCheckboxes() {
   }
   if (els.showReadingBboxes) els.showReadingBboxes.checked = showReadingBboxes;
   if (els.cropPictures) els.cropPictures.checked = cropPictures;
+  if (els.clickableLinks) els.clickableLinks.checked = clickableLinks;
+  els.renderedPane?.classList.toggle("links-clickable", clickableLinks);
 }
 
 function applyReadingBboxStyle() {
@@ -2180,7 +2196,7 @@ function initReadingBboxStyle() {
   if (!els.readingBboxFields) return;
   enhanceArrowRangeInputs(els.readingBboxFields);
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent");
-  const values = { color: readingBboxStyle.color ?? toHexColor(accent), width: readingBboxStyle.width ?? 1, style: readingBboxStyle.style ?? "dashed" };
+  const values = { color: readingBboxStyle.color ?? toHexColor(accent), width: readingBboxStyle.width ?? 1, style: readingBboxStyle.style ?? "solid" };
   for (const input of els.readingBboxFields.querySelectorAll("[data-reading-bbox]")) {
     input.value = String(values[input.dataset.readingBbox]);
     if (input.type === "range") updateArrowRangeReadout(input);
@@ -2212,6 +2228,7 @@ function loadReadingOverlayPrefs() {
     if (typeof data?.bboxes === "boolean") showReadingBboxes = data.bboxes;
     if (data?.bboxStyle && typeof data.bboxStyle === "object") readingBboxStyle = data.bboxStyle;
     if (typeof data?.cropPictures === "boolean") cropPictures = data.cropPictures;
+    if (typeof data?.clickableLinks === "boolean") clickableLinks = data.clickableLinks;
   } catch {
     /* ignore invalid stored prefs */
   }
@@ -2219,7 +2236,7 @@ function loadReadingOverlayPrefs() {
 
 function persistReadingOverlayPrefs() {
   try {
-    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures }));
+    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures, clickableLinks }));
   } catch {
     /* ignore quota / private mode */
   }

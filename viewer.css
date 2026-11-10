@@ -1624,7 +1624,7 @@ body.pane-drag-active .pane-splitter {
   position: absolute;
   overflow: hidden;
   transform-origin: top left;
-  outline: var(--reading-bbox-width, 1px) var(--reading-bbox-line, dashed) var(--reading-bbox-color, color-mix(in srgb, var(--accent) 70%, transparent));
+  outline: var(--reading-bbox-width, 1px) var(--reading-bbox-line, solid) var(--reading-bbox-color, color-mix(in srgb, var(--accent) 70%, transparent));
   outline-offset: calc(-1 * var(--reading-bbox-width, 1px));
 }
 
@@ -1746,7 +1746,7 @@ body.pane-drag-active .pane-splitter {
 }
 
 /* The furniture/background diagonal-stripe hatch is a reading-flow affordance; the
-   paged view already marks every element's bbox with its own dashed outline, and the
+   paged view already marks every element's bbox with its own outline, and the
    hatch just eats into the limited box space, so skip it here. */
 .paged-canvas .rendered-el[data-doclang-layer="furniture"]::before,
 .paged-canvas .rendered-el[data-doclang-layer="background"]::before {
@@ -3318,8 +3318,13 @@ li.has-marker > .rendered-li-body {
   text-underline-offset: 0.15em;
 }
 
-.rendered-link:hover {
+#rendered-pane.links-clickable .rendered-link:hover {
   text-decoration-thickness: 2px;
+}
+
+/* Links that do not navigate keep the pane's cursor. */
+#rendered-pane:not(.links-clickable) .rendered-link {
+  cursor: inherit;
 }
 
 .rendered-handwriting {
