@@ -122,7 +122,8 @@ const NO_MARKUP = "(No markup to be shown.)";
 const NO_IMAGE = "(No page image available.)";
 const FILE_THUMB_PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 const PICTURE_UNAVAILABLE_ALT = "Picture asset not available";
-const INVALID_PICTURE_SRC = "data:image/png;base64,NOT_A_VALID_IMAGE";
+// "image" icon: Lucide (ISC license, see vendor/lucide/LICENSE).
+const PICTURE_UNAVAILABLE_SRC = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>')}`;
 /** Allow small embedded raster data URIs only; remote/blob/other schemes are rejected. */
 const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
 const MAX_DATA_IMAGE_URI_LENGTH = 2 * 1024 * 1024; // 2 MiB
@@ -446,6 +447,8 @@ const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
 const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
+const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
+const READING_OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-reading-overlay-prefs";
 const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -509,8 +512,14 @@ let showKeyValueLinks = false;
 let showReadingOrder = false;
 let showReadingFurniture = true;
 let showReadingBackground = true;
+let showReadingBboxes = true;
+/** The look of the Paged Preview's boxes: what is left out follows the theme. @type {{ color?: string, width?: number, style?: string }} */
+let readingBboxStyle = {};
+let cropPictures = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "pageless";
+/** The DocLang pane's view of choice; it applies to any document that can be edited. @type {"visual" | "raw"} */
+let markupViewMode = "visual";
 let showLayoutBody = true;
 let showLayoutFurniture = true;
 let showLayoutBackground = true;
@@ -556,7 +565,7 @@ let paneRatios = [...DEFAULT_PANE_RATIOS];
 /** @type {number | null} */
 let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
-let hotkeysEnabled = false;
+let hotkeysEnabled = true;
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
@@ -600,6 +609,13 @@ const els = {
   showReadingFurnitureLabel: document.getElementById("show-reading-furniture-label"),
   showReadingBackground: document.getElementById("show-reading-background"),
   showReadingBackgroundLabel: document.getElementById("show-reading-background-label"),
+  showReadingLayers: document.getElementById("show-reading-layers"),
+  showReadingBboxes: document.getElementById("show-reading-bboxes"),
+  readingBboxStyleBtn: document.getElementById("btn-reading-bbox-style"),
+  readingBboxFields: document.getElementById("reading-bbox-fields"),
+  showReadingBboxesLabel: document.getElementById("show-reading-bboxes-label"),
+  cropPictures: document.getElementById("crop-pictures"),
+  cropPicturesLabel: document.getElementById("crop-pictures-label"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   layoutLayersLabel: document.getElementById("layout-layers-label"),
@@ -640,6 +656,7 @@ const els = {
   tokenHeatToggle: document.getElementById("token-heat"),
   tokenCountsToggle: document.getElementById("token-counts"),
   tokenScanToggle: document.getElementById("token-scan"),
+  tokenRenderToggle: document.getElementById("token-render"),
   tokenOverlayOptions: document.getElementById("token-overlay-options"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
@@ -669,11 +686,9 @@ const els = {
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
   validateBtn: document.getElementById("btn-validate"),
-  editBtn: document.getElementById("btn-edit"),
-  paneMenuBtn: document.getElementById("btn-pane-menu"),
-  paneMenu: document.getElementById("pane-menu"),
-  editApplyBtn: document.getElementById("btn-edit-apply"),
-  editCancelBtn: document.getElementById("btn-edit-cancel"),
+  markupViewToggle: document.getElementById("markup-view-toggle"),
+  viewVisualBtn: document.getElementById("btn-view-visual"),
+  viewRawBtn: document.getElementById("btn-view-raw"),
   saveBtn: document.getElementById("btn-save"),
   revertBtn: document.getElementById("btn-revert"),
   pageEditBar: document.getElementById("page-edit-bar"),
@@ -686,6 +701,7 @@ const els = {
   redoBtn: document.getElementById("btn-redo"),
   inspector: document.getElementById("inspector"),
   editError: document.getElementById("edit-error"),
+  draftProblem: document.getElementById("edit-draft-problem"),
   validationPanel: document.getElementById("validation-panel"),
   validationSummary: document.getElementById("validation-summary"),
   validationIssues: document.getElementById("validation-issues"),
@@ -819,32 +835,8 @@ els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
-els.editBtn?.addEventListener("click", () => {
-  setPaneMenuOpen(false);
-  startEditing();
-});
-els.paneMenuBtn?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  setPaneMenuOpen(els.paneMenu?.hidden);
-});
-document.addEventListener("click", (e) => {
-  if (els.paneMenu && !els.paneMenu.hidden && !e.target.closest?.(".pane-menu-wrap")) setPaneMenuOpen(false);
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && els.paneMenu && !els.paneMenu.hidden) {
-    setPaneMenuOpen(false);
-    els.paneMenuBtn?.focus();
-  }
-});
-
-function setPaneMenuOpen(open) {
-  if (!els.paneMenu || !els.paneMenuBtn) return;
-  els.paneMenu.hidden = !open;
-  els.paneMenuBtn.setAttribute("aria-expanded", String(!!open));
-  if (open) els.editBtn?.focus();
-}
-els.editApplyBtn?.addEventListener("click", applyEdit);
-els.editCancelBtn?.addEventListener("click", () => stopEditing({ render: true }));
+els.viewVisualBtn?.addEventListener("click", () => applyEdit());
+els.viewRawBtn?.addEventListener("click", openRawView);
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
 els.addParentBtn?.addEventListener("click", () => toggleAddElement("parent"));
@@ -883,7 +875,6 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented || !selectedElementId || markupEditor || drawing) return;
   if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen) return;
-  if (els.paneMenu && !els.paneMenu.hidden) return;
   const active = document.activeElement;
   if (isTypingTarget(active)) {
     active.blur(); // finish typing first; the next Esc deselects
@@ -954,13 +945,35 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   toggleOverlayCheckbox(els[elsKey]); // the pane checkbox keeps at least one pane visible
 });
+els.showReadingLayers?.addEventListener("change", () => {
+  showReadingFurniture = showReadingBackground = els.showReadingLayers.checked;
+  onReadingLayersChanged();
+});
 els.showReadingFurniture?.addEventListener("change", () => {
   showReadingFurniture = els.showReadingFurniture.checked;
-  syncReadingLayerVisibility();
+  onReadingLayersChanged();
 });
 els.showReadingBackground?.addEventListener("change", () => {
   showReadingBackground = els.showReadingBackground.checked;
-  syncReadingLayerVisibility();
+  onReadingLayersChanged();
+});
+els.showReadingBboxes?.addEventListener("change", () => {
+  showReadingBboxes = els.showReadingBboxes.checked;
+  onReadingLayersChanged();
+});
+els.readingBboxStyleBtn?.addEventListener("click", () => {
+  const open = !!els.readingBboxFields?.hidden;
+  if (els.readingBboxFields) els.readingBboxFields.hidden = !open;
+  els.readingBboxStyleBtn.setAttribute("aria-expanded", String(open));
+});
+for (const type of ["input", "change"]) els.readingBboxFields?.addEventListener(type, onReadingBboxStyleInput);
+els.cropPictures?.addEventListener("change", () => {
+  cropPictures = els.cropPictures.checked;
+  persistReadingOverlayPrefs();
+  if (!state?.currentSegment || !els.renderedPane) return;
+  const scroll = els.renderedPane.scrollTop;
+  renderReadingPane(state.currentSegment, state.elementIds, state.currentBoxes, state.defaultResolution);
+  els.renderedPane.scrollTop = scroll;
 });
 els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMode("pageless"));
 els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
@@ -984,6 +997,10 @@ removeUnavailableMarkup();
 initEditingToggle();
 loadHotkeysPref();
 loadReadingLayoutMode();
+loadMarkupViewMode();
+loadReadingOverlayPrefs();
+syncReadingLayerCheckboxes();
+initReadingBboxStyle();
 syncReadingLayoutButtons();
 syncOverlayPrefControls();
 normalizePaneRatios();
@@ -1026,7 +1043,8 @@ async function loadDemo() {
     const urls = typeof DEMO_ARCHIVE_URLS !== "undefined" && DEMO_ARCHIVE_URLS.length
       ? DEMO_ARCHIVE_URLS
       : [DEMO_ARCHIVE_URL];
-    const primary = await fetch(urls[0]);
+    // Always asks the server: a cached demo can otherwise stay stale for days after the file changes.
+    const primary = await fetch(urls[0], { cache: "no-cache" });
     if (!primary.ok) throw new Error(`HTTP ${primary.status}`);
     const primaryBuffer = await primary.arrayBuffer();
     // A document may have arrived while the demo was downloading; don't replace it.
@@ -1039,7 +1057,7 @@ async function loadDemo() {
     for (const url of urls.slice(1)) {
       if (suppressDemoLoad) return;
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: "no-cache" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buffer = await res.arrayBuffer();
         if (suppressDemoLoad) return;
@@ -1841,9 +1859,15 @@ function initPageWheelNav() {
     { passive: false },
   );
 
-  // Scrolling past the end of the Preview flips the page, as in the Original pane. The DocLang pane does not: its
-  // scroll position is something to work in, and a stray wheel at its top or bottom must not change the page.
-  els.renderedPane?.addEventListener("wheel", (e) => onScrollPaneWheel(e, els.renderedPane), { passive: false });
+  // Scrolling past the end of the Paged Preview flips the page, as in the Original pane. The DocLang pane and the
+  // Pageless Preview do not: they are read or worked in by scrolling, and a stray wheel at the end must not change the page.
+  els.renderedPane?.addEventListener(
+    "wheel",
+    (e) => {
+      if (effectiveReadingLayoutMode() === "paged") onScrollPaneWheel(e, els.renderedPane);
+    },
+    { passive: false },
+  );
 
   els.pagePane.tabIndex = 0;
   els.pagePane.setAttribute("role", "region");
@@ -1854,7 +1878,7 @@ function initPageWheelNav() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (!state?.hasPageView) return;
+    if (!state) return;
     if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
 
     if (hotkeysEnabled && (e.key === "n" || e.key === "N")) {
@@ -1867,6 +1891,7 @@ function initPageWheelNav() {
       navigateBbox("prev");
       return;
     }
+    if (!state.hasPageView) return;
 
     let dir = 0;
     switch (e.key) {
@@ -2077,6 +2102,68 @@ function applyElementLayerAttr(sourceEl, domEl) {
 function syncReadingLayerCheckboxes() {
   if (els.showReadingFurniture) els.showReadingFurniture.checked = showReadingFurniture;
   if (els.showReadingBackground) els.showReadingBackground.checked = showReadingBackground;
+  if (els.showReadingLayers) {
+    els.showReadingLayers.checked = showReadingFurniture && showReadingBackground;
+    els.showReadingLayers.indeterminate = showReadingFurniture !== showReadingBackground;
+  }
+  if (els.showReadingBboxes) els.showReadingBboxes.checked = showReadingBboxes;
+  if (els.cropPictures) els.cropPictures.checked = cropPictures;
+}
+
+function applyReadingBboxStyle() {
+  const root = document.documentElement.style;
+  setCssVar(root, "--reading-bbox-color", readingBboxStyle.color);
+  setCssVar(root, "--reading-bbox-width", readingBboxStyle.width != null ? `${readingBboxStyle.width}px` : null);
+  setCssVar(root, "--reading-bbox-line", readingBboxStyle.style);
+}
+
+function initReadingBboxStyle() {
+  if (!els.readingBboxFields) return;
+  enhanceArrowRangeInputs(els.readingBboxFields);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+  const values = { color: readingBboxStyle.color ?? toHexColor(accent), width: readingBboxStyle.width ?? 1, style: readingBboxStyle.style ?? "dashed" };
+  for (const input of els.readingBboxFields.querySelectorAll("[data-reading-bbox]")) {
+    input.value = String(values[input.dataset.readingBbox]);
+    if (input.type === "range") updateArrowRangeReadout(input);
+  }
+  applyReadingBboxStyle();
+}
+
+function onReadingBboxStyleInput(e) {
+  const input = e.target.closest?.("[data-reading-bbox]");
+  if (!input) return;
+  const field = input.dataset.readingBbox;
+  readingBboxStyle[field] = field === "width" ? Number(input.value) : input.value;
+  if (input.type === "range") updateArrowRangeReadout(input);
+  applyReadingBboxStyle();
+  persistReadingOverlayPrefs();
+}
+
+function onReadingLayersChanged() {
+  syncReadingLayerCheckboxes();
+  syncReadingLayerVisibility();
+  persistReadingOverlayPrefs();
+}
+
+function loadReadingOverlayPrefs() {
+  try {
+    const data = JSON.parse(localStorage.getItem(READING_OVERLAY_PREFS_STORAGE_KEY) ?? "null");
+    if (typeof data?.furniture === "boolean") showReadingFurniture = data.furniture;
+    if (typeof data?.background === "boolean") showReadingBackground = data.background;
+    if (typeof data?.bboxes === "boolean") showReadingBboxes = data.bboxes;
+    if (data?.bboxStyle && typeof data.bboxStyle === "object") readingBboxStyle = data.bboxStyle;
+    if (typeof data?.cropPictures === "boolean") cropPictures = data.cropPictures;
+  } catch {
+    /* ignore invalid stored prefs */
+  }
+}
+
+function persistReadingOverlayPrefs() {
+  try {
+    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures }));
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 /** @returns {{ key: string, value: string, isDefault: boolean }[]} */
@@ -2280,27 +2367,34 @@ function initCursorHints() {
   reloadBtn?.addEventListener("mouseleave", hideCursorHint);
 }
 
-/** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
-const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, .markup-glue-mark, label.file-btn, select, summary';
-
 /**
- * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
- * delay and cannot be styled, so a title is moved to `data-hint` the first time the pointer reaches its control
- * (and again whenever the code sets a new one), and displayed by the cursor hint.
+ * Shows every `title` immediately, next to the cursor. The native tooltip appears only after a long delay and cannot be
+ * styled, so the titles from the pointer's element up to the root are moved to `data-hint` as the pointer reaches them
+ * (and again whenever the code sets a new one), all of them, or the browser would show an outer title as well.
  */
+function moveTitlesToHints(target) {
+  for (let el = target; el?.getAttribute; el = el.parentElement) {
+    const title = el.getAttribute("title");
+    if (title === null) continue;
+    if (title) el.dataset.hint = title;
+    else delete el.dataset.hint;
+    el.removeAttribute("title");
+  }
+}
+
+/** The hint for what the pointer is on: a disabled control gives way to the hint of what holds it, which says why. */
+function quickHintOwner(target) {
+  const el = target.closest?.("[data-hint]");
+  return el?.disabled ? (el.parentElement.closest("[data-hint]") ?? el) : el;
+}
+
 function initQuickHints() {
   let owner = null;
-  document.addEventListener("mouseover", (e) => {
-    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
-    const title = el?.getAttribute("title");
-    if (title) {
-      el.dataset.hint = title;
-      el.removeAttribute("title");
-    }
-  }, true);
+  document.addEventListener("mouseover", (e) => moveTitlesToHints(e.target), true);
   document.addEventListener("mousemove", (e) => {
-    const el = e.target.closest?.(QUICK_HINT_SELECTOR);
-    if (el?.dataset.hint) {
+    moveTitlesToHints(e.target); // a title set while the pointer was already there
+    const el = quickHintOwner(e.target);
+    if (el) {
       owner = el;
       showCursorHint(el.dataset.hint, e.clientX, e.clientY);
     } else if (owner) {
@@ -2421,7 +2515,10 @@ function buildMarkupPieceTree(pieces) {
       top.children.push(node);
       stack.push(node);
     } else if (piece.type === "close") {
-      if (stack.length > 1) stack.pop();
+      if (stack.length > 1) {
+        top.close = piece;
+        stack.pop();
+      }
     } else {
       top.children.push({ piece, children: [] });
     }
@@ -2745,6 +2842,7 @@ function updateTokenReplay() {
     tokenLens.cursor = range.start;
   }
   updateTokenLayer(range);
+  syncPagedTraceRender(range);
   syncReplaySelection(range);
   syncTokenBar(range);
   syncMarkupReplay(range);
@@ -2935,6 +3033,86 @@ function updateTokenLayer(range) {
   }
 }
 
+/** Where the Paged Preview's slots are in the token stream, built once for each rendering of the page. */
+let pagedTraceRender = null;
+
+function pagedTraceItems(canvas) {
+  if (pagedTraceRender?.canvas === canvas) return pagedTraceRender.items;
+  const data = state.tokenData;
+  const items = [];
+  for (const slot of canvas.querySelectorAll(".paged-el-slot[data-element-id]")) {
+    const el = state.idToElement?.get(slot.getAttribute("data-element-id"));
+    const span = el && elementTokenSpan(data, el);
+    if (!span) continue;
+    // The head is written first: what shows on the page starts after it.
+    const nodes = [...el.childNodes];
+    const head = nodes.slice(0, skipElementHeadNodes(nodes, 0)).filter((n) => n.nodeType === Node.ELEMENT_NODE);
+    const start = Math.max(span.start, ...head.map((n) => data.elementTokens.get(n)?.end ?? 0));
+    const end = Math.max(start + 1, span.closeStart ?? span.end);
+    const texts = [];
+    let total = 0;
+    const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.nodeValue.trim() || node.parentElement.closest(".katex-mathml, .formula-rewrite-badge")) continue;
+      texts.push(node);
+      total += node.length;
+    }
+    items.push({ slot, start, end, texts, total, wipe: !total || !!slot.querySelector("img"), shown: null });
+  }
+  pagedTraceRender = { canvas, items };
+  return items;
+}
+
+/** A range over what is not written yet of a slot's text, when `written` of its characters are. */
+function unwrittenTextRange(item, written) {
+  let left = written;
+  for (const node of item.texts) {
+    if (left < node.length) {
+      const range = new Range();
+      range.setStart(node, left);
+      const last = item.texts[item.texts.length - 1];
+      range.setEnd(last, last.length);
+      return range;
+    }
+    left -= node.length;
+  }
+  return null;
+}
+
+/** While tracing, the Paged Preview is built up in reading order: each slot appears as its tokens are written. */
+function syncPagedTraceRender(range) {
+  const canvas = els.renderedPane?.querySelector(".paged-canvas");
+  const active = !!canvas && isReplayShown(range) && tokenLens.effects && !!els.tokenRenderToggle?.checked;
+  const wasActive = canvas?.classList.contains("token-rendering");
+  if (!active) {
+    if (!wasActive) return;
+    canvas.classList.remove("token-rendering");
+    for (const item of pagedTraceItems(canvas)) {
+      item.slot.classList.remove("token-unwritten");
+      item.slot.style.clipPath = "";
+      item.shown = null;
+    }
+    CSS.highlights?.delete("token-unwritten");
+    return;
+  }
+  canvas.classList.add("token-rendering");
+  const ranges = [];
+  for (const item of pagedTraceItems(canvas)) {
+    const progress = Math.min(1, Math.max(0, (tokenLens.cursor - item.start) / (item.end - item.start)));
+    if (progress !== item.shown) {
+      item.slot.classList.toggle("token-unwritten", progress <= 0);
+      item.slot.style.clipPath = item.wipe && progress > 0 && progress < 1 ? `inset(0 0 ${(1 - progress) * 100}% 0)` : "";
+      item.shown = progress;
+    }
+    if (!item.wipe && progress > 0 && progress < 1) {
+      const unwritten = unwrittenTextRange(item, Math.floor(progress * item.total));
+      if (unwritten) ranges.push(unwritten);
+    }
+  }
+  if (typeof Highlight !== "undefined") CSS.highlights.set("token-unwritten", new Highlight(...ranges));
+}
+
 function syncTokenBar(range = currentTokenRange()) {
   const bar = els.tokenBar;
   if (!bar || bar.hidden) return;
@@ -3067,6 +3245,10 @@ function initTokenLens() {
     updateTokenReplay();
     persistTokenPrefs();
   });
+  els.tokenRenderToggle?.addEventListener("change", () => {
+    updateTokenReplay();
+    persistTokenPrefs();
+  });
   // Clicking a token in the source seeks the trace to it (that token written last); a playing trace plays on.
   els.markupPane?.addEventListener("click", (e) => {
     const span = e.target.closest?.(".token-span");
@@ -3113,6 +3295,7 @@ function loadTokenPrefs() {
   if (els.tokenHeatToggle) els.tokenHeatToggle.checked = prefs.heatmap === true;
   if (els.tokenCountsToggle) els.tokenCountsToggle.checked = prefs.counts === true;
   if (els.tokenScanToggle) els.tokenScanToggle.checked = prefs.reveal !== false; // on unless switched off
+  if (els.tokenRenderToggle) els.tokenRenderToggle.checked = prefs.render !== false;
   els.pagePane?.classList.toggle("token-heat", !!els.tokenHeatToggle?.checked);
   els.pagePane?.classList.toggle("token-counts", !!els.tokenCountsToggle?.checked);
   const speed = String(prefs.speed);
@@ -3126,6 +3309,7 @@ function persistTokenPrefs() {
       heatmap: !!els.tokenHeatToggle?.checked,
       counts: !!els.tokenCountsToggle?.checked,
       reveal: !!els.tokenScanToggle?.checked,
+      render: !!els.tokenRenderToggle?.checked,
       speed: tokenLens.speed,
     }));
   } catch {
@@ -3411,6 +3595,7 @@ function activateDocument(docState, entry) {
   updateFileView();
   syncValidationForActiveDocument();
   syncEditUi();
+  resumeRawView();
 }
 
 function setDocLabel(label) {
@@ -3428,6 +3613,20 @@ function setDocLabel(label) {
 
 /** @type {HTMLTextAreaElement | null} */
 let markupEditor = null;
+const LIVE_EDIT_DELAY_MS = 150;
+const LIVE_VALIDATION_DELAY_MS = 500;
+const DRAFT_PROBLEM_DELAY_MS = 1000;
+const RAW_UNDO_GROUP_MS = 1000;
+const EDITOR_CARET_SYNC_MS = 120;
+const EDITOR_FLASH_MS = 1000;
+let liveEditTimer = null;
+let liveEditRun = null;
+let liveValidationTimer;
+let draftProblemTimer;
+let editorCaretTimer;
+let editorFlashTimer;
+/** Until when what is typed in the source editor belongs to the undo step already open. */
+let rawUndoGroupUntil = 0;
 
 function editableEntry() {
   if (!editingOn) return null; // every editing control goes through here
@@ -3444,35 +3643,41 @@ function setEditError(message) {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "e" || e.defaultPrevented || e.repeat || !hotkeysEnabled) return;
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
-  if (markupEditor || !editableEntry()) return;
+  if (!editableEntry()) return;
   e.preventDefault();
-  startEditing();
+  openRawView();
 });
 
 function syncEditUi() {
   const entry = editableEntry();
   const editing = !!markupEditor;
-  if (els.paneMenuBtn) {
-    els.paneMenuBtn.hidden = !entry || editing;
-    if (els.paneMenuBtn.hidden) setPaneMenuOpen(false);
-  }
-  if (els.editApplyBtn) els.editApplyBtn.hidden = !editing;
-  if (els.editCancelBtn) els.editCancelBtn.hidden = !editing;
+  if (els.markupViewToggle) els.markupViewToggle.hidden = !entry;
+  els.viewVisualBtn?.setAttribute("aria-pressed", String(!editing));
+  els.viewRawBtn?.setAttribute("aria-pressed", String(editing));
+  syncHistoryButtons();
   syncAddButtons();
-  // The history/commit buttons keep their place and only toggle enabled, so a click never lands on a moved button.
-  const showHistory = !!entry && !editing;
-  for (const [btn, enabled] of [
-    [els.undoBtn, entry?.undoStack?.length],
-    [els.redoBtn, entry?.redoStack?.length],
-    [els.revertBtn, entry?.dirty || pendingTextEdit],
-    [els.saveBtn, entry?.dirty || pendingTextEdit],
-  ]) {
-    if (!btn) continue;
-    btn.hidden = !showHistory;
-    btn.disabled = !enabled;
-  }
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
   if (!editing) setEditError(null);
+}
+
+/** The history/commit buttons keep their place in both modes and only toggle enabled, so a click never lands on a moved button. */
+function syncHistoryButtons() {
+  const entry = editableEntry();
+  const unapplied = hasUnappliedEditorText();
+  for (const [btn, enabled] of [
+    [els.undoBtn, entry?.undoStack?.length || unapplied],
+    [els.redoBtn, entry?.redoStack?.length && !unapplied], // new text ends the redo history
+    [els.revertBtn, entry?.dirty || pendingTextEdit || unapplied],
+    [els.saveBtn, entry?.dirty || pendingTextEdit || unapplied],
+  ]) {
+    if (!btn) continue;
+    btn.hidden = !entry;
+    btn.disabled = !enabled;
+  }
+}
+
+function hasUnappliedEditorText() {
+  return !!markupEditor && markupEditor.value !== editorTextOf(state?.markupXml ?? "");
 }
 
 function setEditingOn(on) {
@@ -3486,6 +3691,7 @@ function setEditingOn(on) {
     if (els.editingToggle) els.editingToggle.checked = true;
     return;
   }
+  cancelLiveEdit();
   markupEditor = null;
   els.markupPane?.classList.remove("editing");
   editingOn = on;
@@ -3496,9 +3702,11 @@ function setEditingOn(on) {
   renderPage(state.currentPage);
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
   syncEditUi();
+  if (on) resumeRawView();
 }
 
 function initEditingToggle() {
+  document.addEventListener("selectionchange", onEditorSelectionChange);
   if (els.editingToggle) els.editingToggle.checked = editingOn;
   els.editingToggle?.addEventListener("change", () => {
     setEditingOn(els.editingToggle.checked);
@@ -3506,8 +3714,42 @@ function initEditingToggle() {
   });
 }
 
-function startEditing() {
+function loadMarkupViewMode() {
+  try {
+    if (localStorage.getItem(MARKUP_VIEW_MODE_STORAGE_KEY) === "raw") markupViewMode = "raw";
+  } catch {
+    /* ignore unavailable storage */
+  }
+}
+
+function setMarkupViewMode(mode) {
+  markupViewMode = mode;
+  try {
+    localStorage.setItem(MARKUP_VIEW_MODE_STORAGE_KEY, mode);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function openRawView() {
+  setMarkupViewMode("raw");
+  if (markupEditor) focusEditor();
+  else startEditing();
+}
+
+/** A document opens in the view of choice; the keyboard stays with the viewer's shortcuts until asked for. */
+function resumeRawView() {
+  if (markupViewMode === "raw") startEditing({ focus: false });
+}
+
+function focusEditor() {
+  markupEditor.focus({ preventScroll: true });
+  scrollEditorToCaret();
+}
+
+function startEditing({ focus = true } = {}) {
   if (markupEditor || !editableEntry() || !els.markupPane) return;
+  cancelDrawing(); // what was being drawn is a visual edit
   markupEditor = document.createElement("textarea");
   markupEditor.className = "markup-editor";
   markupEditor.spellcheck = false;
@@ -3515,60 +3757,399 @@ function startEditing() {
   markupEditor.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
+      setMarkupViewMode("visual");
       stopEditing({ render: true });
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       applyEdit();
+    } else if (e.key.toLowerCase() === "z" && (e.metaKey || e.ctrlKey)) {
+      // One history: the same steps as the buttons, not the textarea's own.
+      e.preventDefault();
+      if (e.shiftKey) redoLastEdit();
+      else undoLastEdit();
     }
   });
+  markupEditor.addEventListener("input", () => {
+    syncEditorCurrentLine();
+    syncHistoryButtons();
+    scheduleLiveEdit();
+  });
+  markupEditor.addEventListener("scroll", syncEditorCurrentLine);
+  markupEditor.addEventListener("focus", syncEditorCurrentLine);
+  markupEditor.addEventListener("blur", syncEditorCurrentLine);
+  const backdrop = document.createElement("div");
+  backdrop.className = "markup-editor-backdrop";
+  backdrop.setAttribute("aria-hidden", "true");
+  const wrap = document.createElement("div");
+  wrap.className = "markup-editor-wrap";
+  wrap.append(backdrop, markupEditor);
   els.markupPane.classList.add("editing");
-  els.markupPane.replaceChildren(markupEditor);
-  markupEditor.focus();
+  els.markupPane.replaceChildren(wrap);
+  new ResizeObserver(syncEditorCurrentLine).observe(markupEditor);
+  if (focus) markupEditor.focus();
   markupEditor.setSelectionRange(0, 0); // setting the value parks the caret (and the scroll) at the end
   markupEditor.scrollTop = 0;
+  syncEditorCurrentLine();
   syncEditUi();
   syncSelectionEditUi(); // source editing and visual editing are exclusive: hide the inspector and handles
+  rawUndoGroupUntil = 0;
+  revealSelectionInEditor();
+}
+
+/** Where the selected element is in the editor's text, if that is known: not while the text differs from the document. */
+function editorSelectionSpan() {
+  if (!selectedElementId || !state || hasUnappliedEditorText() || state.altInactive?.size) return null;
+  const el = state.idToElement?.get(selectedElementId);
+  const span = el && markupSourceSpans().get(el);
+  return span ? { start: editorOffsetOfSource(span.start), end: editorOffsetOfSource(span.end) } : null;
+}
+
+/** Appends [from, to) of the editor's text to `parent`, marking what is in `element`, and the caret if it is at `caret`. */
+function appendEditorBackdropText(parent, value, from, to, element, caret = -1) {
+  const inside = (at) => Math.min(Math.max(at, from), to);
+  const cuts = [from, to];
+  if (element) cuts.push(inside(element.start), inside(element.end));
+  if (caret >= 0) cuts.push(caret);
+  const points = [...new Set(cuts)].sort((x, y) => x - y);
+  const addCaret = (at) => {
+    if (at !== caret) return;
+    const mark = document.createElement("span");
+    mark.className = "markup-editor-caret";
+    parent.append(mark);
+  };
+  for (let i = 0; i < points.length - 1; i += 1) {
+    addCaret(points[i]);
+    const text = value.slice(points[i], points[i + 1]);
+    if (element && points[i] >= element.start && points[i + 1] <= element.end) {
+      const mark = document.createElement("span");
+      mark.className = "markup-editor-element";
+      mark.textContent = text;
+      parent.append(mark);
+    } else {
+      parent.append(text);
+    }
+  }
+  addCaret(points[points.length - 1]);
+}
+
+/**
+ * What a textarea cannot show itself goes in a copy of its text behind it, wrapped the same way: the line of the caret
+ * over all its screen lines, the selected element, and the caret while the editor has no focus.
+ */
+function syncEditorCurrentLine() {
+  const backdrop = markupEditor?.previousElementSibling;
+  if (!backdrop) return;
+  const { value, selectionStart, selectionEnd } = markupEditor;
+  const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+  const newline = value.indexOf("\n", selectionStart);
+  const lineEnd = newline < 0 ? value.length : newline;
+  const element = editorSelectionSpan();
+  const shown = backdrop.shown;
+  if (
+    shown?.value !== value || shown.caret !== selectionStart ||
+    shown.elementStart !== element?.start || shown.elementEnd !== element?.end
+  ) {
+    backdrop.shown = { value, caret: selectionStart, elementStart: element?.start, elementEnd: element?.end };
+    const current = document.createElement("div");
+    current.className = "markup-editor-current-line";
+    appendEditorBackdropText(current, value, lineStart, lineEnd, element, selectionStart);
+    if (lineStart === lineEnd) current.append("\u200b"); // an empty line still has its height
+    backdrop.replaceChildren();
+    appendEditorBackdropText(backdrop, value, 0, lineStart, element);
+    backdrop.append(current);
+    if (newline >= 0) {
+      appendEditorBackdropText(backdrop, value, newline + 1, value.length, element);
+      backdrop.append("\u200b"); // unlike in a textarea, a final newline would not start another line
+    }
+  }
+  backdrop.querySelector(".markup-editor-current-line").classList.toggle("markup-editor-no-current-line", selectionStart !== selectionEnd);
+  backdrop.classList.toggle("markup-editor-hide-caret", selectionStart !== selectionEnd || document.activeElement === markupEditor);
+  backdrop.style.width = `${markupEditor.clientWidth}px`;
+  backdrop.scrollTop = markupEditor.scrollTop;
+}
+
+/** Draws the eye to the selected element when it got there from elsewhere. */
+function flashEditorSelection() {
+  const backdrop = markupEditor?.previousElementSibling;
+  if (!backdrop) return;
+  backdrop.classList.remove("markup-editor-flash");
+  void backdrop.offsetWidth; // restarts the animation
+  backdrop.classList.add("markup-editor-flash");
+  clearTimeout(editorFlashTimer);
+  editorFlashTimer = setTimeout(() => backdrop.classList.remove("markup-editor-flash"), EDITOR_FLASH_MS);
+}
+
+/** The editor's text for a source text: a textarea reads every line break as a newline. */
+function editorTextOf(xml) {
+  return xml.includes("\r") ? xml.replace(/\r\n?/g, "\n") : xml;
+}
+
+function editorOffsetOfSource(offset) {
+  const xml = state.markupXml;
+  return xml.includes("\r") ? editorTextOf(xml.slice(0, offset)).length : offset;
+}
+
+function sourceOffsetOfEditor(offset) {
+  const xml = state.markupXml;
+  if (!xml.includes("\r")) return offset;
+  let source = 0;
+  for (let i = 0; i < offset && source < xml.length; i += 1) source += xml.startsWith("\r\n", source) ? 2 : 1;
+  return source;
+}
+
+/** The innermost element at a source offset; right after an element's end, that element rather than what holds it. */
+function elementAtSourceOffset(offset) {
+  const spans = markupSourceSpans();
+  const innermostAt = (at) => {
+    let found = null;
+    let foundLength = Infinity;
+    for (const [node, span] of spans) {
+      if (node.nodeType !== Node.ELEMENT_NODE || at < span.start || at >= span.end) continue;
+      if (span.end - span.start < foundLength) {
+        found = node;
+        foundLength = span.end - span.start;
+      }
+    }
+    return found;
+  };
+  const inside = innermostAt(offset);
+  const before = offset > 0 ? innermostAt(offset - 1) : null;
+  return before && before !== inside && spans.get(before).end === offset && (!inside || inside.contains(before)) ? before : inside;
+}
+
+/** Brings the caret into view; in a long line, as in minimized source, that is not the same as bringing the line into view. */
+function scrollEditorToCaret() {
+  syncEditorCurrentLine();
+  const backdrop = markupEditor?.previousElementSibling;
+  const caret = backdrop?.querySelector(".markup-editor-caret");
+  if (!caret) return;
+  const y = caret.getBoundingClientRect().top - backdrop.getBoundingClientRect().top + backdrop.scrollTop;
+  const view = markupEditor.clientHeight;
+  const top = markupEditor.scrollTop;
+  const lineHeight = parseFloat(getComputedStyle(markupEditor).lineHeight) || 0;
+  if (y < top || y + lineHeight > top + view) {
+    markupEditor.scrollTop = Math.max(0, y - view / 3);
+    syncEditorCurrentLine();
+  }
+}
+
+/** Shows the selected element in the source editor: the caret goes to its start, unless it is in the element already. */
+function revealSelectionInEditor() {
+  if (!markupEditor || !selectedElementId || !state || hasUnappliedEditorText() || state.altInactive?.size) return;
+  const el = state.idToElement?.get(selectedElementId);
+  const span = el && markupSourceSpans().get(el);
+  if (!span) return;
+  const atCaret = elementAtSourceOffset(sourceOffsetOfEditor(markupEditor.selectionStart));
+  const fromElsewhere = !atCaret || !el.contains(atCaret) || document.activeElement !== markupEditor;
+  if (!atCaret || !el.contains(atCaret)) {
+    const offset = editorOffsetOfSource(span.start);
+    markupEditor.setSelectionRange(offset, offset);
+  }
+  scrollEditorToCaret();
+  if (fromElsewhere) flashEditorSelection();
+}
+
+/** Selects the element at the editor's caret in the other views, going to its page if needed. */
+function selectElementAtEditorCaret() {
+  if (!markupEditor || !state || hasUnappliedEditorText() || state.altInactive?.size) return;
+  const el = elementAtSourceOffset(sourceOffsetOfEditor(markupEditor.selectionStart));
+  const target = el && resolveSelectionElement(el);
+  if (!target) return;
+  let onPage = target;
+  while (onPage && !state.elementPageByEl.has(onPage)) onPage = onPage.parentElement;
+  const page = onPage && state.elementPageByEl.get(onPage);
+  if (!page) return;
+  if (page !== state.currentPage) {
+    state.pendingSelectElement = target;
+    goToPage(page);
+    return;
+  }
+  const id = findElementIdOnPage(target);
+  if (id && id !== selectedElementId) {
+    state.pendingSelectElement = null;
+    selectElement(id);
+  }
+}
+
+function onEditorSelectionChange() {
+  syncEditorCurrentLine();
+  if (!markupEditor || document.activeElement !== markupEditor) return;
+  clearTimeout(editorCaretTimer);
+  editorCaretTimer = setTimeout(selectElementAtEditorCaret, EDITOR_CARET_SYNC_MS);
+}
+
+/** Puts `xml` in the editor, with the caret where it first differs from what was there. */
+function setEditorText(xml) {
+  const text = editorTextOf(xml);
+  const old = markupEditor.value;
+  if (text === old) return;
+  let at = 0;
+  while (at < text.length && text[at] === old[at]) at += 1;
+  markupEditor.value = text;
+  markupEditor.setSelectionRange(at, at);
+  syncEditorCurrentLine();
+  scrollEditorToCaret();
+}
+
+/** Why `text` cannot be a document, if so. */
+function markupTextProblem(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) {
+    const detail = parseError.querySelector("div")?.textContent ?? parseError.textContent;
+    return `Not well-formed XML: ${detail.trim().split("\n")[0]}`;
+  }
+  return localName(doc.documentElement) === "doclang" ? null : "The root element must be <doclang>.";
+}
+
+/** Says, without moving anything in the pane, that the text in the editor is not reflected in the views. */
+function setDraftProblem(message) {
+  clearTimeout(draftProblemTimer);
+  if (!els.draftProblem) return;
+  els.draftProblem.textContent = message ?? "";
+  els.draftProblem.title = message ?? "";
+  els.draftProblem.hidden = !message;
+}
+
+function scheduleLiveEdit() {
+  clearTimeout(liveEditTimer);
+  liveEditTimer = setTimeout(runLiveEdit, LIVE_EDIT_DELAY_MS);
+}
+
+function runLiveEdit() {
+  liveEditTimer = null;
+  const run = (liveEditRun ?? Promise.resolve()).then(applyLiveEdit).finally(() => {
+    if (liveEditRun === run) liveEditRun = null;
+  });
+  liveEditRun = run;
+}
+
+/** Brings the document up to date with the editor, as far as its text allows. */
+async function flushLiveEdit() {
+  if (liveEditTimer !== null) {
+    clearTimeout(liveEditTimer);
+    runLiveEdit();
+  }
+  await liveEditRun;
+}
+
+function cancelLiveEdit() {
+  clearTimeout(liveEditTimer);
+  liveEditTimer = null;
+  clearTimeout(editorCaretTimer);
+  setDraftProblem(null);
+}
+
+/** What is typed reaches the views once it is well-formed. A pause starts a new undo step. */
+async function applyLiveEdit() {
+  if (!markupEditor) return;
+  if (!hasUnappliedEditorText()) return setDraftProblem(null);
+  const text = markupEditor.value;
+  const problem = markupTextProblem(text);
+  if (problem) {
+    // Most of typing a tag is not well-formed: only say so once the typing has stopped there.
+    clearTimeout(draftProblemTimer);
+    draftProblemTimer = setTimeout(() => setDraftProblem(problem), DRAFT_PROBLEM_DELAY_MS);
+    return;
+  }
+  setDraftProblem(null);
+  const now = Date.now();
+  const record = now >= rawUndoGroupUntil;
+  rawUndoGroupUntil = now + RAW_UNDO_GROUP_MS;
+  if (await commitMarkupText(text, { record })) setEditError(null);
+}
+
+/** Rebuilds the views from `text` around the open source editor, reusing the page images and leaving the scroll where it is. */
+function rebuildDocumentInPlace(entry, text) {
+  const prev = state;
+  const next = buildDocumentState(text, prev.pageImages, entry.label, prev.assetUrls, { markupOnly: prev.markupOnly, altChoices: entry.altChoices });
+  if (!next) return;
+  for (const m of prev.trackMedia?.values() ?? []) {
+    if (m.vttUrl?.startsWith("blob:")) URL.revokeObjectURL(m.vttUrl);
+  }
+  next.currentPage = Math.min(prev.currentPage, next.pageCount);
+  stopTokenReplay();
+  tokenLens.cursor = -Infinity;
+  tokenLens.effects = false;
+  const readingScroll = els.renderedPane?.scrollTop ?? 0;
+  const oldPort = pageViewScrollPane();
+  const pageScroll = oldPort ? [oldPort.scrollLeft, oldPort.scrollTop] : null;
+  state = next;
+  entry.snapshot = next;
+  setPageViewVisible(next.hasPageView);
+  syncReadingLayoutButtons();
+  renderPage(next.currentPage);
+  if (els.renderedPane) els.renderedPane.scrollTop = readingScroll;
+  const port = pageViewScrollPane();
+  if (port && pageScroll) [port.scrollLeft, port.scrollTop] = pageScroll;
+  syncEditUi();
+  selectElementAtEditorCaret();
+  clearTimeout(liveValidationTimer);
+  liveValidationTimer = setTimeout(() => validateActiveDocument({ quiet: true }), LIVE_VALIDATION_DELAY_MS);
 }
 
 function stopEditing({ render }) {
   if (!markupEditor) return;
+  cancelLiveEdit();
+  const keep = selectedElementId;
   markupEditor = null;
   els.markupPane?.classList.remove("editing");
-  if (render && state) renderPage(state.currentPage);
+  if (render && state) {
+    renderPage(state.currentPage);
+    if (keep && state.idToElement?.has(keep)) selectElement(keep);
+  }
   syncEditUi();
 }
 
 /** True unless the user keeps unapplied editor text they would otherwise lose. */
 function confirmDiscardEditor() {
-  if (!markupEditor || !state || markupEditor.value === state.markupXml) return true;
+  if (!hasUnappliedEditorText()) return true;
   return confirm("Discard the unapplied edits in the editor?");
 }
 
-/** Re-parses the editor text and, when it is well-formed, rebuilds every derived view from it. */
-async function applyEdit() {
-  const entry = editableEntry();
-  if (!markupEditor || !entry) return;
-  const text = markupEditor.value;
-  if (text === state.markupXml) return stopEditing({ render: true });
-
-  const doc = new DOMParser().parseFromString(text, "application/xml");
-  const parseError = doc.querySelector("parsererror");
-  if (parseError) {
-    setEditError(`Not well-formed XML: ${parseError.textContent.trim().split("\n")[0]}`);
-    return;
-  }
-  if (localName(doc.documentElement) !== "doclang") {
-    setEditError("The root element must be <doclang>.");
-    return;
-  }
-
-  markupEditor = null; // the discard prompt in switchToFile must not fire for applied text
+/** Takes the editor out while the document is reloaded (switchToFile must not prompt about it); returns what `reopenEditor` needs. */
+function parkEditor() {
+  if (!markupEditor) return null;
+  cancelLiveEdit();
+  const { selectionStart, selectionEnd, scrollTop } = markupEditor;
+  markupEditor = null;
   els.markupPane?.classList.remove("editing");
-  if (!(await commitMarkupText(text))) {
-    markupEditor = null;
-    startEditing();
-    markupEditor.value = text;
+  return { selectionStart, selectionEnd, scrollTop };
+}
+
+/** Brings a parked editor back where it was. */
+function reopenEditor(parked) {
+  if (!parked) return;
+  startEditing(); // the document may have reopened it already
+  markupEditor.focus({ preventScroll: true });
+  markupEditor.setSelectionRange(parked.selectionStart, parked.selectionEnd);
+  markupEditor.scrollTop = parked.scrollTop;
+  syncEditorCurrentLine();
+}
+
+/**
+ * Makes the editor's text the document's, if it can be one.
+ * @param {{ stay?: boolean }} [opts] stay: keep the editor open, for an action that goes on from the text
+ * @returns {Promise<boolean>} whether the editor's text is now the document's
+ */
+async function applyEdit({ stay = false } = {}) {
+  if (!markupEditor || !editableEntry()) return false;
+  await flushLiveEdit();
+  if (!markupEditor) return false;
+  if (hasUnappliedEditorText()) {
+    const problem = markupTextProblem(markupEditor.value);
+    if (problem) {
+      setEditError(problem);
+      return false;
+    }
+    if (!(await commitMarkupText(markupEditor.value))) return false;
   }
+  setEditError(null);
+  if (!stay) {
+    setMarkupViewMode("visual");
+    stopEditing({ render: true });
+  }
+  return true;
 }
 
 /**
@@ -3592,15 +4173,21 @@ async function commitMarkupText(text, { record = true, reselect = null } = {}) {
     setEditError(`Could not apply: ${err.message}`);
     return false;
   }
-  if (!entry.dirty) entry.savedSource = previousSource;
-  entry.dirty = true;
-  entry.validation = null;
+  if (!entry.dirty) {
+    entry.savedSource = previousSource;
+    entry.savedText = previousText;
+  }
+  // Getting back to the saved text, by undo or redo say, leaves nothing to save.
+  entry.dirty = text !== entry.savedText;
+  if (!entry.dirty) entry.savedSource = null;
+  if (!markupEditor) entry.validation = null; // with the editor open, the last result stays until the next one
   const facet = selectedFacet; // renderPage clears the selection: keep the level the user was editing
   if (record) {
     (entry.undoStack ??= []).push(previousText);
     entry.redoStack = [];
   }
-  await switchToFile(activeFileIndex);
+  if (markupEditor) rebuildDocumentInPlace(entry, text);
+  else await switchToFile(activeFileIndex);
   if (reselect && state?.idToElement?.has(reselect)) selectElement(reselect, facet);
   return true;
 }
@@ -3619,6 +4206,8 @@ function downloadBlob(blob, name) {
 /** Writes the applied bytes back through the file's handle, or downloads them when there is none. */
 async function saveActiveFile() {
   await flushPendingEdit();
+  if (markupEditor && !(await applyEdit({ stay: true }))) return;
+  rawUndoGroupUntil = 0;
   const entry = editableEntry();
   if (!entry?.dirty) return;
   const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
@@ -3649,11 +4238,19 @@ async function saveActiveFile() {
   syncEditUi();
 }
 
-/** Drops every applied change and goes back to the last saved (or opened) bytes. */
+/** Drops every change, also any text not applied from the source editor, and goes back to the last saved (or opened) bytes. */
 async function revertActiveFile() {
   await flushPendingEdit();
+  await flushLiveEdit();
   const entry = editableEntry();
-  if (!entry?.dirty || !entry.savedSource) return;
+  if (!entry?.dirty || !entry.savedSource) {
+    if (!hasUnappliedEditorText() || !confirmDiscardEditor()) return;
+    setEditorText(state.markupXml);
+    setDraftProblem(null);
+    setEditError(null);
+    syncHistoryButtons();
+    return;
+  }
   if (!confirm(`Discard the unsaved changes to ${entry.label} and restore its last saved version?`)) return;
   entry.source = entry.savedSource;
   entry.savedSource = null;
@@ -3661,9 +4258,10 @@ async function revertActiveFile() {
   entry.undoStack = [];
   entry.redoStack = [];
   entry.validation = null;
-  markupEditor = null;
-  els.markupPane?.classList.remove("editing");
+  const parked = parkEditor();
+  setEditError(null);
   await switchToFile(activeFileIndex);
+  reopenEditor(parked);
 }
 
 // --- Visual editing: select an element, then change it from the inspector or the page overlay ---
@@ -3726,6 +4324,7 @@ function listItemBody(list) {
   return nodes.slice(head ? head.nextIndex : idx + 1);
 }
 const BBOX_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const BBOX_HANDLE_SCREEN_PX = 9;
 
 function serializeDocument() {
   let xml = new XMLSerializer().serializeToString(state.docRoot.ownerDocument);
@@ -3985,20 +4584,34 @@ function setElementLocations(el, [x0, y0, x1, y1]) {
 /** Moves the document one step along the undo (`from`) or redo stack, pushing the current text onto the other. */
 async function stepHistory(from, to) {
   await flushPendingEdit();
+  if (markupEditor) {
+    await flushLiveEdit();
+    rawUndoGroupUntil = 0;
+    if (hasUnappliedEditorText()) {
+      // Text that is not well-formed is no step of the history: undoing goes back to the last that was.
+      if (from === "undoStack") {
+        setEditorText(state.markupXml);
+        setDraftProblem(null);
+        setEditError(null);
+        syncHistoryButtons();
+      }
+      return;
+    }
+  }
   const entry = editableEntry();
   const target = entry?.[from]?.pop();
   if (target == null) return;
   const current = state.markupXml;
-  const ok = await commitMarkupText(target, { record: false, reselect: selectedElementId });
+  const ok = await commitMarkupText(target, { record: false, reselect: markupEditor ? null : selectedElementId });
+  if (ok && markupEditor) {
+    setEditorText(target);
+    selectElementAtEditorCaret();
+  }
   if (!ok) {
     entry[from].push(target);
     return;
   }
   (entry[to] ??= []).push(current);
-  if (!entry.undoStack?.length) {
-    entry.dirty = false;
-    entry.savedSource = null;
-  }
   syncEditUi();
 }
 
@@ -4342,8 +4955,8 @@ function addButton(kind) {
 }
 
 function syncAddButtons() {
-  const entry = editableEntry();
-  const show = !!entry && !markupEditor;
+  const show = !!editableEntry();
+  const raw = !!markupEditor; // they draw on the page and edit visually: unavailable in Raw, but they keep their place
   const selected = selectedElement();
   const enabled = {
     parent: !!selected && canWrap(selected),
@@ -4353,14 +4966,18 @@ function syncAddButtons() {
   };
   if (els.addThreadBtn) {
     els.addThreadBtn.hidden = !show || !state.hasPageView;
+    els.addThreadBtn.disabled = raw;
     els.addThreadBtn.classList.toggle("active", drawing?.kind === "thread");
   }
-  if (els.pageEditBar) els.pageEditBar.hidden = !show;
+  if (els.pageEditBar) {
+    els.pageEditBar.hidden = !show;
+    els.pageEditBar.title = raw ? "Switch to Visual to add elements and threads" : "";
+  }
   for (const kind of ADD_KINDS) {
     const btn = addButton(kind);
     if (!btn) continue;
     btn.hidden = !show;
-    btn.disabled = !enabled[kind] && drawing?.kind !== kind;
+    btn.disabled = raw || (!enabled[kind] && drawing?.kind !== kind);
     btn.classList.toggle("active", drawing?.kind === kind);
   }
 }
@@ -5433,7 +6050,8 @@ function syncBboxHandles() {
 function drawBboxHandles(group, box, img) {
   group.replaceChildren();
   const { x, y, w, h } = boxPixelRect(box, img);
-  const size = Math.max(8, img.naturalWidth * 0.01);
+  // A fixed size on screen, whatever the zoom: image pixels per screen pixel times the screen size.
+  const size = BBOX_HANDLE_SCREEN_PX * (img.naturalWidth / (img.getBoundingClientRect().width || img.naturalWidth));
   const pos = {
     nw: [x, y], n: [x + w / 2, y], ne: [x + w, y], e: [x + w, y + h / 2],
     se: [x + w, y + h], s: [x + w / 2, y + h], sw: [x, y + h], w: [x, y + h / 2],
@@ -5716,13 +6334,20 @@ function archiveIssues(docState) {
   return issues;
 }
 
-async function validateActiveDocument() {
+/** @param {{ quiet?: boolean }} [opts] quiet: the last result stays up until this one is in */
+async function validateActiveDocument({ quiet = false } = {}) {
   const entry = fileCatalog[activeFileIndex];
   if (!entry || !state) return;
-  entry.validation = { status: "running" };
-  renderValidationUi(entry);
+  if (quiet) {
+    entry.validationPanelOpen ??= !els.validationPanel?.hidden; // the badge tells: the panel must not open while typing
+  } else {
+    entry.validation = { status: "running" };
+    renderValidationUi(entry);
+  }
   const fromArchive = archiveIssues(state);
-  const result = await requestValidation(state.markupXml);
+  const xml = state.markupXml;
+  const result = await requestValidation(xml);
+  if (fileCatalog[activeFileIndex] === entry && state?.markupXml !== xml) return; // the text has moved on: a later run reports
   const issues = result.ok ? [...result.issues, ...fromArchive] : [];
   entry.validation = result.ok
     ? { status: issues.length ? "invalid" : "valid", issues, schemaVersion: result.schemaVersion, versionAssumed: !!result.versionAssumed }
@@ -5883,7 +6508,7 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
   document.body.classList.toggle("viewer-loaded", open);
   document.body.classList.toggle("markup-only", open && markupOnly);
   if (els.pageNav) els.pageNav.hidden = !open || markupOnly;
-  if (els.layoutNav) els.layoutNav.hidden = !open || !state?.hasPageView;
+  if (els.layoutNav) els.layoutNav.hidden = !open;
   updateBboxNavButtons();
   syncToolbarPaneCheckboxes();
   applyPaneLayout();
@@ -5893,6 +6518,7 @@ function setDocumentOpen(open, { markupOnly = false } = {}) {
 function applyReadingLayerClasses(root) {
   root.classList.toggle("show-reading-furniture", showReadingFurniture);
   root.classList.toggle("show-reading-background", showReadingBackground);
+  root.classList.toggle("show-reading-bboxes", showReadingBboxes);
 }
 
 function syncReadingLayerVisibility() {
@@ -5936,9 +6562,6 @@ function resetViewer() {
   selectedElementId = null;
   pagePanDrag = null;
   pagePanSuppressClick = false;
-  showReadingFurniture = true;
-  showReadingBackground = true;
-  syncReadingLayerCheckboxes();
   resetPageZoom();
   setDocLabel(null);
   setDocumentOpen(false);
@@ -6251,7 +6874,7 @@ function resetOverlayPrefs() {
 
 function loadHotkeysPref() {
   try {
-    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) === "true";
+    hotkeysEnabled = localStorage.getItem(HOTKEYS_STORAGE_KEY) !== "false"; // on unless switched off
   } catch {
     /* ignore invalid stored hotkeys pref */
   }
@@ -6294,6 +6917,12 @@ function syncReadingLayoutButtons() {
   if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.disabled = state?.hasPageView === false;
   if (els.readingLayoutPagelessBtn) els.readingLayoutPagelessBtn.setAttribute("aria-pressed", String(!paged));
   if (els.readingLayoutPagedBtn) els.readingLayoutPagedBtn.setAttribute("aria-pressed", String(paged));
+  // Only the Paged layout draws boxes; the choice is kept for when it is back.
+  if (els.showReadingBboxes) els.showReadingBboxes.disabled = !paged;
+  els.showReadingBboxesLabel?.classList.toggle("settings-option-disabled", !paged);
+  // Crops come out of the page image: without one the option has nothing to do, and is kept for the next document.
+  if (els.cropPictures) els.cropPictures.disabled = state?.hasPageView === false;
+  els.cropPicturesLabel?.classList.toggle("settings-option-disabled", state?.hasPageView === false);
 }
 
 function setReadingLayoutMode(mode) {
@@ -6792,7 +7421,8 @@ function renderPage(pageNum) {
   state.currentBoxes = boxes;
 
   if (markupEditor) {
-    // The editor holds the whole document and stays put while paging.
+    // The editor holds the whole document and stays put while paging; the selection is gone.
+    syncEditorCurrentLine();
   } else if (segmentHasMarkup(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
     syncMarkupTokens();
@@ -6801,6 +7431,14 @@ function renderPage(pageNum) {
   }
 
   renderReadingPane(segment, elementIds, boxes, defaultResolution);
+
+  // Without page images nothing waits for an image to load: select what navigation went to right away.
+  if (!state.hasPageView && state.pendingSelectElement) {
+    const pending = state.pendingSelectElement;
+    state.pendingSelectElement = null;
+    const id = findElementIdOnPage(pending);
+    if (id) selectElement(id);
+  }
 
   els.pagePane.innerHTML = "";
   tokenLayer = null;
@@ -6896,6 +7534,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     els.renderedPane.classList.add("reading-mode-paged");
     const canvas = buildPagedView(segment, elementIds, boxes, defaultResolution);
     continueEquationNumbering(canvas, segment);
+    applyRtlBlocks(canvas);
     // The page image (in the separate "Original" pane) may have already
     // finished loading before this canvas existed to receive onImageReady's
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
@@ -6909,6 +7548,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     }
     els.renderedPane.appendChild(canvas);
     fitPagedCanvas();
+    if (state.tokenData) syncPagedTraceRender(currentTokenRange()); // a new page starts out unwritten while tracing
     if (!pagedPaneResizeObserver) {
       pagedPaneResizeObserver = new ResizeObserver(() => fitPagedCanvas());
       pagedPaneResizeObserver.observe(els.renderedPane);
@@ -6917,8 +7557,45 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     els.renderedPane.classList.remove("reading-mode-paged");
     const view = buildRenderedView(segment, elementIds);
     continueEquationNumbering(view, segment);
+    applyRtlBlocks(view);
     els.renderedPane.appendChild(view);
   }
+}
+
+const RTL_BLOCKS = "p, h1, h2, h3, h4, h5, h6, li, td, th, figcaption";
+/** Inline pieces with no direction of their own, which neither set nor follow the direction of the text around them. */
+const DIRECTION_NEUTRAL = ".rendered-formula-inline, code, .rendered-marker, .rendered-checkbox-wrap, img";
+
+/**
+ * <rtl> marks right-to-left text, rendered as an isolated run within its line. A block reads in the direction of its
+ * first piece of text that has one, as in Unicode's paragraph direction: right to left when that is an <rtl> run (the
+ * block is aligned to the right, with its list number or bullet on the right), else left to right. Formulas and code
+ * keep their own left-to-right order inside a right-to-left block.
+ */
+function applyRtlBlocks(root) {
+  for (const block of root.querySelectorAll(RTL_BLOCKS)) {
+    const direction = firstTextDirection(block);
+    if (direction === "rtl") block.dir = "rtl";
+    else if (direction === "ltr" && block.parentElement?.closest("[dir=rtl]")) block.dir = "ltr";
+  }
+  for (const neutral of root.querySelectorAll(".rendered-formula-inline, code")) {
+    if (neutral.closest("[dir=rtl]")) neutral.dir = "ltr";
+  }
+}
+
+/** "rtl" or "ltr" after the first piece of text in `node` that has a direction; null when none has. */
+function firstTextDirection(node) {
+  for (const child of node.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      if (/\p{L}/u.test(child.textContent)) return "ltr"; // text outside <rtl> reads left to right; digits and punctuation do not decide
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      if (child.localName === "bdi" && child.dir === "rtl") return "rtl";
+      if (child.matches(DIRECTION_NEUTRAL)) continue;
+      const inside = firstTextDirection(child);
+      if (inside) return inside;
+    }
+  }
+  return null;
 }
 
 /** Pages render one at a time, so continue KaTeX's equation numbering from earlier pages. */
@@ -7049,6 +7726,7 @@ function syncPageViewChrome(img) {
   syncTokenLayer(img);
   updatePagePanePanCursor();
   applyBboxVisibility();
+  syncBboxHandles(); // their size is set in screen pixels: redraw for the new zoom
 }
 
 function applyPageLayout(img, pane = els.pagePane) {
@@ -7068,7 +7746,13 @@ function refreshPageViewLayout() {
   });
 }
 
+/** Measuring text forces a layout, and a page can have hundreds of badges with a few different labels. */
+const overlayBadgeSizes = new Map();
+
 function overlayBadgeLayout(svg, text, fontSizeUser) {
+  const key = `${fontSizeUser}|${text}`;
+  const known = overlayBadgeSizes.get(key);
+  if (known) return known;
   const padXUser = overlayUserLength(OVERLAY_BADGE_PAD_X);
   const padYUser = overlayUserLength(OVERLAY_BADGE_PAD_Y);
   const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -7087,6 +7771,7 @@ function overlayBadgeLayout(svg, text, fontSizeUser) {
     const bbox = probe.getBBox();
     width = bbox.width + padXUser * 2;
     height = bbox.height + padYUser * 2;
+    if (bbox.width > 0) overlayBadgeSizes.set(key, { width, height }); // nothing to measure while hidden
   } catch {
     const label = String(text);
     width = overlayUserLength(label.length * OVERLAY_BADGE_FONT_SIZE * 0.55 + OVERLAY_BADGE_PAD_X * 2);
@@ -7096,7 +7781,7 @@ function overlayBadgeLayout(svg, text, fontSizeUser) {
   return { width, height };
 }
 
-function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId }) {
+function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId, into = svg }) {
   const fontSize = overlayUserLength(OVERLAY_BADGE_FONT_SIZE);
   const { width, height } = overlayBadgeLayout(svg, text, fontSize);
   const radius = overlayUserLength(OVERLAY_BADGE_RADIUS_SCREEN_PX);
@@ -7123,7 +7808,7 @@ function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId
   label.textContent = String(text);
   badge.appendChild(label);
 
-  svg.appendChild(badge);
+  into.appendChild(badge);
   return badge;
 }
 
@@ -7137,13 +7822,16 @@ function syncOverlayBadges(img) {
 
   const boxes = sortedOverlayBoxes(meta.boxes ?? []);
 
+  const badges = document.createDocumentFragment(); // added all at once, so that no badge forces a layout for the next
   for (const b of boxes) {
     const { x, y } = boxPixelRect(b, img);
     appendOverlayBadge(svg, x, y, b.tag, {
       extraClass: `element-badge ${kindClassForTag(b.kind)}`,
       elementId: b.elementId,
+      into: badges,
     });
   }
+  svg.appendChild(badges);
 }
 
 function splitIntoSegments(root) {
@@ -7693,10 +8381,21 @@ function bboxNavTarget(direction) {
   const currentId = selectedElementId ?? tokenLens.currentId;
   const currentEl = currentId ? state.idToElement?.get(currentId) : state.pendingSelectElement;
   const currentIndex = currentEl ? state.readingOrderIndexByElement?.get(currentEl) : undefined;
-  const startIndex = currentIndex !== undefined ? currentIndex : (direction === "prev" ? order.length : -1);
+  // With nothing selected, navigation starts just before the current page's first element, so it never wraps
+  // around: on the first page there is nothing before, on the last page "next" goes to its first element.
+  let startIndex = currentIndex;
+  if (startIndex === undefined) {
+    const firstOnPage = order.findIndex((el) => (state.elementPageByEl.get(el) ?? 0) >= state.currentPage);
+    const pageStart = firstOnPage < 0 ? order.length : firstOnPage;
+    startIndex = direction === "prev" ? pageStart : pageStart - 1;
+  }
 
   for (let i = startIndex + step; i >= 0 && i < order.length; i += step) {
-    if (hasOverlayBox(order[i]) && !isElementOverlayHidden(order[i])) return order[i];
+    // With page images, the steps are the bboxes the overlay shows; without, the elements that select as themselves.
+    const stops = state.hasPageView
+      ? hasOverlayBox(order[i]) && !isElementOverlayHidden(order[i])
+      : resolveSelectionElement(order[i]) === order[i];
+    if (stops) return order[i];
   }
   return null;
 }
@@ -7719,8 +8418,8 @@ function navigateBbox(direction) {
 }
 
 function updateBboxNavButtons() {
-  if (els.btnBboxPrev) els.btnBboxPrev.disabled = !state?.hasPageView || !bboxNavTarget("prev");
-  if (els.btnBboxNext) els.btnBboxNext.disabled = !state?.hasPageView || !bboxNavTarget("next");
+  if (els.btnBboxPrev) els.btnBboxPrev.disabled = !bboxNavTarget("prev");
+  if (els.btnBboxNext) els.btnBboxNext.disabled = !bboxNavTarget("next");
 }
 
 /** @returns {{ l: number, t: number, r: number, b: number } | null} bbox normalized by location resolution */
@@ -8285,8 +8984,8 @@ function collapseDisabledArrowFields() {
 }
 
 /** Give each thickness/arrowhead range slider a live numeric readout beside it. */
-function enhanceArrowRangeInputs() {
-  const ranges = els.pageSettingsPanel?.querySelectorAll('input[type="range"][data-arrow-layer]');
+function enhanceArrowRangeInputs(panel = els.pageSettingsPanel) {
+  const ranges = panel?.querySelectorAll('input[type="range"]');
   if (!ranges) return;
   for (const input of ranges) {
     if (input.parentElement?.classList.contains("arrow-field-control")) continue;
@@ -8762,12 +9461,14 @@ function selectElement(elementId, facet = "text") {
   selectedElementId = elementId;
   selectedFacet = facet;
   applySelection();
+  revealSelectionInEditor();
   if (!tokenLens.syncing) seekTraceToElement(elementId);
 }
 
 function clearSelection() {
   selectedElementId = null;
   applySelection();
+  syncEditorCurrentLine();
 }
 
 function isLayoutLayerHidden(layer) {
@@ -9278,6 +9979,8 @@ function computeMarkupGlue(segment) {
 
 let markupGlue = new WeakMap();
 let markupSpaces = new WeakMap();
+/** Which node, and which part of it ("whole", "open" or "close"), each line of the source view shows. */
+const markupLineSources = new WeakMap();
 
 /** A space read from a node of just whitespace has no line of its own: it goes at the end of the line before. */
 function appendMarkupLoneSpace(container, fallbackLine) {
@@ -9295,10 +9998,152 @@ function appendGlueMark(parent, className, hint) {
 }
 
 function markGlueLine(line, node, part) {
+  if (line) markupLineSources.set(line, { node, part });
   const glued = markupGlue.get(node)?.[part];
   if (!line || !glued) return;
   if (glued.end) appendGlueMark(line.querySelector(".markup-line-body"), "markup-glue-end", "This line break is not in the source; only used for display");
   if (glued.start) appendGlueMark(line.querySelector(".markup-line-content"), "markup-glue-start", "This spacing is not in the source; only used for display");
+}
+
+/** The source view's text as spans, whichever way it is split (a CDATA section, the tokens of the token lens). */
+const MARKUP_TEXT_SPANS = ".xml-text, .xml-cdata, .xml-cdata-delimiter";
+
+/** Where each node of the current document is in its source, as parsed (nothing while an alternative is swapped in). */
+function markupSourceSpans() {
+  if (state.markupSpans?.xml === state.markupXml) return state.markupSpans.spans;
+  const spans = new Map();
+  const pieces = scanMarkupPieces(state.markupXml);
+  let at = 0;
+  for (const piece of pieces) {
+    piece.start = at;
+    at += piece.raw.length;
+  }
+  const tree = buildMarkupPieceTree(pieces);
+  const rootPiece = tree.children.find((c) => c.piece.type === "open");
+  if (rootPiece) {
+    rootPiece.node = state.docRoot;
+    pairMarkupPieces(rootPiece, state.docRoot);
+  }
+  (function collect(node) {
+    for (const c of node.children) {
+      if (!c.node) continue;
+      const openEnd = c.piece.start + c.piece.raw.length;
+      const closeStart = c.close?.start ?? openEnd;
+      spans.set(c.node, { start: c.piece.start, openEnd, closeStart, end: closeStart + (c.close?.raw.length ?? 0) });
+      collect(c);
+    }
+  })(tree);
+  state.markupSpans = { xml: state.markupXml, spans };
+  return spans;
+}
+
+/** The characters of `text` that positions in text count: all but whitespace, which can be shown differently, or in <content> (`literal`) all but CR. */
+function countedMarkupChars(text, literal) {
+  return text.replace(literal ? /\r/g : /[ \t\r\n]/g, "").length;
+}
+
+/**
+ * The source offset in [from, to) of the shown text's `count`th character: where it starts ("start") or where the one
+ * before it ends ("end"). Whitespace aside, the source view shows the text as written, with entities decoded.
+ */
+function sourceTextOffset(from, to, count, side, literal) {
+  const xml = state.markupXml;
+  const entity = /&(?:#(\d+)|#x([\da-f]+)|\w+);/iy;
+  let seen = 0;
+  let lastEnd = from;
+  let cdataEnd = -1;
+  let i = from;
+  while (i < to) {
+    if (i >= cdataEnd && xml.startsWith("<!--", i)) {
+      i = xml.indexOf("-->", i) + 3;
+      continue;
+    }
+    if (i >= cdataEnd && xml.startsWith("<![CDATA[", i)) cdataEnd = xml.indexOf("]]>", i) + 3;
+    let shown = xml[i];
+    let length = 1;
+    if (i >= cdataEnd) {
+      entity.lastIndex = i;
+      const m = entity.exec(xml);
+      if (m) {
+        const code = m[1] ? Number(m[1]) : m[2] ? parseInt(m[2], 16) : null;
+        shown = code === null ? "x" : String.fromCodePoint(code);
+        length = m[0].length;
+      }
+    }
+    const counted = countedMarkupChars(shown, literal);
+    if (counted) {
+      if (side === "start" && seen >= count) return i;
+      seen += counted;
+      lastEnd = i + length;
+      if (side === "end" && seen >= count) return lastEnd;
+    }
+    i += length;
+  }
+  return side === "start" ? to : lastEnd;
+}
+
+/** The source offset of a selection's end in a line: `point` when it is inside the line's text, else the line's edge. */
+function sourceOffsetInLine(line, point, side) {
+  const { node, part } = markupLineSources.get(line);
+  const span = markupSourceSpans().get(node);
+  const body = line.querySelector(".markup-line-body");
+  const isText = isTextLikeNode(node);
+  const hasText = isText || (part === "whole" && Boolean(body.querySelector(MARKUP_TEXT_SPANS)));
+  if (!hasText) {
+    if (part === "open") return side === "start" ? span.start : line.parentElement.classList.contains("markup-collapsed") ? span.end : span.openEnd;
+    if (part === "close") return side === "start" ? span.closeStart : span.end;
+    return side === "start" ? span.start : span.end;
+  }
+
+  const [from, to] = isText ? [span.start, span.end] : [span.openEnd, span.closeStart];
+  const literal = localName(isText ? node.parentElement : node) === "content";
+  // Before the first or after the last character, an element has its tags to go, a text node its whitespace to leave out.
+  const edge = (atStart) => {
+    if (!isText) return atStart ? (side === "start" ? span.start : span.openEnd) : side === "start" ? span.closeStart : span.end;
+    return sourceTextOffset(from, to, atStart ? 0 : Infinity, side, literal);
+  };
+  if (!point) return edge(side === "start");
+
+  const before = document.createRange();
+  before.setStart(body, 0);
+  before.setEnd(point.container, point.offset);
+  const shown = [...before.cloneContents().querySelectorAll(MARKUP_TEXT_SPANS)].map((s) => s.textContent).join("");
+  const anchor = point.container.nodeType === Node.ELEMENT_NODE ? point.container : point.container.parentElement;
+  if (!anchor.closest(MARKUP_TEXT_SPANS)) return edge(!shown);
+  return sourceTextOffset(from, to, countedMarkupChars(shown, literal), side, literal);
+}
+
+/** The part of the source that the selection in the source view spans: null if it has no source (only ghost tags, say). */
+function markupSourceForSelection(root, range) {
+  const spans = markupSourceSpans();
+  const lines = [...root.querySelectorAll(".markup-line")].filter((line) => {
+    if (!spans.has(markupLineSources.get(line)?.node) || !range.intersectsNode(line)) return false;
+    const inLine = document.createRange();
+    inLine.selectNodeContents(line.querySelector(".markup-line-body"));
+    if (range.compareBoundaryPoints(Range.START_TO_START, inLine) > 0) inLine.setStart(range.startContainer, range.startOffset);
+    if (range.compareBoundaryPoints(Range.END_TO_END, inLine) < 0) inLine.setEnd(range.endContainer, range.endOffset);
+    return inLine.toString().trim() !== "";
+  });
+  if (!lines.length) return null;
+  const pointIn = (line, container, offset) => (line.querySelector(".markup-line-body").contains(container) ? { container, offset } : null);
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  const start = sourceOffsetInLine(first, pointIn(first, range.startContainer, range.startOffset), "start");
+  const end = sourceOffsetInLine(last, pointIn(last, range.endContainer, range.endOffset), "end");
+  return start < end ? state.markupXml.slice(start, end) : null;
+}
+
+/** Copying from the source view gives the source the selection spans. With an alternative swapped in, the document no longer matches the source. */
+function onMarkupCopy(e) {
+  const root = els.markupPane?.querySelector(".markup");
+  const selection = window.getSelection();
+  if (!root || !selection?.rangeCount || selection.isCollapsed || state?.altInactive?.size) return;
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return;
+  const source = markupSourceForSelection(root, range);
+  if (source === null) return;
+  e.clipboardData.setData("text/plain", source);
+  e.preventDefault();
 }
 
 function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
@@ -9466,6 +10311,7 @@ function buildMarkupOtslContainer(el, depth, elementIds) {
       const tag = localName(node);
       if (tag === "nl") {
         appendMarkupSelfClosingTag(children, childDepth, "nl", []);
+        markGlueLine(children.lastElementChild, node, "whole");
         i += 1;
         continue;
       }
@@ -9597,11 +10443,9 @@ function findLastTextNode(node) {
 function trimParentTrailingForFragmentJoin(parent) {
   const lastText = findLastTextNode(parent);
   if (!lastText) return;
-  // Preserved <content> text keeps its trailing whitespace (and any hyphen) across the join.
+  // Preserved <content> text keeps its trailing whitespace across the join.
   if (lastText.parentElement?.closest(".rendered-content")) return;
-  let value = lastText.textContent ?? "";
-  value = value.replace(/\s+$/u, "");
-  if (value.endsWith("-")) value = value.slice(0, -1);
+  const value = (lastText.textContent ?? "").replace(/\s+$/u, "");
   if (!value) {
     lastText.parentNode?.removeChild(lastText);
     trimParentTrailingForFragmentJoin(parent);
@@ -9889,7 +10733,9 @@ function fitSlotContent(slot) {
   if (!(targetW > 0 && targetH > 0)) return;
 
   // A block fills its slot's width however long its text is, so its own box never reveals horizontal overflow
-  // (a word wider than the box, e.g. a chart label). The extent of the text itself does.
+  // (a word wider than the box, e.g. a chart label). The extent of the text itself does, but only what is
+  // visible counts: KaTeX's hidden MathML can run past the box next to a formula at the end of a line.
+  slot.classList.add("paged-el-slot-fitting");
   const range = document.createRange();
   range.selectNodeContents(content);
   const fitsAt = (zoom) => {
@@ -9904,13 +10750,14 @@ function fitSlotContent(slot) {
   };
 
   let lo = 0.02;
-  let hi = 8;
+  let hi = content.querySelector(".rendered-picture-unavailable") ? 1 : 8; // an icon stays its size, whatever the room
   for (let i = 0; i < 16; i++) {
     const mid = (lo + hi) / 2;
     if (fitsAt(mid)) lo = mid;
     else hi = mid;
   }
   fitsAt(lo);
+  slot.classList.remove("paged-el-slot-fitting");
 }
 
 function wrapRendered(el, node, elementId, extraClass) {
@@ -10491,7 +11338,7 @@ function cropPageRegionToDataUrl(pageImg, box) {
  * placeholder itself when no page image or bbox is available for this element.
  */
 async function applyPictureCropFallback(img, el, elementIds) {
-  const elementId = el ? elementIds.get(el) : null;
+  const elementId = el && cropPictures ? elementIds.get(el) : null;
   const box = elementId ? state?.currentBoxes?.find((b) => b.elementId === elementId) : null;
   const pageUrl = box ? state?.pageImages?.get(state.currentPage) : null;
   const pageImg = pageUrl ? await loadPageImageElement(pageUrl) : null;
@@ -10499,7 +11346,7 @@ async function applyPictureCropFallback(img, el, elementIds) {
 
   if (!dataUrl) {
     markPictureUnavailable(img);
-    img.src = INVALID_PICTURE_SRC;
+    img.src = PICTURE_UNAVAILABLE_SRC;
     return;
   }
 
@@ -10873,6 +11720,16 @@ function wireActiveTranscriptRow(media, entries, scrollBox) {
   media.addEventListener("timeupdate", update);
   media.addEventListener("seeked", update);
 }
+
+els.markupPane?.addEventListener("copy", onMarkupCopy);
+
+// A click on the bar of the pane goes to its content, showing where the caret or the selection is.
+document.querySelector(".pane-markup-header")?.addEventListener("click", (e) => {
+  if (e.target.closest?.("button, input, select, label, a")) return;
+  if (markupEditor) return focusEditor();
+  els.markupPane?.focus({ preventScroll: true });
+  if (selectedElementId) findMarkupElementForSelection(selectedElementId)?.scrollIntoView({ block: "nearest" });
+});
 
 let markupUserScrolledAt = 0;
 {

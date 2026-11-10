@@ -307,7 +307,7 @@
           <div class="help-shortcut-list">
             <div class="help-shortcut-row">
               <span class="help-shortcut-keys"><kbd>E</kbd></span>
-              <span class="help-shortcut-desc">Edit source</span>
+              <span class="help-shortcut-desc">Edit the raw source</span>
             </div>
           </div>
         </section>
@@ -674,6 +674,10 @@
                     <input type="checkbox" id="token-scan">
                     <span>Reveal while tracing</span>
                   </label>
+                  <label class="settings-option settings-option-sub" title="While tracing, build up the Paged Preview as its tokens are written">
+                    <input type="checkbox" id="token-render">
+                    <span>Render while tracing</span>
+                  </label>
                 </div>
               </div>
 
@@ -697,25 +701,20 @@
       <div class="pane-header pane-markup-header">
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
-          <button type="button" class="pane-action-btn" id="btn-edit-cancel" title="Discard the changes in the editor (Esc)" hidden>Cancel</button>
-          <button type="button" class="pane-action-btn primary" id="btn-edit-apply" title="Re-parse the source and refresh the views (Ctrl/Cmd+Enter)" hidden>Apply</button>
-          <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
+          <div class="view-toggle" id="markup-view-toggle" role="group" aria-label="DocLang view" hidden>
+            <button type="button" class="view-toggle-btn" id="btn-view-visual" aria-pressed="true" title="Edit visually">Visual</button>
+            <button type="button" class="view-toggle-btn" id="btn-view-raw" aria-pressed="false" title="Edit the raw DocLang source (E)">Raw</button>
+          </div>
+            <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
           <button type="button" class="pane-action-btn icon-btn" id="btn-undo" title="Undo the last edit (Ctrl/Cmd+Z)" aria-label="Undo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
           <button type="button" class="pane-action-btn icon-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" aria-label="Redo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button>
           <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and go back to the last saved version" hidden>Discard</button>
-          <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the applied changes to the file" hidden>Save</button>
-          <!-- Less-used actions live behind "more" (vertical ellipsis icon: Lucide, ISC license, see vendor/lucide/LICENSE). -->
-          <div class="pane-menu-wrap">
-            <button type="button" class="pane-action-btn icon-btn ghost-btn" id="btn-pane-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="pane-menu" aria-label="More actions" title="More actions" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
-            <div class="pane-menu" id="pane-menu" role="menu" hidden>
-              <button type="button" class="pane-menu-item" role="menuitem" id="btn-edit" title="Edit the raw DocLang source (pauses visual editing)">Edit source</button>
-            </div>
-          </div>
+          <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the changes to the file" hidden>Save</button>
         </div>
       </div>
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
       <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
-      <div class="pane-body" id="markup-pane"></div>
+      <div class="pane-body" id="markup-pane" tabindex="-1"></div>
       <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
         <div class="validation-panel-header">
           <span class="validation-panel-summary" id="validation-summary"></span>
@@ -724,6 +723,7 @@
         <ol class="validation-issues" id="validation-issues"></ol>
       </div>
       <div class="pane-statusbar">
+        <span class="edit-draft-problem" id="edit-draft-problem" role="status" hidden></span>
         <div class="token-bar" id="token-bar" data-requires="tokens" aria-label="Token stats" hidden>
           <div class="token-nav" id="token-nav">
             <div class="page-nav-btns">
@@ -780,21 +780,21 @@
       <div class="pane-header pane-reading-header">
         <span class="pane-header-title">Preview</span>
         <div class="pane-header-actions">
-          <div class="reading-layout-toggle" role="group" aria-label="Reading layout">
+          <div class="view-toggle" role="group" aria-label="Reading layout">
             <button
               type="button"
-              class="reading-layout-btn"
+              class="view-toggle-btn"
               id="btn-reading-layout-pageless"
               aria-pressed="true"
-            >Pageless</button>
+            >Flowing</button>
             <button
               type="button"
-              class="reading-layout-btn"
+              class="view-toggle-btn"
               id="btn-reading-layout-paged"
               aria-pressed="false"
             >Paged</button>
           </div>
-          <button
+            <button
             type="button"
             class="pane-settings-toggle"
             id="btn-reading-settings-toggle"
@@ -802,7 +802,7 @@
             aria-expanded="false"
               aria-controls="reading-settings"
             >
-              Layers
+              Overlays
             </button>
         </div>
       </div>
@@ -814,7 +814,7 @@
             class="viewer-settings-scrim"
             id="reading-settings-scrim"
             tabindex="-1"
-            aria-label="Close layers"
+            aria-label="Close overlays"
           ></button>
           <aside
             class="viewer-settings"
@@ -824,11 +824,15 @@
             aria-labelledby="reading-settings-title"
           >
             <div class="viewer-settings-header">
-              <h2 class="viewer-settings-title" id="reading-settings-title">Layers</h2>
-              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close layers">×</button>
+              <h2 class="viewer-settings-title" id="reading-settings-title">Overlays</h2>
+              <button type="button" class="viewer-settings-close" id="btn-reading-settings-close" aria-label="Close overlays">×</button>
             </div>
             <div class="viewer-settings-body">
-              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-labelledby="reading-settings-title">
+              <label class="settings-option settings-option-primary" title="Select or deselect all layers">
+                <input type="checkbox" id="show-reading-layers" checked>
+                <span>Layers</span>
+              </label>
+              <div class="settings-subgroup" id="reading-layer-toggles" role="group" aria-label="Layers">
                 <label class="settings-option settings-option-sub" id="show-reading-furniture-label">
                   <input type="checkbox" id="show-reading-furniture" checked>
                   <span>Furniture</span>
@@ -838,6 +842,40 @@
                   <span>Background</span>
                 </label>
               </div>
+              <div class="arrow-layer-row">
+                <label class="settings-option settings-option-primary" id="show-reading-bboxes-label" title="Outline the box of each element in the Paged layout">
+                  <input type="checkbox" id="show-reading-bboxes" checked>
+                  <span>Bounding boxes</span>
+                </label>
+                <button
+                  type="button"
+                  class="arrow-style-btn"
+                  id="btn-reading-bbox-style"
+                  aria-expanded="false"
+                  aria-controls="reading-bbox-fields"
+                  aria-label="Bounding box style"
+                  title="Box style"
+                ></button>
+              </div>
+              <div class="arrow-style-fields" id="reading-bbox-fields" hidden>
+                <label>Color
+                  <input type="color" data-reading-bbox="color">
+                </label>
+                <label>Thickness
+                  <input type="range" min="0.5" max="6" step="0.5" data-reading-bbox="width">
+                </label>
+                <label>Line
+                  <select data-reading-bbox="style">
+                    <option value="solid">Solid</option>
+                    <option value="dashed">Dashed</option>
+                    <option value="dotted">Dotted</option>
+                  </select>
+                </label>
+              </div>
+              <label class="settings-option settings-option-primary" id="crop-pictures-label" title="Show a picture that has a bbox but no image of its own as a crop of the page image; otherwise, as a placeholder">
+                <input type="checkbox" id="crop-pictures" checked>
+                <span>Picture crops</span>
+              </label>
             </div>
           </aside>
         </div>

@@ -810,7 +810,8 @@ label.file-btn input {
   margin: 0;
   height: 1.875rem;
   box-sizing: border-box;
-  width: calc(var(--page-num-digits, 1) * 1ch + 0.75rem);
+  width: calc(var(--page-num-digits, 1) * 1ch + 1.4rem); /* digits + padding + border, with some air */
+  min-width: 2.25rem;
   line-height: 1;
   cursor: text;
 }
@@ -834,10 +835,6 @@ label.file-btn input {
   justify-content: space-between;
 }
 
-.pane-reading-header {
-  justify-content: space-between;
-}
-
 .pane-page-controls,
 .pane-header-actions {
   display: flex;
@@ -846,14 +843,23 @@ label.file-btn input {
   flex-shrink: 0;
 }
 
-.reading-layout-toggle {
+/* A pane's title is on the left, its view switch and what acts on it are on the right. */
+.pane-header-actions {
+  margin-left: auto;
+}
+
+.view-toggle {
   display: flex;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
   overflow: hidden;
 }
 
-.reading-layout-btn {
+.view-toggle[hidden] {
+  display: none;
+}
+
+.view-toggle-btn {
   appearance: none;
   border: none;
   background: transparent;
@@ -866,26 +872,26 @@ label.file-btn input {
   transition: color 0.12s ease, background 0.12s ease;
 }
 
-.reading-layout-btn + .reading-layout-btn {
+.view-toggle-btn + .view-toggle-btn {
   border-left: 1px solid var(--border);
 }
 
-.reading-layout-btn:hover:not(:disabled) {
+.view-toggle-btn:hover:not(:disabled) {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
-.reading-layout-btn:disabled {
+.view-toggle-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.reading-layout-btn[aria-pressed="true"] {
+.view-toggle-btn[aria-pressed="true"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
 }
 
-.reading-layout-btn:focus-visible {
+.view-toggle-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -937,7 +943,6 @@ label.file-btn input {
 
 .page-zoom-reset:disabled {
   opacity: 0.55;
-  cursor: default;
 }
 
 .pane-header-title {
@@ -1208,6 +1213,14 @@ kbd {
 
 .settings-option-primary {
   font-weight: 600;
+}
+
+#reading-settings .settings-subgroup + .arrow-layer-row,
+#reading-settings .arrow-layer-row + .settings-option-primary,
+#reading-settings .arrow-style-fields + .settings-option-primary,
+.settings-subgroup + .settings-option-primary,
+.settings-option-primary + .settings-option-primary {
+  margin-top: 0.65rem;
 }
 
 .settings-option-heading {
@@ -1551,13 +1564,27 @@ body.pane-drag-active .pane-splitter {
   position: absolute;
   overflow: hidden;
   transform-origin: top left;
-  outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
-  outline-offset: -1px;
+  outline: var(--reading-bbox-width, 1px) var(--reading-bbox-line, dashed) var(--reading-bbox-color, color-mix(in srgb, var(--accent) 70%, transparent));
+  outline-offset: calc(-1 * var(--reading-bbox-width, 1px));
+}
+
+.paged-el-slot-fitting .katex-mathml {
+  display: none;
+}
+
+.paged-canvas.token-rendering .paged-el-slot.token-unwritten {
+  visibility: hidden;
+}
+
+/* Hidden, not removed: a slot keeps the layout of its whole text while it is written. */
+::highlight(token-unwritten) {
+  color: transparent;
 }
 
 .paged-el-slot.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Inline wrappers (formula/code/marker nested in running text) must stay inline, as in
@@ -1617,6 +1644,17 @@ body.pane-drag-active .pane-splitter {
   max-width: 100%;
   height: auto;
   display: block;
+}
+
+.paged-canvas figure img.rendered-picture-unavailable {
+  width: 2rem;
+  height: 2rem;
+}
+
+.paged-el-slot:has(.rendered-picture-unavailable) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .paged-canvas figcaption {
@@ -1704,7 +1742,6 @@ body.pane-drag-active .pane-splitter {
 
 /* The source header carries the edit actions: when they do not fit next to the title they wrap onto further lines. */
 .pane-markup-header {
-  justify-content: space-between;
   flex-wrap: wrap;
   height: auto;
   min-height: 2.125rem;
@@ -1714,10 +1751,9 @@ body.pane-drag-active .pane-splitter {
 }
 
 .pane-markup-header .pane-header-actions {
-  flex: 1 1 0;
+  flex-shrink: 1;
   flex-wrap: wrap;
   min-width: 0;
-  margin-left: auto;
   justify-content: flex-end;
   row-gap: 0.25rem;
 }
@@ -1783,7 +1819,6 @@ body.pane-drag-active .pane-splitter {
 
 .pane-action-btn:disabled {
   opacity: 0.45;
-  cursor: default;
 }
 
 .edit-error {
@@ -1799,23 +1834,103 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
-.markup-editor {
-  display: block;
+.markup-editor-wrap {
+  position: relative;
+  height: 100%;
+}
+
+.markup-editor,
+.markup-editor-backdrop {
   box-sizing: border-box;
+  border: 0;
+  padding: 1rem;
+  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markup-editor {
+  position: relative;
+  display: block;
   width: 100%;
   height: 100%;
   resize: none;
-  border: 0;
-  padding: 1rem;
   background: transparent;
   color: var(--text);
-  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  tab-size: 2;
-  white-space: pre;
-  overflow: auto;
+  overflow: hidden auto;
+}
+
+.markup-editor-backdrop {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Room to scroll on: browsers differ in how far a textarea scrolls, and it must never stop short of the editor's position. */
+.markup-editor-backdrop::after {
+  content: "";
+  display: block;
+  height: 100vh;
+}
+
+/* Neutral, as in code editors: blue is for the selected element. */
+.markup-editor-current-line {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Stronger than a selection elsewhere: it has to stand out from the tint of the line, which can be the whole view. */
+.markup-editor-element {
+  background: color-mix(in srgb, var(--accent) 17%, transparent);
+}
+
+.markup-editor-flash .markup-editor-element {
+  animation: markup-editor-flash 1s ease-out;
+}
+
+@keyframes markup-editor-flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 80%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markup-editor-flash .markup-editor-element {
+    animation: none;
+  }
+}
+
+/* A textarea hides its caret without focus: this one stays, and does not blink. */
+.markup-editor-caret {
+  position: relative;
+}
+
+.markup-editor-caret::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 1.5em;
+  background: var(--text);
+}
+
+.markup-editor-hide-caret .markup-editor-caret::before {
+  display: none;
+}
+
+.markup-editor-no-current-line {
+  background: none;
 }
 
 .markup-editor:focus {
+  outline: none;
+}
+
+#markup-pane:focus {
   outline: none;
 }
 
@@ -2900,6 +3015,12 @@ body.demo-loading .empty-state-prompt {
   outline: none;
 }
 
+/* A picture is its own affordance: no ring around it, nor around what holds it. */
+.rendered-picture:not(.selected):hover,
+.rendered-el:not(.selected):hover:has(figure img:hover) {
+  outline: none;
+}
+
 .rendered-el.selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2952,9 +3073,10 @@ body.demo-loading .empty-state-prompt {
   margin-right: 0.35rem;
 }
 
-/* <content> is read literally; other whitespace collapses, also in code. */
+/* <content> is read literally; other whitespace collapses, also in code.
+   Not pre-wrap: spaces hanging past the line's end would count as overflow when a paged slot fits its content. */
 .rendered-content {
-  white-space: pre-wrap;
+  white-space: break-spaces;
 }
 
 pre .rendered-content {
@@ -3266,7 +3388,6 @@ li.has-marker > .rendered-li-body {
 }
 
 .rendered-track-chapter:disabled {
-  cursor: default;
   opacity: 0.7;
 }
 
@@ -3303,10 +3424,6 @@ li.has-marker > .rendered-li-body {
 .rendered-track-time-btn:hover:not(:disabled) {
   border-color: var(--border);
   color: var(--text);
-}
-
-.rendered-track-time-btn:disabled {
-  cursor: default;
 }
 
 .rendered-track-chapter-name {
@@ -3421,7 +3538,7 @@ li.has-marker > .rendered-li-body {
   border: 1px solid var(--border);
   padding: 0.35rem 0.5rem;
   vertical-align: top;
-  text-align: left;
+  text-align: start; /* right in a cell of right-to-left text */
 }
 
 .rendered-table th {
@@ -3490,6 +3607,10 @@ li.has-marker > .rendered-li-body {
 
 .rendered-doc:not(.show-reading-background) .rendered-el[data-doclang-layer="background"] {
   display: none;
+}
+
+.paged-canvas:not(.show-reading-bboxes) .paged-el-slot:not(.selected) {
+  outline: none;
 }
 
 .paged-canvas:not(.show-reading-furniture) .paged-el-slot[data-doclang-layer="furniture"] {
@@ -3906,53 +4027,6 @@ li.has-marker > .rendered-li-body {
   flex: none;
 }
 
-/* "More actions" menu of the source pane */
-.pane-menu-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.pane-menu {
-  position: absolute;
-  top: calc(100% + 0.25rem);
-  right: 0;
-  z-index: 20;
-  min-width: 9rem;
-  padding: 0.25rem;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.pane-menu[hidden] {
-  display: none;
-}
-
-.pane-menu-item {
-  appearance: none;
-  display: block;
-  width: 100%;
-  padding: 0.35rem 0.6rem;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: left;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: 0.25rem;
-  cursor: pointer;
-}
-
-.pane-menu-item:hover,
-.pane-menu-item:focus-visible {
-  background: var(--markup-hover);
-  outline: none;
-}
-
 /* Status bar at the bottom of the source pane: XSD validation */
 .pane-statusbar {
   flex-shrink: 0;
@@ -3967,17 +4041,16 @@ li.has-marker > .rendered-li-body {
   background: var(--panel);
 }
 
-/* A borderless icon button (the "more" menu), as is idiomatic for a kebab menu */
-.pane-action-btn.ghost-btn {
-  border-color: transparent;
-  background: transparent;
-  min-width: 1.5rem;
-  padding: 0.2rem 0.2rem;
+/* Takes the room it has and no more, so that the pane does not move while typing. */
+.edit-draft-problem {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--status-error);
 }
 
-.pane-action-btn.ghost-btn:not(:disabled):hover,
-.pane-action-btn.ghost-btn[aria-expanded="true"] {
-  background: var(--markup-hover);
-  border-color: transparent;
-  color: var(--text);
+.edit-draft-problem[hidden] {
+  display: none;
 }
