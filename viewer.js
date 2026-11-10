@@ -406,13 +406,20 @@ function appendMarkupTextLine(parent, depth, text) {
   parent.appendChild(line);
 }
 
+/** Text as DocLang 0.9 reads it: whitespace collapsed, with a space at an edge only where `kept` says it counts. */
+function canonicalWhitespace(text, kept) {
+  const core = text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "").replace(/[ \t\r\n]+/g, " ");
+  if (!core) return kept?.only ? " " : "";
+  return `${kept?.lead ? " " : ""}${core}${kept?.trail ? " " : ""}`;
+}
+
 function formatMarkupTextNode(node) {
   if (node.nodeType === Node.CDATA_SECTION_NODE) {
     return `<![CDATA[${node.textContent ?? ""}]]>`;
   }
   // <content> has xml:space="preserve" semantics: its whitespace is significant.
   if (node.parentElement && localName(node.parentElement) === "content") return node.textContent;
-  return node.textContent.trim();
+  return canonicalWhitespace(node.textContent, markupSpaces.get(node));
 }
 
 function serializeMarkupTextNodes(nodes) {
@@ -2274,7 +2281,7 @@ function initCursorHints() {
 }
 
 /** Controls whose `title` is shown as the quick cursor hint (the same one as on Open file) instead of the slow native tooltip. */
-const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, label.file-btn, select, summary';
+const QUICK_HINT_SELECTOR = 'button, [role="menuitem"], .markup-drag-handle, .markup-glue-mark, label.file-btn, select, summary';
 
 /**
  * Shows every control's `title` immediately, next to the cursor. The native tooltip appears only after a long
@@ -2345,15 +2352,14 @@ function initFormulaRewriteHints() {
 
 /* ---- DocLang tokenization -------------------------------------------- *
  * Tokenizes the markup with the custom DocLang tokenizer (tokenizer.js).
- * The markup is first reduced to its dense form — whitespace that sits
- * purely between two tags (the newlines and indentation of pretty-printing)
- * is dropped, while whitespace inside CDATA or inside element text is
- * untouched — so the token stream reflects how DocLang is meant to be used.
+ * The markup is first reduced to its dense form, which reads the same under
+ * the DocLang 0.9 whitespace rules: whitespace they ignore (pretty-printing,
+ * the edges of a text block) is dropped, other runs become a single space,
+ * and <content> and CDATA stay as written. So the token stream reflects how
+ * DocLang is meant to be used.
  * ------------------------------------------------------------------- */
 
 const TOKEN_SPAN_COLOR_COUNT = 6;
-// Elements that flow inside a line of text rather than getting their own line.
-const TOKENS_INLINE_TAGS = new Set([...RENDER_FORMAT_TAGS, "marker", "xref", "href"]);
 
 /** Split well-formed DocLang XML into a flat list of lexical pieces. */
 function scanMarkupPieces(src) {
@@ -2423,73 +2429,35 @@ function buildMarkupPieceTree(pieces) {
   return root;
 }
 
-/** A node gets block layout (children on their own lines) if it holds a non-inline child element. */
-function markupNodeIsBlock(node) {
-  return node.children.some((c) => {
-    const t = c.piece.type;
-    return (t === "open" || t === "selfclose") && !TOKENS_INLINE_TAGS.has(c.piece.name);
+/** Pairs the text and element pieces of `node` with the nodes of its parsed element, in source order. */
+function pairMarkupPieces(node, el) {
+  const isPaired = (c) => ["text", "cdata", "open", "selfclose"].includes(c.piece.type);
+  const pieces = node.children.filter(isPaired);
+  const nodes = [...el.childNodes].filter((n) => isTextLikeNode(n) || n.nodeType === Node.ELEMENT_NODE);
+  if (pieces.length !== nodes.length) return;
+  pieces.forEach((c, i) => {
+    c.node = nodes[i];
+    if (c.piece.type === "open" && nodes[i].nodeType === Node.ELEMENT_NODE) pairMarkupPieces(c, nodes[i]);
   });
 }
 
-/**
- * Re-serialize the piece tree the way the DocLang pane lays it out: every element
- * on its own depth-indented line, text-only elements kept inline. Returns an
- * ordered list of `{ code }` (real markup, tokenized) and `{ ws }` (synthetic
- * newline + indentation, shown but not tokenized) parts.
- */
-function canonicalizeMarkup(root) {
+/** The dense form of the piece tree: an ordered list of the `{ code }` parts to tokenize. `spaces` as in computeMarkupGlue. */
+function canonicalizeMarkup(root, spaces) {
   const parts = [];
-  const indent = (d) => "  ".repeat(d);
-
-  function emitInline(node, atEdge) {
-    const kids = node.children;
-    for (let idx = 0; idx < kids.length; idx += 1) {
-      const c = kids[idx];
+  (function emit(node) {
+    for (const c of node.children) {
       if (c.piece.type === "text") {
-        let s = c.piece.raw.replace(/\s+/g, " ");
-        if (atEdge && idx === 0) s = s.replace(/^ /, "");
-        if (idx === kids.length - 1) s = s.replace(/ $/, "");
-        if (s) parts.push({ code: s });
+        const code = node.name === "content" ? c.piece.raw : canonicalWhitespace(c.piece.raw, c.node && spaces.get(c.node));
+        if (code) parts.push({ code });
         continue;
       }
       parts.push({ code: c.piece.raw, opens: c });
       if (c.piece.type === "open") {
-        emitInline(c, false);
+        emit(c);
         parts.push({ code: `</${c.name}>`, closes: c });
       }
     }
-  }
-
-  function walk(node, depth, first) {
-    let atStart = first;
-    for (const c of node.children) {
-      const t = c.piece.type;
-      if (t === "text") {
-        const trimmed = c.piece.raw.replace(/^\s+/u, "").replace(/\s+$/u, "");
-        if (!trimmed) continue;
-        if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
-        parts.push({ code: trimmed });
-        atStart = false;
-        continue;
-      }
-      if (!atStart) parts.push({ ws: `\n${indent(depth)}` });
-      atStart = false;
-      if (t === "open" && markupNodeIsBlock(c)) {
-        parts.push({ code: c.piece.raw, opens: c });
-        walk(c, depth + 1, false);
-        parts.push({ ws: `\n${indent(depth)}` });
-        parts.push({ code: `</${c.name}>`, closes: c });
-      } else if (t === "open") {
-        parts.push({ code: c.piece.raw, opens: c });
-        emitInline(c, true);
-        parts.push({ code: `</${c.name}>`, closes: c });
-      } else {
-        parts.push({ code: c.piece.raw, opens: c });
-      }
-    }
-  }
-
-  walk(root, 0, true);
+  })(root);
   return parts;
 }
 
@@ -2503,12 +2471,15 @@ function ensureTokenData(docState) {
     const { stdExt } = await window.DoclangTokenizers.loadTokenizerAssets();
     const srcXml = docState.markupXml.replace(/\r\n/g, "\n");
     const tree = buildMarkupPieceTree(scanMarkupPieces(srcXml));
-    const parts = canonicalizeMarkup(tree);
+    // Read from the source as written: the document in `docState` may have alternatives swapped in.
+    const written = new DOMParser().parseFromString(srcXml, "application/xml").documentElement;
+    const rootPiece = tree.children.find((c) => c.piece.type === "open");
+    if (rootPiece) pairMarkupPieces(rootPiece, written);
+    const parts = canonicalizeMarkup(tree, computeMarkupGlue([written]).spaces);
 
-    // dense = markup with no pretty-printing whitespace (what we tokenize).
+    // dense = what we tokenize.
     let dense = "";
     for (const part of parts) {
-      if (part.ws != null) continue;
       const base = dense.length;
       dense += part.code;
       if (part.opens) part.opens.denseStart = base;
@@ -3341,9 +3312,9 @@ function buildDocumentState(markupXml, pageImages, label, assetUrls, { markupOnl
   const segments = markupOnly
     ? [childElements(root).filter((el) => localName(el) !== "head")]
     : splitIntoSegments(root);
-  const hasPageView = !markupOnly && pageImages.size > 0;
-  const maxImagePage = hasPageView ? Math.max(...pageImages.keys()) : 0;
-  const pageCount = markupOnly ? 1 : Math.max(segments.length, maxImagePage, 1);
+  // The markup defines the pages (spec, Annex B); an image beyond them is not shown, but reported by archiveIssues().
+  const pageCount = markupOnly ? 1 : segments.length;
+  const hasPageView = !markupOnly && [...pageImages.keys()].some((page) => page <= pageCount);
   const readingOrder = computeReadingOrder(root);
   const elementPageByEl = buildElementPageMap(segments);
 
@@ -3700,7 +3671,7 @@ async function revertActiveFile() {
 /** Block types that share one content model in the schema, so any of them can become another. */
 /** Types that carry text and may nest blocks; they convert freely into each other. */
 const TEXT_BLOCK_TYPES = [
-  "text", "heading", "footnote", "page_header", "page_footer", "field_region", "field_item", "field_heading", "key", "value",
+  "text", "heading", "footnote", "page_header", "page_footer", "field_region", "field_item", "field_heading", "key", "value", "marker",
 ];
 /** The schema's top_level_cat: the only elements a <group> may hold. */
 const TOP_LEVEL_TYPES = new Set([
@@ -3709,13 +3680,13 @@ const TOP_LEVEL_TYPES = new Set([
 ]);
 const CONVERTIBLE_TYPES = [...TEXT_BLOCK_TYPES, "group", "list"];
 /** Types whose schema content model allows a <content> wrapper (and so can keep whitespace). */
-const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula"]);
+const CONTENT_WRAPPER_TYPES = new Set(["text", "heading", "field_heading", "footnote", "page_header", "page_footer", "key", "value", "code", "formula", "marker"]);
 /** Types that carry text of their own. Containers such as group and list only hold other elements. */
 const TEXT_EDITABLE_TYPES = new Set([...TEXT_BLOCK_TYPES, "code", "formula"]);
 /** Types that may hold nested block elements (the schema's top_level_cat group). */
 const CHILD_CONTAINER_TYPES = new Set(["group", ...TEXT_BLOCK_TYPES]);
 /** Blocks with a bbox of their own that can be added to, drawn or deleted. */
-const BBOX_BLOCK_TYPES = new Set([...RENDER_BLOCK_TAGS, "key", "value"]);
+const BBOX_BLOCK_TYPES = new Set([...RENDER_BLOCK_TAGS, "key", "value", "marker"]);
 /** Type-specific attributes, as enumerated by the schema. */
 const ATTR_SPECS = {
   heading: [{ name: "level", label: "Level", options: ["1", "2", "3", "4", "5", "6"], def: "1" }],
@@ -3727,6 +3698,9 @@ const ATTR_SPECS = {
 /** Why `el` cannot become `tag`, or null when it can. */
 function retypeBlocker(el, tag) {
   const from = localName(el);
+  const parentTag = localName(el.parentElement);
+  if (parentTag === "ldiv" && tag !== "marker") return "<ldiv> can only hold a <marker>";
+  if (tag === "marker" && from !== "marker" && !isTextBlockBody(el.parentElement)) return "<marker> only goes inside text or a list item";
   if (from === "list") {
     // A list turns into a single block only while it has at most one item.
     if (childElements(el).filter((c) => localName(c) === "ldiv").length > 1) return "the list has several items";
@@ -3862,9 +3836,29 @@ function textNodesFor(doc, text) {
   });
 }
 
+/**
+ * Whether `el` sits in the running text of a text block: whitespace around it then reads as a space (DocLang 0.9),
+ * so an edit must neither add any for layout nor remove any that is there.
+ */
+function isInTextFlow(el) {
+  const parent = el?.parentElement;
+  if (!parent) return false;
+  return isInlineInTextBlock(el) || (WS_RAW_TEXT_TAGS.has(localName(parent)) && !WS_HEAD_TAGS.has(localName(el)));
+}
+
+/** Removes the whitespace before `node` when it is only layout, or when whitespace right after it takes its place. */
+function dropWhitespaceBefore(node) {
+  const prev = node.previousSibling;
+  if (!prev || !isWhitespaceText(prev)) return;
+  const next = node.nextSibling;
+  const counts = isInTextFlow(node) || isInTextFlow(node.parentElement);
+  if (!counts || (next && isTextLikeNode(next) && /^\s/.test(next.textContent))) prev.remove();
+}
+
 function setPlainText(el, text) {
   const doc = el.ownerDocument;
   const virtual = isVirtualUnit(el);
+  const flowEdges = !virtual && isInTextFlow(el) ? textEdgeSpaces(el) : null;
   /** @type {{ parent: Node, ref: Node | null, childIndent: string, closeIndent: string }} */
   let place;
   if (virtual) {
@@ -3899,9 +3893,10 @@ function setPlainText(el, text) {
     content.append(...nodes);
     inner = [content];
   }
-  for (const node of [doc.createTextNode(`\n${place.childIndent}`), ...inner, doc.createTextNode(`\n${place.closeIndent}`)]) {
-    place.parent.insertBefore(node, place.ref);
-  }
+  const lead = flowEdges ? (flowEdges.start ? " " : "") : `\n${place.childIndent}`;
+  const trail = flowEdges ? (flowEdges.end ? " " : "") : `\n${place.closeIndent}`;
+  const framed = [lead && doc.createTextNode(lead), ...inner, trail && doc.createTextNode(trail)].filter(Boolean);
+  for (const node of framed) place.parent.insertBefore(node, place.ref);
 }
 
 function insertHeadChild(el, child) {
@@ -3942,8 +3937,7 @@ function setElementLayer(el, value) {
   const layerEl = firstHeadChild(el, "layer");
   if (value === "body") {
     if (!layerEl) return;
-    const prev = layerEl.previousSibling;
-    if (prev && isWhitespaceText(prev)) prev.remove();
+    dropWhitespaceBefore(layerEl);
     layerEl.remove();
     return;
   }
@@ -4150,9 +4144,11 @@ function renderInspector() {
     none.title = "No marker: leave it unspecified (<ldiv/>)";
     none.disabled = !marker;
     if (marker && childElements(marker).length) {
-      input.value = marker.textContent.trim();
+      input.value = plainTextOf(marker)?.trim() ?? "";
+      if (!input.value) input.placeholder = "nested elements";
       input.disabled = true;
-      input.title = "This marker has its own bbox or a checkbox: edit it in the source";
+      none.disabled = true;
+      input.title = "This marker has elements of its own: select the marker to edit it";
     } else {
       input.value = marker?.textContent.trim() ?? "";
       input.addEventListener("input", () => {
@@ -4265,7 +4261,7 @@ function locationNodes(doc, ns, coords, indent) {
   return coords.flatMap((v) => {
     const loc = doc.createElementNS(ns, "location");
     loc.setAttribute("value", String(v));
-    return [doc.createTextNode(`\n${indent}`), loc];
+    return indent == null ? [loc] : [doc.createTextNode(`\n${indent}`), loc];
   });
 }
 
@@ -4277,11 +4273,11 @@ function addBboxToElement(el, coords) {
     for (const node of locationNodes(el.ownerDocument, el.namespaceURI, coords, indentBefore(el))) parent.insertBefore(node, ref);
     return;
   }
-  const indent = childIndentOf(el);
+  const indent = isInTextFlow(el) ? null : childIndentOf(el);
   const wasEmpty = !el.firstChild;
   const ref = el.childNodes[headEndIndex(el)] ?? null;
   for (const node of locationNodes(el.ownerDocument, el.namespaceURI, coords, indent)) el.insertBefore(node, ref);
-  if (wasEmpty) el.appendChild(el.ownerDocument.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
+  if (wasEmpty && indent != null) el.appendChild(el.ownerDocument.createTextNode(`\n${indent.slice(0, Math.max(0, indent.length - 2))}`));
 }
 
 function removeBboxFromElement(el) {
@@ -4292,8 +4288,7 @@ function removeBboxFromElement(el) {
     return;
   }
   for (const loc of elementHeadLocations(el)) {
-    const prev = loc.previousSibling;
-    if (prev && isWhitespaceText(prev)) prev.remove();
+    dropWhitespaceBefore(loc);
     loc.remove();
   }
 }
@@ -4311,8 +4306,7 @@ function removeElementNode(el) {
     for (const node of doomed) node.remove();
     return;
   }
-  const prev = el.previousSibling;
-  if (prev && isWhitespaceText(prev)) prev.remove();
+  dropWhitespaceBefore(el);
   el.remove();
 }
 
@@ -4332,6 +4326,7 @@ function blockSibling(el) {
 /** True when `el` sits where a wrapper group is allowed (the root or a container). */
 function canWrap(el) {
   const parent = el.parentElement;
+  if (localName(el) === "marker") return false;
   return DELETABLE_TYPES.has(localName(el)) && !!parent && (parent === state.docRoot || CHILD_CONTAINER_TYPES.has(localName(parent)));
 }
 
@@ -4402,9 +4397,9 @@ function newBlock(doc, ns, tag, coords, indent) {
   const created = doc.createElementNS(ns, tag);
   if (tag === "heading") created.setAttribute("level", "1");
   if (coords) {
-    for (const node of locationNodes(doc, ns, coords, `${indent}  `)) created.appendChild(node);
+    for (const node of locationNodes(doc, ns, coords, indent == null ? null : `${indent}  `)) created.appendChild(node);
   }
-  if (created.firstChild) created.appendChild(doc.createTextNode(`\n${indent}`));
+  if (created.firstChild && indent != null) created.appendChild(doc.createTextNode(`\n${indent}`));
   return created;
 }
 
@@ -4499,6 +4494,10 @@ async function addElement(coords, kind) {
     selected.parentNode.insertBefore(doc.createTextNode(`\n${indent}`), point);
     selected.parentNode.insertBefore(created, point);
     id = idOf(created);
+  } else if (kind === "child" && selected && isInTextFlow(selected)) {
+    const created = newBlock(doc, ns, "text", coords, null);
+    selected.appendChild(created);
+    id = idOf(created);
   } else if (kind === "child" && selected) {
     const indent = childIndentOf(selected);
     const created = newBlock(doc, ns, "text", coords, indent);
@@ -4532,9 +4531,12 @@ async function addElement(coords, kind) {
   } else if ((kind === "prev" || kind === "next") && selected) {
     const anchor = blockSibling(selected);
     const parent = anchor.parentNode;
+    const inFlow = isInTextFlow(anchor);
     const indent = indentBefore(anchor);
-    const created = newBlock(doc, ns, "text", coords, indent);
-    if (kind === "prev") {
+    const created = newBlock(doc, ns, "text", coords, inFlow ? null : indent);
+    if (inFlow) {
+      parent.insertBefore(created, kind === "prev" ? anchor : anchor.nextSibling);
+    } else if (kind === "prev") {
       parent.insertBefore(created, anchor);
       parent.insertBefore(doc.createTextNode(`\n${indent}`), anchor);
     } else {
@@ -4705,7 +4707,7 @@ function addThreadTo(el, id) {
     if (ws) parent.insertBefore(ws.cloneNode(), ref);
   } else {
     const first = el.firstChild;
-    el.insertBefore(doc.createTextNode(`\n${childIndentOf(el)}`), first);
+    if (!isInTextFlow(el)) el.insertBefore(doc.createTextNode(`\n${childIndentOf(el)}`), first);
     el.insertBefore(thread, first);
   }
 }
@@ -4759,8 +4761,7 @@ function setMarker(ldiv, text) {
 }
 
 function removeNode(node) {
-  const prev = node.previousSibling;
-  if (prev && isWhitespaceText(prev)) prev.remove();
+  dropWhitespaceBefore(node);
   node.remove();
 }
 
@@ -5104,6 +5105,11 @@ function insertBeside(target, pos, nodes) {
   const doc = target.ownerDocument;
   const parent = target.parentNode;
   const indent = indentBefore(target);
+  if (isInTextFlow(target)) {
+    const ref = pos === "before" ? target : target.nextSibling;
+    for (const n of nodes) parent.insertBefore(n, ref);
+    return indent;
+  }
   if (pos === "before") {
     for (const n of nodes) {
       parent.insertBefore(n, target);
@@ -5125,6 +5131,10 @@ function insertBeside(target, pos, nodes) {
 function insertInto(container, nodes) {
   const doc = container.ownerDocument;
   const indent = childIndentOf(container);
+  if (isInTextFlow(container)) {
+    for (const n of nodes) container.appendChild(n);
+    return indent;
+  }
   const closing = closingWhitespace(container, indent.slice(0, Math.max(0, indent.length - 2)));
   for (const n of nodes) {
     container.insertBefore(doc.createTextNode(`\n${indent}`), closing);
@@ -5661,7 +5671,8 @@ function failPendingValidations(message) {
 /** @returns {Promise<{ ok: true, issues: object[], schemaVersion: string | null } | { ok: false, error: string }>} */
 function requestValidation(markup) {
   if (!validatorWorker) {
-    validatorWorker = new Worker("validator-worker.mjs", { type: "module" });
+    // A unique URL: even a hard reload can leave a cached worker script running, and that one its cached schema list.
+    validatorWorker = new Worker(`validator-worker.mjs?t=${Date.now()}`, { type: "module" });
     validatorWorker.addEventListener("message", (e) => {
       const { id, ...result } = e.data;
       validatorPending.get(id)?.(result);
@@ -5681,14 +5692,40 @@ function requestValidation(markup) {
   });
 }
 
+/** Archive parts beyond what the markup defines (spec, Annex B): page images past its pages, media past its tracks. */
+function archiveIssues(docState) {
+  const issues = [];
+  const report = (part, limit, unit) => issues.push({
+    kind: "archive",
+    message: `${part} is out of bounds: the markup defines ${limit} ${unit}${limit === 1 ? "" : "s"}`,
+    line: null,
+    col: null,
+    xpath: null,
+  });
+  for (const page of [...docState.pageImages.keys()].sort((a, b) => a - b)) {
+    if (page > docState.pageCount) report(`pages/${page}.*`, docState.pageCount, "page");
+  }
+  let trackCount = 0;
+  walkElements(childElements(docState.docRoot), (el) => {
+    if (localName(el) === "track") trackCount += 1;
+  });
+  for (const path of docState.assetUrls.keys()) {
+    const ordinal = path.match(/^(?:audio|video)\/(\d+)\./)?.[1];
+    if (ordinal && Number(ordinal) > trackCount) report(path, trackCount, "track");
+  }
+  return issues;
+}
+
 async function validateActiveDocument() {
   const entry = fileCatalog[activeFileIndex];
   if (!entry || !state) return;
   entry.validation = { status: "running" };
   renderValidationUi(entry);
+  const fromArchive = archiveIssues(state);
   const result = await requestValidation(state.markupXml);
+  const issues = result.ok ? [...result.issues, ...fromArchive] : [];
   entry.validation = result.ok
-    ? { status: result.issues.length ? "invalid" : "valid", issues: result.issues, schemaVersion: result.schemaVersion }
+    ? { status: issues.length ? "invalid" : "valid", issues, schemaVersion: result.schemaVersion, versionAssumed: !!result.versionAssumed }
     : { status: "error", error: result.error };
   if (fileCatalog[activeFileIndex] === entry) renderValidationUi(entry);
 }
@@ -5745,23 +5782,28 @@ function renderValidationUi(entry) {
   btn.dataset.status = v.status;
   btn.disabled = v.status === "running";
   // "XSD <version>", plus the issue count when there are issues; the colour says valid or not.
-  const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}`;
+  // A document that declares no version is validated against the latest: "(assumed)" tells the two apart.
+  const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (assumed)" : ""}`;
+  const schema = `DocLang XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (no version declared, so the latest was assumed)" : ""}`;
+  const countOf = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
+  const archiveCount = v.issues?.filter((issue) => issue.kind === "archive").length ?? 0;
+  const xsdCount = (v.issues?.length ?? 0) - archiveCount;
+  const issueCounts = [xsdCount && countOf(xsdCount, "issue"), archiveCount && countOf(archiveCount, "archive issue")].filter(Boolean);
   btn.textContent = v.status === "valid" ? xsd
-    : v.status === "invalid" ? `${xsd} · ${v.issues.length} ${v.issues.length === 1 ? "issue" : "issues"}`
+    : v.status === "invalid" ? [xsd, ...issueCounts].join(" · ")
     : VALIDATE_BTN_LABELS[v.status];
   btn.title = v.status === "idle" || v.status === "error"
     ? "Validate against the DocLang XSD"
     : v.status === "valid"
-      ? `Valid against DocLang XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}. Click for details`
+      ? `Valid against ${schema}. Click for details`
       : "Show validation results";
 
   if (!els.validationSummary || !els.validationIssues) return;
-  const schema = v.schemaVersion ? `DocLang XSD ${v.schemaVersion}` : "DocLang XSD";
   if (v.status === "valid") {
     els.validationSummary.textContent = `Valid against ${schema}`;
   } else if (v.status === "invalid") {
-    const n = v.issues.length;
-    els.validationSummary.textContent = `${n} ${n === 1 ? "issue" : "issues"} against ${schema}`;
+    const againstSchema = xsdCount ? `${countOf(xsdCount, "issue")} against ${schema}` : `Valid against ${schema}`;
+    els.validationSummary.textContent = archiveCount ? `${againstSchema}; ${countOf(archiveCount, "archive issue")}` : againstSchema;
   } else if (v.status === "error") {
     els.validationSummary.textContent = `Could not validate: ${v.error}`;
   } else {
@@ -5787,7 +5829,7 @@ function buildValidationIssueItem(issue) {
   }
   const loc = document.createElement("span");
   loc.className = "validation-issue-loc";
-  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "policy" || issue.kind === "version" ? "Document" : "—";
+  loc.textContent = issue.line ? `Line ${issue.line}` : issue.kind === "archive" ? "Archive" : issue.kind === "policy" || issue.kind === "version" ? "Document" : "—";
   const msg = document.createElement("span");
   msg.className = "validation-issue-msg";
   msg.textContent = issue.message.replaceAll(DOCLANG_NS_CLARK, "");
@@ -7259,8 +7301,8 @@ function findTrackSelectionHost(xmlEl) {
 
 function resolveSelectionElement(xmlEl) {
   if (!xmlEl) return null;
-  // The marker of a list item is edited with the item itself.
-  if (localName(xmlEl) === "marker" && xmlEl.parentElement && localName(xmlEl.parentElement) === "ldiv") return xmlEl.parentElement;
+  // A plain marker of a list item is edited with the item itself; one with elements of its own on its own.
+  if (localName(xmlEl) === "marker" && !childElements(xmlEl).length && xmlEl.parentElement && localName(xmlEl.parentElement) === "ldiv") return xmlEl.parentElement;
   const trackHost = findTrackSelectionHost(xmlEl);
   if (trackHost) return trackHost;
   if (isSemanticElement(xmlEl) || isVirtualTextHost(xmlEl)) return xmlEl;
@@ -7734,9 +7776,12 @@ function computeReadingOrder(docRoot) {
     const captions = childElements(el).filter((c) => localName(c) === "caption");
     const before = captions.filter((c) => captionPrecedesHost(c, el));
     const after = captions.filter((c) => !before.includes(c));
+    // A list item's marker (bullet, number) is read before the item it labels.
+    const marker = localName(el) === "ldiv" ? markerOf(el) : null;
+    if (marker) visitElement(marker);
     before.forEach(visitElement);
     record(el);
-    walkChildren(el, new Set(captions));
+    walkChildren(el, new Set(marker ? [...captions, marker] : captions));
     after.forEach(visitElement);
   }
 
@@ -8958,6 +9003,7 @@ function applySelectionCore() {
 function buildMarkupView(segment, elementIds) {
   const root = document.createElement("div");
   root.className = "markup";
+  ({ glue: markupGlue, spaces: markupSpaces } = computeMarkupGlue(segment));
   for (const el of segment) {
     if (el.nodeType === Node.ELEMENT_NODE) {
       root.appendChild(buildMarkupElement(el, 0, elementIds));
@@ -9055,11 +9101,216 @@ function appendRenderedSliceContent(container, hostEl, contentNodes, elementIds)
   }
 }
 
+/* ---- Display-only line breaks of the source view ---------------------- *
+ * The source view puts elements on lines of their own, but a line break in a
+ * text block reads as a space (DocLang 0.9, whitespace handling). So a gap of
+ * the text (between two characters, across tags and element heads) that has no
+ * whitespace in the source but spans lines gets one mark, on the line break
+ * between siblings where possible. Classification as in the doclang toolkit
+ * (migration/_steps/v0_8_to_0_9.py).
+ * ------------------------------------------------------------------- */
+
+const WS_RAW_TEXT_TAGS = new Set([
+  "text", "heading", "footnote", "page_header", "page_footer", "formula", "code", "marker", "field_heading", "key", "value",
+  "hint", "caption", "description", "summary", "classification", "content", "bold", "italic", "underline", "strikethrough",
+  "superscript", "subscript", "handwriting", "rtl", "voice", "chapter",
+]);
+const WS_VIRTUAL_TEXT_TAGS = new Set(["list", "table", "index", "tabular", "track"]);
+const WS_NEVER_INLINE_TAGS = new Set(["caption", "description", "summary", "voice", "chapter"]);
+const WS_SEMANTIC_TAGS = new Set([
+  "text", "heading", "footnote", "page_header", "page_footer", "formula", "code", "field_heading", "key", "value", "marker", "hint",
+]);
+const WS_TEXT_LEVEL_TAGS = new Set([...RENDER_FORMAT_TAGS, "checkbox"]);
+const WS_HEAD_TAGS = new Set(["label", "thread", "h_thread", "xref", "href", "layer", "location", "caption", "description", "summary", "custom"]);
+const WS_DELIMITER_TAGS = new Set([
+  "ldiv", "fcel", "ecel", "ched", "rhed", "corn", "srow", "lcel", "ucel", "xcel", "nl", "bdiv", "hours", "minutes", "seconds",
+  "msecs", "voice", "chapter", "frame", "audio", "cover",
+]);
+
+/** Whether `el`, in a list item, a cell or a transcript turn, is part of a virtual <text>. */
+function isInVirtualText(el) {
+  const parent = el.parentElement;
+  if (localName(parent) === "track") return true;
+  const nodes = [...parent.childNodes];
+  const isDelimiter = (n) => n.nodeType === Node.ELEMENT_NODE && WS_DELIMITER_TAGS.has(localName(n));
+  let start = nodes.indexOf(el);
+  let end = start;
+  while (start > 0 && !isDelimiter(nodes[start - 1])) start -= 1;
+  while (end + 1 < nodes.length && !isDelimiter(nodes[end + 1])) end += 1;
+  return nodes.slice(start, end + 1).some((n) => (isTextLikeNode(n)
+    ? !isWhitespaceOnlyText(n)
+    : n.nodeType === Node.ELEMENT_NODE && WS_TEXT_LEVEL_TAGS.has(localName(n))));
+}
+
+/** Whether `el` is part of the text block around it, rather than a block of its own. */
+function isInlineInTextBlock(el) {
+  const tag = localName(el);
+  const parent = el.parentElement;
+  if (!parent || !WS_RAW_TEXT_TAGS.has(tag) || WS_NEVER_INLINE_TAGS.has(tag)) return false;
+  const parentTag = localName(parent);
+  const inBody = WS_RAW_TEXT_TAGS.has(parentTag)
+    || (WS_VIRTUAL_TEXT_TAGS.has(parentTag) && (!WS_SEMANTIC_TAGS.has(tag) || isInVirtualText(el)));
+  if (!inBody) return false;
+  for (let a = parent; a; a = a.parentElement) if (localName(a) === "head") return false;
+  return true;
+}
+
+/** Whether the source view shows `el` on a single line, tags and text together. */
+function isSingleLineMarkup(el) {
+  const tag = localName(el);
+  if (tag === "list" || tag === "track" || OTSL_CONTAINER_TAGS.has(tag)) return false;
+  return !el.childNodes.length || isTextOnlyMarkup(el);
+}
+
+function isTextOnlyMarkup(el) {
+  return !childElements(el).length && [...el.childNodes].some((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
+}
+
+/**
+ * How the text blocks of `segment` read. `glue` holds the display-only line breaks: for a source node and its line
+ * ("whole", "open" or "close"), whether the break after it ("end") or before it ("start") has no whitespace in the
+ * source. `spaces` holds, for a text node, which of its edges has the space a run of whitespace reads as ("lead",
+ * "trail", or "only" for a node of just whitespace): the run's first character, as the spec attributes it.
+ * @returns {{ glue: WeakMap<Node, Record<string, { end?: boolean, start?: boolean }>>, spaces: WeakMap<Node, { lead?: boolean, trail?: boolean, only?: boolean }> }}
+ */
+function computeMarkupGlue(segment) {
+  const glue = new WeakMap();
+  const spaces = new WeakMap();
+  const keepSpace = ({ node, at }) => spaces.set(node, { ...spaces.get(node), [at]: true });
+  const mark = ([node, part], side) => {
+    if (!glue.has(node)) glue.set(node, {});
+    const lines = glue.get(node);
+    lines[part] = { ...lines[part], [side]: true };
+  };
+
+  /** Goes through a text block's lines, whitespace and characters: one mark for each gap without whitespace. */
+  const flush = (tokens) => {
+    let prev = null;
+    let gap = null;
+    for (const token of tokens) {
+      if (token.kind === "line") {
+        if (gap && prev) gap.breaks.push({ from: prev.last, to: token.first, weight: prev.depth + token.depth });
+        prev = token;
+      } else if (token.kind === "space") {
+        if (gap) gap.space ??= token;
+      } else {
+        if (gap?.space) {
+          keepSpace(gap.space);
+        } else if (gap?.breaks.length) {
+          const shallowest = gap.breaks.reduce((a, b) => (b.weight < a.weight ? b : a));
+          mark(shallowest.from, "end");
+          mark(shallowest.to, "start");
+        }
+        gap = { space: null, breaks: [] };
+      }
+    }
+    tokens.length = 0;
+  };
+
+  const pushText = (tokens, node) => {
+    const text = node.textContent ?? "";
+    if (!text) return;
+    if (/^[ \t\r\n]+$/.test(text)) {
+      tokens.push({ kind: "space", node, at: "only" });
+      return;
+    }
+    if (/^[ \t\r\n]/.test(text)) tokens.push({ kind: "space", node, at: "lead" });
+    tokens.push({ kind: "char" });
+    if (/[ \t\r\n]$/.test(text)) tokens.push({ kind: "space", node, at: "trail" });
+  };
+  const pushLine = (tokens, node, part, depth) => {
+    tokens.push({ kind: "line", first: [node, part], last: [node, part], depth });
+  };
+  /** An element shown on its lines, whose inside does not matter to the text around it. */
+  const pushOpaque = (tokens, el, depth) => {
+    const single = isSingleLineMarkup(el);
+    tokens.push({ kind: "line", first: [el, single ? "whole" : "open"], last: [el, single ? "whole" : "close"], depth });
+  };
+
+  const walk = (el, tokens, depth) => {
+    for (const child of el.childNodes) {
+      if (isTextLikeNode(child)) {
+        if (!isWhitespaceOnlyText(child)) pushLine(tokens, child, "whole", depth);
+        pushText(tokens, child);
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const tag = localName(child);
+        if (isInlineInTextBlock(child)) {
+          if (tag === "content") {
+            pushOpaque(tokens, child, depth);
+            tokens.push({ kind: "char" });
+          } else if (isSingleLineMarkup(child)) {
+            pushLine(tokens, child, "whole", depth);
+            for (const text of child.childNodes) if (isTextLikeNode(text)) pushText(tokens, text);
+          } else {
+            pushLine(tokens, child, "open", depth);
+            walk(child, tokens, depth + 1);
+            pushLine(tokens, child, "close", depth);
+          }
+        } else if (WS_HEAD_TAGS.has(tag)) {
+          pushOpaque(tokens, child, depth); // disregarded here: its text blocks are read on their own
+          visit(child);
+        } else if (WS_SEMANTIC_TAGS.has(tag) || WS_DELIMITER_TAGS.has(tag)) {
+          flush(tokens);
+          visit(child);
+        } else {
+          pushOpaque(tokens, child, depth); // e.g. a checkbox or picture: part of the text
+          tokens.push({ kind: "char" });
+          visit(child);
+        }
+      }
+    }
+  };
+
+  const visit = (el) => {
+    const tag = localName(el);
+    if (WS_RAW_TEXT_TAGS.has(tag) || WS_VIRTUAL_TEXT_TAGS.has(tag)) {
+      const tokens = [];
+      walk(el, tokens, 1);
+      flush(tokens);
+    } else {
+      for (const child of childElements(el)) visit(child);
+    }
+  };
+
+  for (const el of segment) if (el.nodeType === Node.ELEMENT_NODE) visit(el);
+  return { glue, spaces };
+}
+
+let markupGlue = new WeakMap();
+let markupSpaces = new WeakMap();
+
+/** A space read from a node of just whitespace has no line of its own: it goes at the end of the line before. */
+function appendMarkupLoneSpace(container, fallbackLine) {
+  const lines = container.querySelectorAll(".markup-line");
+  const line = lines[lines.length - 1] ?? fallbackLine;
+  line?.querySelector(".markup-line-body")?.appendChild(document.createTextNode(" "));
+}
+
+function appendGlueMark(parent, className, hint) {
+  const mark = document.createElement("span");
+  mark.className = `markup-glue-mark ${className}`;
+  mark.setAttribute("aria-hidden", "true");
+  mark.dataset.hint = hint;
+  parent.appendChild(mark);
+}
+
+function markGlueLine(line, node, part) {
+  const glued = markupGlue.get(node)?.[part];
+  if (!line || !glued) return;
+  if (glued.end) appendGlueMark(line.querySelector(".markup-line-body"), "markup-glue-end", "This line break is not in the source; only used for display");
+  if (glued.start) appendGlueMark(line.querySelector(".markup-line-content"), "markup-glue-start", "This spacing is not in the source; only used for display");
+}
+
 function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
   for (const child of nodes) {
     if (isTextLikeNode(child)) {
       const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(parent, depth, text);
+      if (text === " ") {
+        appendMarkupLoneSpace(parent);
+      } else if (text) {
+        appendMarkupTextLine(parent, depth, text);
+        markGlueLine(parent.lastElementChild, child, "whole");
+      }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       parent.appendChild(buildMarkupElement(child, depth, elementIds));
     }
@@ -9100,6 +9351,7 @@ function buildMarkupFoldableElement(el, depth, elementIds, buildBody) {
 
   const attributes = markupAttributes(el);
   appendMarkupFoldableOpen(block, depth, tag, attributes);
+  markGlueLine(block.lastElementChild, el, "open");
   block.classList.add("markup-el-foldable");
 
   const foldBody = document.createElement("div");
@@ -9109,6 +9361,7 @@ function buildMarkupFoldableElement(el, depth, elementIds, buildBody) {
   buildBody(children, depth + 1);
   foldBody.appendChild(children);
   appendMarkupCloseTag(foldBody, depth, tag);
+  markGlueLine(foldBody.lastElementChild, el, "close");
   block.appendChild(foldBody);
   return block;
 }
@@ -9272,20 +9525,21 @@ function buildMarkupElement(el, depth, elementIds) {
 
   if (!el.childNodes.length) {
     appendMarkupSelfClosingTag(block, depth, tag, attributes);
+    markGlueLine(block.lastElementChild, el, "whole");
     return block;
   }
 
-  const meaningfulText = [...el.childNodes].filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
-  const textOnly = meaningfulText.length > 0 && meaningfulText.every(isTextLikeNode) && !childElements(el).length;
-  if (textOnly) {
+  if (isTextOnlyMarkup(el)) {
     const text = serializeMarkupTextNodes(el.childNodes);
     if (text) {
       appendMarkupInlineElement(block, depth, tag, attributes, text);
+      markGlueLine(block.lastElementChild, el, "whole");
       return block;
     }
   }
 
   appendMarkupFoldableOpen(block, depth, tag, attributes);
+  markGlueLine(block.lastElementChild, el, "open");
   block.classList.add("markup-el-foldable");
 
   const foldBody = document.createElement("div");
@@ -9295,13 +9549,19 @@ function buildMarkupElement(el, depth, elementIds) {
   for (const child of el.childNodes) {
     if (isTextLikeNode(child)) {
       const text = formatMarkupTextNode(child);
-      if (text) appendMarkupTextLine(children, depth + 1, text);
+      if (text === " " && localName(el) !== "content") {
+        appendMarkupLoneSpace(children, block.firstElementChild);
+      } else if (text) {
+        appendMarkupTextLine(children, depth + 1, text);
+        markGlueLine(children.lastElementChild, child, "whole");
+      }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       children.appendChild(buildMarkupElement(child, depth + 1, elementIds));
     }
   }
   foldBody.appendChild(children);
   appendMarkupCloseTag(foldBody, depth, tag);
+  markGlueLine(foldBody.lastElementChild, el, "close");
   block.appendChild(foldBody);
   return block;
 }
@@ -9490,7 +9750,9 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
           if (markerEl && firstSlot) {
             // Inside the first text block (not before it) so the marker stays on its line.
             const host = firstSlot.querySelector("p, h1, h2, h3, h4, h5, h6") ?? firstSlot.firstChild;
-            host?.prepend(renderMarkerElement(markerEl, elementIds, { inline: true }));
+            const marker = renderMarkerElement(markerEl, elementIds, { inline: true });
+            marker.classList.add("rendered-list-marker");
+            host?.prepend(marker);
           }
           return;
         }
@@ -9800,9 +10062,20 @@ function renderEmbeddedCaption(captionEl, elementIds, tagName) {
   return node;
 }
 
+/** Whether raw text in `el`'s body belongs to a text block, where whitespace between inline pieces reads as a space. */
+function isTextBlockBody(el) {
+  if (!el) return false;
+  const tag = localName(el);
+  return WS_RAW_TEXT_TAGS.has(tag) || WS_VIRTUAL_TEXT_TAGS.has(tag);
+}
+
 function appendRenderedBody(parent, el, elementIds, ctx) {
   const nodes = [...el.childNodes];
   let i = skipElementHeadNodes(nodes, 0);
+  // The element head is read as if removed: the whitespace around it is still there.
+  if (ctx.inline && !ctx.trimLeading && isTextBlockBody(el) && nodes.slice(0, i).some(isWhitespaceOnlyText)) {
+    parent.appendChild(document.createTextNode(" "));
+  }
   while (i < nodes.length) {
     appendRenderedNode(parent, nodes[i], elementIds, ctx);
     i += 1;
@@ -9897,11 +10170,15 @@ const INLINE_NESTABLE_TAGS = new Set([
 function appendRenderedNode(parent, node, elementIds, ctx) {
   if (isTextLikeNode(node)) {
     let text = node.textContent;
-    if (!text || !text.trim()) return;
+    if (!text) return;
+    if (!text.trim()) {
+      // Between inline pieces of a text block it reads as a space; CSS collapses it with its neighbours and at the edges.
+      if (!ctx.trimLeading && isTextBlockBody(node.parentElement)) parent.appendChild(document.createTextNode(" "));
+      return;
+    }
     if (ctx.trimLeading) {
       text = text.replace(/^\s+/u, "");
       ctx.trimLeading = false;
-      if (!text) return;
     }
     parent.appendChild(document.createTextNode(text));
     return;
@@ -9917,8 +10194,12 @@ function appendRenderedNode(parent, node, elementIds, ctx) {
   }
 
   if (tag === "code" || tag === "formula") {
+    // A formula's source goes to KaTeX, so the space at its edges has to go around it.
+    const edges = tag === "formula" && isTextBlockBody(node.parentElement) ? textEdgeSpaces(node) : null;
+    if (edges?.start && !ctx.trimLeading) parent.appendChild(document.createTextNode(" "));
     const rendered = renderBlockElement(node, elementIds, { inline: true });
     if (rendered) parent.appendChild(rendered);
+    if (edges?.end) parent.appendChild(document.createTextNode(" "));
     return;
   }
 
@@ -10045,6 +10326,18 @@ function formulaSourceText(el) {
     text += nodes[i].textContent ?? "";
   }
   return text.trim();
+}
+
+/** Whether the element's body starts or ends with whitespace, also around its element head. */
+function textEdgeSpaces(el) {
+  const nodes = [...el.childNodes];
+  const bodyStart = skipElementHeadNodes(nodes, 0);
+  const first = nodes[bodyStart];
+  const last = nodes[nodes.length - 1];
+  return {
+    start: nodes.slice(0, bodyStart).some(isWhitespaceOnlyText) || (!!first && isTextLikeNode(first) && /^\s/.test(first.textContent)),
+    end: bodyStart < nodes.length && isTextLikeNode(last) && /\s$/.test(last.textContent),
+  };
 }
 
 // KaTeX has no eqnarray; align is its closest (numbered) equivalent.
@@ -10930,7 +11223,9 @@ function collectListItems(el, elementIds) {
         // An explicit marker replaces the browser's own list numbering/bullet.
         li.classList.add("has-marker");
         li.style.listStyle = "none";
-        li.appendChild(renderMarkerElement(child, elementIds, { inline: true }));
+        const marker = renderMarkerElement(child, elementIds, { inline: true });
+        marker.classList.add("rendered-list-marker");
+        li.appendChild(marker);
       } else if (childTag === "checkbox") {
         li.appendChild(renderCheckboxElement(child, elementIds));
       }
