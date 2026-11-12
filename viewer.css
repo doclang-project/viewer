@@ -2425,6 +2425,11 @@ pre.markup {
   min-width: 0;
 }
 
+/* A line of text starting with a space (which the line break before it already reads as): aligned with its siblings. */
+.markup-line-lead-space .markup-line-body {
+  text-indent: -1ch;
+}
+
 .markup-fold-toggle {
   appearance: none;
   display: inline-flex;
