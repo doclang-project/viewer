@@ -47,6 +47,22 @@
           >
           <span class="page-indicator-suffix" id="page-count-indicator">&nbsp;of 1</span>
         </div>
+        <div class="view-toggle page-layout-toggle" id="page-layout-toggle" role="group" aria-label="Page layout">
+          <button
+            type="button"
+            class="view-toggle-btn"
+            id="btn-page-layout-single"
+            title="Every pane shows one page at a time"
+            aria-pressed="true"
+          >Single</button>
+          <button
+            type="button"
+            class="view-toggle-btn"
+            id="btn-page-layout-continuous"
+            title="All pages, one after the other, in the Original, the DocLang and the Flowing Preview (the Paged Preview shows the current page); the page at the centre of the pane you scroll is the current one"
+            aria-pressed="false"
+          >Continuous</button>
+        </div>
       </nav>
       <nav class="page-nav layout-nav" id="layout-nav" hidden>
         <div class="page-nav-btns">
@@ -373,18 +389,28 @@
             <label class="page-zoom-control-label" for="page-zoom">
               <span aria-hidden="true">Zoom</span>
             </label>
-            <input
-              type="range"
-              id="page-zoom"
-              min="100"
-              max="300"
-              step="10"
-              value="100"
-              aria-valuemin="100"
-              aria-valuemax="300"
-              aria-valuenow="100"
-              aria-label="Page zoom"
-            >
+            <span class="page-zoom-track" id="page-zoom-track">
+              <input
+                type="range"
+                id="page-zoom"
+                min="100"
+                max="300"
+                step="5"
+                value="100"
+                aria-valuemin="100"
+                aria-valuemax="300"
+                aria-valuenow="100"
+                aria-label="Page zoom"
+              >
+              <button
+                type="button"
+                class="page-zoom-fit-mark"
+                id="page-zoom-fit-mark"
+                title="Fit to width (100%)"
+                aria-label="Zoom to fit the width (100%)"
+                hidden
+              ></button>
+            </span>
             <button
               type="button"
               id="page-zoom-reset"
@@ -749,7 +775,22 @@
             </div>
             <button type="button" class="page-nav-btn token-play-btn" id="btn-token-play" aria-label="Trace DocLang, token by token"></button>
             <input type="range" class="token-scrub" id="token-scrub" min="0" max="0" value="0" aria-label="Tokens written">
-            <select class="token-speed" id="token-speed" aria-label="Trace speed in tokens per second" title="Trace speed">
+            <!-- The speed is picked from a menu that opens upwards, all of it in view (a <select> at the bottom of the
+                 window opens on the chosen speed, with the faster ones out of view); the <select> keeps the value. -->
+            <span class="token-speed-wrap">
+              <button
+                type="button"
+                class="token-speed-btn"
+                id="token-speed-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="token-speed-menu"
+                aria-label="Trace speed in tokens per second"
+                title="Trace speed"
+              >100 tok/s</button>
+              <ul class="token-speed-menu" id="token-speed-menu" role="listbox" aria-label="Trace speed" hidden></ul>
+            </span>
+            <select class="token-speed" id="token-speed" hidden tabindex="-1" aria-hidden="true">
               <option value="5">5 tok/s</option>
               <option value="10">10 tok/s</option>
               <option value="50">50 tok/s</option>

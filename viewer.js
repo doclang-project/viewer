@@ -447,6 +447,11 @@ const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
 const OVERLAY_REF_IMAGE_WIDTH = 1224;
 const OVERLAY_REF_IMAGE_HEIGHT = 1584;
 const PAGE_ZOOM_DEFAULT = 100;
+/** Continuous pages can zoom out below the width fit, to see several at once. */
+const PAGE_ZOOM_MIN_CONTINUOUS = 20;
+/** Dragging the zoom this close to 100% (the fit) stays at 100%. */
+const PAGE_ZOOM_SNAP = 5;
+const PAGE_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-page-layout-mode";
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
@@ -560,6 +565,24 @@ let pageSettingsOpen = false;
 let readingSettingsOpen = false;
 let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
+/** "single": one page at a time; "continuous": every page in one vertical stream, fit to the pane's width. */
+let pageLayoutMode = "single";
+/**
+ * The continuous stream of the Original pane, while it shows. Only the current page's view is live (selection,
+ * editing, tokens); the others carry overlays built in their own id space, and a click on one makes it current.
+ * @type {{ port: HTMLElement, inner: HTMLElement, connectors: SVGSVGElement, pages: { pageNum: number, wrap: HTMLElement, img: HTMLImageElement }[], urls: string[], state: object | null, entry?: object, sticky: { page: number, scrollTop: number } | null, scrollFrame: number, fallbackAspect: number, loadedAspect?: boolean } | null}
+ */
+let pageStream = null;
+/** @type {{ scrollTop: number, scrollLeft: number, fallbackAspect: number } | null} where a rebuilt stream picks up */
+let streamRestore = null;
+/** @type {Map<HTMLElement, { page: number, scrollTop: number }>} a page that stays current while its pane barely moves */
+const paneSticky = new Map();
+/**
+ * Only scrolling done by the user moves the current page in the DocLang and Preview panes: they also scroll by
+ * themselves (to follow the current page, or to show a selection), and that must not move it back.
+ * @type {Map<HTMLElement, { at: number, held: boolean }>}
+ */
+const paneUserScroll = new Map();
 /** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
 let pagePanDrag = null;
 let pagePanSuppressClick = false;
@@ -648,6 +671,11 @@ const els = {
   pageZoom: document.getElementById("page-zoom"),
   pageZoomLabel: document.getElementById("page-zoom-label"),
   pageZoomReset: document.getElementById("page-zoom-reset"),
+  pageZoomTrack: document.getElementById("page-zoom-track"),
+  pageZoomFitMark: document.getElementById("page-zoom-fit-mark"),
+  pageLayoutToggle: document.getElementById("page-layout-toggle"),
+  pageLayoutSingleBtn: document.getElementById("btn-page-layout-single"),
+  pageLayoutContinuousBtn: document.getElementById("btn-page-layout-continuous"),
   main: document.getElementById("main"),
   emptyState: document.getElementById("empty-state"),
   emptyStateLoading: document.getElementById("empty-state-loading"),
@@ -659,6 +687,8 @@ const els = {
   tokenPlayBtn: document.getElementById("btn-token-play"),
   tokenScrub: document.getElementById("token-scrub"),
   tokenSpeed: document.getElementById("token-speed"),
+  tokenSpeedBtn: document.getElementById("token-speed-btn"),
+  tokenSpeedMenu: document.getElementById("token-speed-menu"),
   tokenCounter: document.getElementById("token-counter"),
   tokenHeatToggle: document.getElementById("token-heat"),
   tokenCountsToggle: document.getElementById("token-counts"),
@@ -776,13 +806,13 @@ els.pageNumberInput?.addEventListener("focus", (e) => {
 els.showAllBboxes?.addEventListener("change", () => {
   showAllBboxes = els.showAllBboxes.checked;
   syncLayoutSubtoggles();
-  const img = els.pagePane?.querySelector(".page-view img");
+  const img = livePageImg();
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
 els.showLayoutBadges?.addEventListener("change", () => {
   showLayoutBadges = els.showLayoutBadges.checked;
-  const img = els.pagePane?.querySelector(".page-view img");
+  const img = livePageImg();
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
@@ -829,7 +859,7 @@ els.showKeyValueLinks?.addEventListener("change", () => {
 els.showReadingOrder?.addEventListener("change", () => {
   showReadingOrder = els.showReadingOrder.checked;
   syncLayoutSubtoggles();
-  const img = els.pagePane?.querySelector(".page-view img");
+  const img = livePageImg();
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
 });
@@ -984,6 +1014,8 @@ els.cropPictures?.addEventListener("change", () => {
 });
 els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMode("pageless"));
 els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
+els.pageLayoutSingleBtn?.addEventListener("click", () => setPageLayoutMode("single"));
+els.pageLayoutContinuousBtn?.addEventListener("click", () => setPageLayoutMode("continuous"));
 els.pageSettingsPanel?.addEventListener("change", (e) => {
   if (!(e.target instanceof HTMLInputElement) || e.target.type !== "checkbox") return;
   const group = e.target.dataset.selectAll;
@@ -1004,11 +1036,14 @@ removeUnavailableMarkup();
 initEditingToggle();
 loadHotkeysPref();
 loadReadingLayoutMode();
+loadPageLayoutMode();
+initTextStreamScrolling();
 loadMarkupViewMode();
 loadReadingOverlayPrefs();
 syncReadingLayerCheckboxes();
 initReadingBboxStyle();
 syncReadingLayoutButtons();
+syncPageLayoutButtons();
 syncOverlayPrefControls();
 normalizePaneRatios();
 initArrowStyleControls();
@@ -1855,7 +1890,7 @@ function initPageWheelNav() {
   els.pagePane.addEventListener(
     "wheel",
     (e) => {
-      if (!state?.hasPageView) return;
+      if (!state?.hasPageView || pageStream) return; // the continuous stream just scrolls
       const pane = pageViewScrollPane();
       if (!pane) return;
       const scrollable = pane.scrollHeight > pane.clientHeight || pane.scrollWidth > pane.clientWidth;
@@ -1957,14 +1992,26 @@ function updatePagePanePanCursor() {
 function initPageViewControls() {
   if (!els.pagePane) return;
 
+  // A drag near 100% stays there; the arrow keys step on past it.
+  let zoomDragging = false;
+  els.pageZoom?.addEventListener("pointerdown", () => { zoomDragging = true; });
+  window.addEventListener("pointerup", () => { zoomDragging = false; });
   els.pageZoom?.addEventListener("input", () => {
-    pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, Number(els.pageZoom.value));
-    if (Number(els.pageZoom.value) < PAGE_ZOOM_DEFAULT) {
+    const value = Number(els.pageZoom.value);
+    if (zoomDragging && value !== PAGE_ZOOM_DEFAULT && Math.abs(value - PAGE_ZOOM_DEFAULT) <= PAGE_ZOOM_SNAP) {
+      els.pageZoom.value = String(PAGE_ZOOM_DEFAULT);
+    }
+    pageZoomPercent = Math.max(pageZoomMin(), Number(els.pageZoom.value));
+    if (Number(els.pageZoom.value) < pageZoomMin()) {
       els.pageZoom.value = String(pageZoomPercent);
     }
     els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
     updatePageZoomResetButton();
     refreshPageViewLayout();
+  });
+
+  els.pageZoomFitMark?.addEventListener("click", () => {
+    if (pageZoomPercent !== PAGE_ZOOM_DEFAULT) resetPageZoom();
   });
 
   els.pageZoomReset?.addEventListener("click", () => {
@@ -2680,7 +2727,7 @@ function markupLineTokenAnchor(line, data) {
 }
 
 function decorateMarkupTokens() {
-  const root = els.markupPane?.querySelector(".markup");
+  const root = els.markupPane && livePaneRoot(els.markupPane).querySelector(".markup");
   const data = state?.tokenData;
   if (!root || !data || root.dataset.tokens === "on") return;
   root.dataset.tokens = "on";
@@ -2726,8 +2773,20 @@ function decorateMarkupTokens() {
 }
 
 function undecorateMarkupTokens() {
-  const root = els.markupPane?.querySelector('.markup[data-tokens="on"]');
-  if (!root) return;
+  const root = els.markupPane && livePaneRoot(els.markupPane).querySelector('.markup[data-tokens="on"]');
+  if (root) undecorateMarkupRoot(root);
+}
+
+/** The tokens of a continuous source view are on the current page only (the lens works page by page): off the others. */
+function undecorateOtherPagesTokens() {
+  if (!els.markupPane) return;
+  const live = livePaneRoot(els.markupPane);
+  for (const root of els.markupPane.querySelectorAll('.markup[data-tokens="on"]')) {
+    if (!live.contains(root)) undecorateMarkupRoot(root);
+  }
+}
+
+function undecorateMarkupRoot(root) {
   delete root.dataset.tokens;
   delete root.dataset.replayAt;
   root.classList.remove("token-replay");
@@ -2741,6 +2800,7 @@ function undecorateMarkupTokens() {
 
 /** Shows or hides the tokens of the source view to match the lens; called whenever the view is rebuilt. */
 function syncMarkupTokens() {
+  undecorateOtherPagesTokens();
   if (!tokenLens.active || !state) return undecorateMarkupTokens();
   if (state.tokenData) return decorateMarkupTokens();
   const docState = state;
@@ -2755,7 +2815,7 @@ function syncMarkupTokens() {
 
 /** During a replay: dims the source lines and tokens not written yet and keeps the current one in view. */
 function syncMarkupReplay(range = currentTokenRange()) {
-  const root = els.markupPane?.querySelector('.markup[data-tokens="on"]');
+  const root = els.markupPane && livePaneRoot(els.markupPane).querySelector('.markup[data-tokens="on"]');
   if (!root) return;
   const replaying = isReplayShown(range);
   const at = replaying ? Math.floor(tokenLens.cursor) : Infinity;
@@ -2857,6 +2917,7 @@ function updateTokenReplay() {
   }
   updateTokenLayer(range);
   syncPagedTraceRender(range);
+  syncTraceUpcomingPages(range);
   syncReplaySelection(range);
   syncTokenBar(range);
   syncMarkupReplay(range);
@@ -2932,8 +2993,8 @@ function highlightReplayElement(id) {
   const targets = [
     markupEl,
     renderedEl,
-    els.renderedPane?.querySelector(`.paged-el-slot[data-element-id="${id}"]`),
-    ...(els.pagePane?.querySelectorAll(`.bbox[data-element-id="${id}"]`) ?? []),
+    els.renderedPane && livePaneRoot(els.renderedPane).querySelector(`.paged-el-slot[data-element-id="${id}"]`),
+    ...(livePageView()?.querySelectorAll(`.bbox[data-element-id="${id}"]`) ?? []),
   ];
   for (const el of targets) el?.classList.add("selected", "token-current");
   renderedEl?.scrollIntoView({ block: "nearest" });
@@ -3047,6 +3108,20 @@ function updateTokenLayer(range) {
   }
 }
 
+/**
+ * While a trace shows its effects, the pages after the one being written (in a continuous view) are not written yet
+ * either: the Original veils them whole, as what is not scanned yet of the page, and the Paged Preview leaves them
+ * empty, as what is not written yet. The pages before are done, and show as they are.
+ */
+function syncTraceUpcomingPages(range) {
+  const tracing = isReplayShown(range) && tokenLens.effects;
+  const veil = tracing && !!els.tokenScanToggle?.checked;
+  const empty = tracing && !!els.tokenRenderToggle?.checked;
+  const current = state?.currentPage ?? 0;
+  for (const { pageNum, wrap } of pageStream?.pages ?? []) wrap.classList.toggle("token-upcoming", veil && pageNum > current);
+  for (const { pageNum, el } of previewPageEls()) el.classList.toggle("token-upcoming", empty && pageNum > current);
+}
+
 /** Where the Paged Preview's slots are in the token stream, built once for each rendering of the page. */
 let pagedTraceRender = null;
 
@@ -3096,7 +3171,7 @@ function unwrittenTextRange(item, written) {
 
 /** While tracing, the Paged Preview is built up in reading order: each slot appears as its tokens are written. */
 function syncPagedTraceRender(range) {
-  const canvas = els.renderedPane?.querySelector(".paged-canvas");
+  const canvas = els.renderedPane && livePaneRoot(els.renderedPane).querySelector(".paged-canvas");
   const active = !!canvas && isReplayShown(range) && tokenLens.effects && !!els.tokenRenderToggle?.checked;
   const wasActive = canvas?.classList.contains("token-rendering");
   if (!active) {
@@ -3278,8 +3353,10 @@ function initTokenLens() {
   });
   els.tokenSpeed?.addEventListener("change", () => {
     tokenLens.speed = Number(els.tokenSpeed.value) || 100; // tokens per second
+    syncTokenSpeedButton();
     persistTokenPrefs();
   });
+  initTokenSpeedMenu();
   document.addEventListener("keydown", (e) => {
     if (!tokenLens.active || !state || !hotkeysEnabled) return;
     if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
@@ -3315,6 +3392,76 @@ function loadTokenPrefs() {
   const speed = String(prefs.speed);
   if (els.tokenSpeed && [...els.tokenSpeed.options].some((o) => o.value === speed)) els.tokenSpeed.value = speed;
   tokenLens.speed = Number(els.tokenSpeed?.value) || 100;
+  syncTokenSpeedButton();
+}
+
+function syncTokenSpeedButton() {
+  const option = els.tokenSpeed?.selectedOptions[0];
+  if (els.tokenSpeedBtn && option) els.tokenSpeedBtn.textContent = option.textContent;
+  for (const item of els.tokenSpeedMenu?.children ?? []) {
+    item.setAttribute("aria-selected", String(item.dataset.value === els.tokenSpeed?.value));
+  }
+}
+
+/** The menu of trace speeds: it opens above its button, all of it in view, and picks into the hidden <select>. */
+function initTokenSpeedMenu() {
+  const select = els.tokenSpeed;
+  const button = els.tokenSpeedBtn;
+  const menu = els.tokenSpeedMenu;
+  if (!select || !button || !menu) return;
+  for (const option of select.options) {
+    const item = document.createElement("li");
+    item.className = "token-speed-option";
+    item.setAttribute("role", "option");
+    item.dataset.value = option.value;
+    item.textContent = option.textContent;
+    menu.appendChild(item);
+  }
+  const items = () => [...menu.children];
+  const setOpen = (open) => {
+    menu.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+    if (open) {
+      for (const item of items()) item.classList.toggle("is-active", item.dataset.value === select.value);
+    }
+  };
+  const pick = (value) => {
+    setOpen(false);
+    button.focus();
+    if (value === select.value) return;
+    select.value = value;
+    select.dispatchEvent(new Event("change"));
+  };
+  const move = (step) => {
+    const list = items();
+    const at = list.findIndex((item) => item.classList.contains("is-active"));
+    const next = list[Math.min(list.length - 1, Math.max(0, at + step))];
+    for (const item of list) item.classList.toggle("is-active", item === next);
+  };
+  button.addEventListener("click", () => setOpen(menu.hidden));
+  menu.addEventListener("click", (e) => {
+    const item = e.target.closest(".token-speed-option");
+    if (item) pick(item.dataset.value);
+  });
+  button.addEventListener("keydown", (e) => {
+    if (menu.hidden) {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") move(e.key === "ArrowUp" ? -1 : 1);
+    else if (e.key === "Enter" || e.key === " ") pick(menu.querySelector(".is-active")?.dataset.value ?? select.value);
+    else if (e.key === "Escape") setOpen(false);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!menu.hidden && !e.target.closest(".token-speed-wrap")) setOpen(false);
+  });
+  syncTokenSpeedButton();
 }
 
 function persistTokenPrefs() {
@@ -3670,11 +3817,17 @@ function activateDocument(docState, entry) {
     els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
   }
   updatePageZoomResetButton();
+  syncPageZoomRange();
+  // The same file opened again (after a visual edit, say): a continuous stream is built anew but keeps its place.
+  streamRestore = pageStream?.entry === entry
+    ? { scrollTop: pageStream.port.scrollTop, scrollLeft: pageStream.port.scrollLeft, fallbackAspect: pageStream.fallbackAspect }
+    : null;
   const port = pageViewScrollPane();
   if (port) {
     port.scrollLeft = 0;
     port.scrollTop = 0;
   }
+  pageStream = null; // another document state: a continuous stream is built anew, at its current page
 
   stopEditing({ render: false });
   stopTokenReplay();
@@ -3685,6 +3838,8 @@ function activateDocument(docState, entry) {
   setPageViewVisible(state.hasPageView);
   syncReadingLayoutButtons();
   renderPage(state.currentPage);
+  streamRestore = null;
+  if (pageStream) pageStream.entry = entry;
   updateFileView();
   syncValidationForActiveDocument();
   syncEditUi();
@@ -5335,7 +5490,7 @@ document.addEventListener("keydown", (e) => {
 
 function beginDraw(e) {
   const svg = e.currentTarget;
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = livePageImg();
   const start = imageCoordsFromEvent(svg, e);
   if (e.button !== 0 || !img || !start) return;
   e.preventDefault();
@@ -5380,7 +5535,7 @@ function beginDraw(e) {
 }
 
 function wireOverlayEditing() {
-  const svg = els.pagePane?.querySelector("svg.overlay");
+  const svg = liveOverlaySvg();
   if (!svg || svg.dataset.editWired || !editableEntry()) return;
   svg.dataset.editWired = "1";
   svg.addEventListener("pointerdown", onOverlayPointerDown);
@@ -5544,7 +5699,7 @@ function markPendingThread() {
   els.pagePane?.querySelectorAll(".bbox.thread-pending").forEach((r) => r.classList.remove("thread-pending"));
   const pending = drawing?.pending;
   const id = pending ? state?.elementIds?.get(pending) : null;
-  if (id) els.pagePane?.querySelector(`.bbox[data-element-id="${id}"]`)?.classList.add("thread-pending");
+  if (id) livePageView()?.querySelector(`.bbox[data-element-id="${id}"]`)?.classList.add("thread-pending");
 }
 
 function pickThreadEnd(el) {
@@ -5564,7 +5719,7 @@ function pickThreadEnd(el) {
 
 function beginThreadDrag(e) {
   const svg = e.currentTarget;
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = livePageImg();
   const start = imageCoordsFromEvent(svg, e);
   if (e.button !== 0 || !img || !start) return;
   e.preventDefault();
@@ -6137,12 +6292,12 @@ function wireMarkupDrag(root) {
 const HANDLE_CURSORS = { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" };
 
 function syncBboxHandles() {
-  const svg = els.pagePane?.querySelector("svg.overlay");
+  const svg = liveOverlaySvg();
   svg?.querySelector(".bbox-handles")?.remove();
   if (!svg || !selectedElementId || markupEditor || !editableEntry()) return;
   const el = state.idToElement?.get(selectedElementId);
   const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = livePageImg();
   if (!el || !box || !img || elementHeadLocations(el).length !== 4) return;
   if (isListItem(el) && selectedFacet === "item") return; // the bbox belongs to the item's text
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -6181,7 +6336,7 @@ function onOverlayPointerDown(e) {
   }
   if (e.button !== 0 || !selectedElementId || markupEditor) return;
   const svg = e.currentTarget;
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = livePageImg();
   const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
   if (!img || !box) return;
   const mode = e.target.closest?.(".bbox-handle")?.getAttribute("data-handle");
@@ -6335,7 +6490,7 @@ function docTagsToText(raw, keepLines) {
 async function ocrSelectedElement(button) {
   const el = selectedElement();
   const box = el ? state.currentBoxes?.find((b) => b.elementId === selectedElementId) : null;
-  const img = els.pagePane?.querySelector(".page-view img");
+  const img = livePageImg();
   const id = selectedElementId;
   if (!el || !box || !img || ocrBusy) return;
   if (!navigator.gpu) {
@@ -6626,8 +6781,7 @@ function applyReadingLayerClasses(root) {
 }
 
 function syncReadingLayerVisibility() {
-  const root = els.renderedPane?.querySelector(".rendered-doc, .paged-canvas");
-  if (root) applyReadingLayerClasses(root);
+  for (const root of els.renderedPane?.querySelectorAll(".rendered-doc, .paged-canvas") ?? []) applyReadingLayerClasses(root);
 }
 
 function closeAllSettings() {
@@ -6643,7 +6797,8 @@ function resetPageZoom() {
   }
   updatePageZoomResetButton();
   const port = pageViewScrollPane();
-  if (port) {
+  // The continuous stream keeps its place (the layout keeps the centre of the view where it is).
+  if (port && !pageStream) {
     port.scrollLeft = 0;
     port.scrollTop = 0;
   }
@@ -6676,6 +6831,7 @@ function resetViewer() {
   if (els.markupPane) els.markupPane.innerHTML = "";
   if (els.renderedPane) els.renderedPane.innerHTML = "";
   if (els.pagePane) els.pagePane.innerHTML = "";
+  pageStream = null;
   setPageIndicator(1, 1);
   if (els.btnPrev) els.btnPrev.disabled = true;
   if (els.btnNext) els.btnNext.disabled = true;
@@ -6706,7 +6862,7 @@ function syncPagePaneControls() {
   const pageVisible = isPaneVisible("page");
   if (els.settingsToggle) els.settingsToggle.hidden = !pageVisible;
   if (els.pageZoomLabel) els.pageZoomLabel.hidden = !pageVisible;
-  if (pageVisible) updatePageZoomResetButton();
+  if (pageVisible) syncPageZoomRange();
   if (els.pagePane) els.pagePane.tabIndex = pageVisible ? 0 : -1;
 }
 
@@ -7470,6 +7626,11 @@ function goToPage(n) {
   setPageSettingsOpen(false);
   const page = Math.min(Math.max(1, n), state.pageCount);
   state.currentPage = page;
+  if (isContinuousLayout()) {
+    // Scroll first: showing a selection the page brings (pending) may scroll on from there.
+    if (pageStream && isContinuousPageLayout()) scrollStreamToPage(page);
+    followCurrentPage(null, page);
+  }
   renderPage(page);
 }
 
@@ -7516,7 +7677,8 @@ function renderPage(pageNum) {
 
   if (!els.markupPane || !els.renderedPane || !els.pagePane) return;
 
-  if (!markupEditor) els.markupPane.innerHTML = "";
+  const continuous = isContinuousLayout();
+  if (!markupEditor && !continuous) els.markupPane.innerHTML = "";
   const elementIds = assignElementIds(segment);
   state.elementIds = elementIds;
   state.idToElement = invertElementIds(elementIds);
@@ -7527,6 +7689,10 @@ function renderPage(pageNum) {
   if (markupEditor) {
     // The editor holds the whole document and stays put while paging; the selection is gone.
     syncEditorCurrentLine();
+  } else if (continuous) {
+    if (!isPaneStreamCurrent(els.markupPane)) buildMarkupStream(pageNum);
+    markLivePageBlocks(pageNum); // before the tokens: they go on the current page's source
+    syncMarkupTokens();
   } else if (segmentHasMarkup(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
     syncMarkupTokens();
@@ -7534,7 +7700,9 @@ function renderPage(pageNum) {
     els.markupPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
   }
 
-  renderReadingPane(segment, elementIds, boxes, defaultResolution);
+  if (!isReadingStreamLayout()) renderReadingPane(segment, elementIds, boxes, defaultResolution);
+  else if (!isPaneStreamCurrent(els.renderedPane)) buildReadingStream(pageNum);
+  if (continuous) markLivePageBlocks(pageNum);
 
   // Without page images nothing waits for an image to load: select what navigation went to right away.
   if (!state.hasPageView && state.pendingSelectElement) {
@@ -7544,16 +7712,21 @@ function renderPage(pageNum) {
     if (id) selectElement(id);
   }
 
-  els.pagePane.innerHTML = "";
   tokenLayer = null;
   tokenLens.currentId = null; // the panes are rebuilt: nothing is highlighted any more
+  if (state.hasPageView && isContinuousPageLayout()) {
+    renderPageStream(pageNum, segment, elementIds, boxes);
+    return;
+  }
+  pageStream = null;
+  els.pagePane.innerHTML = "";
   if (state.hasPageView) {
     const imageUrl = pageImages.get(pageNum);
     if (imageUrl) {
       const port = document.createElement("div");
       port.className = "page-view-port";
       const wrap = document.createElement("div");
-      wrap.className = "page-view";
+      wrap.className = "page-view is-live";
       const img = document.createElement("img");
       img.alt = `Page ${pageNum}`;
 
@@ -7563,46 +7736,8 @@ function renderPage(pageNum) {
         if (!img.isConnected || state?.currentPage !== pageNum) return;
         if (img.dataset.layoutGeneration === String(pageNum)) return;
         img.dataset.layoutGeneration = String(pageNum);
-
         applyPageImageSize(img, els.pagePane);
-
-        const pagedCanvas = els.renderedPane?.querySelector(".paged-canvas");
-        if (pagedCanvas && img.naturalWidth && img.naturalHeight) {
-          pagedCanvas.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-          pagedCanvas.dataset.aspectW = String(img.naturalWidth);
-          pagedCanvas.dataset.aspectH = String(img.naturalHeight);
-          fitPagedCanvas();
-        }
-
-        const existing = wrap.querySelector("svg.overlay");
-        if (existing) existing.remove();
-        const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder);
-        state.pageViewOverlay = { boxes, readingOrderSteps };
-        if (boxes.length) {
-          wrap.appendChild(
-            buildOverlay(
-              img,
-              boxes,
-              collectCaptionLinks(segment, elementIds, boxes),
-              collectXrefLinks(segment, elementIds, boxes),
-              readingOrderSteps,
-              collectKeyValueLinks(segment, elementIds, boxes),
-              collectFragmentLinks(segment, elementIds, boxes, pageNum, state.threadPagesById),
-              collectFragmentNavItems(segment, elementIds, boxes),
-              defaultResolution,
-            ),
-          );
-        }
-        syncPageViewChrome(img);
-        // The overlay is built once the image has loaded, which can be after a selection (e.g. one kept across an edit).
-        if (selectedElementId) applySelection();
-        else syncSelectionEditUi();
-        const pending = state.pendingSelectElement;
-        if (pending) {
-          state.pendingSelectElement = null;
-          const id = findElementIdOnPage(pending);
-          if (id) selectElement(id);
-        }
+        buildLiveOverlay(wrap, img, pageNum, segment, elementIds, boxes);
       };
 
       img.addEventListener("load", onImageReady, { once: true });
@@ -7611,22 +7746,916 @@ function renderPage(pageNum) {
       els.pagePane.appendChild(port);
       img.src = imageUrl;
       if (img.complete) onImageReady();
-
-      if (!pagePaneResizeObserver) {
-        pagePaneResizeObserver = new ResizeObserver(() => {
-          refreshPageViewLayout();
-        });
-        pagePaneResizeObserver.observe(els.pagePane);
-      }
+      observePagePaneResize();
     } else {
       els.pagePane.innerHTML = `<div class="placeholder">${NO_IMAGE}</div>`;
     }
   }
 }
 
+function buildLiveOverlaySvg(img, pageNum, segment, elementIds, boxes, readingOrderSteps) {
+  const svg = buildOverlay(
+    img,
+    boxes,
+    collectCaptionLinks(segment, elementIds, boxes),
+    collectXrefLinks(segment, elementIds, boxes),
+    readingOrderSteps,
+    collectKeyValueLinks(segment, elementIds, boxes),
+    // In the continuous stream, the connectors between pages replace the stubs to the page corners.
+    collectFragmentLinks(segment, elementIds, boxes, pageNum, pageStream ? new Map() : state.threadPagesById),
+    collectFragmentNavItems(segment, elementIds, boxes),
+    state.defaultResolution,
+    { pageNum },
+  );
+  svg.overlayMeta = { boxes, readingOrderSteps, elementIds, idToElement: invertElementIds(elementIds) };
+  return svg;
+}
+
+/**
+ * Some overlay pieces (the fragment buttons and labels, the stubs to the page corners) are sized for the screen when the
+ * overlay is built: once the zoom or the pane's size settles, the overlays built at another scale are built again.
+ */
+let overlayRebuildTimer = 0;
+let pointerHeld = false;
+window.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
+window.addEventListener("pointerup", () => { pointerHeld = false; }, true);
+window.addEventListener("pointercancel", () => { pointerHeld = false; }, true);
+
+function scheduleOverlayRebuild() {
+  clearTimeout(overlayRebuildTimer);
+  overlayRebuildTimer = setTimeout(rebuildRescaledOverlays, 150);
+}
+
+function overlayScaleKey(img) {
+  return `${pageZoomPercent}|${Math.round(getCachedFitScale(img, els.pagePane) * 1e5)}`;
+}
+
+function rebuildRescaledOverlays() {
+  if (!state?.hasPageView) return;
+  // Not under a drag (panning, a bbox handle, drawing): it would lose what it is dragging.
+  if (pointerHeld || drawing) {
+    scheduleOverlayRebuild();
+    return;
+  }
+  const wrap = livePageView();
+  const img = wrap?.querySelector(":scope > img");
+  const old = wrap?.querySelector(":scope > svg.overlay");
+  if (old && img?.naturalWidth && old.dataset.scaleKey !== overlayScaleKey(img)) {
+    const steps = state.pageViewOverlay?.readingOrderSteps
+      ?? collectReadingOrderSteps(state.currentSegment, state.elementIds, state.currentBoxes, state.readingOrder);
+    const svg = buildLiveOverlaySvg(img, state.currentPage, state.currentSegment, state.elementIds, state.currentBoxes, steps);
+    old.replaceWith(svg);
+    // The same selection, without showing it again (no scrolling).
+    if (selectedElementId) {
+      for (const el of svg.querySelectorAll(`[data-element-id="${selectedElementId}"]`)) el.classList.add("selected");
+    }
+    syncPageViewChrome(img);
+    wireOverlayEditing();
+    markPendingThread();
+  }
+  if (pageStream) {
+    let dropped = false;
+    for (const svg of pageStream.inner.querySelectorAll(".page-view:not(.is-live) > svg.overlay")) {
+      const pageImg = svg.parentElement.querySelector(":scope > img");
+      if (pageImg && svg.dataset.scaleKey !== overlayScaleKey(pageImg)) {
+        svg.remove();
+        dropped = true;
+      }
+    }
+    if (dropped) syncStreamOverlays(); // builds those near the view again, at this scale
+  }
+}
+
+function observePagePaneResize() {
+  if (pagePaneResizeObserver || !els.pagePane) return;
+  pagePaneResizeObserver = new ResizeObserver(() => {
+    refreshPageViewLayout();
+  });
+  pagePaneResizeObserver.observe(els.pagePane);
+}
+
+/**
+ * Builds the current page's overlay (selection, editing, tokens) on its view, once its image has loaded, and syncs
+ * the Paged Preview's aspect ratio to the image.
+ */
+function buildLiveOverlay(wrap, img, pageNum, segment, elementIds, boxes) {
+  const { defaultResolution } = state;
+  const pagedCanvas = els.renderedPane?.querySelector(".paged-canvas");
+  if (pagedCanvas && img.naturalWidth && img.naturalHeight) {
+    pagedCanvas.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+    pagedCanvas.dataset.aspectW = String(img.naturalWidth);
+    pagedCanvas.dataset.aspectH = String(img.naturalHeight);
+    fitPagedCanvas();
+  }
+
+  wrap.querySelector(":scope > svg.overlay")?.remove();
+  const readingOrderSteps = collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder);
+  state.pageViewOverlay = { boxes, readingOrderSteps };
+  if (boxes.length) wrap.appendChild(buildLiveOverlaySvg(img, pageNum, segment, elementIds, boxes, readingOrderSteps));
+  syncPageViewChrome(img);
+  // The overlay is built once the image has loaded, which can be after a selection (e.g. one kept across an edit).
+  if (selectedElementId) applySelection();
+  else syncSelectionEditUi();
+  const pending = state.pendingSelectElement;
+  if (pending) {
+    state.pendingSelectElement = null;
+    const id = findElementIdOnPage(pending);
+    if (id) selectElement(id);
+  }
+}
+
+// --- Continuous layout of the DocLang pane and the Flowing Preview: every page, one after the other ---
+//
+// Each page is a block of its own, built with the page's own element ids (the same ones it has when it is the current
+// page). Ids repeat from page to page, so everything that looks up the current page's elements does so in its block.
+
+/** The Flowing Preview streams too; the Paged one is drawn over a page's geometry, and shows the current page. */
+function isReadingStreamLayout() {
+  return isContinuousLayout() && effectiveReadingLayoutMode() !== "paged";
+}
+
+function pageBlockFor(pane, pageNum) {
+  return pane?.querySelector(`:scope > .pane-page-block[data-page="${pageNum}"]`) ?? null;
+}
+
+/** Where to look up the current page's elements in a pane: its block in a continuous pane, else the whole pane. */
+function livePaneRoot(pane) {
+  return pane.querySelector(":scope > .pane-page-block.is-live") ?? pane;
+}
+
+/** The DocLang and Preview panes that show every page now. */
+function textStreamPanes() {
+  return [els.markupPane, els.renderedPane].filter((pane) => pane?.querySelector(":scope > .pane-page-block"));
+}
+
+function isPaneStreamCurrent(pane) {
+  return pane.streamState === state && Boolean(pane.querySelector(":scope > .pane-page-block"));
+}
+
+function makePageBlock(pageNum) {
+  const block = document.createElement("section");
+  block.className = "pane-page-block";
+  block.dataset.page = String(pageNum);
+  return block;
+}
+
+/** Fills a pane with a block per page; a pane that showed them already keeps its place, else it goes to `pageNum`. */
+function fillPageStream(pane, pageNum, buildPage) {
+  const wasStream = Boolean(pane.querySelector(":scope > .pane-page-block"));
+  const scroll = pane.scrollTop;
+  pane.innerHTML = "";
+  for (let n = 1; n <= state.pageCount; n += 1) {
+    const block = makePageBlock(n);
+    const ctx = pageContextFor(n);
+    if (segmentHasMarkup(ctx.segment)) block.appendChild(buildPage(ctx, n));
+    else block.insertAdjacentHTML("beforeend", `<div class="placeholder">${NO_MARKUP}</div>`);
+    pane.appendChild(block);
+  }
+  pane.streamState = state;
+  if (wasStream) pane.scrollTop = scroll;
+  else scrollPaneToPageBlock(pane, pageNum);
+}
+
+function buildMarkupStream(pageNum) {
+  // Pages are separated by the source's own <page_break/>, shown where it is: at the start of the page it begins.
+  const breaks = childElements(state.docRoot).filter((el) => localName(el) === "page_break");
+  fillPageStream(els.markupPane, pageNum, (ctx, n) => {
+    const view = buildMarkupView(ctx.segment, ctx.elementIds);
+    const pageBreak = n > 1 ? breaks[n - 2] : null;
+    if (pageBreak) {
+      const line = buildMarkupElement(pageBreak, 0, new Map());
+      // Marked, like the source view's other display-only marks, with dashes to the end of the line and the page it starts.
+      line.classList.add("markup-page-break");
+      const body = line.querySelector(".markup-line-body");
+      if (body) {
+        appendGlueMark(body, "markup-page-break-mark", `Page ${n} starts here; this mark is not in the source, only used for display`);
+        body.lastElementChild.dataset.pageLabel = `page ${n}`;
+      }
+      view.prepend(line);
+    }
+    return view;
+  });
+}
+
+function buildReadingStream(pageNum) {
+  const pane = els.renderedPane;
+  pane.classList.remove("reading-mode-paged");
+  pane.classList.add("reading-stream");
+  const joins = computeCrossPageJoins();
+  fillPageStream(pane, pageNum, (ctx, n) => {
+    const view = buildRenderedView(ctx.segment, ctx.elementIds, { joins, pageNum: n });
+    continueEquationNumbering(view, ctx.segment);
+    applyRtlBlocks(view);
+    return view;
+  });
+}
+
+/**
+ * The continuous Flowing Preview joins each thread's fragments on later pages onto its first fragment, wherever they
+ * are and whatever comes in between, as fragments on one page are: one paragraph (or list), shown where the thread
+ * starts. Only fragments of the first one's kind (text or list) join, up to the first page with another kind.
+ * @returns {{ into: Map<Element, { page: number, elements: Element[], elementIds: Map<Element, string> }[]>, skip: Set<Element> }}
+ */
+function computeCrossPageJoins() {
+  const into = new Map();
+  const skip = new Set();
+  if (!state) return { into, skip };
+  for (const [, members] of buildThreadsById(state.docRoot)) {
+    // The fragments the Preview shows as blocks of their own (those at the top of a page), page by page.
+    /** @type {Map<number, Element[]>} */
+    const byPage = new Map();
+    for (const el of members) {
+      const page = el.parentElement === state.docRoot ? state.elementPageByEl.get(el) : null;
+      if (!page) continue;
+      if (!byPage.has(page)) byPage.set(page, []);
+      byPage.get(page).push(el);
+    }
+    const pages = [...byPage.keys()].sort((a, b) => a - b);
+    if (pages.length < 2) continue;
+    const head = byPage.get(pages[0])[0];
+    const tag = localName(head);
+    if (tag !== "text" && tag !== "list") continue;
+    for (const page of pages.slice(1)) {
+      const elements = byPage.get(page);
+      if (elements.some((el) => localName(el) !== tag)) break;
+      if (!into.has(head)) into.set(head, []);
+      into.get(head).push({ page, elements, elementIds: pageContextFor(page).elementIds });
+      for (const el of elements) skip.add(el);
+    }
+  }
+  return { into, skip };
+}
+
+function markLivePageBlocks(pageNum) {
+  for (const pane of [els.markupPane, els.renderedPane]) {
+    for (const block of pane?.querySelectorAll(":scope > .pane-page-block") ?? []) {
+      block.classList.toggle("is-live", Number(block.dataset.page) === pageNum);
+    }
+  }
+  // The source view's display spacing is worked out per page: keep the current page's at hand.
+  if (els.markupPane?.querySelector(":scope > .pane-page-block") && state?.currentSegment) {
+    ({ glue: markupGlue, spaces: markupSpaces } = computeMarkupGlue(state.currentSegment));
+  }
+}
+
+/** Brings a page's block to the top of a pane, unless it already spans the pane's centre. */
+function scrollPaneToPageBlock(pane, pageNum) {
+  const block = pageBlockFor(pane, pageNum);
+  if (!block) return;
+  const pr = pane.getBoundingClientRect();
+  const br = block.getBoundingClientRect();
+  const centre = pr.top + pane.clientHeight / 2;
+  if (br.top <= centre && br.bottom >= centre) return;
+  pane.scrollTop += br.top - pr.top;
+  setPaneSticky(pane, pageNum);
+}
+
+/** The page at the centre of a continuous pane (the first / last at either end). */
+function paneCenterPage(pane) {
+  const blocks = [...pane.querySelectorAll(":scope > .pane-page-block")];
+  if (!blocks.length || pane.scrollHeight <= pane.clientHeight + 1) return null;
+  if (pane.scrollTop <= 0) return Number(blocks[0].dataset.page);
+  if (pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1) return Number(blocks[blocks.length - 1].dataset.page);
+  const centre = pane.getBoundingClientRect().top + pane.clientHeight / 2;
+  let best = null;
+  let bestDist = Infinity;
+  for (const block of blocks) {
+    const r = block.getBoundingClientRect();
+    if (centre >= r.top && centre <= r.bottom) return Number(block.dataset.page);
+    const dist = Math.min(Math.abs(centre - r.top), Math.abs(centre - r.bottom));
+    if (dist < bestDist) {
+      best = block;
+      bestDist = dist;
+    }
+  }
+  return best ? Number(best.dataset.page) : null;
+}
+
+
+function setPaneSticky(pane, pageNum) {
+  if (!pane) return;
+  if (pane === els.pagePane) {
+    if (pageStream) pageStream.sticky = { page: pageNum, scrollTop: pageStream.port.scrollTop };
+    return;
+  }
+  paneSticky.set(pane, { page: pageNum, scrollTop: pane.scrollTop });
+}
+
+/** The other panes show the new current page (where they do not already). */
+function followCurrentPage(origin, pageNum) {
+  for (const pane of textStreamPanes()) {
+    if (pane !== origin) scrollPaneToPageBlock(pane, pageNum);
+  }
+  if (origin !== els.pagePane && pageStream && isContinuousPageLayout()) {
+    const port = pageStream.port;
+    const centre = streamPageAt(port.getBoundingClientRect().top + port.clientHeight / 2)?.pageNum;
+    if (centre !== pageNum) scrollStreamToPage(pageNum);
+  }
+}
+
+/** Makes a page current from a pane that is already showing it (a scroll or a click there): the others follow. */
+function setCurrentPageFrom(pageNum, origin) {
+  if (!state || pageNum === state.currentPage) return;
+  state.currentPage = pageNum;
+  setPaneSticky(origin, pageNum);
+  followCurrentPage(origin, pageNum);
+  renderPage(pageNum);
+}
+
+/** A click in another page's block of a continuous pane makes that page the current one first. */
+function activatePageBlockOf(target, pane) {
+  const block = target.closest?.("[data-continued-page]") ?? target.closest?.(".pane-page-block");
+  const pageNum = block ? Number(block.dataset.continuedPage ?? block.dataset.page) : 0;
+  if (pageNum && state && pageNum !== state.currentPage) setCurrentPageFrom(pageNum, pane);
+}
+
+
+function initTextStreamScrolling() {
+  const scrollKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
+  for (const pane of [els.markupPane, els.renderedPane]) {
+    if (!pane) continue;
+    const signal = { at: 0, held: false };
+    paneUserScroll.set(pane, signal);
+    const mark = () => { signal.at = performance.now(); };
+    pane.addEventListener("wheel", mark, { passive: true });
+    pane.addEventListener("touchmove", mark, { passive: true });
+    pane.addEventListener("keydown", (e) => { if (scrollKeys.includes(e.key)) mark(); });
+    // Dragging the scrollbar: a press on the pane that is not on its content.
+    pane.addEventListener("pointerdown", (e) => { if (e.target === pane) signal.held = true; });
+    window.addEventListener("pointerup", () => { signal.held = false; });
+    let frame = 0;
+    pane.addEventListener("scroll", () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        onTextPaneScroll(pane);
+      });
+    }, { passive: true });
+  }
+}
+
+function onTextPaneScroll(pane) {
+  if (!state || !isContinuousLayout() || !pane.querySelector(":scope > .pane-page-block")) return;
+  const signal = paneUserScroll.get(pane);
+  if (!signal || !(signal.held || performance.now() - signal.at < 800)) return;
+  const sticky = paneSticky.get(pane);
+  if (sticky) {
+    const block = pageBlockFor(pane, sticky.page);
+    const pr = pane.getBoundingClientRect();
+    const br = block?.getBoundingClientRect();
+    const visible = br && br.bottom > pr.top && br.top < pr.top + pane.clientHeight;
+    if (visible && Math.abs(pane.scrollTop - sticky.scrollTop) < pane.clientHeight / 2) return;
+    paneSticky.delete(pane);
+  }
+  const pageNum = paneCenterPage(pane);
+  if (pageNum && pageNum !== state.currentPage) setCurrentPageFrom(pageNum, pane);
+}
+
+// --- Continuous page layout: every page in one vertical stream, fit to the pane's width ---
+
+/** The continuous layout applies to documents with pages (a lone markup file is one page). */
+function isContinuousLayout() {
+  return pageLayoutMode === "continuous" && Boolean(state) && !state.markupOnly;
+}
+
+/** The continuous stream of the Original pane, which needs page images. */
+function isContinuousPageLayout() {
+  return isContinuousLayout() && Boolean(state?.hasPageView);
+}
+
+function pageZoomMin() {
+  return isContinuousPageLayout() ? PAGE_ZOOM_MIN_CONTINUOUS : PAGE_ZOOM_DEFAULT;
+}
+
+/** The view of the current page: the one that selection, editing and tokens work on. */
+function livePageView() {
+  return els.pagePane?.querySelector(".page-view.is-live") ?? null;
+}
+
+function livePageImg() {
+  return livePageView()?.querySelector(":scope > img") ?? null;
+}
+
+function liveOverlaySvg() {
+  return livePageView()?.querySelector(":scope > svg.overlay") ?? null;
+}
+
+function loadPageLayoutMode() {
+  try {
+    if (localStorage.getItem(PAGE_LAYOUT_MODE_STORAGE_KEY) === "continuous") pageLayoutMode = "continuous";
+  } catch {
+    /* ignore unavailable storage */
+  }
+}
+
+function persistPageLayoutMode() {
+  try {
+    localStorage.setItem(PAGE_LAYOUT_MODE_STORAGE_KEY, pageLayoutMode);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function syncPageLayoutButtons() {
+  const continuous = pageLayoutMode === "continuous";
+  els.pageLayoutSingleBtn?.setAttribute("aria-pressed", String(!continuous));
+  els.pageLayoutContinuousBtn?.setAttribute("aria-pressed", String(continuous));
+}
+
+/** The zoom slider reaches below 100% (the width fit) only in the continuous layout. */
+function syncPageZoomRange() {
+  const min = pageZoomMin();
+  pageZoomPercent = Math.max(min, pageZoomPercent);
+  if (els.pageZoom) {
+    els.pageZoom.min = String(min);
+    els.pageZoom.setAttribute("aria-valuemin", String(min));
+    els.pageZoom.value = String(pageZoomPercent);
+    els.pageZoom.setAttribute("aria-valuenow", String(pageZoomPercent));
+  }
+  // The mark at 100% (the fit), where it is not the end of the range.
+  const max = Number(els.pageZoom?.max ?? PAGE_ZOOM_DEFAULT);
+  const at = max > min ? (PAGE_ZOOM_DEFAULT - min) / (max - min) : 0;
+  els.pageZoomTrack?.style.setProperty("--zoom-fit-at", String(at));
+  if (els.pageZoomFitMark) els.pageZoomFitMark.hidden = !(at > 0);
+  updatePageZoomResetButton();
+}
+
+function setPageLayoutMode(mode) {
+  if (mode === pageLayoutMode) return;
+  pageLayoutMode = mode;
+  persistPageLayoutMode();
+  syncPageLayoutButtons();
+  syncPageZoomRange();
+  syncReadingLayoutButtons();
+  if (!state || state.markupOnly) return;
+  // The selection survives the switch: it is made again once the page is shown the new way.
+  const selected = selectedElementId ? state.idToElement?.get(selectedElementId) : null;
+  if (selected) state.pendingSelectElement = selected;
+  resetPageLayoutCache();
+  renderPage(state.currentPage);
+}
+
+function renderPageStream(pageNum, segment, elementIds, boxes) {
+  const urls = Array.from({ length: state.pageCount }, (_, i) => state.pageImages.get(i + 1) ?? "");
+  const fresh = !pageStream
+    || !pageStream.port.isConnected
+    || pageStream.urls.length !== urls.length
+    || pageStream.urls.some((url, i) => url !== urls[i]);
+  if (fresh) buildPageStream(urls);
+  if (pageStream.state !== state) {
+    // Another document state (an edit, an undo): the overlays of every page are out of date.
+    pageStream.state = state;
+    for (const { wrap } of pageStream.pages) wrap.querySelector(":scope > svg.overlay")?.remove();
+  }
+  for (const wrap of pageStream.inner.querySelectorAll(".page-view.is-live")) {
+    wrap.classList.remove("is-live");
+    wrap.querySelector(":scope > svg.overlay")?.remove();
+    wrap.querySelector(":scope > svg.token-layer")?.remove();
+  }
+  const page = pageStream.pages[pageNum - 1];
+  if (!page) return;
+  page.wrap.classList.add("is-live");
+  page.wrap.querySelector(":scope > svg.overlay")?.remove();
+  page.img.loading = "eager";
+  if (fresh && streamRestore) {
+    pageStream.fallbackAspect = streamRestore.fallbackAspect;
+    pageStream.loadedAspect = true;
+    layoutPageStream({ anchor: null });
+    pageStream.port.scrollTop = streamRestore.scrollTop;
+    pageStream.port.scrollLeft = streamRestore.scrollLeft;
+    pageStream.sticky = { page: pageNum, scrollTop: pageStream.port.scrollTop };
+  } else if (fresh) {
+    layoutPageStream({ anchor: null });
+    scrollStreamToPage(pageNum);
+  }
+  // Otherwise its load handler builds it.
+  if (page.img.complete && page.img.naturalWidth) buildLiveOverlay(page.wrap, page.img, pageNum, segment, elementIds, boxes);
+  syncStreamOverlays();
+  drawStreamConnectors();
+  applyBboxVisibility();
+}
+
+function buildPageStream(urls) {
+  els.pagePane.innerHTML = "";
+  const port = document.createElement("div");
+  port.className = "page-view-port page-stream";
+  const inner = document.createElement("div");
+  inner.className = "page-stream-inner";
+  const connectors = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  connectors.setAttribute("class", "overlay page-stream-connectors");
+  connectors.setAttribute("aria-hidden", "true");
+
+  const pages = urls.map((url, i) => {
+    const pageNum = i + 1;
+    const wrap = document.createElement("div");
+    wrap.className = "page-view";
+    wrap.dataset.page = String(pageNum);
+    const img = document.createElement("img");
+    img.alt = `Page ${pageNum}`;
+    img.loading = "lazy";
+    img.decoding = "async";
+    wrap.appendChild(img);
+    inner.appendChild(wrap);
+    const page = { pageNum, wrap, img };
+    img.addEventListener("load", () => onStreamImageLoad(page));
+    // A page with no overlay (no boxes, or not loaded yet): a click on it still goes to it.
+    wrap.addEventListener("click", (e) => {
+      if (e.target.closest("svg.overlay")) return;
+      if (pagePanSuppressClick) {
+        pagePanSuppressClick = false;
+        return;
+      }
+      if (pageNum === state?.currentPage) return;
+      activateStreamPage(pageNum);
+      if (state?.currentPage === pageNum) selectFirstElementOfPage(pageNum);
+    });
+    if (url) img.src = url;
+    else wrap.classList.add("page-view-missing");
+    return page;
+  });
+  inner.appendChild(connectors);
+  port.appendChild(inner);
+  els.pagePane.appendChild(port);
+
+  pageStream = {
+    port,
+    inner,
+    connectors,
+    pages,
+    urls,
+    state: null,
+    sticky: null,
+    scrollFrame: 0,
+    fallbackAspect: OVERLAY_REF_IMAGE_HEIGHT / OVERLAY_REF_IMAGE_WIDTH,
+  };
+  const stream = pageStream;
+  port.addEventListener("scroll", () => {
+    if (pageStream !== stream || stream.scrollFrame) return;
+    stream.scrollFrame = requestAnimationFrame(() => {
+      stream.scrollFrame = 0;
+      if (pageStream === stream) onStreamScroll();
+    });
+  }, { passive: true });
+  observePagePaneResize();
+}
+
+function onStreamImageLoad(page) {
+  const stream = pageStream;
+  if (!stream || !stream.pages.includes(page) || !state) return;
+  if (!stream.loadedAspect) {
+    // Pages that have not loaded yet take the first loaded page's shape, so the stream settles in one go.
+    stream.loadedAspect = true;
+    stream.fallbackAspect = page.img.naturalHeight / page.img.naturalWidth;
+    layoutPageStream();
+  } else {
+    const anchor = captureStreamAnchor();
+    applyStreamImageSize(page.img);
+    restoreStreamAnchor(anchor);
+  }
+  if (page.wrap.classList.contains("is-live") && page.pageNum === state.currentPage
+    && !page.wrap.querySelector(":scope > svg.overlay")) {
+    buildLiveOverlay(page.wrap, page.img, page.pageNum, state.currentSegment, state.elementIds, state.currentBoxes);
+  }
+  syncStreamOverlays();
+  drawStreamConnectors();
+  applyBboxVisibility();
+}
+
+/** Width of a page at 100%: the port's width, inside its (stable) scrollbar gutter. */
+function streamFitWidth() {
+  const port = pageStream?.port;
+  const w = port ? port.clientWidth : paneContentSize(els.pagePane).w;
+  return Math.max(1, w - PAGE_VIEW_BORDER_PX);
+}
+
+function applyStreamImageSize(img) {
+  const w = Math.max(1, Math.floor(streamFitWidth() * pageZoomFactor()));
+  const aspect = img.naturalWidth && img.naturalHeight ? img.naturalHeight / img.naturalWidth : pageStream.fallbackAspect;
+  img.style.width = `${w}px`;
+  img.style.height = `${Math.floor(w * aspect)}px`;
+  img.style.maxWidth = "none";
+  img.style.maxHeight = "none";
+  if (img.naturalWidth) img.dataset.layoutReady = "1";
+}
+
+/** Sizes every page for the current pane width and zoom, keeping the point at the centre of the view in place. */
+function layoutPageStream({ anchor = captureStreamAnchor() } = {}) {
+  if (!pageStream) return;
+  resetPageLayoutCache();
+  for (const { img } of pageStream.pages) applyStreamImageSize(img);
+  restoreStreamAnchor(anchor);
+  for (const svg of pageStream.inner.querySelectorAll(".page-view:not(.is-live) > svg.overlay")) {
+    const img = svg.parentElement.querySelector(":scope > img");
+    if (img) syncOverlayBadges(img); // their size is set in screen pixels
+  }
+  const live = livePageImg();
+  if (live?.naturalWidth) syncPageViewChrome(live);
+  else {
+    updatePagePanePanCursor();
+    applyBboxVisibility();
+  }
+  syncStreamOverlays();
+  drawStreamConnectors();
+}
+
+/** @returns {{ page: object, fx: number, fy: number, viewX: number, viewY: number } | null} */
+function captureStreamAnchor() {
+  const port = pageStream?.port;
+  if (!port?.isConnected) return null;
+  const portRect = port.getBoundingClientRect();
+  const viewX = port.clientWidth / 2;
+  const viewY = port.clientHeight / 2;
+  const page = streamPageAt(portRect.top + viewY);
+  if (!page) return null;
+  const r = page.wrap.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return null;
+  return { page, fx: (portRect.left + viewX - r.left) / r.width, fy: (portRect.top + viewY - r.top) / r.height, viewX, viewY };
+}
+
+function restoreStreamAnchor(anchor) {
+  const port = pageStream?.port;
+  if (!anchor || !port) return;
+  const portRect = port.getBoundingClientRect();
+  const r = anchor.page.wrap.getBoundingClientRect();
+  port.scrollTop += r.top + anchor.fy * r.height - (portRect.top + anchor.viewY);
+  port.scrollLeft += r.left + anchor.fx * r.width - (portRect.left + anchor.viewX);
+  if (pageStream.sticky) pageStream.sticky.scrollTop = port.scrollTop;
+}
+
+/** The page at a viewport y: the one that spans it, else the nearest. */
+function streamPageAt(clientY) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const page of pageStream?.pages ?? []) {
+    const r = page.wrap.getBoundingClientRect();
+    if (clientY >= r.top && clientY <= r.bottom) return page;
+    const dist = Math.min(Math.abs(clientY - r.top), Math.abs(clientY - r.bottom));
+    if (dist < bestDist) {
+      best = page;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** The current page while scrolling: the one at the vertical centre of the view (the first / last at either end). */
+function streamCenterPage() {
+  const port = pageStream.port;
+  if (port.scrollHeight <= port.clientHeight + 1) return null; // nothing to scroll: keep the current page
+  if (port.scrollTop <= 0) return 1;
+  if (port.scrollTop + port.clientHeight >= port.scrollHeight - 1) return pageStream.pages.length;
+  const portRect = port.getBoundingClientRect();
+  return streamPageAt(portRect.top + port.clientHeight / 2)?.pageNum ?? null;
+}
+
+function isStreamPageVisible(pageNum) {
+  const page = pageStream?.pages[pageNum - 1];
+  if (!page) return false;
+  const portRect = pageStream.port.getBoundingClientRect();
+  const r = page.wrap.getBoundingClientRect();
+  return r.bottom > portRect.top && r.top < portRect.top + pageStream.port.clientHeight;
+}
+
+function onStreamScroll() {
+  syncStreamOverlays();
+  if (!state || !isContinuousPageLayout()) return;
+  const port = pageStream.port;
+  // A page made current by going to it, or by a click, stays current until the view moves well away from it.
+  const sticky = pageStream.sticky;
+  if (sticky) {
+    if (Math.abs(port.scrollTop - sticky.scrollTop) < port.clientHeight / 2 && isStreamPageVisible(sticky.page)) return;
+    pageStream.sticky = null;
+  }
+  const pageNum = streamCenterPage();
+  if (pageNum && pageNum !== state.currentPage) {
+    state.currentPage = pageNum;
+    followCurrentPage(els.pagePane, pageNum);
+    renderPage(pageNum);
+  }
+}
+
+function scrollStreamToPage(pageNum) {
+  const page = pageStream?.pages[pageNum - 1];
+  if (!page) return;
+  const port = pageStream.port;
+  port.scrollTop += page.wrap.getBoundingClientRect().top - port.getBoundingClientRect().top;
+  pageStream.sticky = { page: pageNum, scrollTop: port.scrollTop };
+}
+
+/** Selects the first element of a page that selects on its own (the first one after its <page_break/>). */
+function selectFirstElementOfPage(pageNum) {
+  let first = null;
+  walkElements(state.segments[pageNum - 1] ?? [], (el) => {
+    if (first) return;
+    const selectable = state.hasPageView
+      ? hasOverlayBox(el) && !isElementOverlayHidden(el)
+      : resolveSelectionElement(el) === el;
+    if (selectable) first = el;
+  });
+  const id = first ? findElementIdOnPage(first) : null;
+  if (id) selectElement(id);
+}
+
+/** Makes another page of the stream the current one, where it is (a click on it). */
+function activateStreamPage(pageNum) {
+  if (!pageStream || !state || pageNum === state.currentPage) return;
+  pageStream.sticky = { page: pageNum, scrollTop: pageStream.port.scrollTop };
+  state.currentPage = pageNum;
+  followCurrentPage(els.pagePane, pageNum);
+  renderPage(pageNum);
+}
+
+/** Scrolls the stream just enough to show the selected element's bbox. */
+function revealSelectionInStream() {
+  if (!pageStream || !selectedElementId || !state) return;
+  const box = state.currentBoxes?.find((b) => b.elementId === selectedElementId);
+  const img = livePageImg();
+  if (!box || !img) return;
+  const port = pageStream.port;
+  const pr = port.getBoundingClientRect();
+  const ir = img.getBoundingClientRect();
+  const margin = 16;
+  const span = (lo, hi, viewLo, viewSize) => {
+    if (hi - lo > viewSize - 2 * margin || lo < viewLo + margin) return lo - viewLo - margin;
+    if (hi > viewLo + viewSize - margin) return hi - (viewLo + viewSize - margin);
+    return 0;
+  };
+  const top = ir.top + (box.y0 / box.resH) * ir.height;
+  const bottom = ir.top + (box.y1 / box.resH) * ir.height;
+  const left = ir.left + (box.x0 / box.resW) * ir.width;
+  const right = ir.left + (box.x1 / box.resW) * ir.width;
+  const dy = top >= pr.top + margin && bottom <= pr.top + port.clientHeight - margin ? 0 : span(top, bottom, pr.top, port.clientHeight);
+  const dx = left >= pr.left + margin && right <= pr.left + port.clientWidth - margin ? 0 : span(left, right, pr.left, port.clientWidth);
+  if (dy) port.scrollTop += dy;
+  if (dx) port.scrollLeft += dx;
+  pageStream.sticky = { page: state.currentPage, scrollTop: port.scrollTop };
+}
+
+/** A page's elements, ids, boxes and reading-order steps, in the same id space as when it is the current page. */
+function streamPageContext(pageNum) {
+  return pageContextFor(pageNum);
+}
+
+/** A page's elements, ids, boxes and reading-order steps, kept with the document state they belong to. */
+function pageContextFor(pageNum) {
+  state.pageContexts ??= new Map();
+  const cached = state.pageContexts.get(pageNum);
+  if (cached) return cached;
+  const segment = state.segments[pageNum - 1] ?? [];
+  const elementIds = assignElementIds(segment);
+  const boxes = collectBoundingBoxes(segment, state.defaultResolution, elementIds);
+  const ctx = {
+    segment,
+    elementIds,
+    idToElement: invertElementIds(elementIds),
+    boxes,
+    readingOrderSteps: collectReadingOrderSteps(segment, elementIds, boxes, state.readingOrder),
+  };
+  state.pageContexts.set(pageNum, ctx);
+  return ctx;
+}
+
+/**
+ * Pages other than the current one show their overlays too, built while they are near the view and dropped when
+ * they are far from it, so a long document does not carry the overlays of every page.
+ */
+function syncStreamOverlays() {
+  if (!pageStream || !state) return;
+  const port = pageStream.port;
+  const portRect = port.getBoundingClientRect();
+  const h = port.clientHeight;
+  let built = false;
+  for (const page of pageStream.pages) {
+    if (page.wrap.classList.contains("is-live")) continue;
+    const r = page.wrap.getBoundingClientRect();
+    const existing = page.wrap.querySelector(":scope > svg.overlay");
+    const near = r.bottom > portRect.top - h && r.top < portRect.top + 2 * h;
+    const far = r.bottom < portRect.top - 3 * h || r.top > portRect.top + 4 * h;
+    if (existing && far) existing.remove();
+    else if (!existing && near && page.img.naturalWidth) built = buildPassiveOverlay(page) || built;
+  }
+  if (built) applyBboxVisibility();
+}
+
+function buildPassiveOverlay(page) {
+  const ctx = streamPageContext(page.pageNum);
+  if (!ctx.boxes.length) return false;
+  const { segment, elementIds, boxes } = ctx;
+  const svg = buildOverlay(
+    page.img,
+    boxes,
+    collectCaptionLinks(segment, elementIds, boxes),
+    collectXrefLinks(segment, elementIds, boxes),
+    ctx.readingOrderSteps,
+    collectKeyValueLinks(segment, elementIds, boxes),
+    collectFragmentLinks(segment, elementIds, boxes, page.pageNum, new Map()),
+    collectFragmentNavItems(segment, elementIds, boxes),
+    state.defaultResolution,
+    { pageNum: page.pageNum },
+  );
+  svg.overlayMeta = ctx;
+  page.wrap.appendChild(svg);
+  syncOverlayBadges(page.img);
+  return true;
+}
+
+/** An element's bbox in the stream's own coordinates (CSS pixels from the top-left of its content). */
+function streamElementRect(el, pageNum) {
+  const page = pageStream.pages[pageNum - 1];
+  if (!page) return null;
+  const ctx = streamPageContext(pageNum);
+  const id = ctx.elementIds.get(el);
+  const box = id ? ctx.boxes.find((b) => b.elementId === id) : null;
+  if (!box) return null;
+  const w = page.img.offsetWidth;
+  const h = page.img.offsetHeight;
+  const left = page.wrap.offsetLeft + page.wrap.clientLeft + page.img.offsetLeft;
+  const top = page.wrap.offsetTop + page.wrap.clientTop + page.img.offsetTop;
+  return {
+    x: left + (box.x0 / box.resW) * w,
+    y: top + (box.y0 / box.resH) * h,
+    w: ((box.x1 - box.x0) / box.resW) * w,
+    h: ((box.y1 - box.y0) / box.resH) * h,
+  };
+}
+
+/** Draws, over the whole stream, the links between consecutive fragments of a thread that are on different pages. */
+function drawStreamConnectors() {
+  if (!pageStream || !state) return;
+  const svg = pageStream.connectors;
+  svg.replaceChildren();
+  // Measured without the layer's own (old) size, which would otherwise keep the stream from shrinking.
+  svg.setAttribute("width", "0");
+  svg.setAttribute("height", "0");
+  svg.setAttribute("width", String(pageStream.inner.scrollWidth));
+  svg.setAttribute("height", String(pageStream.inner.scrollHeight));
+  const defs = ensureOverlayDefs(svg);
+  ensureArrowMarker(defs, "fragment-arrowhead", arrowMarkerOptions("fragment"));
+  const live = livePageImg();
+  const fontSize = live?.naturalWidth
+    ? overlayUserLength(OVERLAY_BADGE_FONT_SIZE, live) * (live.offsetWidth / live.naturalWidth)
+    : 11;
+
+  for (const [threadId, members] of buildThreadsById(state.docRoot)) {
+    for (let i = 0; i < members.length - 1; i += 1) {
+      const fromPage = state.elementPageByEl.get(members[i]);
+      const toPage = state.elementPageByEl.get(members[i + 1]);
+      if (!fromPage || !toPage || fromPage === toPage) continue;
+      const from = streamElementRect(members[i], fromPage);
+      const to = streamElementRect(members[i + 1], toPage);
+      if (!from || !to) continue;
+      const start = boxCenter(from);
+      const end = boxCenter(to);
+
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.setAttribute("class", "fragment-link page-stream-connector");
+      group.setAttribute("data-thread-id", threadId);
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "fragment-link-path fragment-link-path-dashed");
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      line.setAttribute("marker-end", "url(#fragment-arrowhead)");
+      alignDashedLineToEnd(line, start, end);
+      group.appendChild(line);
+
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("class", "fragment-link-label");
+      text.setAttribute("x", String((start.x + end.x) / 2));
+      text.setAttribute("y", String((start.y + end.y) / 2));
+      text.setAttribute("font-size", String(fontSize));
+      text.textContent = FRAGMENT_LINK_LABEL_SAME_PAGE;
+      group.appendChild(text);
+      svg.appendChild(group);
+    }
+  }
+  syncStreamConnectorVisibility(currentSelectedThreadId());
+}
+
+function currentSelectedThreadId() {
+  const el = selectedElementId ? state?.idToElement?.get(selectedElementId) : null;
+  return el ? elementThreadId(el) : null;
+}
+
+function syncStreamConnectorVisibility(selectedThreadId) {
+  if (!pageStream) return;
+  const optionVisible = showAllBboxes && showFragmentLinks;
+  for (const g of pageStream.connectors.querySelectorAll(".page-stream-connector")) {
+    const clickVisible = Boolean(selectedThreadId) && g.getAttribute("data-thread-id") === selectedThreadId;
+    g.classList.toggle("bbox-hidden", !(optionVisible || clickVisible));
+  }
+}
+
 function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   if (!els.renderedPane) return;
+  if (isReadingStreamLayout()) {
+    buildReadingStream(state.currentPage);
+    markLivePageBlocks(state.currentPage);
+    return;
+  }
   els.renderedPane.innerHTML = "";
+  els.renderedPane.classList.remove("reading-stream");
 
   if (!segmentHasMarkup(segment)) {
     els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
@@ -7644,7 +8673,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
     // aspect-ratio correction (e.g. it loaded while we were in pageless mode,
     // or before the mode was ever switched to paged) — sync from it now rather
     // than being stuck with the defaultResolution fallback until next page load.
-    const existingImg = els.pagePane?.querySelector(".page-view img");
+    const existingImg = livePageImg();
     if (existingImg?.naturalWidth && existingImg?.naturalHeight) {
       canvas.style.aspectRatio = `${existingImg.naturalWidth} / ${existingImg.naturalHeight}`;
       canvas.dataset.aspectW = String(existingImg.naturalWidth);
@@ -7718,7 +8747,7 @@ function pageZoomFactor() {
  * units for the current page. Matches the old demo on-screen size, stays zoom-stable,
  * and scales with page resolution so other images look the same.
  */
-function overlayUserLength(baseUserPx, img = els.pagePane?.querySelector(".page-view img")) {
+function overlayUserLength(baseUserPx, img = livePageImg()) {
   const zoom = pageZoomFactor();
   if (!(zoom > 0)) return baseUserPx;
   if (!img?.naturalWidth || !img.naturalHeight || !els.pagePane) {
@@ -7728,10 +8757,13 @@ function overlayUserLength(baseUserPx, img = els.pagePane?.querySelector(".page-
   const { w: paneW, h: paneH } = paneContentSize(els.pagePane);
   if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
 
-  const refFit = Math.min(
-    (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
-    (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT,
-  );
+  // The reference page fitted the way pages are at 100%: to the pane (single), or to its width (continuous).
+  const refFit = pageStream && isContinuousPageLayout()
+    ? streamFitWidth() / OVERLAY_REF_IMAGE_WIDTH
+    : Math.min(
+      (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
+      (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT,
+    );
   const fitScale = getCachedFitScale(img, els.pagePane);
   if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
 
@@ -7782,6 +8814,8 @@ function fitPagedCanvas() {
 }
 
 function getCachedFitScale(img, pane) {
+  // The continuous stream fits every page to the pane's width.
+  if (pageStream && isContinuousPageLayout()) return img?.naturalWidth ? streamFitWidth() / img.naturalWidth : 1;
   const { w: paneW, h: paneH } = paneContentSize(pane);
   const imgW = img.naturalWidth;
   const imgH = img.naturalHeight;
@@ -7807,7 +8841,7 @@ function getCachedFitScale(img, pane) {
 
 function applyPageImageSize(img, pane = els.pagePane) {
   if (!img?.naturalWidth || !img.naturalHeight) return false;
-  pageZoomPercent = Math.max(PAGE_ZOOM_DEFAULT, pageZoomPercent);
+  pageZoomPercent = Math.max(pageZoomMin(), pageZoomPercent);
   const fitScale = getCachedFitScale(img, pane);
   const scale = fitScale * (pageZoomPercent / PAGE_ZOOM_DEFAULT);
   const w = Math.floor(img.naturalWidth * scale);
@@ -7845,7 +8879,12 @@ function refreshPageViewLayout() {
   cancelAnimationFrame(pageLayoutFrame);
   pageLayoutFrame = requestAnimationFrame(() => {
     pageLayoutFrame = 0;
-    const img = els.pagePane?.querySelector(".page-view img");
+    scheduleOverlayRebuild();
+    if (pageStream) {
+      layoutPageStream();
+      return;
+    }
+    const img = livePageImg();
     if (img?.naturalWidth) applyPageLayout(img);
   });
 }
@@ -7918,7 +8957,7 @@ function appendOverlayBadge(svg, anchorX, anchorY, text, { extraClass, elementId
 
 function syncOverlayBadges(img) {
   const svg = img.parentElement?.querySelector("svg.overlay");
-  const meta = state?.pageViewOverlay;
+  const meta = svg?.overlayMeta ?? state?.pageViewOverlay;
   if (!svg || !img.naturalWidth || !meta) return;
 
   svg.querySelectorAll(".element-badge").forEach((badge) => badge.remove());
@@ -9026,12 +10065,12 @@ function setCssVar(styleDecl, name, value) {
 
 /** Rebuild the arrowhead markers of the live overlay so head size / colour changes take effect. */
 function refreshArrowMarkers() {
-  const svg = els.pagePane?.querySelector("svg.overlay");
-  const defs = svg?.querySelector("defs");
-  if (!defs) return;
-  for (const [layerKey, meta] of Object.entries(ARROW_LAYERS)) {
-    if (defs.querySelector(`#${meta.markerId}`)) {
-      ensureArrowMarker(defs, meta.markerId, arrowMarkerOptions(layerKey));
+  // Every page of a continuous stream has its own overlay (and the stream its connectors), each with its own markers.
+  for (const defs of els.pagePane?.querySelectorAll("svg.overlay > defs") ?? []) {
+    for (const [layerKey, meta] of Object.entries(ARROW_LAYERS)) {
+      if (defs.querySelector(`#${meta.markerId}`)) {
+        ensureArrowMarker(defs, meta.markerId, arrowMarkerOptions(layerKey));
+      }
     }
   }
 }
@@ -9436,11 +10475,11 @@ function appendReadingOrderOverlay(svg, img, steps) {
 }
 
 /** Draws the arrow chain through the boxes the layer/type/contents selections leave visible. */
-function redrawReadingOrderArrows(svg, img, steps) {
+function redrawReadingOrderArrows(svg, img, steps, idToElement = state?.idToElement) {
   const group = svg.querySelector(".reading-order-layer");
   if (!group) return;
   group.replaceChildren();
-  const visible = steps.filter((step) => !isContentsOptionHidden(step.elementId, false));
+  const visible = steps.filter((step) => !isContentsOptionHidden(step.elementId, false, idToElement));
   if (visible.length >= 2) {
     const defs = ensureOverlayDefs(svg);
     ensureArrowMarker(defs, "reading-order-arrowhead", arrowMarkerOptions("readingOrder"));
@@ -9486,10 +10525,11 @@ function hitTestBoxes(boxes, img, x, y) {
   return best;
 }
 
-function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], keyValueLinks = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }) {
+function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrderSteps = [], keyValueLinks = [], fragmentLinks = [], fragmentNavItems = [], defaultResolution = { width: 512, height: 512 }, { pageNum = null } = {}) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("overlay");
   svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
+  svg.dataset.scaleKey = overlayScaleKey(img);
   svg.setAttribute("overflow", "hidden");
 
   appendCaptionLinks(svg, img, captionLinks);
@@ -9527,6 +10567,21 @@ function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrde
       pagePanSuppressClick = false;
       return;
     }
+    // Where on the page, worked out first: making another page current replaces this overlay, which then has no place
+    // on the screen any more.
+    const coords = imageCoordsFromEvent(svg, e);
+    // Another page of the continuous stream: it becomes the current page first. Its element ids are assigned the
+    // same way as this overlay's, so what was clicked keeps its id. A click off its boxes goes to its first element.
+    if (pageNum && pageStream && pageNum !== state?.currentPage) {
+      const onElement = e.target.closest(".fragment-nav-btn, .overlay-badge[data-element-id]")
+        || (coords && hitTestBoxes(boxes, img, coords.x, coords.y));
+      activateStreamPage(pageNum);
+      if (state?.currentPage !== pageNum) return;
+      if (!onElement) {
+        selectFirstElementOfPage(pageNum);
+        return;
+      }
+    }
     const navBtn = e.target.closest(".fragment-nav-btn:not(.fragment-nav-btn-disabled)");
     if (navBtn) {
       e.stopPropagation();
@@ -9542,7 +10597,6 @@ function buildOverlay(img, boxes, captionLinks = [], xrefLinks = [], readingOrde
       if (elementId) selectElement(elementId);
       return;
     }
-    const coords = imageCoordsFromEvent(svg, e);
     if (!coords) return;
     const hit = hitTestBoxes(boxes, img, coords.x, coords.y);
     if (hit) selectElement(hit.elementId);
@@ -9590,25 +10644,53 @@ function isElementOverlayHidden(el) {
   return hiddenOverlayTypes.has(overlayTypeOf(el));
 }
 
-function isContentsOptionHidden(elementId, clickVisible) {
+function isContentsOptionHidden(elementId, clickVisible, idToElement = state?.idToElement) {
   if (clickVisible) return false;
-  const el = state?.idToElement?.get(elementId);
+  const el = idToElement?.get(elementId);
   return Boolean(el) && isElementOverlayHidden(el);
 }
 
 function applyBboxVisibility() {
   if (!state?.hasPageView || !els.pagePane) return;
 
-  const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set();
+  // A selection on the current page also marks its thread's fragments on the other pages of a continuous stream.
+  const selectedEl = selectedElementId ? state.idToElement?.get(selectedElementId) : null;
+  const selectedThreadId = selectedEl ? elementThreadId(selectedEl) : null;
+  for (const svg of els.pagePane.querySelectorAll(".page-view > svg.overlay")) {
+    const wrap = svg.parentElement;
+    const img = wrap.querySelector(":scope > img");
+    if (wrap.classList.contains("is-live")) {
+      if (img) redrawReadingOrderArrows(svg, img, state.pageViewOverlay?.readingOrderSteps ?? []);
+      const peerIds = selectedElementId ? fragmentPeerElementIds(selectedElementId) : new Set();
+      applyOverlayVisibility(svg, {
+        selectedId: selectedElementId,
+        tracedId: tokenLens.currentId,
+        peerIds,
+        idToElement: state.idToElement,
+      });
+    } else {
+      const meta = svg.overlayMeta;
+      if (img && meta) redrawReadingOrderArrows(svg, img, meta.readingOrderSteps, meta.idToElement);
+      const peerIds = new Set();
+      if (selectedThreadId && meta) {
+        for (const [node, id] of meta.elementIds) if (elementThreadId(node) === selectedThreadId) peerIds.add(id);
+      }
+      applyOverlayVisibility(svg, { selectedId: null, tracedId: null, peerIds, idToElement: meta?.idToElement });
+    }
+  }
+  syncStreamConnectorVisibility(selectedThreadId);
+  updateBboxNavButtons();
+}
 
-  for (const el of els.pagePane.querySelectorAll(".bbox")) {
+function applyOverlayVisibility(root, { selectedId, tracedId, peerIds, idToElement }) {
+  for (const el of root.querySelectorAll(".bbox")) {
     el.classList.remove("related");
     const elementId = el.getAttribute("data-element-id");
     // The element a token trace is on shows like a selection.
-    const traced = elementId === tokenLens.currentId;
-    const clickVisible = elementId === selectedElementId || traced || peerIds.has(elementId);
+    const traced = elementId === tracedId;
+    const clickVisible = elementId === selectedId || traced || peerIds.has(elementId);
     if (showAllBboxes) {
-      if (isContentsOptionHidden(elementId, clickVisible)) {
+      if (isContentsOptionHidden(elementId, clickVisible, idToElement)) {
         el.classList.add("bbox-hidden");
       } else {
         el.classList.remove("bbox-hidden");
@@ -9618,7 +10700,7 @@ function applyBboxVisibility() {
       }
       continue;
     }
-    if (elementId === selectedElementId || traced) {
+    if (elementId === selectedId || traced) {
       el.classList.remove("bbox-hidden");
     } else if (peerIds.has(elementId)) {
       el.classList.remove("bbox-hidden");
@@ -9628,74 +10710,52 @@ function applyBboxVisibility() {
     }
   }
 
-  for (const el of els.pagePane.querySelectorAll(".element-badge")) {
+  for (const el of root.querySelectorAll(".element-badge")) {
     const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
+    const clickVisible = elementId === selectedId || peerIds.has(elementId);
     if (!showAllBboxes || !showLayoutBadges) {
       el.classList.add("bbox-hidden");
       continue;
     }
-    if (isContentsOptionHidden(elementId, clickVisible)) {
-      el.classList.add("bbox-hidden");
-    } else {
-      el.classList.remove("bbox-hidden");
-    }
+    el.classList.toggle("bbox-hidden", isContentsOptionHidden(elementId, clickVisible, idToElement));
   }
 
-  for (const el of els.pagePane.querySelectorAll(".caption-link")) {
-    if (!showAllBboxes || !showCaptionLinks) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
+  for (const el of root.querySelectorAll(".caption-link")) {
+    el.classList.toggle("bbox-hidden", !showAllBboxes || !showCaptionLinks);
   }
 
-  for (const el of els.pagePane.querySelectorAll(".xref-link")) {
-    if (!showAllBboxes || !showXrefLinks) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
+  for (const el of root.querySelectorAll(".xref-link")) {
+    el.classList.toggle("bbox-hidden", !showAllBboxes || !showXrefLinks);
   }
 
-  for (const el of els.pagePane.querySelectorAll(".key-value-link")) {
+  for (const el of root.querySelectorAll(".key-value-link")) {
     el.classList.toggle("bbox-hidden", !showAllBboxes || !showKeyValueLinks);
   }
 
-  for (const el of els.pagePane.querySelectorAll(".fragment-link")) {
-    const clickVisible = Boolean(selectedElementId && isFragmentLinkRelevant(el, peerIds));
+  for (const el of root.querySelectorAll(".fragment-link")) {
+    const clickVisible = peerIds.size > 0 && isFragmentLinkRelevant(el, peerIds);
     const optionVisible = showAllBboxes && showFragmentLinks;
     el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
   }
 
-  for (const el of els.pagePane.querySelectorAll(".fragment-nav")) {
+  for (const el of root.querySelectorAll(".fragment-nav")) {
     const elementId = el.getAttribute("data-element-id");
-    const clickVisible = elementId === selectedElementId || peerIds.has(elementId);
+    const clickVisible = elementId === selectedId || peerIds.has(elementId);
     const optionVisible = showAllBboxes && showFragmentLinks;
     el.classList.toggle("bbox-hidden", !(clickVisible || optionVisible));
   }
 
-  const overlaySvg = els.pagePane.querySelector("svg.overlay");
-  const overlayImg = els.pagePane.querySelector(".page-view img");
-  if (overlaySvg && overlayImg) {
-    redrawReadingOrderArrows(overlaySvg, overlayImg, state.pageViewOverlay?.readingOrderSteps ?? []);
-  }
-  updateBboxNavButtons();
-
-  for (const el of els.pagePane.querySelectorAll(".reading-order-step")) {
-    if (!showAllBboxes || !showReadingOrder) {
-      el.classList.add("bbox-hidden");
-      continue;
-    }
-    el.classList.remove("bbox-hidden");
+  for (const el of root.querySelectorAll(".reading-order-step")) {
+    el.classList.toggle("bbox-hidden", !showAllBboxes || !showReadingOrder);
   }
 }
 
 function findMarkupElementForSelection(elementId) {
   if (!els.markupPane) return null;
+  const root = livePaneRoot(els.markupPane);
   return (
-    els.markupPane.querySelector(`.markup-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.markupPane.querySelector(`[data-element-id="${elementId}"]`)
+    root.querySelector(`.markup-el-virtual-text[data-element-id="${elementId}"]`) ||
+    root.querySelector(`[data-element-id="${elementId}"]`)
   );
 }
 
@@ -9705,16 +10765,21 @@ function findRenderedElementForSelection(elementId) {
   // `.rendered-el` inside the paged view's `.paged-canvas`, which shares the same
   // container and the same data-element-id values but has its own selection
   // handling (`.paged-el-slot.selected`, below).
+  const root = livePaneRoot(els.renderedPane);
+  // Parts joined on from a later page carry that page's ids: they are not this page's elements.
+  const own = (selector) => [...root.querySelectorAll(selector)].find((el) => !el.closest("[data-continued-page]")) ?? null;
   const direct =
-    els.renderedPane.querySelector(`.rendered-doc .rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
-    els.renderedPane.querySelector(`.rendered-doc .rendered-el[data-element-id="${elementId}"]`);
+    own(`.rendered-doc .rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
+    own(`.rendered-doc .rendered-el[data-element-id="${elementId}"]`);
   if (direct) return direct;
+  const joined = joinedPartBlock(elementId);
+  if (joined) return joined;
 
   const xmlEl = state?.idToElement?.get(elementId);
   const threadId = xmlEl ? elementThreadId(xmlEl) : null;
   if (!threadId) return null;
 
-  const merged = els.renderedPane.querySelector(
+  const merged = root.querySelector(
     `.rendered-doc .rendered-fragment-merged[data-thread-id="${threadId}"]`,
   );
   if (!merged) return null;
@@ -9722,6 +10787,15 @@ function findRenderedElementForSelection(elementId) {
   const primaryId = merged.getAttribute("data-element-id");
   if (!primaryId || primaryId === elementId) return merged;
   return fragmentPeerElementIds(primaryId).has(elementId) ? merged : null;
+}
+
+/** The block (on an earlier page) that the continuous Flowing Preview joined a fragment of the current page onto. */
+function joinedPartBlock(elementId) {
+  const page = state?.currentPage;
+  const part = els.renderedPane?.querySelector(
+    `[data-continued-page="${page}"][data-element-id="${elementId}"], [data-continued-page="${page}"] [data-element-id="${elementId}"]`,
+  );
+  return part?.closest(".rendered-fragment-merged") ?? null;
 }
 
 function revealRenderedSelectionContext(renderedEl) {
@@ -9772,7 +10846,7 @@ function applySelectionCore() {
   });
 
   if (!selectedElementId) {
-    const img = els.pagePane.querySelector(".page-view img");
+    const img = livePageImg();
     if (img) syncOverlayBadges(img);
     applyBboxVisibility();
     return;
@@ -9791,18 +10865,20 @@ function applySelectionCore() {
     renderedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 
-  const pagedSlot = els.renderedPane?.querySelector(`.paged-el-slot[data-element-id="${selectedElementId}"]`);
+  const pagedSlot = els.renderedPane && livePaneRoot(els.renderedPane).querySelector(`.paged-el-slot[data-element-id="${selectedElementId}"]`);
   if (pagedSlot) pagedSlot.classList.add("selected");
 
   if (state?.hasPageView) {
-    for (const el of els.pagePane.querySelectorAll(`[data-element-id="${selectedElementId}"]`)) {
+    for (const el of livePageView()?.querySelectorAll(`[data-element-id="${selectedElementId}"]`) ?? []) {
       el.classList.add("selected");
     }
   }
 
-  const img = els.pagePane.querySelector(".page-view img");
+  const img = livePageImg();
   if (img) syncOverlayBadges(img);
   applyBboxVisibility();
+  revealSelectionInStream();
+  if (isContinuousLayout()) for (const pane of textStreamPanes()) setPaneSticky(pane, state.currentPage);
 }
 
 function buildMarkupView(segment, elementIds) {
@@ -9845,6 +10921,7 @@ function buildMarkupView(segment, elementIds) {
       chooseAlternative(Number(altRestore.dataset.altRestore), null);
       return;
     }
+    activatePageBlockOf(e.target, els.markupPane);
     const elementId = resolveMarkupClickTarget(e.target);
     if (elementId) {
       selectElement(elementId, clickFacet(e.target, ".markup-el-virtual-text", ".markup-el"));
@@ -9857,7 +10934,7 @@ function buildMarkupView(segment, elementIds) {
 
 /** Selecting a cue block in the source view seeks the track's player to it. */
 function seekTrackToElement(elementId) {
-  const row = els.renderedPane?.querySelector(
+  const row = els.renderedPane && livePaneRoot(els.renderedPane).querySelector(
     `.rendered-doc .rendered-track-cue[data-element-id="${elementId}"]`,
   );
   row?.trackSeek?.();
@@ -10242,10 +11319,13 @@ function markupSourceForSelection(root, range) {
 
 /** Copying from the source view gives the source the selection spans. With an alternative swapped in, the document no longer matches the source. */
 function onMarkupCopy(e) {
-  const root = els.markupPane?.querySelector(".markup");
   const selection = window.getSelection();
-  if (!root || !selection?.rangeCount || selection.isCollapsed || state?.altInactive?.size) return;
+  if (!selection?.rangeCount || selection.isCollapsed || state?.altInactive?.size) return;
   const range = selection.getRangeAt(0);
+  // The page's source the selection is in (a continuous view has one per page).
+  const common = range.commonAncestorContainer;
+  const root = (common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement)?.closest(".markup");
+  if (!root || !els.markupPane?.contains(root)) return;
   if (!root.contains(range.commonAncestorContainer)) return;
   const source = markupSourceForSelection(root, range);
   if (source === null) return;
@@ -10571,7 +11651,13 @@ function appendMergedTextFragments(parent, fragments, elementIds) {
   }
 }
 
-function renderMergedIntraPageFragments(fragments, elementIds) {
+/**
+ * Renders a thread's fragments as one block. `continuations` are fragments on the following pages that the continuous
+ * Flowing Preview joins on (see computeCrossPageJoins); each keeps its own page's element ids, and marks what it adds
+ * with the page it comes from.
+ * @param {{ page: number, elements: Element[], elementIds: Map<Element, string> }[]} continuations
+ */
+function renderMergedIntraPageFragments(fragments, elementIds, continuations = []) {
   const first = fragments[0];
   const tag = localName(first);
   const firstId = elementIds.get(first);
@@ -10581,11 +11667,30 @@ function renderMergedIntraPageFragments(fragments, elementIds) {
   if (tag === "text") {
     node = document.createElement("p");
     appendMergedTextFragments(node, fragments, elementIds);
+    for (const { page, elements, elementIds: ids } of continuations) {
+      for (const el of elements) {
+        trimParentTrailingForFragmentJoin(node);
+        const part = document.createElement("span");
+        part.className = "rendered-el rendered-continuation";
+        part.dataset.continuedPage = String(page);
+        const id = ids.get(el);
+        if (id) part.setAttribute("data-element-id", id);
+        appendRenderedBody(part, el, ids, { inline: true, trimLeading: true });
+        node.appendChild(part);
+      }
+    }
   } else if (tag === "list") {
     const listClass = first.getAttribute("class") ?? "unordered";
     node = document.createElement(listClass === "ordered" ? "ol" : "ul");
     for (const el of fragments) {
       appendListItemsFromElement(node, el, elementIds);
+    }
+    for (const { page, elements, elementIds: ids } of continuations) {
+      for (const el of elements) {
+        const before = node.children.length;
+        appendListItemsFromElement(node, el, ids);
+        for (const item of [...node.children].slice(before)) item.dataset.continuedPage = String(page);
+      }
     }
   } else {
     node = document.createElement("div");
@@ -10600,7 +11705,7 @@ function renderMergedIntraPageFragments(fragments, elementIds) {
   return wrap;
 }
 
-function buildRenderedView(segment, elementIds) {
+function buildRenderedView(segment, elementIds, { joins = null, pageNum = 0 } = {}) {
   const intraPageThreads = collectIntraPageThreads(segment);
   const skipElements = new Set();
   /** @type {Map<Element, Element[]>} */
@@ -10619,14 +11724,17 @@ function buildRenderedView(segment, elementIds) {
     if (el.nodeType !== Node.ELEMENT_NODE) continue;
     if (localName(el) === "page_break") continue;
     if (skipElements.has(el)) continue;
+    if (joins?.skip.has(el)) continue; // joined onto a fragment on an earlier page
 
     const mergeGroup = mergeGroups.get(el);
-    const rendered = mergeGroup
-      ? renderMergedIntraPageFragments(mergeGroup, elementIds)
+    const continuations = joins?.into.get(el);
+    const rendered = mergeGroup || continuations
+      ? renderMergedIntraPageFragments(mergeGroup ?? [el], elementIds, continuations)
       : renderBlockElement(el, elementIds, { inline: false });
     if (rendered) root.appendChild(rendered);
   }
   root.addEventListener("click", (e) => {
+    activatePageBlockOf(e.target, els.renderedPane);
     const elementId = resolveRenderedClickTarget(e.target);
     if (elementId) selectElement(elementId, clickFacet(e.target, ".rendered-el-virtual-text", ".rendered-marker"));
   });
@@ -11440,14 +12548,18 @@ function cropPageRegionToDataUrl(pageImg, box) {
 
 /**
  * Fallback for a picture with no usable embedded asset: crop its region straight out of
- * the current page's scanned image (using the same element bbox the page-view overlay
+ * its page's scanned image (using the same element bbox the page-view overlay
  * draws), rather than showing the "unavailable" placeholder. Falls back to that
  * placeholder itself when no page image or bbox is available for this element.
+ * The page is the picture's own, not necessarily the current one (a continuous view renders every page).
  */
 async function applyPictureCropFallback(img, el, elementIds) {
-  const elementId = el && cropPictures ? elementIds.get(el) : null;
-  const box = elementId ? state?.currentBoxes?.find((b) => b.elementId === elementId) : null;
-  const pageUrl = box ? state?.pageImages?.get(state.currentPage) : null;
+  const host = el && cropPictures && state ? pageHostElement(el) : null;
+  const page = host ? state.elementPageByEl.get(host) : null;
+  const ctx = page ? pageContextFor(page) : null;
+  const elementId = ctx?.elementIds.get(el);
+  const box = elementId ? ctx.boxes.find((b) => b.elementId === elementId) : null;
+  const pageUrl = box ? state?.pageImages?.get(page) : null;
   const pageImg = pageUrl ? await loadPageImageElement(pageUrl) : null;
   const dataUrl = pageImg && box ? cropPageRegionToDataUrl(pageImg, box) : null;
 
@@ -11856,7 +12968,7 @@ function syncMarkupPlayhead(elementId) {
   if (!pane) return;
   pane.querySelectorAll(".markup-el-cue.is-playing").forEach((b) => b.classList.remove("is-playing"));
   if (!elementId) return;
-  const block = pane.querySelector(`.markup-el-cue[data-element-id="${elementId}"]`);
+  const block = livePaneRoot(pane).querySelector(`.markup-el-cue[data-element-id="${elementId}"]`);
   if (!block) return;
   block.classList.add("is-playing");
   if (performance.now() - markupUserScrolledAt < 4000) return;

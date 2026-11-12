@@ -183,9 +183,9 @@ header h1 {
   text-align: center;
 }
 
-.token-nav .token-speed {
+.token-nav .token-speed-btn {
   font-size: 0.75rem;
-  padding: 0.1rem 0.15rem;
+  padding: 0.1rem 0.4rem;
 }
 
 .token-nav .page-nav-btn {
@@ -689,6 +689,11 @@ body.viewer-loaded.drag-over .drop-banner {
   margin-left: 0.25rem;
 }
 
+.page-layout-toggle {
+  align-self: center;
+  margin-left: 0.5rem;
+}
+
 .header-brand .page-nav::before {
   content: "";
   flex-shrink: 0;
@@ -913,10 +918,57 @@ label.file-btn input {
 }
 
 .page-zoom-control input[type="range"] {
+  display: block;
   width: 5.5rem;
   height: 1rem;
   margin: 0;
   cursor: pointer;
+}
+
+/* Under the slider, where the range goes below 100% (the fit): an arrowhead pointing up at 100%, which goes there. */
+.page-zoom-track {
+  position: relative;
+  display: block;
+  --zoom-thumb: 0.875rem;
+}
+
+.page-zoom-fit-mark {
+  appearance: none;
+  position: absolute;
+  /* The button is wider than the arrowhead, which is drawn at its centre: an easier target. */
+  left: calc(var(--zoom-thumb) / 2 + var(--zoom-fit-at, 0) * (100% - var(--zoom-thumb)) - 0.375rem);
+  bottom: -0.3rem;
+  width: 0.75rem;
+  height: 0.45rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.page-zoom-fit-mark[hidden] {
+  display: none;
+}
+
+.page-zoom-fit-mark::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0.5625rem;
+  height: 0.375rem;
+  transform: translateX(-50%);
+  background: var(--muted);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.page-zoom-fit-mark:hover::before,
+.page-zoom-fit-mark:focus-visible::before {
+  background: var(--accent);
+}
+
+.page-zoom-fit-mark:focus-visible {
+  outline: none;
 }
 
 .page-zoom-reset {
@@ -933,7 +985,9 @@ label.file-btn input {
   font-variant-numeric: tabular-nums;
   line-height: 1;
   cursor: pointer;
-  min-width: 2.75rem;
+  /* Fixed: wide enough for "300%", so neither it nor the slider moves as the number of digits changes. */
+  width: 3.25rem;
+  text-align: center;
 }
 
 .page-zoom-reset:not(:disabled):hover {
@@ -1578,7 +1632,8 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
-.paged-canvas.token-rendering .paged-el-slot.token-unwritten {
+.paged-canvas.token-rendering .paged-el-slot.token-unwritten,
+.paged-canvas.token-upcoming .paged-el-slot {
   visibility: hidden;
 }
 
@@ -2136,6 +2191,21 @@ button.validation-issue:focus-visible {
   opacity: 1;
 }
 
+/* A page after the one a trace is writing, in the continuous Original: veiled whole, as not scanned yet. */
+.page-stream .page-view::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--token-veil);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.page-stream .page-view.token-upcoming::after {
+  opacity: 1;
+}
+
 .token-heat-cell {
   fill: var(--token-heat);
 }
@@ -2182,12 +2252,65 @@ button.validation-issue:focus-visible {
   accent-color: var(--token-heat);
 }
 
-.token-speed {
+.token-speed-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.token-speed-btn {
   font: inherit;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.token-speed-btn::after {
+  content: "▴";
+  margin-left: 0.3rem;
+  color: var(--muted);
+}
+
+/* Opens upwards from the bar at the bottom of the pane, every speed in view. */
+.token-speed-menu {
+  position: absolute;
+  bottom: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 20;
+  min-width: 100%;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  box-shadow: 0 0.5rem 1.25rem color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.token-speed-menu[hidden] {
+  display: none;
+}
+
+.token-speed-option {
+  padding: 0.2rem 0.6rem 0.2rem 1.4rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+}
+
+.token-speed-option[aria-selected="true"]::before {
+  content: "✓";
+  position: absolute;
+  left: 0.45rem;
+}
+
+.token-speed-option:hover,
+.token-speed-option.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .token-counter strong {
@@ -2218,6 +2341,81 @@ button.validation-issue:focus-visible {
   min-width: 0;
   min-height: 0;
   scrollbar-gutter: stable;
+}
+
+/* Continuous DocLang pane: the pages' sources follow on without a gap, as in the source; each <page_break/> has a
+   display-only mark of dashes to the end of its line and the page it starts. */
+#markup-pane > .pane-page-block + .pane-page-block > .markup {
+  padding-top: 0;
+}
+
+#markup-pane > .pane-page-block:not(:last-child) > .markup {
+  padding-bottom: 0;
+}
+
+.markup-page-break .markup-line-body {
+  display: flex;
+  align-items: center;
+}
+
+/* Dashes to the end of the line, as for display-only spacing, then the page that starts. */
+.markup-page-break-mark {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  margin-left: 1ch;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.markup-page-break-mark::before {
+  content: "";
+  flex: 1 1 auto;
+  border-top: 1px dashed var(--muted);
+}
+
+.markup-page-break-mark::after {
+  content: attr(data-page-label);
+}
+
+/* Continuous layout: the pages one above the other, centred when narrower than the pane. */
+.page-view-port.page-stream {
+  display: block;
+  /* The stream keeps the centre of the view in place itself when pages are resized. */
+  overflow-anchor: none;
+}
+
+.page-stream-inner {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+}
+
+.page-stream .page-view {
+  margin: 0 auto 12px;
+  background: var(--panel);
+}
+
+.page-stream .page-view:last-of-type {
+  margin-bottom: 0;
+}
+
+.page-stream .page-view.page-view-missing img {
+  visibility: hidden;
+}
+
+svg.page-stream-connectors {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
 }
 
 #page-pane.can-pan {
@@ -2383,7 +2581,7 @@ pre.markup {
   padding-left: calc(var(--markup-depth, 0) * var(--markup-indent));
 }
 
-/* A line break with no whitespace in the source: an arrow leaves this line, dots fill the next one's indent. */
+/* A line break with no whitespace in the source: an arrow leaves this line, dashes fill the next one's indent. */
 .markup-glue-end {
   display: inline-block;
   width: 1em;
@@ -2415,7 +2613,7 @@ pre.markup {
   top: 0.65em;
   left: 0;
   right: 0;
-  border-top: 1px dotted var(--muted);
+  border-top: 1px dashed var(--muted);
 }
 
 .markup-gutter {
