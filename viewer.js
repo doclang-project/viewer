@@ -447,11 +447,12 @@ const OVERLAY_BADGE_RADIUS_SCREEN_PX = 3;
 const OVERLAY_REF_IMAGE_WIDTH = 1224;
 const OVERLAY_REF_IMAGE_HEIGHT = 1584;
 const PAGE_ZOOM_DEFAULT = 100;
-/** Continuous pages can zoom out below the width fit, to see several at once. */
-const PAGE_ZOOM_MIN_CONTINUOUS = 20;
+/** The zoom goes below 100% (the fit), to see a page whole when it fits the width, or several pages at once. */
+const PAGE_ZOOM_MIN = 20;
 /** Dragging the zoom this close to 100% (the fit) stays at 100%. */
 const PAGE_ZOOM_SNAP = 5;
 const PAGE_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-page-layout-mode";
+const PAGE_FIT_MODE_STORAGE_KEY = "doclang-viewer-page-fit-mode";
 const PAGE_PAN_DRAG_THRESHOLD = 5;
 const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
@@ -569,6 +570,8 @@ let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** "single": one page at a time; "continuous": every page in one vertical stream, fit to the pane's width. */
 let pageLayoutMode = "single";
+/** What 100% zoom is in the Original: "page", a whole page fits the pane; "width", a page fits its width. */
+let pageFitMode = "page";
 /**
  * The continuous stream of the Original pane, while it shows. Only the current page's view is live (selection,
  * editing, tokens); the others carry overlays built in their own id space, and a click on one makes it current.
@@ -588,7 +591,7 @@ const paneUserScroll = new Map();
 /** @type {{ pointerId: number, startX: number, startY: number, scrollLeft: number, scrollTop: number, moved: boolean } | null} */
 let pagePanDrag = null;
 let pagePanSuppressClick = false;
-/** @type {{ paneW: number, paneH: number, imgW: number, imgH: number, fitScale: number } | null} */
+/** @type {{ w: number, h: number, imgW: number, imgH: number, mode: string, fitScale: number } | null} */
 let pageLayoutCache = null;
 /** @type {{ file: boolean, page: boolean, markup: boolean, reading: boolean }} */
 let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
@@ -679,6 +682,8 @@ const els = {
   pageLayoutToggle: document.getElementById("page-layout-toggle"),
   pageLayoutSingleBtn: document.getElementById("btn-page-layout-single"),
   pageLayoutContinuousBtn: document.getElementById("btn-page-layout-continuous"),
+  pageFitPageBtn: document.getElementById("btn-page-fit-page"),
+  pageFitWidthBtn: document.getElementById("btn-page-fit-width"),
   main: document.getElementById("main"),
   emptyState: document.getElementById("empty-state"),
   emptyStateLoading: document.getElementById("empty-state-loading"),
@@ -1030,6 +1035,8 @@ els.readingLayoutPagelessBtn?.addEventListener("click", () => setReadingLayoutMo
 els.readingLayoutPagedBtn?.addEventListener("click", () => setReadingLayoutMode("paged"));
 els.pageLayoutSingleBtn?.addEventListener("click", () => setPageLayoutMode("single"));
 els.pageLayoutContinuousBtn?.addEventListener("click", () => setPageLayoutMode("continuous"));
+els.pageFitPageBtn?.addEventListener("click", () => setPageFitMode("page"));
+els.pageFitWidthBtn?.addEventListener("click", () => setPageFitMode("width"));
 els.pageSettingsPanel?.addEventListener("change", (e) => {
   if (!(e.target instanceof HTMLInputElement) || e.target.type !== "checkbox") return;
   const group = e.target.dataset.selectAll;
@@ -1924,7 +1931,7 @@ function initPageWheelNav() {
   els.renderedPane?.addEventListener(
     "wheel",
     (e) => {
-      if (effectiveReadingLayoutMode() === "paged") onScrollPaneWheel(e, els.renderedPane);
+      if (effectiveReadingLayoutMode() === "paged" && !isReadingStreamLayout()) onScrollPaneWheel(e, els.renderedPane);
     },
     { passive: false },
   );
@@ -7718,7 +7725,9 @@ function renderPage(pageNum) {
   }
 
   if (!isReadingStreamLayout()) renderReadingPane(segment, elementIds, boxes, defaultResolution);
-  else if (!isPaneStreamCurrent(els.renderedPane)) buildReadingStream(pageNum);
+  else if (!isPaneStreamCurrent(els.renderedPane) || els.renderedPane.streamMode !== effectiveReadingLayoutMode()) {
+    buildReadingStream(pageNum);
+  }
   if (continuous) markLivePageBlocks(pageNum);
 
   // Without page images nothing waits for an image to load: select what navigation went to right away.
@@ -7755,6 +7764,7 @@ function renderPage(pageNum) {
         img.dataset.layoutGeneration = String(pageNum);
         applyPageImageSize(img, els.pagePane);
         buildLiveOverlay(wrap, img, pageNum, segment, elementIds, boxes);
+        mirrorPanes("page");
       };
 
       img.addEventListener("load", onImageReady, { once: true });
@@ -7857,7 +7867,7 @@ function observePagePaneResize() {
  */
 function buildLiveOverlay(wrap, img, pageNum, segment, elementIds, boxes) {
   const { defaultResolution } = state;
-  const pagedCanvas = els.renderedPane?.querySelector(".paged-canvas");
+  const pagedCanvas = els.renderedPane && livePaneRoot(els.renderedPane).querySelector(".paged-canvas");
   if (pagedCanvas && img.naturalWidth && img.naturalHeight) {
     pagedCanvas.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
     pagedCanvas.dataset.aspectW = String(img.naturalWidth);
@@ -7886,9 +7896,9 @@ function buildLiveOverlay(wrap, img, pageNum, segment, elementIds, boxes) {
 // Each page is a block of its own, built with the page's own element ids (the same ones it has when it is the current
 // page). Ids repeat from page to page, so everything that looks up the current page's elements does so in its block.
 
-/** The Flowing Preview streams too; the Paged one is drawn over a page's geometry, and shows the current page. */
+/** The Preview streams in both its layouts: Flowing as one flow, Paged as pages mirroring the Original's. */
 function isReadingStreamLayout() {
-  return isContinuousLayout() && effectiveReadingLayoutMode() !== "paged";
+  return isContinuousLayout();
 }
 
 function pageBlockFor(pane, pageNum) {
@@ -7956,8 +7966,23 @@ function buildMarkupStream(pageNum) {
 
 function buildReadingStream(pageNum) {
   const pane = els.renderedPane;
-  pane.classList.remove("reading-mode-paged");
+  const paged = effectiveReadingLayoutMode() === "paged";
+  pane.classList.toggle("reading-mode-paged", paged);
   pane.classList.add("reading-stream");
+  pane.streamMode = effectiveReadingLayoutMode();
+  if (paged) {
+    fillPageStream(pane, pageNum, (ctx, n) => {
+      const canvas = buildPagedView(ctx.segment, ctx.elementIds, ctx.boxes, state.defaultResolution);
+      continueEquationNumbering(canvas, ctx.segment);
+      applyRtlBlocks(canvas);
+      setPagedCanvasAspect(canvas, n);
+      return canvas;
+    });
+    fitPagedCanvas();
+    observePagedPaneResize();
+    mirrorPanes();
+    return;
+  }
   const joins = computeCrossPageJoins();
   fillPageStream(pane, pageNum, (ctx, n) => {
     const view = buildRenderedView(ctx.segment, ctx.elementIds, { joins, pageNum: n });
@@ -8060,14 +8085,17 @@ function setPaneSticky(pane, pageNum) {
 
 /** The other panes show the new current page (where they do not already). */
 function followCurrentPage(origin, pageNum) {
+  // A mirrored Paged Preview and the Original keep one place: they follow each other, not the page.
+  const mirrored = isPreviewMirrored();
   for (const pane of textStreamPanes()) {
-    if (pane !== origin) scrollPaneToPageBlock(pane, pageNum);
+    if (pane !== origin && !(mirrored && pane === els.renderedPane)) scrollPaneToPageBlock(pane, pageNum);
   }
-  if (origin !== els.pagePane && pageStream && isContinuousPageLayout()) {
+  if (origin !== els.pagePane && !(mirrored && origin === els.renderedPane) && pageStream && isContinuousPageLayout()) {
     const port = pageStream.port;
     const centre = streamPageAt(port.getBoundingClientRect().top + port.clientHeight / 2)?.pageNum;
     if (centre !== pageNum) scrollStreamToPage(pageNum);
   }
+  if (mirrored && origin !== els.renderedPane) mirrorPanes("page");
 }
 
 /** Makes a page current from a pane that is already showing it (a scroll or a click there): the others follow. */
@@ -8089,7 +8117,7 @@ function activatePageBlockOf(target, pane) {
 
 function initTextStreamScrolling() {
   const scrollKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
-  for (const pane of [els.markupPane, els.renderedPane]) {
+  for (const pane of [els.markupPane, els.renderedPane, els.pagePane]) {
     if (!pane) continue;
     const signal = { at: 0, held: false };
     paneUserScroll.set(pane, signal);
@@ -8097,17 +8125,26 @@ function initTextStreamScrolling() {
     pane.addEventListener("wheel", mark, { passive: true });
     pane.addEventListener("touchmove", mark, { passive: true });
     pane.addEventListener("keydown", (e) => { if (scrollKeys.includes(e.key)) mark(); });
-    // Dragging the scrollbar: a press on the pane that is not on its content.
-    pane.addEventListener("pointerdown", (e) => { if (e.target === pane) signal.held = true; });
+    // Dragging the scrollbar: a press on the scrolling box itself, not on its content (in the Original, its port).
+    pane.addEventListener("pointerdown", (e) => {
+      if (e.target === pane || e.target.classList?.contains("page-view-port")) signal.held = true;
+    });
+    // Panning the Original by dragging a page.
+    if (pane === els.pagePane) pane.addEventListener("pointermove", () => { if (pagePanDrag?.moved) mark(); });
     window.addEventListener("pointerup", () => { signal.held = false; });
     let frame = 0;
+    // The Original's scrolling box (its port) is inside the pane, and replaced with each page: listened to from here.
     pane.addEventListener("scroll", () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        onTextPaneScroll(pane);
+        if (pane === els.pagePane) onOriginalScrolled();
+        else {
+          onTextPaneScroll(pane);
+          if (pane === els.renderedPane) onPreviewScrolled();
+        }
       });
-    }, { passive: true });
+    }, { passive: true, capture: pane === els.pagePane });
   }
 }
 
@@ -8140,8 +8177,9 @@ function isContinuousPageLayout() {
   return isContinuousLayout() && Boolean(state?.hasPageView);
 }
 
+/** One range and one zoom for both layouts: switching between them keeps the zoom. */
 function pageZoomMin() {
-  return isContinuousPageLayout() ? PAGE_ZOOM_MIN_CONTINUOUS : PAGE_ZOOM_DEFAULT;
+  return PAGE_ZOOM_MIN;
 }
 
 /** The view of the current page: the one that selection, editing and tokens work on. */
@@ -8160,6 +8198,7 @@ function liveOverlaySvg() {
 function loadPageLayoutMode() {
   try {
     if (localStorage.getItem(PAGE_LAYOUT_MODE_STORAGE_KEY) === "continuous") pageLayoutMode = "continuous";
+    if (localStorage.getItem(PAGE_FIT_MODE_STORAGE_KEY) === "width") pageFitMode = "width";
   } catch {
     /* ignore unavailable storage */
   }
@@ -8177,9 +8216,40 @@ function syncPageLayoutButtons() {
   const continuous = pageLayoutMode === "continuous";
   els.pageLayoutSingleBtn?.setAttribute("aria-pressed", String(!continuous));
   els.pageLayoutContinuousBtn?.setAttribute("aria-pressed", String(continuous));
+  const width = pageFitMode === "width";
+  els.pageFitPageBtn?.setAttribute("aria-pressed", String(!width));
+  els.pageFitWidthBtn?.setAttribute("aria-pressed", String(width));
 }
 
-/** The zoom slider reaches below 100% (the width fit) only in the continuous layout. */
+function setPageFitMode(mode) {
+  if (mode === pageFitMode) return;
+  pageFitMode = mode;
+  try {
+    localStorage.setItem(PAGE_FIT_MODE_STORAGE_KEY, mode);
+  } catch {
+    /* ignore quota / private mode */
+  }
+  syncPageLayoutButtons();
+  syncPageZoomRange();
+  resetPageLayoutCache();
+  refreshPageViewLayout();
+}
+
+/** The room a page of the Original has at 100%: its scrolling area, inside the scrollbar gutter and the page border. */
+function pageFitArea() {
+  const port = els.pagePane?.querySelector(".page-view-port");
+  const { w, h } = port ? { w: port.clientWidth, h: port.clientHeight } : paneContentSize(els.pagePane);
+  return { w: w - PAGE_VIEW_BORDER_PX, h: h - PAGE_VIEW_BORDER_PX };
+}
+
+/** The scale at 100% of a page of `imgW` × `imgH` pixels: fitting the pane, or its width (see pageFitMode). */
+function fitScaleFor(imgW, imgH, area = pageFitArea()) {
+  const { w, h } = area;
+  if (!(w > 0 && h > 0 && imgW > 0 && imgH > 0)) return 1;
+  return pageFitMode === "width" ? w / imgW : Math.min(w / imgW, h / imgH);
+}
+
+/** The zoom slider: its range, value and the mark at 100% (the fit), with what the fit is. */
 function syncPageZoomRange() {
   const min = pageZoomMin();
   pageZoomPercent = Math.max(min, pageZoomPercent);
@@ -8193,7 +8263,12 @@ function syncPageZoomRange() {
   const max = Number(els.pageZoom?.max ?? PAGE_ZOOM_DEFAULT);
   const at = max > min ? (PAGE_ZOOM_DEFAULT - min) / (max - min) : 0;
   els.pageZoomTrack?.style.setProperty("--zoom-fit-at", String(at));
-  if (els.pageZoomFitMark) els.pageZoomFitMark.hidden = !(at > 0);
+  if (els.pageZoomFitMark) {
+    els.pageZoomFitMark.hidden = !(at > 0);
+    const fit = pageFitMode === "width" ? "Fit to width" : "Fit the page";
+    els.pageZoomFitMark.title = `${fit} (100%)`;
+    els.pageZoomFitMark.setAttribute("aria-label", `Zoom: ${fit.toLowerCase()} (100%)`);
+  }
   updatePageZoomResetButton();
 }
 
@@ -8336,18 +8411,20 @@ function onStreamImageLoad(page) {
   syncStreamOverlays();
   drawStreamConnectors();
   applyBboxVisibility();
-}
-
-/** Width of a page at 100%: the port's width, inside its (stable) scrollbar gutter. */
-function streamFitWidth() {
-  const port = pageStream?.port;
-  const w = port ? port.clientWidth : paneContentSize(els.pagePane).w;
-  return Math.max(1, w - PAGE_VIEW_BORDER_PX);
+  // The Paged Preview's page takes the shape of this page; the follower the leader's place.
+  const canvas = els.renderedPane && pageBlockFor(els.renderedPane, page.pageNum)?.querySelector(".paged-canvas");
+  if (canvas && canvas.dataset.aspectW !== String(page.img.naturalWidth)) {
+    setPagedCanvasAspect(canvas, page.pageNum);
+    fitPagedCanvas();
+  }
+  mirrorPanes();
 }
 
 function applyStreamImageSize(img) {
-  const w = Math.max(1, Math.floor(streamFitWidth() * pageZoomFactor()));
   const aspect = img.naturalWidth && img.naturalHeight ? img.naturalHeight / img.naturalWidth : pageStream.fallbackAspect;
+  // A page not loaded yet is sized as one of the shape the stream expects.
+  const naturalW = img.naturalWidth || OVERLAY_REF_IMAGE_WIDTH;
+  const w = Math.max(1, Math.floor(fitScaleFor(naturalW, naturalW * aspect) * naturalW * pageZoomFactor()));
   img.style.width = `${w}px`;
   img.style.height = `${Math.floor(w * aspect)}px`;
   img.style.maxWidth = "none";
@@ -8355,7 +8432,7 @@ function applyStreamImageSize(img) {
   if (img.naturalWidth) img.dataset.layoutReady = "1";
 }
 
-/** Sizes every page for the current pane width and zoom, keeping the point at the centre of the view in place. */
+/** Sizes every page for the current pane size, fit and zoom, keeping the line at the top of the view in place. */
 function layoutPageStream({ anchor = captureStreamAnchor() } = {}) {
   if (!pageStream) return;
   resetPageLayoutCache();
@@ -8375,28 +8452,74 @@ function layoutPageStream({ anchor = captureStreamAnchor() } = {}) {
   drawStreamConnectors();
 }
 
-/** @returns {{ page: object, fx: number, fy: number, viewX: number, viewY: number } | null} */
 function captureStreamAnchor() {
-  const port = pageStream?.port;
-  if (!port?.isConnected) return null;
-  const portRect = port.getBoundingClientRect();
-  const viewX = port.clientWidth / 2;
-  const viewY = port.clientHeight / 2;
-  const page = streamPageAt(portRect.top + viewY);
-  if (!page) return null;
-  const r = page.wrap.getBoundingClientRect();
-  if (!(r.width > 0 && r.height > 0)) return null;
-  return { page, fx: (portRect.left + viewX - r.left) / r.width, fy: (portRect.top + viewY - r.top) / r.height, viewX, viewY };
+  return captureViewAnchor(pageStream?.port, originalPageEls());
 }
 
 function restoreStreamAnchor(anchor) {
-  const port = pageStream?.port;
-  if (!anchor || !port) return;
-  const portRect = port.getBoundingClientRect();
-  const r = anchor.page.wrap.getBoundingClientRect();
-  port.scrollTop += r.top + anchor.fy * r.height - (portRect.top + anchor.viewY);
-  port.scrollLeft += r.left + anchor.fx * r.width - (portRect.left + anchor.viewX);
-  if (pageStream.sticky) pageStream.sticky.scrollTop = port.scrollTop;
+  if (!pageStream) return;
+  applyViewAnchor(pageStream.port, originalPageEls(), anchor);
+  if (pageStream.sticky) pageStream.sticky.scrollTop = pageStream.port.scrollTop;
+}
+
+/**
+ * The place a scroller shows, by the top-left corner of its view: the page there and how far into it, as fractions of
+ * its size; or, where the corner is above a page (in the gap before it), that page's top and its distance below the
+ * corner. Being relative to the pages, a place carries over to the same pages at another size (a pane keeping its
+ * place when they are resized) and to another pane showing them (the Paged Preview and the Original).
+ * @param {{ pageNum: number, el: Element }[]} pages
+ * @returns {{ pageNum: number, fx: number, fy: number, offY: number } | null}
+ */
+function captureViewAnchor(scroller, pages) {
+  if (!scroller?.isConnected || !pages.length) return null;
+  const { top, left } = viewCorner(scroller);
+  const page = pages.find((p) => p.el.getBoundingClientRect().bottom > top) ?? pages[pages.length - 1];
+  const r = page.el.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return null;
+  const fx = (left - r.left) / r.width;
+  if (r.top >= top) return { pageNum: page.pageNum, fx, fy: 0, offY: r.top - top };
+  return { pageNum: page.pageNum, fx, fy: (top - r.top) / r.height, offY: 0 };
+}
+
+function applyViewAnchor(scroller, pages, anchor) {
+  const page = anchor && scroller ? pages.find((p) => p.pageNum === anchor.pageNum) : null;
+  if (!page) return;
+  const { top, left } = viewCorner(scroller);
+  const r = page.el.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return;
+  scroller.scrollTop += r.top + anchor.fy * r.height - (top + anchor.offY);
+  scroller.scrollLeft += r.left + anchor.fx * r.width - left;
+}
+
+/** The top-left corner of a scroller's view, inside its border and padding: where its content starts, unscrolled. */
+function viewCorner(scroller) {
+  const sr = scroller.getBoundingClientRect();
+  const style = getComputedStyle(scroller);
+  return {
+    top: sr.top + scroller.clientTop + parseFloat(style.paddingTop),
+    left: sr.left + scroller.clientLeft + parseFloat(style.paddingLeft),
+  };
+}
+
+/** The pages of the Original, in order: the stream's, or the current page alone. */
+function originalPageEls() {
+  if (pageStream) return pageStream.pages.map((p) => ({ pageNum: p.pageNum, el: p.wrap }));
+  const live = livePageView();
+  return live && state ? [{ pageNum: state.currentPage, el: live }] : [];
+}
+
+/** The pages of the Paged Preview, in order: the stream's canvases, or the current page's alone. */
+function previewPageEls() {
+  const pane = els.renderedPane;
+  if (!pane?.classList.contains("reading-mode-paged")) return [];
+  const blocks = [...pane.querySelectorAll(":scope > .pane-page-block")];
+  if (blocks.length) {
+    return blocks
+      .map((block) => ({ pageNum: Number(block.dataset.page), el: block.querySelector(".paged-canvas") }))
+      .filter((p) => p.el);
+  }
+  const canvas = pane.querySelector(".paged-canvas");
+  return canvas && state ? [{ pageNum: state.currentPage, el: canvas }] : [];
 }
 
 /** The page at a viewport y: the one that spans it, else the nearest. */
@@ -8664,6 +8787,16 @@ function syncStreamConnectorVisibility(selectedThreadId) {
   }
 }
 
+function observePagedPaneResize() {
+  if (pagedPaneResizeObserver || !els.renderedPane) return;
+  // The Preview resized: its pages too, then it takes the leader's place again (or gives its own, when it leads).
+  pagedPaneResizeObserver = new ResizeObserver(() => {
+    fitPagedCanvas();
+    mirrorPanes();
+  });
+  pagedPaneResizeObserver.observe(els.renderedPane);
+}
+
 function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   if (!els.renderedPane) return;
   if (isReadingStreamLayout()) {
@@ -8697,12 +8830,11 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
       canvas.dataset.aspectH = String(existingImg.naturalHeight);
     }
     els.renderedPane.appendChild(canvas);
+    els.renderedPane.scrollTop = 0;
+    els.renderedPane.scrollLeft = 0;
     fitPagedCanvas();
     if (state.tokenData) syncPagedTraceRender(currentTokenRange()); // a new page starts out unwritten while tracing
-    if (!pagedPaneResizeObserver) {
-      pagedPaneResizeObserver = new ResizeObserver(() => fitPagedCanvas());
-      pagedPaneResizeObserver.observe(els.renderedPane);
-    }
+    observePagedPaneResize();
   } else {
     els.renderedPane.classList.remove("reading-mode-paged");
     const view = buildRenderedView(segment, elementIds);
@@ -8771,16 +8903,8 @@ function overlayUserLength(baseUserPx, img = livePageImg()) {
     return baseUserPx / zoom;
   }
 
-  const { w: paneW, h: paneH } = paneContentSize(els.pagePane);
-  if (!(paneW > 0 && paneH > 0)) return baseUserPx / zoom;
-
-  // The reference page fitted the way pages are at 100%: to the pane (single), or to its width (continuous).
-  const refFit = pageStream && isContinuousPageLayout()
-    ? streamFitWidth() / OVERLAY_REF_IMAGE_WIDTH
-    : Math.min(
-      (paneW - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_WIDTH,
-      (paneH - PAGE_VIEW_BORDER_PX) / OVERLAY_REF_IMAGE_HEIGHT,
-    );
+  // The reference page fitted the way pages are at 100% (see pageFitMode).
+  const refFit = fitScaleFor(OVERLAY_REF_IMAGE_WIDTH, OVERLAY_REF_IMAGE_HEIGHT);
   const fitScale = getCachedFitScale(img, els.pagePane);
   if (!(refFit > 0) || !(fitScale > 0)) return baseUserPx / zoom;
 
@@ -8805,54 +8929,132 @@ function paneContentSize(pane) {
   };
 }
 
+/**
+ * Sizes the Paged Preview's pages like the Original's (the same fit and zoom, in its own pane), keeping the line at
+ * the top of its view in place. Fitting the content of their boxes is costly: pages are fitted near the view only, those
+ * never fitted at once, the others once the size settles, and the rest as they come into view.
+ */
 function fitPagedCanvas() {
-  if (!els.renderedPane) return;
-  const canvas = els.renderedPane.querySelector(".paged-canvas");
-  if (!canvas) return;
-  const aspectW = Number(canvas.dataset.aspectW) || 1;
-  const aspectH = Number(canvas.dataset.aspectH) || 1;
-  const { w: paneW, h: paneH } = paneContentSize(els.renderedPane);
-  if (!(paneW > 0 && paneH > 0)) return;
-  let cw = paneW;
-  let ch = cw * (aspectH / aspectW);
-  if (ch > paneH) {
-    ch = paneH;
-    cw = ch * (aspectW / aspectH);
-  }
-  canvas.style.width = `${cw}px`;
-  canvas.style.height = `${ch}px`;
+  const pane = els.renderedPane;
+  if (!pane?.classList.contains("reading-mode-paged")) return;
+  const pages = previewPageEls();
+  if (!pages.length) return;
+  const anchor = captureViewAnchor(pane, pages);
+  for (const { el } of pages) sizePagedCanvas(el);
+  applyViewAnchor(pane, pages, anchor);
+  fitPagedSlotsNearView({ firstOnly: true });
+  schedulePagedSlotFit();
+}
 
-  // Re-fit slot content every time the canvas is (re)sized: slot pixel sizes change
-  // with it, and this also corrects any earlier fit done against a provisional aspect
-  // ratio (e.g. before the real page image loaded and replaced the fallback guess).
-  for (const slot of canvas.querySelectorAll(".paged-el-slot")) {
-    fitSlotContent(slot);
+/** The room a Paged page has at 100%: the Preview's content box, inside its scrollbar gutter and the page's border. */
+function previewFitArea() {
+  const { w, h } = paneContentSize(els.renderedPane);
+  return { w: w - PAGE_VIEW_BORDER_PX, h: h - PAGE_VIEW_BORDER_PX };
+}
+
+function sizePagedCanvas(canvas) {
+  // Until its page image is known, a page is taken to have the shape of the reference page.
+  const aspectW = Number(canvas.dataset.aspectW) || OVERLAY_REF_IMAGE_WIDTH;
+  const aspectH = Number(canvas.dataset.aspectH) || OVERLAY_REF_IMAGE_HEIGHT;
+  const w = Math.max(1, Math.floor(fitScaleFor(aspectW, aspectH, previewFitArea()) * aspectW * pageZoomFactor()));
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${Math.floor((w * aspectH) / aspectW)}px`;
+}
+
+/** Gives a Paged page the shape of its page image, at once when the Original has it loaded, else once it loads. */
+function setPagedCanvasAspect(canvas, pageNum) {
+  const set = (img) => {
+    canvas.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+    canvas.dataset.aspectW = String(img.naturalWidth);
+    canvas.dataset.aspectH = String(img.naturalHeight);
+  };
+  const shown = pageStream?.pages[pageNum - 1]?.img ?? (pageNum === state?.currentPage ? livePageImg() : null);
+  if (shown?.naturalWidth) {
+    set(shown);
+    return;
+  }
+  loadPageImageElement(state?.pageImages?.get(pageNum)).then((img) => {
+    if (!img?.naturalWidth || !canvas.isConnected) return;
+    set(img);
+    fitPagedCanvas();
+    mirrorPanes();
+  });
+}
+
+let pagedSlotFitTimer = 0;
+
+function schedulePagedSlotFit(delay = 150) {
+  clearTimeout(pagedSlotFitTimer);
+  pagedSlotFitTimer = setTimeout(() => fitPagedSlotsNearView(), delay);
+}
+
+/** Fits the content of the boxes of the Paged pages near the view, where their size changed since. */
+function fitPagedSlotsNearView({ firstOnly = false } = {}) {
+  const pane = els.renderedPane;
+  if (!pane?.classList.contains("reading-mode-paged")) return;
+  const top = pane.getBoundingClientRect().top;
+  const h = pane.clientHeight;
+  for (const { el } of previewPageEls()) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom < top - h || r.top > top + 2 * h) continue;
+    const key = `${el.style.width}x${el.style.height}`;
+    if (el.dataset.fitKey === key || (firstOnly && el.dataset.fitKey)) continue;
+    el.dataset.fitKey = key;
+    for (const slot of el.querySelectorAll(".paged-el-slot")) fitSlotContent(slot);
   }
 }
 
-function getCachedFitScale(img, pane) {
-  // The continuous stream fits every page to the pane's width.
-  if (pageStream && isContinuousPageLayout()) return img?.naturalWidth ? streamFitWidth() / img.naturalWidth : 1;
-  const { w: paneW, h: paneH } = paneContentSize(pane);
-  const imgW = img.naturalWidth;
-  const imgH = img.naturalHeight;
-  if (
-    pageLayoutCache &&
-    pageLayoutCache.paneW === paneW &&
-    pageLayoutCache.paneH === paneH &&
-    pageLayoutCache.imgW === imgW &&
-    pageLayoutCache.imgH === imgH
-  ) {
-    return pageLayoutCache.fitScale;
-  }
-  const fitScale =
-    paneW > 0 && paneH > 0 && imgW > 0 && imgH > 0
-      ? Math.min(
-          (paneW - PAGE_VIEW_BORDER_PX) / imgW,
-          (paneH - PAGE_VIEW_BORDER_PX) / imgH,
-        )
-      : 1;
-  pageLayoutCache = { paneW, paneH, imgW, imgH, fitScale };
+// --- The Paged Preview mirrors the Original: the same place at the top of both views, whichever one is scrolled ---
+
+/** Which of the two the other follows: the one the user scrolled last ("page", the Original, at first). */
+let mirrorLeader = "page";
+
+function isPreviewMirrored() {
+  return Boolean(state?.hasPageView)
+    && isPaneVisible("page")
+    && isPaneVisible("reading")
+    && Boolean(els.renderedPane?.classList.contains("reading-mode-paged"));
+}
+
+/** Brings the follower to the leader's place (or `from`'s). */
+function mirrorPanes(from = mirrorLeader) {
+  if (!isPreviewMirrored()) return;
+  const original = [pageViewScrollPane(), originalPageEls()];
+  const preview = [els.renderedPane, previewPageEls()];
+  const [[src, srcPages], [dst, dstPages]] = from === "page" ? [original, preview] : [preview, original];
+  applyViewAnchor(dst, dstPages, captureViewAnchor(src, srcPages));
+}
+
+/** True while `pane` is being scrolled by the user, and more recently than the other mirrored pane. */
+function isUserScrollLead(pane, other) {
+  const signal = paneUserScroll.get(pane);
+  if (!signal || !(signal.held || performance.now() - signal.at < 800)) return false;
+  const rival = paneUserScroll.get(other);
+  return !rival?.held && (signal.held || signal.at >= (rival?.at ?? 0));
+}
+
+function onOriginalScrolled() {
+  if (!isPreviewMirrored() || !isUserScrollLead(els.pagePane, els.renderedPane)) return;
+  mirrorLeader = "page";
+  mirrorPanes("page");
+}
+
+function onPreviewScrolled() {
+  if (!els.renderedPane?.classList.contains("reading-mode-paged")) return;
+  fitPagedSlotsNearView();
+  if (!isPreviewMirrored() || !isUserScrollLead(els.renderedPane, els.pagePane)) return;
+  mirrorLeader = "reading";
+  mirrorPanes("reading");
+}
+
+function getCachedFitScale(img) {
+  const imgW = img?.naturalWidth || 0;
+  const imgH = img?.naturalHeight || 0;
+  const { w, h } = pageFitArea();
+  const c = pageLayoutCache;
+  if (c && c.w === w && c.h === h && c.imgW === imgW && c.imgH === imgH && c.mode === pageFitMode) return c.fitScale;
+  const fitScale = fitScaleFor(imgW, imgH);
+  pageLayoutCache = { w, h, imgW, imgH, mode: pageFitMode, fitScale };
   return fitScale;
 }
 
@@ -8897,12 +9099,18 @@ function refreshPageViewLayout() {
   pageLayoutFrame = requestAnimationFrame(() => {
     pageLayoutFrame = 0;
     scheduleOverlayRebuild();
-    if (pageStream) {
-      layoutPageStream();
-      return;
+    if (pageStream) layoutPageStream();
+    else {
+      const img = livePageImg();
+      if (img?.naturalWidth) {
+        const anchor = captureViewAnchor(pageViewScrollPane(), originalPageEls());
+        applyPageLayout(img);
+        applyViewAnchor(pageViewScrollPane(), originalPageEls(), anchor);
+      }
     }
-    const img = livePageImg();
-    if (img?.naturalWidth) applyPageLayout(img);
+    // The zoom and the fit are the Paged Preview's too; then the follower takes the leader's place again.
+    fitPagedCanvas();
+    mirrorPanes();
   });
 }
 
@@ -11934,6 +12142,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
   }
 
   canvas.addEventListener("click", (e) => {
+    activatePageBlockOf(e.target, els.renderedPane);
     // Fall back to the slot itself for boxes with no rendered content (empty text, container bboxes).
     const elementId = resolveRenderedClickTarget(e.target)
       ?? e.target.closest(".paged-el-slot")?.getAttribute("data-element-id");

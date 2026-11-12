@@ -524,7 +524,7 @@ header h1 {
   top: calc(100% + 0.35rem);
   right: 0;
   z-index: 30;
-  min-width: 11rem;
+  min-width: 15rem;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
@@ -611,6 +611,12 @@ header h1 {
   padding: 0.35rem 0.75rem;
 }
 
+/* A choice between options, labelled: Layout, Fit. */
+.toolbar-options-choice {
+  justify-content: space-between;
+  font-size: 0.875rem;
+}
+
 .toolbar-options-row .toolbar-options-item-flex {
   flex: 1;
   min-width: 0;
@@ -687,11 +693,6 @@ body.viewer-loaded.drag-over .drop-banner {
 
 .header-brand .page-nav {
   margin-left: 0.25rem;
-}
-
-.page-layout-toggle {
-  align-self: center;
-  margin-left: 0.5rem;
 }
 
 .header-brand .page-nav::before {
@@ -1606,9 +1607,25 @@ body.pane-drag-active .pane-splitter {
   min-width: 0;
 }
 
+/* The Paged Preview is sized like the Original (fit and zoom), so it scrolls when its page is larger than the pane. */
 #rendered-pane.reading-mode-paged {
   display: flex;
-  overflow: hidden;
+  overflow: auto;
+  /* A scrollbar that comes and goes would change the room the page is fitted to. */
+  scrollbar-gutter: stable;
+}
+
+/* Continuous: the pages one above the other, centred when narrower than the pane. */
+#rendered-pane.reading-mode-paged.reading-stream {
+  display: block;
+}
+
+#rendered-pane.reading-stream > .pane-page-block > .paged-canvas {
+  margin: 0 auto;
+}
+
+#rendered-pane.reading-mode-paged.reading-stream > .pane-page-block + .pane-page-block {
+  margin-top: 12px;
 }
 
 .paged-canvas {
