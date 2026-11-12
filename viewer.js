@@ -2915,6 +2915,7 @@ function updateTokenReplay() {
   }
   updateTokenLayer(range);
   syncPagedTraceRender(range);
+  syncTraceUpcomingPages(range);
   syncReplaySelection(range);
   syncTokenBar(range);
   syncMarkupReplay(range);
@@ -3103,6 +3104,20 @@ function updateTokenLayer(range) {
     it.heat?.setAttribute("height", h);
     it.badge?.classList.toggle("is-shown", progress >= 1);
   }
+}
+
+/**
+ * While a trace shows its effects, the pages after the one being written (in a continuous view) are not written yet
+ * either: the Original veils them whole, as what is not scanned yet of the page, and the Paged Preview leaves them
+ * empty, as what is not written yet. The pages before are done, and show as they are.
+ */
+function syncTraceUpcomingPages(range) {
+  const tracing = isReplayShown(range) && tokenLens.effects;
+  const veil = tracing && !!els.tokenScanToggle?.checked;
+  const empty = tracing && !!els.tokenRenderToggle?.checked;
+  const current = state?.currentPage ?? 0;
+  for (const { pageNum, wrap } of pageStream?.pages ?? []) wrap.classList.toggle("token-upcoming", veil && pageNum > current);
+  for (const { pageNum, el } of previewPageEls()) el.classList.toggle("token-upcoming", empty && pageNum > current);
 }
 
 /** Where the Paged Preview's slots are in the token stream, built once for each rendering of the page. */

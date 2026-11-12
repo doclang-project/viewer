@@ -1632,7 +1632,8 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
-.paged-canvas.token-rendering .paged-el-slot.token-unwritten {
+.paged-canvas.token-rendering .paged-el-slot.token-unwritten,
+.paged-canvas.token-upcoming .paged-el-slot {
   visibility: hidden;
 }
 
@@ -2187,6 +2188,21 @@ button.validation-issue:focus-visible {
 }
 
 .token-layer.is-replaying .token-veil {
+  opacity: 1;
+}
+
+/* A page after the one a trace is writing, in the continuous Original: veiled whole, as not scanned yet. */
+.page-stream .page-view::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--token-veil);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.page-stream .page-view.token-upcoming::after {
   opacity: 1;
 }
 
