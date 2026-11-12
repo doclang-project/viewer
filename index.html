@@ -775,7 +775,22 @@
             </div>
             <button type="button" class="page-nav-btn token-play-btn" id="btn-token-play" aria-label="Trace DocLang, token by token"></button>
             <input type="range" class="token-scrub" id="token-scrub" min="0" max="0" value="0" aria-label="Tokens written">
-            <select class="token-speed" id="token-speed" aria-label="Trace speed in tokens per second" title="Trace speed">
+            <!-- The speed is picked from a menu that opens upwards, all of it in view (a <select> at the bottom of the
+                 window opens on the chosen speed, with the faster ones out of view); the <select> keeps the value. -->
+            <span class="token-speed-wrap">
+              <button
+                type="button"
+                class="token-speed-btn"
+                id="token-speed-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="token-speed-menu"
+                aria-label="Trace speed in tokens per second"
+                title="Trace speed"
+              >100 tok/s</button>
+              <ul class="token-speed-menu" id="token-speed-menu" role="listbox" aria-label="Trace speed" hidden></ul>
+            </span>
+            <select class="token-speed" id="token-speed" hidden tabindex="-1" aria-hidden="true">
               <option value="5">5 tok/s</option>
               <option value="10">10 tok/s</option>
               <option value="50">50 tok/s</option>

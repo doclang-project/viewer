@@ -687,6 +687,8 @@ const els = {
   tokenPlayBtn: document.getElementById("btn-token-play"),
   tokenScrub: document.getElementById("token-scrub"),
   tokenSpeed: document.getElementById("token-speed"),
+  tokenSpeedBtn: document.getElementById("token-speed-btn"),
+  tokenSpeedMenu: document.getElementById("token-speed-menu"),
   tokenCounter: document.getElementById("token-counter"),
   tokenHeatToggle: document.getElementById("token-heat"),
   tokenCountsToggle: document.getElementById("token-counts"),
@@ -3351,8 +3353,10 @@ function initTokenLens() {
   });
   els.tokenSpeed?.addEventListener("change", () => {
     tokenLens.speed = Number(els.tokenSpeed.value) || 100; // tokens per second
+    syncTokenSpeedButton();
     persistTokenPrefs();
   });
+  initTokenSpeedMenu();
   document.addEventListener("keydown", (e) => {
     if (!tokenLens.active || !state || !hotkeysEnabled) return;
     if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
@@ -3388,6 +3392,76 @@ function loadTokenPrefs() {
   const speed = String(prefs.speed);
   if (els.tokenSpeed && [...els.tokenSpeed.options].some((o) => o.value === speed)) els.tokenSpeed.value = speed;
   tokenLens.speed = Number(els.tokenSpeed?.value) || 100;
+  syncTokenSpeedButton();
+}
+
+function syncTokenSpeedButton() {
+  const option = els.tokenSpeed?.selectedOptions[0];
+  if (els.tokenSpeedBtn && option) els.tokenSpeedBtn.textContent = option.textContent;
+  for (const item of els.tokenSpeedMenu?.children ?? []) {
+    item.setAttribute("aria-selected", String(item.dataset.value === els.tokenSpeed?.value));
+  }
+}
+
+/** The menu of trace speeds: it opens above its button, all of it in view, and picks into the hidden <select>. */
+function initTokenSpeedMenu() {
+  const select = els.tokenSpeed;
+  const button = els.tokenSpeedBtn;
+  const menu = els.tokenSpeedMenu;
+  if (!select || !button || !menu) return;
+  for (const option of select.options) {
+    const item = document.createElement("li");
+    item.className = "token-speed-option";
+    item.setAttribute("role", "option");
+    item.dataset.value = option.value;
+    item.textContent = option.textContent;
+    menu.appendChild(item);
+  }
+  const items = () => [...menu.children];
+  const setOpen = (open) => {
+    menu.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+    if (open) {
+      for (const item of items()) item.classList.toggle("is-active", item.dataset.value === select.value);
+    }
+  };
+  const pick = (value) => {
+    setOpen(false);
+    button.focus();
+    if (value === select.value) return;
+    select.value = value;
+    select.dispatchEvent(new Event("change"));
+  };
+  const move = (step) => {
+    const list = items();
+    const at = list.findIndex((item) => item.classList.contains("is-active"));
+    const next = list[Math.min(list.length - 1, Math.max(0, at + step))];
+    for (const item of list) item.classList.toggle("is-active", item === next);
+  };
+  button.addEventListener("click", () => setOpen(menu.hidden));
+  menu.addEventListener("click", (e) => {
+    const item = e.target.closest(".token-speed-option");
+    if (item) pick(item.dataset.value);
+  });
+  button.addEventListener("keydown", (e) => {
+    if (menu.hidden) {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") move(e.key === "ArrowUp" ? -1 : 1);
+    else if (e.key === "Enter" || e.key === " ") pick(menu.querySelector(".is-active")?.dataset.value ?? select.value);
+    else if (e.key === "Escape") setOpen(false);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!menu.hidden && !e.target.closest(".token-speed-wrap")) setOpen(false);
+  });
+  syncTokenSpeedButton();
 }
 
 function persistTokenPrefs() {
