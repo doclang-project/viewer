@@ -10996,7 +10996,8 @@ function findRenderedElementForSelection(elementId) {
   const direct =
     own(`.rendered-doc .rendered-el-virtual-text[data-element-id="${elementId}"]`) ||
     own(`.rendered-doc .rendered-el[data-element-id="${elementId}"]`);
-  if (direct) return direct;
+  // A fragment of a joined paragraph: the selection shows on the whole paragraph (its part is marked in it).
+  if (direct) return direct.classList.contains("rendered-fragment-part") ? direct.closest(".rendered-fragment-merged") ?? direct : direct;
   const joined = joinedPartBlock(elementId);
   if (joined) return joined;
 
@@ -11012,6 +11013,15 @@ function findRenderedElementForSelection(elementId) {
   const primaryId = merged.getAttribute("data-element-id");
   if (!primaryId || primaryId === elementId) return merged;
   return fragmentPeerElementIds(primaryId).has(elementId) ? merged : null;
+}
+
+/** In a joined paragraph shown as the selection, the part of the selected fragment (of the current page). */
+function selectedFragmentPart(block) {
+  if (!block.classList.contains("rendered-fragment-merged")) return null;
+  const page = state?.currentPage;
+  return [...block.querySelectorAll(`.rendered-fragment-part[data-element-id="${selectedElementId}"]`)]
+    .find((part) => (part.dataset.continuedPage ? Number(part.dataset.continuedPage) === page : !part.closest("[data-continued-page]")
+      && Number(part.closest(".pane-page-block")?.dataset.page ?? page) === page)) ?? null;
 }
 
 /** The block (on an earlier page) that the continuous Flowing Preview joined a fragment of the current page onto. */
@@ -11059,8 +11069,8 @@ function applySelectionCore() {
   els.markupPane?.querySelectorAll(".markup-el.selected").forEach((el) => {
     el.classList.remove("selected");
   });
-  els.renderedPane?.querySelectorAll(".rendered-el.selected").forEach((el) => {
-    el.classList.remove("selected");
+  els.renderedPane?.querySelectorAll(".rendered-el.selected, .rendered-fragment-part.part-selected").forEach((el) => {
+    el.classList.remove("selected", "part-selected");
   });
   els.renderedPane?.querySelectorAll(".paged-el-slot.selected").forEach((el) => {
     el.classList.remove("selected");
@@ -11088,6 +11098,7 @@ function applySelectionCore() {
     revealRenderedSelectionContext(renderedEl);
     renderedEl.classList.add("selected");
     renderedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    selectedFragmentPart(renderedEl)?.classList.add("part-selected");
   }
 
   const pagedSlot = els.renderedPane && livePaneRoot(els.renderedPane).querySelector(`.paged-el-slot[data-element-id="${selectedElementId}"]`);
@@ -11866,14 +11877,25 @@ function trimParentTrailingForFragmentJoin(parent) {
   lastText.textContent = value;
 }
 
+/**
+ * Joins a thread's text fragments into one paragraph, each in a part of its own: hovering shows a fragment's span,
+ * and a click selects that fragment (not the thread's first).
+ */
 function appendMergedTextFragments(parent, fragments, elementIds) {
   for (let i = 0; i < fragments.length; i += 1) {
     if (i > 0) trimParentTrailingForFragmentJoin(parent);
-    appendRenderedBody(parent, fragments[i], elementIds, {
-      inline: true,
-      trimLeading: i > 0,
-    });
+    parent.appendChild(renderFragmentPart(fragments[i], elementIds, { trimLeading: i > 0 }));
   }
+}
+
+function renderFragmentPart(el, elementIds, { trimLeading = false, continuedPage = 0 } = {}) {
+  const part = document.createElement("span");
+  part.className = `rendered-el rendered-fragment-part${continuedPage ? " rendered-continuation" : ""}`;
+  if (continuedPage) part.dataset.continuedPage = String(continuedPage);
+  const id = elementIds.get(el);
+  if (id) part.setAttribute("data-element-id", id);
+  appendRenderedBody(part, el, elementIds, { inline: true, trimLeading });
+  return part;
 }
 
 /**
@@ -11895,13 +11917,7 @@ function renderMergedIntraPageFragments(fragments, elementIds, continuations = [
     for (const { page, elements, elementIds: ids } of continuations) {
       for (const el of elements) {
         trimParentTrailingForFragmentJoin(node);
-        const part = document.createElement("span");
-        part.className = "rendered-el rendered-continuation";
-        part.dataset.continuedPage = String(page);
-        const id = ids.get(el);
-        if (id) part.setAttribute("data-element-id", id);
-        appendRenderedBody(part, el, ids, { inline: true, trimLeading: true });
-        node.appendChild(part);
+        node.appendChild(renderFragmentPart(el, ids, { trimLeading: true, continuedPage: page }));
       }
     }
   } else if (tag === "list") {
@@ -11921,7 +11937,12 @@ function renderMergedIntraPageFragments(fragments, elementIds, continuations = [
     node = document.createElement("div");
     node.className = "rendered-fragment-merged-body";
     for (const el of fragments) {
-      appendRenderedBodyBlocks(node, el, elementIds);
+      const part = document.createElement("div");
+      part.className = "rendered-el rendered-fragment-part";
+      const id = elementIds.get(el);
+      if (id) part.setAttribute("data-element-id", id);
+      appendRenderedBodyBlocks(part, el, elementIds);
+      node.appendChild(part);
     }
   }
 

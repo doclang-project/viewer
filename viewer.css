@@ -3253,6 +3253,12 @@ body.demo-loading .empty-state-prompt {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
+/* In a joined paragraph shown as the selection, the part of the fragment that is selected. */
+.rendered-fragment-part.part-selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 0.15rem;
+}
+
 .rendered-doc p {
   margin: 0 0 0.75rem;
 }
