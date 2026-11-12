@@ -14,14 +14,14 @@ Serve this directory over HTTP so the demo can fetch example files:
 python3 -m http.server 8080
 ```
 
-Open [http://localhost:8080/](http://localhost:8080/) and click **Load demo**.
+Open [http://localhost:8080/](http://localhost:8080/) and click **Demo**.
 
 ## Opening files
 
 | Action | Description |
 |--------|-------------|
-| **Load demo** | Fetches the demo archives, [`assets/2501.17887.dclx`](assets/2501.17887.dclx) and [`assets/artemis.dclx`](assets/artemis.dclx) (requires HTTP). |
-| **Open file** | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file. |
+| **Demo** | Fetches the demo archives, [`assets/2501.17887.dclx`](assets/2501.17887.dclx) and [`assets/artemis.dclx`](assets/artemis.dclx) (requires HTTP), in place of the open files. |
+| **Open** (⌘O / Ctrl+O) | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file; it opens next to the files already open. |
 | **Drag and drop** | Drop any supported file onto the page. |
 | **From another page** | A page that opens the viewer can hand it a file; see [Opening from another page](#opening-from-another-page). |
 
