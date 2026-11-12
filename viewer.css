@@ -1178,6 +1178,12 @@ label.file-btn input {
   flex-shrink: 0;
 }
 
+/* Between keys that do the same: either one. */
+.help-shortcut-or {
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
 .help-shortcut-desc {
   color: var(--muted);
   text-align: right;

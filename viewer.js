@@ -1905,19 +1905,20 @@ function initPageWheelNav() {
 
     let dir = 0;
     switch (e.key) {
+      // Page Up / Page Down flip pages wherever the left and right arrows do, also over a pane that scrolls.
       case "ArrowRight":
+      case "PageDown":
         dir = 1;
         break;
       case "ArrowLeft":
+      case "PageUp":
         dir = -1;
         break;
       case "ArrowDown":
-      case "PageDown":
         if (isScrollablePaneFocused()) return;
         dir = 1;
         break;
       case "ArrowUp":
-      case "PageUp":
         if (isScrollablePaneFocused()) return;
         dir = -1;
         break;
