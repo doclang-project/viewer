@@ -1311,6 +1311,8 @@ function findCatalogIndexForFile(file) {
 
 async function addFilesToCatalog(files, { replace = false } = {}) {
   if (replace) {
+    // Asked before the open document goes: afterwards there would be nothing to compare the editor's text with.
+    if (!confirmDiscardEditor()) return;
     clearFileCatalog();
     filePaneUserToggled = false;
   }
@@ -1482,6 +1484,7 @@ async function appendFolderArchive(files) {
 
 async function addArchiveBufferToCatalog(buffer, label, { replace = false, activate = true } = {}) {
   if (replace) {
+    if (!confirmDiscardEditor()) return;
     clearFileCatalog();
     filePaneUserToggled = false;
   }
@@ -3760,7 +3763,8 @@ function syncHistoryButtons() {
 }
 
 function hasUnappliedEditorText() {
-  return !!markupEditor && markupEditor.value !== editorTextOf(state?.markupXml ?? "");
+  // Without a document (released while another opens) there is nothing the text would apply to.
+  return !!markupEditor && !!state && markupEditor.value !== editorTextOf(state.markupXml);
 }
 
 function setEditingOn(on) {
