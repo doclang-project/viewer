@@ -401,9 +401,12 @@ function appendMarkupInlineElement(parent, depth, tag, attributes, text) {
   parent.appendChild(line);
 }
 
-function appendMarkupTextLine(parent, depth, text) {
+function appendMarkupTextLine(parent, depth, text, node = null) {
   const { line, content } = createMarkupLineRow(depth);
   appendMarkupTextContent(content, text);
+  // A space that starts a line of text is read from the line break before it (DocLang 0.9): it stays in the text, for
+  // copying and tokens, but does not indent the line. In <content> it is the text itself, and shows.
+  if (text.startsWith(" ") && localName(node?.parentElement ?? parent) !== "content") line.classList.add("markup-line-lead-space");
   parent.appendChild(line);
 }
 
@@ -425,7 +428,8 @@ function formatMarkupTextNode(node) {
 
 function serializeMarkupTextNodes(nodes) {
   return [...nodes]
-    .filter((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n))
+    // Whitespace is layout, except in <content>, where it is the text itself.
+    .filter((n) => isTextLikeNode(n) && (!isWhitespaceOnlyText(n) || localName(n.parentElement) === "content"))
     .map(formatMarkupTextNode)
     .join("");
 }
@@ -9864,7 +9868,10 @@ function isSingleLineMarkup(el) {
 }
 
 function isTextOnlyMarkup(el) {
-  return !childElements(el).length && [...el.childNodes].some((n) => isTextLikeNode(n) && !isWhitespaceOnlyText(n));
+  // Whitespace is layout, except in <content>, where it is the text itself (e.g. <content> </content>).
+  const literal = localName(el) === "content";
+  return !childElements(el).length
+    && [...el.childNodes].some((n) => isTextLikeNode(n) && (literal || !isWhitespaceOnlyText(n)));
 }
 
 /**
@@ -10153,7 +10160,7 @@ function appendMarkupNodesFromSlice(parent, depth, nodes, elementIds) {
       if (text === " ") {
         appendMarkupLoneSpace(parent);
       } else if (text) {
-        appendMarkupTextLine(parent, depth, text);
+        appendMarkupTextLine(parent, depth, text, child);
         markGlueLine(parent.lastElementChild, child, "whole");
       }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
@@ -10398,7 +10405,7 @@ function buildMarkupElement(el, depth, elementIds) {
       if (text === " " && localName(el) !== "content") {
         appendMarkupLoneSpace(children, block.firstElementChild);
       } else if (text) {
-        appendMarkupTextLine(children, depth + 1, text);
+        appendMarkupTextLine(children, depth + 1, text, child);
         markGlueLine(children.lastElementChild, child, "whole");
       }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
