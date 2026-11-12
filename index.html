@@ -144,12 +144,12 @@
       <span class="header-divider" aria-hidden="true"></span>
       <span class="toolbar-file-group" id="toolbar-file-group">
         <label class="file-btn" id="open-file-btn">
-          Open file
+          Open
           <input type="file" id="input-archive" multiple accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
         </label>
         <button type="button" id="btn-reload-file" aria-disabled="true">Reload</button>
       </span>
-      <button type="button" id="btn-demo">Load demo</button>
+      <button type="button" id="btn-demo" title="Load the demo documents in place of the open files">Demo</button>
       <span class="header-divider" aria-hidden="true"></span>
       <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
     </div>
@@ -180,6 +180,10 @@
               <span class="help-shortcut-keys"><kbd>Esc</kbd></span>
               <span class="help-shortcut-desc">Close this help</span>
             </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd class="mod-key" data-key="O">Ctrl+O</kbd></span>
+              <span class="help-shortcut-desc">Open a file</span>
+            </div>
           </div>
         </section>
         <section class="help-shortcut-group">
@@ -194,11 +198,11 @@
               <span class="help-shortcut-desc">Next file</span>
             </div>
             <div class="help-shortcut-row">
-              <span class="help-shortcut-keys"><kbd>&larr;</kbd></span>
+              <span class="help-shortcut-keys"><kbd>&larr;</kbd><span class="help-shortcut-or">or</span><kbd>PgUp</kbd></span>
               <span class="help-shortcut-desc">Previous page</span>
             </div>
             <div class="help-shortcut-row">
-              <span class="help-shortcut-keys"><kbd>&rarr;</kbd></span>
+              <span class="help-shortcut-keys"><kbd>&rarr;</kbd><span class="help-shortcut-or">or</span><kbd>PgDn</kbd></span>
               <span class="help-shortcut-desc">Next page</span>
             </div>
             <div class="help-shortcut-row">

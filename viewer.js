@@ -105,7 +105,10 @@ function removeUnavailableMarkup() {
 }
 
 const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
-const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")})`;
+/** Shortcuts with a modifier use ⌘ on Apple platforms and Ctrl elsewhere. */
+const IS_APPLE_PLATFORM = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? "");
+const MOD_KEY_LABEL = IS_APPLE_PLATFORM ? "⌘" : "Ctrl+";
+const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")}) · ${MOD_KEY_LABEL}O`;
 const RELOAD_FILE_HINT = "Re-read the active file from disk";
 const RELOAD_FILE_UNAVAILABLE_HINT = "Reload is available for files opened from disk (file picker or drag-and-drop)";
 const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
@@ -740,7 +743,7 @@ document.getElementById("input-archive")?.addEventListener("click", async (e) =>
       fileHandles.set(file, handle);
       return file;
     }));
-    await addFilesToCatalog(files.filter((f) => isArchiveFile(f) || isMarkupFile(f)), { replace: true });
+    await addFilesToCatalog(files.filter((f) => isArchiveFile(f) || isMarkupFile(f)));
   } catch (err) {
     if (err?.name !== "AbortError") alert(`Failed to open file: ${err.message}`);
   }
@@ -748,7 +751,7 @@ document.getElementById("input-archive")?.addEventListener("click", async (e) =>
 document.getElementById("input-archive")?.addEventListener("change", async (e) => {
   const files = [...e.target.files].filter((f) => isArchiveFile(f) || isMarkupFile(f));
   if (!files.length) return;
-  await addFilesToCatalog(files, { replace: true });
+  await addFilesToCatalog(files);
   e.target.value = "";
 });
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
@@ -1041,6 +1044,8 @@ setTimeout(() => {
 
 async function loadDemo() {
   if (demoLoadInProgress) return;
+  // The demo takes the place of the open files: asked first, before anything is downloaded.
+  if (!confirmDiscardEditor() || !confirmDiscardUnsavedFiles()) return;
   demoLoadInProgress = true;
   setDemoLoading(true);
   try {
@@ -1080,7 +1085,7 @@ async function loadDemo() {
     );
   } finally {
     demoLoadInProgress = false;
-    if (!document.body.classList.contains("viewer-loaded")) setDemoLoading(false);
+    setDemoLoading(false); // the button too: it stayed disabled once the demo had opened
   }
 }
 
@@ -1312,7 +1317,7 @@ function findCatalogIndexForFile(file) {
 async function addFilesToCatalog(files, { replace = false } = {}) {
   if (replace) {
     // Asked before the open document goes: afterwards there would be nothing to compare the editor's text with.
-    if (!confirmDiscardEditor()) return;
+    if (!confirmDiscardEditor() || !confirmDiscardUnsavedFiles()) return;
     clearFileCatalog();
     filePaneUserToggled = false;
   }
@@ -1484,7 +1489,6 @@ async function appendFolderArchive(files) {
 
 async function addArchiveBufferToCatalog(buffer, label, { replace = false, activate = true } = {}) {
   if (replace) {
-    if (!confirmDiscardEditor()) return;
     clearFileCatalog();
     filePaneUserToggled = false;
   }
@@ -1902,19 +1906,20 @@ function initPageWheelNav() {
 
     let dir = 0;
     switch (e.key) {
+      // Page Up / Page Down flip pages wherever the left and right arrows do, also over a pane that scrolls.
       case "ArrowRight":
+      case "PageDown":
         dir = 1;
         break;
       case "ArrowLeft":
+      case "PageUp":
         dir = -1;
         break;
       case "ArrowDown":
-      case "PageDown":
         if (isScrollablePaneFocused()) return;
         dir = 1;
         break;
       case "ArrowUp":
-      case "PageUp":
         if (isScrollablePaneFocused()) return;
         dir = -1;
         break;
@@ -2364,6 +2369,8 @@ function initCursorHints() {
     showCursorHint(OPEN_FILE_HINT, e.clientX, e.clientY);
   });
   els.openFileBtn?.addEventListener("mouseleave", hideCursorHint);
+  // The help names the modifier of this platform.
+  for (const key of document.querySelectorAll("kbd.mod-key")) key.textContent = `${MOD_KEY_LABEL}${key.dataset.key}`;
 
   // aria-disabled (not `disabled`) so the hint still shows on hover while inactive.
   const reloadBtn = document.getElementById("btn-reload-file");
@@ -4188,6 +4195,14 @@ function stopEditing({ render }) {
   syncEditUi();
 }
 
+/** True unless open files have unsaved changes the user would rather keep than have them closed. */
+function confirmDiscardUnsavedFiles() {
+  const dirty = fileCatalog.filter((entry) => entry.dirty);
+  if (!dirty.length) return true;
+  const which = dirty.length === 1 ? `${dirty[0].label} has` : `${dirty.length} open files have`;
+  return confirm(`${which} unsaved changes. Close ${dirty.length === 1 ? "it" : "them"} anyway?`);
+}
+
 /** True unless the user keeps unapplied editor text they would otherwise lose. */
 function confirmDiscardEditor() {
   if (!hasUnappliedEditorText()) return true;
@@ -4703,6 +4718,15 @@ function undoLastEdit() {
 function redoLastEdit() {
   return stepHistory("redoStack", "undoStack");
 }
+
+// ⌘O / Ctrl+O opens a file, as Open does, instead of the browser opening one as a page. Ctrl+O on a Mac is left
+// alone: there it inserts a line break in text.
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() !== "o" || e.shiftKey || e.altKey || e.defaultPrevented) return;
+  if (!(IS_APPLE_PLATFORM ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return;
+  e.preventDefault();
+  document.getElementById("input-archive")?.click();
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey) || e.defaultPrevented) return;
