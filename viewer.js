@@ -3421,9 +3421,11 @@ async function attachDroppedHandles(dataTransfer, files) {
  * where each option holds replacement elements (as CDATA or as child elements).
  * `choices` maps an alt_repr index (document order) to the chosen option index. A chosen
  * option replaces its host in the document: the host is moved into an inert `<custom>`
- * wrapper (skipped by rendering) and the option's elements follow it as siblings. The
- * source view hides that bookkeeping and shows the document as it was written.
- * @returns {{ options: Map<Element, { host: number, opt: number, active: boolean }>, inactive: Map<Element, { host: number, replacement: Element[] }>, replacements: Set<Element> }}
+ * wrapper (skipped by rendering) and the option's elements follow it as siblings, up to a
+ * comment that marks where they end. The source view hides that bookkeeping and shows the
+ * document as it was written; saving puts it back the way it was written, with what was
+ * edited between the wrapper and the end mark as the option (see withoutAlternativesApplied).
+ * @returns {{ options: Map<Element, { host: number, opt: number, active: boolean }>, inactive: Map<Element, { host: number, opt: number, replacement: Element[], end: Comment, original: string, asText: boolean, cdata: boolean }>, replacements: Set<Element> }}
  */
 function applyAlternatives(doc, choices) {
   const options = new Map();
@@ -3448,9 +3450,86 @@ function applyAlternatives(doc, choices) {
       anchor = el;
       replacements.add(el);
     }
-    inactive.set(wrapper, { host: hostIdx, replacement });
+    const end = doc.createComment(" end of the chosen alternative ");
+    anchor.parentNode.insertBefore(end, anchor.nextSibling);
+    const option = opts[chosen];
+    inactive.set(wrapper, {
+      host: hostIdx,
+      opt: chosen,
+      replacement,
+      end,
+      original: replacement.map(alternativeElementSource).join("\n"),
+      asText: !childElements(option).length,
+      cdata: [...option.childNodes].some((n) => n.nodeType === Node.CDATA_SECTION_NODE),
+    });
   });
   return { options, inactive, replacements };
+}
+
+/** An element as source text, without the namespace it shares with the document. */
+function alternativeElementSource(el) {
+  const ns = el.ownerDocument.documentElement.namespaceURI;
+  const xml = new XMLSerializer().serializeToString(el);
+  return ns ? xml.replace(` xmlns="${ns}"`, "") : xml;
+}
+
+function nodePath(node) {
+  const path = [];
+  for (let n = node; n.parentNode; n = n.parentNode) path.unshift([...n.parentNode.childNodes].indexOf(n));
+  return path;
+}
+
+function nodeAtPath(root, path) {
+  let n = root;
+  for (const i of path) n = n?.childNodes[i];
+  return n ?? null;
+}
+
+/**
+ * The document as written, from one with alternatives swapped in: each host goes back in place, and what is between
+ * its wrapper and the end mark (the chosen option, with any edits made to it, also elements added or removed there)
+ * goes back into its <docling__alt_opt>, in the form it had (text, CDATA or elements). An option left as it was keeps
+ * its text exactly.
+ */
+function withoutAlternativesApplied(doc) {
+  const copy = doc.cloneNode(true);
+  const swaps = [...state.altInactive].map(([wrapper, alt]) => ({
+    wrapper: nodeAtPath(copy, nodePath(wrapper)),
+    end: nodeAtPath(copy, nodePath(alt.end)),
+    alt,
+  }));
+  for (const { wrapper, end, alt } of swaps) {
+    if (!wrapper?.parentNode || !end) continue;
+    const run = [];
+    for (let n = wrapper.nextSibling; n && n !== end; n = n.nextSibling) run.push(n);
+    const elements = run.filter((n) => n.nodeType === Node.ELEMENT_NODE);
+    const host = childElements(wrapper)[0] ?? null;
+    const current = elements.map(alternativeElementSource).join("\n");
+    if (host && current !== alt.original) writeAlternativeOption(host, alt, elements, current);
+    for (const n of run) n.remove();
+    end.remove();
+    if (host) wrapper.parentNode.insertBefore(host, wrapper);
+    wrapper.remove();
+  }
+  return copy;
+}
+
+function writeAlternativeOption(host, alt, elements, source) {
+  const repr = [...host.getElementsByTagName("*")]
+    .find((el) => localName(el) === "docling__alt_repr" && el.parentElement?.parentElement === host);
+  const opt = repr ? childElements(repr).filter((el) => localName(el) === "docling__alt_opt")[alt.opt] : null;
+  if (!opt) return;
+  const doc = opt.ownerDocument;
+  if (!alt.asText) {
+    opt.replaceChildren(...elements.flatMap((el) => [doc.createTextNode("\n"), el]), doc.createTextNode("\n"));
+  } else if (!alt.cdata) {
+    opt.replaceChildren(doc.createTextNode(source));
+  } else {
+    // A CDATA section cannot hold "]]>": split it across two sections.
+    const pieces = source.split("]]>");
+    opt.replaceChildren(...pieces.map((piece, i) =>
+      doc.createCDATASection(`${i ? ">" : ""}${piece}${i < pieces.length - 1 ? "]]" : ""}`)));
+  }
 }
 
 function parseAlternativeElements(doc, opt) {
@@ -4331,25 +4410,19 @@ const BBOX_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const BBOX_HANDLE_SCREEN_PX = 9;
 
 function serializeDocument() {
-  let xml = new XMLSerializer().serializeToString(state.docRoot.ownerDocument);
+  const doc = state.docRoot.ownerDocument;
+  let xml = new XMLSerializer().serializeToString(state.altInactive?.size ? withoutAlternativesApplied(doc) : doc);
   const decl = state.markupXml.match(/^\s*<\?xml[^>]*\?>/)?.[0];
   if (decl && !xml.startsWith("<?xml")) xml = `${decl.trim()}\n${xml}`;
   if (/\n\s*$/.test(state.markupXml) && !xml.endsWith("\n")) xml += "\n";
   return xml;
 }
 
-/** Visual edits serialize the parsed DOM, which holds substituted content while an alternative is chosen. */
-function canEditDocument() {
-  if (!state?.altInactive?.size) return true;
-  setEditError("Switch back to the original (no alternative chosen) before editing.");
-  return false;
-}
-
 /** Applies `mutate` to the selected element's DOM node, then commits the serialized result. */
 async function editSelectedElement(mutate) {
   const id = selectedElementId;
   const el = id ? state?.idToElement?.get(id) : null;
-  if (!el || !editableEntry() || !canEditDocument()) return;
+  if (!el || !editableEntry()) return;
   mutate(el);
   const text = serializeDocument();
   if (text === state.markupXml) return;
@@ -5083,7 +5156,7 @@ function itemInsertPoint(ldiv) {
  * Without a selection `next` appends to the page.
  */
 async function addElement(coords, kind) {
-  if (!state || !editableEntry() || !canEditDocument()) return;
+  if (!state || !editableEntry()) return;
   const root = state.docRoot;
   const doc = root.ownerDocument;
   const ns = root.namespaceURI;
@@ -5335,7 +5408,6 @@ function addThreadTo(el, id) {
 
 /** Threads `a` and `b` per the rules: a fresh id if neither has one, the existing id if only one has, else nothing. */
 async function connectThread(a, b) {
-  if (!canEditDocument()) return;
   const unthreadable = [a, b].find((el) => isVirtualUnit(el) && !headElementsOf(el).length);
   if (unthreadable) {
     setEditError("A list item or cell needs a bbox before it can be threaded.");
@@ -5673,7 +5745,7 @@ function idOnCurrentPage(node) {
 
 async function dissolveParentOfSelected() {
   const el = selectedElement();
-  if (!el || !canDissolveParent(el) || !canEditDocument()) return;
+  if (!el || !canDissolveParent(el)) return;
   const target = unwrapParent(el);
   const id = idOnCurrentPage(target);
   selectedFacet = "text";
@@ -5878,7 +5950,7 @@ function moveElement(moved, target, pos) {
 }
 
 async function moveElementTo(moved, target, pos) {
-  if (!canEditDocument() || !canMoveTo(moved, target, pos)) return;
+  if (!canMoveTo(moved, target, pos)) return;
   const stillUnit = isVirtualUnit(moved) && (pos === "into" ? localName(target) === "list" : isVirtualUnit(target));
   const focus = moveElement(moved, target, pos);
   selectedFacet = stillUnit && localName(moved) === "ldiv" ? "item" : "text";
