@@ -1083,6 +1083,7 @@ initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
 let suppressDemoLoad = false;
+let launchSource;
 initFileHandling();
 initOpenerHandoff();
 
@@ -1157,6 +1158,23 @@ async function loadFromFileList(fileList) {
 }
 
 /**
+ * The `source` URL parameter (how the viewer was opened), dropped from the address once read:
+ * it describes the launch only, and a reload, which brings no files or handoff, would otherwise
+ * keep the demo suppressed and the loading state on forever.
+ */
+function takeLaunchSource() {
+  if (launchSource === undefined) {
+    const url = new URL(location.href);
+    launchSource = url.searchParams.get("source");
+    if (launchSource !== null) {
+      url.searchParams.delete("source");
+      history.replaceState(history.state, "", url);
+    }
+  }
+  return launchSource;
+}
+
+/**
  * Receive files opened with the installed PWA (manifest `file_handlers`).
  *
  * The OS launch opens the handler's action URL (`?source=file-handler`), which
@@ -1165,7 +1183,7 @@ async function loadFromFileList(fileList) {
  */
 function initFileHandling() {
   if (!("launchQueue" in window)) return;
-  if (new URLSearchParams(location.search).get("source") === "file-handler") suppressDemoLoad = true;
+  if (takeLaunchSource() === "file-handler") suppressDemoLoad = true;
   window.launchQueue.setConsumer(async (launchParams) => {
     if (!launchParams.files?.length) return;
     suppressDemoLoad = true;
@@ -1189,7 +1207,7 @@ function initFileHandling() {
  * Only messages from `window.opener` are accepted.
  */
 function initOpenerHandoff() {
-  if (!window.opener || new URLSearchParams(location.search).get("source") !== "opener") return;
+  if (!window.opener || takeLaunchSource() !== "opener") return;
   suppressDemoLoad = true;
   window.addEventListener("message", async (event) => {
     if (event.source !== window.opener) return;
