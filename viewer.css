@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #f4f4f5;
   --panel: #ffffff;
   --border: #d4d4d8;
@@ -65,49 +65,48 @@
   --token-veil: rgba(9, 9, 11, 0.72);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #09090b;
-    --panel: #18181b;
-    --border: #3f3f46;
-    --text: #fafafa;
-    --muted: #a1a1aa;
-    --placeholder-bg: #27272a;
-    --markup-bg: #1e1e1e;
-    --markup-fg: #d4d4d4;
-    --markup-hover: rgba(96, 165, 250, 0.1);
-    --markup-selected: rgba(96, 165, 250, 0.18);
-    --kind-text: #60a5fa;
-    --overlay-reading-order: #ff0000;
-    --overlay-fragment: #c084fc;
-    --overlay-key-value: #65a30d;
-    --kind-heading: #a78bfa;
-    --kind-list: #fb923c;
-    --kind-ldiv: #fb923c;
-    --kind-table: #4ade80;
-    --kind-index: #2dd4bf;
-    --kind-formula: #22d3ee;
-    --kind-code: #94a3b8;
-    --kind-picture: #f472b6;
-    --kind-track: #e879f9;
-    --kind-group: #818cf8;
-    --kind-footnote: #facc15;
-    --kind-page_header: #a1a1aa;
-    --kind-page_footer: #a1a1aa;
-    --kind-caption: #a1a1aa;
-    --kind-field: #fbbf24;
-    --kind-default: #f87171;
-    --xml-tag: #4ec9b0;
-    --xml-bracket: #808080;
-    --xml-attr-name: #9cdcfe;
-    --xml-attr-value: #ce9178;
-    --xml-text: #d4d4d4;
-    --xml-cdata: #b5cea8;
-    --xml-cdata-delimiter: #808080;
-    --status-ok: #4ade80;
-    --status-error: #f87171;
-    --status-error-bg: #2d1519;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #09090b;
+  --panel: #18181b;
+  --border: #3f3f46;
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --placeholder-bg: #27272a;
+  --markup-bg: #1e1e1e;
+  --markup-fg: #d4d4d4;
+  --markup-hover: rgba(96, 165, 250, 0.1);
+  --markup-selected: rgba(96, 165, 250, 0.18);
+  --kind-text: #60a5fa;
+  --overlay-reading-order: #ff0000;
+  --overlay-fragment: #c084fc;
+  --overlay-key-value: #65a30d;
+  --kind-heading: #a78bfa;
+  --kind-list: #fb923c;
+  --kind-ldiv: #fb923c;
+  --kind-table: #4ade80;
+  --kind-index: #2dd4bf;
+  --kind-formula: #22d3ee;
+  --kind-code: #94a3b8;
+  --kind-picture: #f472b6;
+  --kind-track: #e879f9;
+  --kind-group: #818cf8;
+  --kind-footnote: #facc15;
+  --kind-page_header: #a1a1aa;
+  --kind-page_footer: #a1a1aa;
+  --kind-caption: #a1a1aa;
+  --kind-field: #fbbf24;
+  --kind-default: #f87171;
+  --xml-tag: #4ec9b0;
+  --xml-bracket: #808080;
+  --xml-attr-name: #9cdcfe;
+  --xml-attr-value: #ce9178;
+  --xml-text: #d4d4d4;
+  --xml-cdata: #b5cea8;
+  --xml-cdata-delimiter: #808080;
+  --status-ok: #4ade80;
+  --status-error: #f87171;
+  --status-error-bg: #2d1519;
 }
 
 * {
@@ -3079,37 +3078,35 @@ pre.markup {
 /* fallback */
 .overlay .bbox-default { fill: color-mix(in srgb, var(--kind-default) 12%, transparent); stroke: var(--kind-default); }
 
-@media (prefers-color-scheme: dark) {
-  .overlay .bbox-text { fill: color-mix(in srgb, var(--kind-text) 20%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-text { fill: color-mix(in srgb, var(--kind-text) 20%, transparent); }
 
-  .overlay .bbox-heading { fill: color-mix(in srgb, var(--kind-heading) 20%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-heading { fill: color-mix(in srgb, var(--kind-heading) 20%, transparent); }
 
-  .overlay .bbox-list,
-  .overlay .bbox-ldiv { fill: color-mix(in srgb, var(--kind-list) 20%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-list,
+:root[data-theme="dark"] .overlay .bbox-ldiv { fill: color-mix(in srgb, var(--kind-list) 20%, transparent); }
 
-  .overlay .bbox-table { fill: color-mix(in srgb, var(--kind-table) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-table { fill: color-mix(in srgb, var(--kind-table) 18%, transparent); }
 
-  .overlay .bbox-index { fill: color-mix(in srgb, var(--kind-index) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-index { fill: color-mix(in srgb, var(--kind-index) 18%, transparent); }
 
-  .overlay .bbox-formula { fill: color-mix(in srgb, var(--kind-formula) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-formula { fill: color-mix(in srgb, var(--kind-formula) 18%, transparent); }
 
-  .overlay .bbox-code { fill: color-mix(in srgb, var(--kind-code) 20%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-code { fill: color-mix(in srgb, var(--kind-code) 20%, transparent); }
 
-  .overlay .bbox-picture { fill: color-mix(in srgb, var(--kind-picture) 20%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-picture { fill: color-mix(in srgb, var(--kind-picture) 20%, transparent); }
 
-  .overlay .bbox-group { fill: color-mix(in srgb, var(--kind-group) 20%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-group { fill: color-mix(in srgb, var(--kind-group) 20%, transparent); }
 
-  .overlay .bbox-footnote { fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-footnote { fill: color-mix(in srgb, var(--kind-footnote) 18%, transparent); }
 
-  .overlay .bbox-page_header,
-  .overlay .bbox-page_footer { fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-page_header,
+:root[data-theme="dark"] .overlay .bbox-page_footer { fill: color-mix(in srgb, var(--kind-page_header) 18%, transparent); }
 
-  .overlay .bbox-caption { fill: color-mix(in srgb, var(--kind-caption) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-caption { fill: color-mix(in srgb, var(--kind-caption) 18%, transparent); }
 
-  .overlay .bbox-field { fill: color-mix(in srgb, var(--kind-field) 18%, transparent); }
+:root[data-theme="dark"] .overlay .bbox-field { fill: color-mix(in srgb, var(--kind-field) 18%, transparent); }
 
-  .overlay .bbox-default { fill: color-mix(in srgb, var(--kind-default) 18%, transparent); }
-}
+:root[data-theme="dark"] .overlay .bbox-default { fill: color-mix(in srgb, var(--kind-default) 18%, transparent); }
 
 .empty-state {
   flex: 1 1 0;

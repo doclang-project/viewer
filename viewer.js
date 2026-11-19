@@ -458,6 +458,8 @@ const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
+const THEME_STORAGE_KEY = "doclang-viewer-theme"; // also read by the inline script in index.html
+const THEMES = ["system", "light", "dark"];
 const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
@@ -601,6 +603,8 @@ let paneRatios = [...DEFAULT_PANE_RATIOS];
 let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
 let hotkeysEnabled = true;
+let themePref = "system";
+const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
@@ -727,6 +731,7 @@ const els = {
   readingLayoutPagedBtn: document.getElementById("btn-reading-layout-paged"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
   toggleHotkeys: document.getElementById("toggle-hotkeys"),
+  themeToggle: document.getElementById("theme-toggle"),
   hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
@@ -1055,6 +1060,7 @@ loadLayoutPrefs();
 loadOverlayPrefs();
 removeUnavailableMarkup();
 initEditingToggle();
+initTheme();
 loadHotkeysPref();
 loadReadingLayoutMode();
 loadPageLayoutMode();
@@ -7172,6 +7178,46 @@ function resetOverlayPrefs() {
   persistOverlayPrefs();
   syncLayoutSubtoggles();
   if (state) renderPage(state.currentPage);
+}
+
+function initTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (THEMES.includes(stored)) themePref = stored;
+  } catch {
+    /* storage not accessible */
+  }
+  els.themeToggle?.addEventListener("click", (e) => {
+    const choice = e.target.closest("[data-theme-choice]")?.dataset.themeChoice;
+    if (!THEMES.includes(choice) || choice === themePref) return;
+    themePref = choice;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, themePref);
+    } catch {
+      /* ignore quota / private mode */
+    }
+    applyTheme();
+  });
+  systemDarkQuery.addEventListener("change", () => {
+    if (themePref === "system") applyTheme();
+  });
+  applyTheme();
+}
+
+/** Sets the resolved theme on the root and refreshes what was coloured from the theme in JS. */
+function applyTheme() {
+  for (const btn of els.themeToggle?.querySelectorAll("[data-theme-choice]") ?? []) {
+    btn.setAttribute("aria-pressed", String(btn.dataset.themeChoice === themePref));
+  }
+  const theme = themePref === "system" ? (systemDarkQuery.matches ? "dark" : "light") : themePref;
+  if (document.documentElement.dataset.theme === theme) return;
+  document.documentElement.dataset.theme = theme;
+  populateArrowStyleControls();
+  refreshArrowMarkers();
+  const bboxColor = els.readingBboxFields?.querySelector('[data-reading-bbox="color"]');
+  if (bboxColor && !readingBboxStyle.color) {
+    bboxColor.value = toHexColor(getComputedStyle(document.documentElement).getPropertyValue("--accent"));
+  }
 }
 
 function loadHotkeysPref() {

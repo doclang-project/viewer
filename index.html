@@ -11,6 +11,15 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="viewer.css">
+  <script>
+    // Set the theme before the first paint (viewer.js keeps it in step afterwards).
+    (() => {
+      let theme = "system";
+      try { theme = localStorage.getItem("doclang-viewer-theme") || theme; } catch { /* storage not accessible */ }
+      if (theme !== "light" && theme !== "dark") theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
 </head>
 <body class="demo-loading">
   <div id="cursor-hint" class="cursor-hint" role="tooltip" hidden></div>
@@ -173,6 +182,16 @@
                 aria-controls="help-overlay"
                 title="Keyboard shortcuts"
               >i</button>
+            </div>
+            <div class="toolbar-options-divider" role="separator"></div>
+            <div class="toolbar-options-heading">Appearance</div>
+            <div class="toolbar-options-row toolbar-options-choice">
+              <span class="toolbar-options-choice-label" id="theme-label">Theme</span>
+              <div class="view-toggle" id="theme-toggle" role="group" aria-labelledby="theme-label">
+                <button type="button" class="view-toggle-btn" data-theme-choice="system" title="Follow the system" aria-pressed="true">System</button>
+                <button type="button" class="view-toggle-btn" data-theme-choice="light" aria-pressed="false">Light</button>
+                <button type="button" class="view-toggle-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
+              </div>
             </div>
             <div class="toolbar-options-divider" role="separator"></div>
             <button type="button" class="toolbar-options-reset" id="btn-reset-all-settings" role="menuitem" title="Clear all saved settings of every pane and reload">
