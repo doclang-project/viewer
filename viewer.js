@@ -575,7 +575,7 @@ let readingSettingsOpen = false;
 let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** "single": one page at a time; "continuous": every page in one vertical stream, fit to the pane's width. */
-let pageLayoutMode = "single";
+let pageLayoutMode = "continuous";
 /** What 100% zoom is in the Original: "page", a whole page fits the pane; "width", a page fits its width. */
 let pageFitMode = "page";
 /**
@@ -8621,7 +8621,7 @@ function liveOverlaySvg() {
 
 function loadPageLayoutMode() {
   try {
-    if (localStorage.getItem(PAGE_LAYOUT_MODE_STORAGE_KEY) === "continuous") pageLayoutMode = "continuous";
+    if (localStorage.getItem(PAGE_LAYOUT_MODE_STORAGE_KEY) === "single") pageLayoutMode = "single";
     if (localStorage.getItem(PAGE_FIT_MODE_STORAGE_KEY) === "width") pageFitMode = "width";
   } catch {
     /* ignore unavailable storage */
