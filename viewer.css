@@ -54,6 +54,8 @@
     var(--file-thumb-size) +
     var(--file-thumb-close-overflow)) * 1.5
   );
+  /* Files on the left or right, with the names only (turned to read along the column). */
+  --file-pane-names-width: 2.75rem;
   --token-bg0: rgba(234, 179, 8, 0.22);
   --token-bg1: rgba(34, 197, 94, 0.22);
   --token-bg2: rgba(59, 130, 246, 0.22);
@@ -163,7 +165,7 @@ header {
 .header-brand {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem; /* as on the right side (.toolbar) */
   min-width: 0;
   grid-column: 1;
   justify-self: start;
@@ -277,6 +279,110 @@ header h1 {
   max-width: 100%;
 }
 
+/* Files in a row above or below the other panes (its splitter draws the line between): the files side by side,
+   scrolling sideways. */
+#main:is(.files-top, .files-bottom) #file-pane {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#main:is(.files-top, .files-bottom) .file-view-list {
+  flex-direction: row;
+  width: max-content;
+}
+
+#main:is(.files-top, .files-bottom) .file-view-list > li {
+  width: 8rem;
+  flex: 0 0 auto;
+}
+
+/* Names only (Files' splitter dragged towards it, on any side): no thumbnails; the unsaved-changes dot before the
+   name, × after it. In a row, each name takes the room it needs, up to a cap. */
+#main.files-names-only:is(.files-top, .files-bottom) .file-view-list > li {
+  width: auto;
+  max-width: 12rem;
+}
+
+#main.files-names-only .file-view-item {
+  flex-direction: row;
+  padding-block: 0.3rem;
+}
+
+#main.files-names-only .file-view-thumb-wrap {
+  display: contents;
+}
+
+#main.files-names-only .file-view-thumb {
+  display: none;
+}
+
+#main.files-names-only .file-view-dirty {
+  position: static;
+  order: -1;
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 0;
+}
+
+#main.files-names-only .file-view-label {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+#main.files-names-only .file-view-close {
+  position: static;
+  order: 1;
+  flex-shrink: 0;
+}
+
+/* Names only in a column on the left or right: each name turned to read along the column, facing the centre (upwards
+   on the left, downwards on the right), capped in length. The header keeps only Clear, as ×. */
+#main.files-names-only.files-side #file-pane {
+  padding-inline: 0.25rem;
+}
+
+#main.files-names-only.files-side .file-view-item {
+  writing-mode: vertical-rl;
+  padding: 0.5rem 0;
+  max-height: 12rem;
+}
+
+#main.files-names-only.files-side:not(.files-right) .file-view-item {
+  transform: rotate(180deg);
+}
+
+/* The × keeps the horizontal writing mode, so its glyph stays centred in the round button. */
+#main.files-names-only.files-side .file-view-close {
+  writing-mode: horizontal-tb;
+}
+
+#main.files-names-only.files-side .file-view-label {
+  min-height: 0;
+  line-height: 1.6; /* room for descenders and ascenders across the column */
+}
+
+#main.files-names-only.files-side .pane-file-header {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+#main.files-names-only.files-side .pane-file-header .pane-header-title {
+  display: none;
+}
+
+#main.files-names-only.files-side .file-pane-close-all {
+  font-size: 0;
+  letter-spacing: 0;
+}
+
+#main.files-names-only.files-side .file-pane-close-all::before {
+  content: "×";
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
 .file-view-item {
   display: flex;
   flex-direction: column;
@@ -286,7 +392,7 @@ header h1 {
   max-width: 100%;
   box-sizing: border-box;
   border: none;
-  border-radius: 0;
+  border-radius: 0.375rem; /* as the other controls */
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -730,17 +836,12 @@ body.viewer-loaded.drag-over .drop-banner {
   display: block;
 }
 
-.header-brand .page-nav {
-  margin-left: 0.25rem;
-}
-
 .header-brand .page-nav::before {
   content: "";
   flex-shrink: 0;
   align-self: center;
   width: 1px;
   height: 1.125rem;
-  margin-right: 0.75rem;
   background: var(--border);
 }
 
@@ -799,7 +900,7 @@ label.file-btn input {
 .page-nav {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .page-nav-btns {
@@ -907,6 +1008,7 @@ label.file-btn input {
 .view-toggle-btn {
   appearance: none;
   border: none;
+  border-radius: 0; /* the group rounds the outer corners; the dividers stay straight */
   background: transparent;
   color: var(--muted);
   font-size: 0.6875rem;
@@ -922,6 +1024,7 @@ label.file-btn input {
 }
 
 .view-toggle-btn:hover:not(:disabled) {
+  border-color: var(--border); /* the divider keeps its color: hover is shown by the fill */
   color: var(--text);
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
@@ -934,6 +1037,22 @@ label.file-btn input {
 .view-toggle-btn[aria-pressed="true"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.view-toggle-icon {
+  display: flex;
+  align-items: center;
+  padding: 0.15rem 0.35rem;
+}
+
+/* Taller than a checkbox label: let the icons reach into the row's padding, so Files is as tall as the other views. */
+#file-placement-toggle {
+  margin-block: -0.2rem;
+}
+
+/* The placement stays selectable while Files is hidden, but recedes. */
+.toolbar-options-row:has(#toggle-file-pane:not(:checked)) #file-placement-toggle {
+  opacity: 0.55;
 }
 
 .view-toggle-btn:focus-visible {
@@ -1625,6 +1744,37 @@ body.viewer-loaded #main:not(.layout-stacked) .pane {
 
 .pane-splitter[hidden] {
   display: none !important;
+}
+
+/* The splitter of Files on top or at the bottom: a row between it and the other panes. */
+.pane-splitter.is-row {
+  width: auto;
+  height: 1px;
+  margin: -4px 0;
+  padding: 4px 0;
+  cursor: row-resize;
+}
+
+.pane-splitter.is-row::after {
+  top: 4px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 1px;
+  transition: background 0.15s ease, height 0.15s ease;
+}
+
+.pane-splitter.is-row:hover::after,
+.pane-splitter.is-row:focus-visible::after,
+.pane-splitter.is-row.is-dragging::after {
+  width: auto;
+  height: 3px;
+}
+
+body.pane-drag-row,
+body.pane-drag-row .pane-splitter {
+  cursor: row-resize;
 }
 
 body.pane-drag-active {
@@ -2388,7 +2538,14 @@ button.validation-issue:focus-visible {
   min-width: 0;
 }
 
+/* The pages scroll right up to the pane's edges, its scrollbars at them too: the pane's padding moves inside. */
+#page-pane:has(> .page-view-port) {
+  padding: 0;
+}
+
 .page-view-port {
+  box-sizing: border-box;
+  padding: 0.75rem;
   display: flex;
   overflow: auto;
   flex: 1 1 auto;
@@ -2483,13 +2640,9 @@ svg.page-stream-connectors {
   user-select: none;
 }
 
+/* Focused for its keys (paging, panning), and like the other panes without a focus ring. */
 #page-pane:focus {
   outline: none;
-}
-
-#page-pane:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 .placeholder {

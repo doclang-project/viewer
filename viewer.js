@@ -575,7 +575,7 @@ let readingSettingsOpen = false;
 let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** "single": one page at a time; "continuous": every page in one vertical stream, fit to the pane's width. */
-let pageLayoutMode = "single";
+let pageLayoutMode = "continuous";
 /** What 100% zoom is in the Original: "page", a whole page fits the pane; "width", a page fits its width. */
 let pageFitMode = "page";
 /**
@@ -603,8 +603,24 @@ let pageLayoutCache = null;
 let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 /** @type {number[]} */
 let paneRatios = [...DEFAULT_PANE_RATIOS];
-/** @type {number | null} */
-let filePaneWidthPx = null;
+/** Where the Files pane sits: a column left or right of the other panes, or a row above or below them. */
+let filePanePlacement = "top";
+const FILE_PANE_PLACEMENTS = ["top", "bottom", "left", "right"]; // the rows, then the columns
+/**
+ * Files shows the file names only (no thumbnails), or thumbnails with names: its splitter snaps between the two. Kept
+ * per orientation: a row (top, bottom) starts with the names only, a column (left, right) with the thumbnails.
+ */
+const DEFAULT_FILE_NAMES_ONLY = { row: true, column: false };
+let fileNamesOnlyBy = { ...DEFAULT_FILE_NAMES_ONLY };
+
+function fileOrientation() {
+  return filePanePlacement === "top" || filePanePlacement === "bottom" ? "row" : "column";
+}
+
+function fileNamesOnly() {
+  return fileNamesOnlyBy[fileOrientation()];
+}
+
 let toolbarOptionsOpen = false;
 let hotkeysEnabled = true;
 let themePref = "system";
@@ -633,6 +649,7 @@ const els = {
   tokenNextBtn: document.getElementById("btn-token-next"),
   btnBboxPrev: document.getElementById("btn-bbox-prev"),
   btnBboxNext: document.getElementById("btn-bbox-next"),
+  btnFirst: document.getElementById("btn-first"),
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
@@ -736,6 +753,7 @@ const els = {
   readingLayoutPagedBtn: document.getElementById("btn-reading-layout-paged"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
   toggleHotkeys: document.getElementById("toggle-hotkeys"),
+  filePlacementToggle: document.getElementById("file-placement-toggle"),
   downloadFileBtn: document.getElementById("btn-download-file"),
   themeToggle: document.getElementById("theme-toggle"),
   hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
@@ -802,6 +820,7 @@ document.getElementById("input-archive")?.addEventListener("change", async (e) =
   await addFilesToCatalog(files);
   e.target.value = "";
 });
+els.btnFirst?.addEventListener("click", () => goToPage(1));
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
 els.btnBboxPrev?.addEventListener("click", () => navigateBbox("prev"));
@@ -990,12 +1009,12 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   toggleOverlayCheckbox(els[elsKey]);
 });
-// 1–4 show or hide the panes, numbered left to right.
+// 0 shows or hides Files (on whichever side it is), 1–3 the content panes, numbered left to right.
 const PANE_SHORTCUT_KEYS = {
-  1: "toggleFilePane",
-  2: "togglePagePane",
-  3: "toggleMarkupPane",
-  4: "toggleReadingPane",
+  0: "toggleFilePane",
+  1: "togglePagePane",
+  2: "toggleMarkupPane",
+  3: "toggleReadingPane",
 };
 document.addEventListener("keydown", (e) => {
   const elsKey = PANE_SHORTCUT_KEYS[e.key];
@@ -1702,7 +1721,6 @@ function syncFilePaneDefault() {
     if (!wasVisible && shouldBeVisible) {
       paneRatios = [...DEFAULT_PANE_RATIOS];
       normalizePaneRatios();
-      filePaneWidthPx = null;
     }
   }
 }
@@ -1790,6 +1808,7 @@ function renderFileView() {
     const label = document.createElement("span");
     label.className = "file-view-label";
     label.textContent = entry.label;
+    label.dataset.name = entry.label;
 
     card.append(thumbWrap, label);
     card.addEventListener("click", (e) => {
@@ -1808,7 +1827,41 @@ function renderFileView() {
   });
 
   els.filePane.appendChild(list);
+  fitFileLabels();
   activeCard?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+}
+
+/**
+ * A file name that doesn't fit is cut with "…", which also stands for its extension, to keep more of the name itself:
+ * my_final_quar… (the card's title has it whole).
+ */
+function fitFileLabels() {
+  for (const label of els.filePane?.querySelectorAll(".file-view-label[data-name]") ?? []) {
+    const name = label.dataset.name;
+    label.textContent = name;
+    const vertical = getComputedStyle(label).writingMode.startsWith("vertical"); // names turned in a side column
+    const fits = () => (vertical ? label.scrollHeight <= label.clientHeight : label.scrollWidth <= label.clientWidth);
+    if (fits()) continue;
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    let lo = 1;
+    let hi = dot > 0 ? stem.length : stem.length - 1; // with an extension, all of the name may fit before "…"
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      label.textContent = `${stem.slice(0, mid)}…`;
+      if (fits()) lo = mid;
+      else hi = mid - 1;
+    }
+    label.textContent = `${stem.slice(0, lo)}…`;
+  }
+}
+
+let fileLabelsFitFrame = 0;
+if (els.filePane) {
+  new ResizeObserver(() => {
+    cancelAnimationFrame(fileLabelsFitFrame);
+    fileLabelsFitFrame = requestAnimationFrame(fitFileLabels);
+  }).observe(els.filePane);
 }
 
 /** Downloads an open file as it is now: its applied edits included, in its own format. */
@@ -7082,6 +7135,7 @@ function resetViewer() {
   if (els.pagePane) els.pagePane.innerHTML = "";
   pageStream = null;
   setPageIndicator(1, 1);
+  if (els.btnFirst) els.btnFirst.disabled = true;
   if (els.btnPrev) els.btnPrev.disabled = true;
   if (els.btnNext) els.btnNext.disabled = true;
   if (els.filePane) els.filePane.replaceChildren();
@@ -7181,17 +7235,22 @@ function paneMinRatio(key) {
 }
 
 function filePaneFitWidthPx() {
+  return cssLengthPx("--file-pane-fit-width", 108);
+}
+
+/** A length custom property of the root, in pixels. */
+function cssLengthPx(name, fallback) {
   const probe = document.createElement("div");
-  probe.style.cssText = "position:absolute;visibility:hidden;width:var(--file-pane-fit-width);";
+  probe.style.cssText = `position:absolute;visibility:hidden;width:var(${name});`;
   document.documentElement.appendChild(probe);
   const px = probe.getBoundingClientRect().width;
   probe.remove();
-  return Math.ceil(px) || 108;
+  return Math.ceil(px) || fallback;
 }
 
+/** Files on the left or right: as wide as its thumbnails need, or narrower with the names only. */
 function resolvedFilePaneWidthPx() {
-  const fit = filePaneFitWidthPx();
-  return Math.max(fit, filePaneWidthPx ?? fit);
+  return fileNamesOnly() ? cssLengthPx("--file-pane-names-width", 120) : filePaneFitWidthPx();
 }
 
 function contentPaneFrWeights(keys) {
@@ -7241,8 +7300,9 @@ function loadLayoutPrefs() {
         normalizePaneRatios();
       }
     }
-    if (typeof data?.filePaneWidthPx === "number" && data.filePaneWidthPx > 0) {
-      filePaneWidthPx = data.filePaneWidthPx;
+    if (FILE_PANE_PLACEMENTS.includes(data?.filePanePlacement)) filePanePlacement = data.filePanePlacement;
+    for (const orientation of ["row", "column"]) {
+      if (typeof data?.fileNamesOnly?.[orientation] === "boolean") fileNamesOnlyBy[orientation] = data.fileNamesOnly[orientation];
     }
   } catch {
     /* ignore invalid stored layout */
@@ -7253,7 +7313,7 @@ function saveLayoutPrefs() {
   try {
     localStorage.setItem(
       LAYOUT_STORAGE_KEY,
-      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx }),
+      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePanePlacement, fileNamesOnly: fileNamesOnlyBy }),
     );
   } catch {
     /* ignore quota / private mode */
@@ -7495,7 +7555,8 @@ function resetPaneLayout() {
   };
   paneRatios = [...DEFAULT_PANE_RATIOS];
   normalizePaneRatios();
-  filePaneWidthPx = null;
+  filePanePlacement = "top";
+  fileNamesOnlyBy = { ...DEFAULT_FILE_NAMES_ONLY };
   setReadingSettingsOpen(false);
   syncPagePaneControls();
   syncToolbarPaneCheckboxes();
@@ -7609,6 +7670,11 @@ function visiblePaneNeighborBefore(key) {
 }
 
 function resolvedPhysicalSplitterKeys(physicalSplitterIndex) {
+  if (physicalSplitterIndex === 0 && filePanePlacement === "right") {
+    const keys = visiblePaneKeys();
+    const contentKeys = keys.filter((key) => key !== "file");
+    return keys.includes("file") && contentKeys.length ? { leftKey: contentKeys[contentKeys.length - 1], rightKey: "file" } : null;
+  }
   const leftPhysical = PANE_KEYS[physicalSplitterIndex];
   const rightPhysical = PANE_KEYS[physicalSplitterIndex + 1];
   if (!leftPhysical || !rightPhysical) return null;
@@ -7636,6 +7702,12 @@ function resetPaneGridStyles() {
     splitter.style.gridColumn = "";
     splitter.style.gridRow = "";
     splitter.hidden = true;
+    if (splitter.classList.contains("is-row")) {
+      splitter.classList.remove("is-row");
+      splitter.setAttribute("aria-orientation", "vertical");
+      splitter.setAttribute("aria-label", splitter.dataset.columnLabel ?? "");
+      splitter.removeAttribute("title");
+    }
   }
 }
 
@@ -7649,8 +7721,44 @@ function setUserPaneVisible(key, visible) {
   applyPaneLayout();
 }
 
+/** True when the Files pane takes a row of its own (above or below) rather than a column. */
+function filePaneInRow(keys) {
+  return (filePanePlacement === "top" || filePanePlacement === "bottom") && keys.includes("file") && keys.some((key) => key !== "file");
+}
+
+/**
+ * The splitter between two panes laid out side by side, or null. With Files on the right, the splitter that otherwise
+ * follows Files sits before it.
+ */
+function splitterBetween(leftKey, rightKey) {
+  if (filePanePlacement === "right" && (leftKey === "file" || rightKey === "file")) {
+    return rightKey === "file" && isPaneVisible(leftKey) && isPaneVisible("file") ? els.splitters[0] ?? null : null;
+  }
+  return splitterForLayoutGap(leftKey, rightKey);
+}
+
+/** The visible panes laid out side by side: without Files when it takes a row of its own. */
+function columnPaneKeys(keys) {
+  return filePaneInRow(keys) ? keys.filter((key) => key !== "file") : keys;
+}
+
+function syncFilePlacementButtons() {
+  for (const btn of els.filePlacementToggle?.querySelectorAll("[data-file-placement]") ?? []) {
+    btn.setAttribute("aria-pressed", String(btn.dataset.filePlacement === filePanePlacement));
+  }
+}
+
+function setFilePanePlacement(placement) {
+  if (!FILE_PANE_PLACEMENTS.includes(placement) || placement === filePanePlacement) return;
+  filePanePlacement = placement;
+  syncFilePlacementButtons();
+  saveLayoutPrefs();
+  applyPaneLayout();
+}
+
 function applyPaneLayout() {
   if (!els.main) return;
+  syncFilePlacementButtons();
 
   const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
   els.main.classList.toggle("layout-stacked", stacked);
@@ -7674,6 +7782,15 @@ function applyPaneLayout() {
     userPaneVisible.markup = true;
     keys = visiblePaneKeys();
   }
+  const fileRow = filePaneInRow(keys) ? filePanePlacement : null;
+  els.main.classList.toggle("files-top", fileRow === "top");
+  els.main.classList.toggle("files-bottom", fileRow === "bottom");
+  els.main.classList.toggle("files-names-only", fileNamesOnly() && keys.includes("file"));
+  // A column beside the other panes (not stacked): with the names only, they turn to read along it, facing the centre.
+  const fileSide = !fileRow && !stacked && keys.includes("file") && keys.length > 1;
+  els.main.classList.toggle("files-side", fileSide);
+  els.main.classList.toggle("files-right", fileSide && filePanePlacement === "right");
+  if (fileRow === "bottom") keys = [...keys.filter((key) => key !== "file"), "file"];
 
   const lastKey = keys[keys.length - 1];
   paneDef(lastKey)?.el?.classList.add("pane-layout-last");
@@ -7696,6 +7813,9 @@ function applyPaneLayout() {
     return;
   }
 
+  const fileEl = paneDef("file")?.el;
+  if (fileRow) keys = columnPaneKeys(keys);
+  else if (filePanePlacement === "right" && keys.includes("file")) keys = [...keys.filter((key) => key !== "file"), "file"];
   const contentFr = contentPaneFrWeights(keys);
   const cols = [];
   let contentFrIndex = 0;
@@ -7705,27 +7825,43 @@ function applyPaneLayout() {
     } else {
       cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
     }
-    if (index < keys.length - 1 && shouldShowSplitterBetween(keys[index], keys[index + 1])) {
+    if (index < keys.length - 1 && splitterBetween(keys[index], keys[index + 1])) {
       cols.push("1px");
     }
   });
   els.main.style.gridTemplateColumns = cols.join(" ");
-  els.main.style.gridTemplateRows = "minmax(0, 1fr)";
+  // Files in a row of its own, with its splitter in a row between it and the panes side by side.
+  els.main.style.gridTemplateRows = fileRow === "top" ? "auto 1px minmax(0, 1fr)" : fileRow === "bottom" ? "minmax(0, 1fr) 1px auto" : "minmax(0, 1fr)";
+  const columnsRow = fileRow === "top" ? "3" : "1";
+  if (fileRow && fileEl) {
+    fileEl.style.gridColumn = "1 / -1";
+    fileEl.style.gridRow = fileRow === "top" ? "1" : "3";
+    const splitter = els.splitters[0];
+    if (splitter) {
+      splitter.hidden = false;
+      splitter.dataset.columnLabel ??= splitter.getAttribute("aria-label") ?? "";
+      splitter.classList.add("is-row");
+      splitter.setAttribute("aria-orientation", "horizontal");
+      splitter.setAttribute("aria-label", "Show or hide the file thumbnails");
+      splitter.title = "Drag to show or hide the file thumbnails";
+      splitter.style.gridColumn = "1 / -1";
+      splitter.style.gridRow = "2";
+    }
+  }
 
   let col = 1;
   keys.forEach((key, index) => {
     const def = paneDef(key);
     if (!def?.el) return;
     def.el.style.gridColumn = String(col);
+    def.el.style.gridRow = columnsRow;
     col += 1;
     if (index < keys.length - 1) {
-      const leftKey = keys[index];
-      const rightKey = keys[index + 1];
-      if (!shouldShowSplitterBetween(leftKey, rightKey)) return;
-      const splitter = splitterForLayoutGap(leftKey, rightKey);
+      const splitter = splitterBetween(keys[index], keys[index + 1]);
       if (splitter) {
         splitter.hidden = false;
         splitter.style.gridColumn = String(col);
+        splitter.style.gridRow = columnsRow;
         col += 1;
       }
     }
@@ -7770,6 +7906,9 @@ function initToolbarOptions() {
   onToggle("markup", els.toggleMarkupPane);
   onToggle("reading", els.toggleReadingPane);
   document.getElementById("btn-reset-all-settings")?.addEventListener("click", resetAllSettings);
+  els.filePlacementToggle?.addEventListener("click", (e) => {
+    setFilePanePlacement(e.target.closest("[data-file-placement]")?.dataset.filePlacement);
+  });
   els.resetPaneLayoutBtn?.addEventListener("click", () => {
     if (!state) return;
     resetPaneLayout();
@@ -7816,11 +7955,19 @@ function initPaneSplitters() {
 
 function startPaneDrag(e, physicalSplitterIndex) {
   if (e.button !== 0 || isLayoutStacked() || !document.body.classList.contains("viewer-loaded")) return;
+  if (physicalSplitterIndex === 0 && e.currentTarget.classList.contains("is-row")) {
+    startFileSnapDrag(e, "y", filePanePlacement === "top" ? 1 : -1);
+    return;
+  }
 
   const resolved = resolvedPhysicalSplitterKeys(physicalSplitterIndex);
   if (!resolved) return;
 
   const { leftKey, rightKey } = resolved;
+  if (leftKey === "file" || rightKey === "file") {
+    startFileSnapDrag(e, "x", leftKey === "file" ? 1 : -1);
+    return;
+  }
 
   normalizePaneRatios();
   const leftIndex = paneRatioIndex(leftKey);
@@ -7834,11 +7981,6 @@ function startPaneDrag(e, physicalSplitterIndex) {
     rightStart: paneRatios[rightIndex],
     pointerId: e.pointerId,
   };
-  if (leftKey === "file") {
-    dragState.leftStartPx = resolvedFilePaneWidthPx();
-  } else if (rightKey === "file") {
-    dragState.rightStartPx = resolvedFilePaneWidthPx();
-  }
   paneDrag = dragState;
 
   e.preventDefault();
@@ -7850,7 +7992,7 @@ function startPaneDrag(e, physicalSplitterIndex) {
 function contentPaneAvailableWidthPx() {
   if (!els.main) return 1;
   const rect = els.main.getBoundingClientRect();
-  const keys = visiblePaneKeys();
+  const keys = columnPaneKeys(visiblePaneKeys());
   let reserved = 0;
   if (keys.includes("file")) reserved += resolvedFilePaneWidthPx();
   for (let i = 0; i < keys.length - 1; i++) {
@@ -7859,17 +8001,33 @@ function contentPaneAvailableWidthPx() {
   return Math.max(rect.width - reserved, 1);
 }
 
+/**
+ * Dragging the splitter of Files (on any side) does not size it freely: it snaps between thumbnails with names, and the
+ * names only, once dragged half a thumbnail's size. `grows` is the direction (+1/-1) in which Files grows along `axis`.
+ */
+function startFileSnapDrag(e, axis, grows) {
+  const physicalSplitterIndex = els.splitters.indexOf(e.currentTarget);
+  paneDrag = { physicalSplitterIndex, fileSnap: true, axis, grows, start: axis === "y" ? e.clientY : e.clientX, startNamesOnly: fileNamesOnly(), pointerId: e.pointerId };
+  e.preventDefault();
+  e.currentTarget.setPointerCapture(e.pointerId);
+  e.currentTarget.classList.add("is-dragging");
+  document.body.classList.add("pane-drag-active");
+  if (axis === "y") document.body.classList.add("pane-drag-row");
+}
+
+function onFileSnapDragMove(e) {
+  const grow = ((paneDrag.axis === "y" ? e.clientY : e.clientX) - paneDrag.start) * paneDrag.grows;
+  const snapAt = (document.querySelector(".file-view-thumb")?.offsetHeight || 60) / 2;
+  const namesOnly = paneDrag.startNamesOnly ? grow < snapAt : grow < -snapAt;
+  if (namesOnly === fileNamesOnly()) return;
+  fileNamesOnlyBy[fileOrientation()] = namesOnly;
+  applyPaneLayout();
+}
+
 function onPaneDragMove(e) {
   if (!paneDrag || e.pointerId !== paneDrag.pointerId || !els.main) return;
-
-  if (paneDrag.leftKey === "file" && typeof paneDrag.leftStartPx === "number") {
-    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.leftStartPx + (e.clientX - paneDrag.startX));
-    applyPaneLayout();
-    return;
-  }
-  if (paneDrag.rightKey === "file" && typeof paneDrag.rightStartPx === "number") {
-    filePaneWidthPx = Math.max(filePaneFitWidthPx(), paneDrag.rightStartPx - (e.clientX - paneDrag.startX));
-    applyPaneLayout();
+  if (paneDrag.fileSnap) {
+    onFileSnapDragMove(e);
     return;
   }
 
@@ -7905,7 +8063,7 @@ function endPaneDrag(e) {
   splitter?.classList.remove("is-dragging");
   if (splitter?.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
   paneDrag = null;
-  document.body.classList.remove("pane-drag-active");
+  document.body.classList.remove("pane-drag-active", "pane-drag-row");
   normalizePaneRatios();
   saveLayoutPrefs();
 }
@@ -7960,6 +8118,7 @@ function renderPage(pageNum) {
   selectedElementId = null;
 
   setPageIndicator(pageNum, pageCount);
+  if (els.btnFirst) els.btnFirst.disabled = pageNum <= 1;
   if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
   if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
   updateBboxNavButtons();
@@ -8462,7 +8621,7 @@ function liveOverlaySvg() {
 
 function loadPageLayoutMode() {
   try {
-    if (localStorage.getItem(PAGE_LAYOUT_MODE_STORAGE_KEY) === "continuous") pageLayoutMode = "continuous";
+    if (localStorage.getItem(PAGE_LAYOUT_MODE_STORAGE_KEY) === "single") pageLayoutMode = "single";
     if (localStorage.getItem(PAGE_FIT_MODE_STORAGE_KEY) === "width") pageFitMode = "width";
   } catch {
     /* ignore unavailable storage */
@@ -8503,7 +8662,12 @@ function setPageFitMode(mode) {
 /** The room a page of the Original has at 100%: its scrolling area, inside the scrollbar gutter and the page border. */
 function pageFitArea() {
   const port = els.pagePane?.querySelector(".page-view-port");
-  const { w, h } = port ? { w: port.clientWidth, h: port.clientHeight } : paneContentSize(els.pagePane);
+  let { w, h } = port ? { w: port.clientWidth, h: port.clientHeight } : paneContentSize(els.pagePane);
+  if (port) {
+    const style = getComputedStyle(port); // the pages' inset, inside the scrolling area
+    w -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  }
   return { w: w - PAGE_VIEW_BORDER_PX, h: h - PAGE_VIEW_BORDER_PX };
 }
 
@@ -8843,7 +9007,9 @@ function scrollStreamToPage(pageNum) {
   const page = pageStream?.pages[pageNum - 1];
   if (!page) return;
   const port = pageStream.port;
-  port.scrollTop += page.wrap.getBoundingClientRect().top - port.getBoundingClientRect().top;
+  // The page lands below the stream's top padding, as the first one starts out: page 1 is at the very top.
+  const inset = parseFloat(getComputedStyle(port).paddingTop) || 0;
+  port.scrollTop += page.wrap.getBoundingClientRect().top - port.getBoundingClientRect().top - inset;
   pageStream.sticky = { page: pageNum, scrollTop: port.scrollTop };
 }
 

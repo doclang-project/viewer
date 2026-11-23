@@ -32,6 +32,11 @@
       <h1>DocLang Viewer</h1>
       <nav class="page-nav" id="page-nav" hidden>
         <div class="page-nav-btns">
+          <button type="button" id="btn-first" class="page-nav-btn" disabled aria-label="First page" title="First page">
+            <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path d="M4 3.5v9M11.5 3.5 6.5 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
           <button type="button" id="btn-prev" class="page-nav-btn" disabled aria-label="Previous page" title="Previous page">
             <svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path d="M10.5 3.5 5.5 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -96,10 +101,18 @@
           <div class="toolbar-options-body">
             <div class="toolbar-options-heading">Views</div>
             <div class="toolbar-options-submenu">
-              <label class="toolbar-options-item" id="toggle-file-pane-label">
-                <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
-                <span>Files</span>
-              </label>
+              <div class="toolbar-options-row">
+                <label class="toolbar-options-item toolbar-options-item-flex" id="toggle-file-pane-label">
+                  <input type="checkbox" id="toggle-file-pane" checked role="menuitemcheckbox">
+                  <span>Files</span>
+                </label>
+                <div class="view-toggle" id="file-placement-toggle" role="group" aria-label="Files placement">
+                  <button type="button" class="view-toggle-btn view-toggle-icon" data-file-placement="top" title="Files on top" aria-label="Files on top" aria-pressed="true"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25"/><rect x="1.5" y="2.5" width="13" height="3.75" rx="1" fill="currentColor"/></svg></button>
+                  <button type="button" class="view-toggle-btn view-toggle-icon" data-file-placement="bottom" title="Files at the bottom" aria-label="Files at the bottom" aria-pressed="false"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25"/><rect x="1.5" y="9.75" width="13" height="3.75" rx="1" fill="currentColor"/></svg></button>
+                  <button type="button" class="view-toggle-btn view-toggle-icon" data-file-placement="left" title="Files on the left" aria-label="Files on the left" aria-pressed="false"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25"/><rect x="1.5" y="2.5" width="4.5" height="11" rx="1" fill="currentColor"/></svg></button>
+                  <button type="button" class="view-toggle-btn view-toggle-icon" data-file-placement="right" title="Files on the right" aria-label="Files on the right" aria-pressed="false"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25"/><rect x="10" y="2.5" width="4.5" height="11" rx="1" fill="currentColor"/></svg></button>
+                </div>
+              </div>
               <label class="toolbar-options-item" id="toggle-page-pane-label">
                 <input type="checkbox" id="toggle-page-pane" checked role="menuitemcheckbox">
                 <span>Original</span>
@@ -120,21 +133,21 @@
             <div class="toolbar-options-divider" role="separator"></div>
             <div class="toolbar-options-heading">Pages</div>
             <div class="toolbar-options-row toolbar-options-choice">
-              <span class="toolbar-options-choice-label" id="page-layout-label">Layout</span>
+              <span class="toolbar-options-choice-label" id="page-layout-label">Display</span>
               <div class="view-toggle" id="page-layout-toggle" role="group" aria-labelledby="page-layout-label">
                 <button
                   type="button"
                   class="view-toggle-btn"
                   id="btn-page-layout-single"
                   title="Every pane shows one page at a time"
-                  aria-pressed="true"
+                  aria-pressed="false"
                 >Single</button>
                 <button
                   type="button"
                   class="view-toggle-btn"
                   id="btn-page-layout-continuous"
                   title="All pages, one after the other, in the Original, the DocLang and the Flowing Preview (the Paged Preview shows the current page); the page at the centre of the pane you scroll is the current one"
-                  aria-pressed="false"
+                  aria-pressed="true"
                 >Continuous</button>
               </div>
             </div>
@@ -281,19 +294,19 @@
           <h3>Panes</h3>
           <div class="help-shortcut-list">
             <div class="help-shortcut-row">
-              <span class="help-shortcut-keys"><kbd>1</kbd></span>
+              <span class="help-shortcut-keys"><kbd>0</kbd></span>
               <span class="help-shortcut-desc">Show / hide Files</span>
             </div>
             <div class="help-shortcut-row">
-              <span class="help-shortcut-keys"><kbd>2</kbd></span>
+              <span class="help-shortcut-keys"><kbd>1</kbd></span>
               <span class="help-shortcut-desc">Show / hide Original</span>
             </div>
             <div class="help-shortcut-row">
-              <span class="help-shortcut-keys"><kbd>3</kbd></span>
+              <span class="help-shortcut-keys"><kbd>2</kbd></span>
               <span class="help-shortcut-desc">Show / hide DocLang</span>
             </div>
             <div class="help-shortcut-row">
-              <span class="help-shortcut-keys"><kbd>4</kbd></span>
+              <span class="help-shortcut-keys"><kbd>3</kbd></span>
               <span class="help-shortcut-desc">Show / hide Preview</span>
             </div>
           </div>
@@ -418,6 +431,7 @@
           id="btn-file-pane-close-all"
           hidden
           aria-label="Clear all open files"
+          title="Clear all open files"
         >Clear</button>
       </div>
       <div class="pane-body" id="file-pane"></div>
