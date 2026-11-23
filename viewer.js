@@ -605,7 +605,7 @@ let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 let paneRatios = [...DEFAULT_PANE_RATIOS];
 /** Where the Files pane sits: a column left or right of the other panes, or a row above or below them. */
 let filePanePlacement = "top";
-const FILE_PANE_PLACEMENTS = ["top", "right", "bottom", "left"]; // clockwise from the top, as in CSS
+const FILE_PANE_PLACEMENTS = ["top", "bottom", "left", "right"]; // the rows, then the columns
 /**
  * Files shows the file names only (no thumbnails), or thumbnails with names: its splitter snaps between the two. Kept
  * per orientation: a row (top, bottom) starts with the names only, a column (left, right) with the thumbnails.
