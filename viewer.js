@@ -19,8 +19,9 @@ const FEATURE_DEFAULTS = {
   editing: "on",
   "editing.ocr": "always",
   tokens: "off", // opt-in
+  demo: "on", // the demo when the viewer opens without a file; `never` also drops the start screen's "load demo"
 };
-const SWITCHABLE_FEATURES = new Set(["editing", "tokens"]);
+const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo"]);
 // Saved per deployment path, so deployments under different paths of one domain keep their own choices.
 const FEATURE_CHOICES_STORAGE_KEY = `doclang-viewer-feature-choices:${location.pathname.replace(/[^/]*$/, "")}`;
 const resolvedFeatures = resolveFeatures();
@@ -763,7 +764,6 @@ const els = {
   validationClose: document.getElementById("btn-validation-close"),
 };
 
-document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
 document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   loadDemo();
@@ -1065,6 +1065,7 @@ loadLayoutPrefs();
 loadOverlayPrefs();
 removeUnavailableMarkup();
 initEditingToggle();
+initDemoToggle();
 initTheme();
 loadHotkeysPref();
 loadReadingLayoutMode();
@@ -1100,14 +1101,14 @@ initOpenerHandoff();
 
 function setDemoLoading(loading) {
   document.body.classList.toggle("demo-loading", loading);
-  const btnDemo = document.getElementById("btn-demo");
-  if (btnDemo) btnDemo.disabled = loading;
 }
 
 // A file-handling launch (see initFileHandling) or an opener handoff (see
 // initOpenerHandoff) sets suppressDemoLoad synchronously, before this runs.
 setTimeout(() => {
-  if (!suppressDemoLoad && document.getElementById("btn-demo")) loadDemo();
+  if (suppressDemoLoad) return;
+  if (startsOn("demo")) loadDemo();
+  else setDemoLoading(false); // the page starts out showing "Loading demo…": the start screen instead
 }, 0);
 
 async function loadDemo() {
@@ -1153,7 +1154,7 @@ async function loadDemo() {
     );
   } finally {
     demoLoadInProgress = false;
-    setDemoLoading(false); // the button too: it stayed disabled once the demo had opened
+    setDemoLoading(false);
   }
 }
 
@@ -4149,6 +4150,14 @@ function setEditingOn(on) {
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
   syncEditUi();
   if (on) resumeRawView();
+}
+
+/** The demo switch only decides the next launch: it loads or closes nothing now. */
+function initDemoToggle() {
+  const toggle = document.getElementById("toggle-demo");
+  if (!toggle) return;
+  toggle.checked = startsOn("demo");
+  toggle.addEventListener("change", () => saveFeatureChoice("demo", toggle.checked));
 }
 
 function initEditingToggle() {
