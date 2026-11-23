@@ -163,7 +163,7 @@ header {
 .header-brand {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem; /* as on the right side (.toolbar) */
   min-width: 0;
   grid-column: 1;
   justify-self: start;
@@ -275,6 +275,30 @@ header h1 {
 .file-view-list > li {
   width: 100%;
   max-width: 100%;
+}
+
+/* Files in a row above or below the other panes: the files side by side, scrolling sideways. */
+#main.files-top .pane-file {
+  border-bottom: 1px solid var(--border);
+}
+
+#main.files-bottom .pane-file {
+  border-top: 1px solid var(--border);
+}
+
+#main:is(.files-top, .files-bottom) #file-pane {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#main:is(.files-top, .files-bottom) .file-view-list {
+  flex-direction: row;
+  width: max-content;
+}
+
+#main:is(.files-top, .files-bottom) .file-view-list > li {
+  width: 8rem;
+  flex: 0 0 auto;
 }
 
 .file-view-item {
@@ -730,17 +754,12 @@ body.viewer-loaded.drag-over .drop-banner {
   display: block;
 }
 
-.header-brand .page-nav {
-  margin-left: 0.25rem;
-}
-
 .header-brand .page-nav::before {
   content: "";
   flex-shrink: 0;
   align-self: center;
   width: 1px;
   height: 1.125rem;
-  margin-right: 0.75rem;
   background: var(--border);
 }
 
@@ -799,7 +818,7 @@ label.file-btn input {
 .page-nav {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .page-nav-btns {
@@ -907,6 +926,7 @@ label.file-btn input {
 .view-toggle-btn {
   appearance: none;
   border: none;
+  border-radius: 0; /* the group rounds the outer corners; the dividers stay straight */
   background: transparent;
   color: var(--muted);
   font-size: 0.6875rem;
@@ -922,6 +942,7 @@ label.file-btn input {
 }
 
 .view-toggle-btn:hover:not(:disabled) {
+  border-color: var(--border); /* the divider keeps its color: hover is shown by the fill */
   color: var(--text);
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
@@ -934,6 +955,22 @@ label.file-btn input {
 .view-toggle-btn[aria-pressed="true"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.view-toggle-icon {
+  display: flex;
+  align-items: center;
+  padding: 0.15rem 0.35rem;
+}
+
+/* Taller than a checkbox label: let the icons reach into the row's padding, so Files is as tall as the other views. */
+#file-placement-toggle {
+  margin-block: -0.2rem;
+}
+
+/* The placement stays selectable while Files is hidden, but recedes. */
+.toolbar-options-row:has(#toggle-file-pane:not(:checked)) #file-placement-toggle {
+  opacity: 0.55;
 }
 
 .view-toggle-btn:focus-visible {
@@ -2439,9 +2476,16 @@ button.validation-issue:focus-visible {
   content: attr(data-page-label);
 }
 
-/* Continuous layout: the pages one above the other, centred when narrower than the pane. */
+/* Continuous layout: the pages one above the other, centred when narrower than the pane. They scroll right up to the
+   pane's top and bottom edges: its padding there moves inside the scrolling area. */
+#page-pane:has(> .page-view-port.page-stream) {
+  padding-block: 0;
+}
+
 .page-view-port.page-stream {
   display: block;
+  box-sizing: border-box;
+  padding-block: 0.75rem;
   /* The stream keeps the centre of the view in place itself when pages are resized. */
   overflow-anchor: none;
 }

@@ -605,6 +605,9 @@ let userPaneVisible = { ...DEFAULT_USER_PANE_VISIBLE };
 let paneRatios = [...DEFAULT_PANE_RATIOS];
 /** @type {number | null} */
 let filePaneWidthPx = null;
+/** Where the Files pane sits: a column left or right of the other panes, or a row above or below them. */
+let filePanePlacement = "left";
+const FILE_PANE_PLACEMENTS = ["left", "right", "top", "bottom"];
 let toolbarOptionsOpen = false;
 let hotkeysEnabled = true;
 let themePref = "system";
@@ -633,6 +636,7 @@ const els = {
   tokenNextBtn: document.getElementById("btn-token-next"),
   btnBboxPrev: document.getElementById("btn-bbox-prev"),
   btnBboxNext: document.getElementById("btn-bbox-next"),
+  btnFirst: document.getElementById("btn-first"),
   btnPrev: document.getElementById("btn-prev"),
   btnNext: document.getElementById("btn-next"),
   showAllBboxes: document.getElementById("show-all-bboxes"),
@@ -736,6 +740,7 @@ const els = {
   readingLayoutPagedBtn: document.getElementById("btn-reading-layout-paged"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
   toggleHotkeys: document.getElementById("toggle-hotkeys"),
+  filePlacementToggle: document.getElementById("file-placement-toggle"),
   downloadFileBtn: document.getElementById("btn-download-file"),
   themeToggle: document.getElementById("theme-toggle"),
   hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
@@ -802,6 +807,7 @@ document.getElementById("input-archive")?.addEventListener("change", async (e) =
   await addFilesToCatalog(files);
   e.target.value = "";
 });
+els.btnFirst?.addEventListener("click", () => goToPage(1));
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.btnNext?.addEventListener("click", () => goToPage(state.currentPage + 1));
 els.btnBboxPrev?.addEventListener("click", () => navigateBbox("prev"));
@@ -7082,6 +7088,7 @@ function resetViewer() {
   if (els.pagePane) els.pagePane.innerHTML = "";
   pageStream = null;
   setPageIndicator(1, 1);
+  if (els.btnFirst) els.btnFirst.disabled = true;
   if (els.btnPrev) els.btnPrev.disabled = true;
   if (els.btnNext) els.btnNext.disabled = true;
   if (els.filePane) els.filePane.replaceChildren();
@@ -7244,6 +7251,7 @@ function loadLayoutPrefs() {
     if (typeof data?.filePaneWidthPx === "number" && data.filePaneWidthPx > 0) {
       filePaneWidthPx = data.filePaneWidthPx;
     }
+    if (FILE_PANE_PLACEMENTS.includes(data?.filePanePlacement)) filePanePlacement = data.filePanePlacement;
   } catch {
     /* ignore invalid stored layout */
   }
@@ -7253,7 +7261,7 @@ function saveLayoutPrefs() {
   try {
     localStorage.setItem(
       LAYOUT_STORAGE_KEY,
-      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx }),
+      JSON.stringify({ visible: userPaneVisible, ratios: paneRatios, filePaneWidthPx, filePanePlacement }),
     );
   } catch {
     /* ignore quota / private mode */
@@ -7496,6 +7504,7 @@ function resetPaneLayout() {
   paneRatios = [...DEFAULT_PANE_RATIOS];
   normalizePaneRatios();
   filePaneWidthPx = null;
+  filePanePlacement = "left";
   setReadingSettingsOpen(false);
   syncPagePaneControls();
   syncToolbarPaneCheckboxes();
@@ -7609,6 +7618,11 @@ function visiblePaneNeighborBefore(key) {
 }
 
 function resolvedPhysicalSplitterKeys(physicalSplitterIndex) {
+  if (physicalSplitterIndex === 0 && filePanePlacement === "right") {
+    const keys = visiblePaneKeys();
+    const contentKeys = keys.filter((key) => key !== "file");
+    return keys.includes("file") && contentKeys.length ? { leftKey: contentKeys[contentKeys.length - 1], rightKey: "file" } : null;
+  }
   const leftPhysical = PANE_KEYS[physicalSplitterIndex];
   const rightPhysical = PANE_KEYS[physicalSplitterIndex + 1];
   if (!leftPhysical || !rightPhysical) return null;
@@ -7649,8 +7663,44 @@ function setUserPaneVisible(key, visible) {
   applyPaneLayout();
 }
 
+/** True when the Files pane takes a row of its own (above or below) rather than a column. */
+function filePaneInRow(keys) {
+  return (filePanePlacement === "top" || filePanePlacement === "bottom") && keys.includes("file") && keys.some((key) => key !== "file");
+}
+
+/**
+ * The splitter between two panes laid out side by side, or null. With Files on the right, the splitter that otherwise
+ * follows Files sits before it.
+ */
+function splitterBetween(leftKey, rightKey) {
+  if (filePanePlacement === "right" && (leftKey === "file" || rightKey === "file")) {
+    return rightKey === "file" && isPaneVisible(leftKey) && isPaneVisible("file") ? els.splitters[0] ?? null : null;
+  }
+  return splitterForLayoutGap(leftKey, rightKey);
+}
+
+/** The visible panes laid out side by side: without Files when it takes a row of its own. */
+function columnPaneKeys(keys) {
+  return filePaneInRow(keys) ? keys.filter((key) => key !== "file") : keys;
+}
+
+function syncFilePlacementButtons() {
+  for (const btn of els.filePlacementToggle?.querySelectorAll("[data-file-placement]") ?? []) {
+    btn.setAttribute("aria-pressed", String(btn.dataset.filePlacement === filePanePlacement));
+  }
+}
+
+function setFilePanePlacement(placement) {
+  if (!FILE_PANE_PLACEMENTS.includes(placement) || placement === filePanePlacement) return;
+  filePanePlacement = placement;
+  syncFilePlacementButtons();
+  saveLayoutPrefs();
+  applyPaneLayout();
+}
+
 function applyPaneLayout() {
   if (!els.main) return;
+  syncFilePlacementButtons();
 
   const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
   els.main.classList.toggle("layout-stacked", stacked);
@@ -7674,6 +7724,10 @@ function applyPaneLayout() {
     userPaneVisible.markup = true;
     keys = visiblePaneKeys();
   }
+  const fileRow = filePaneInRow(keys) ? filePanePlacement : null;
+  els.main.classList.toggle("files-top", fileRow === "top");
+  els.main.classList.toggle("files-bottom", fileRow === "bottom");
+  if (fileRow === "bottom") keys = [...keys.filter((key) => key !== "file"), "file"];
 
   const lastKey = keys[keys.length - 1];
   paneDef(lastKey)?.el?.classList.add("pane-layout-last");
@@ -7696,6 +7750,9 @@ function applyPaneLayout() {
     return;
   }
 
+  const fileEl = paneDef("file")?.el;
+  if (fileRow) keys = columnPaneKeys(keys);
+  else if (filePanePlacement === "right" && keys.includes("file")) keys = [...keys.filter((key) => key !== "file"), "file"];
   const contentFr = contentPaneFrWeights(keys);
   const cols = [];
   let contentFrIndex = 0;
@@ -7705,27 +7762,31 @@ function applyPaneLayout() {
     } else {
       cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
     }
-    if (index < keys.length - 1 && shouldShowSplitterBetween(keys[index], keys[index + 1])) {
+    if (index < keys.length - 1 && splitterBetween(keys[index], keys[index + 1])) {
       cols.push("1px");
     }
   });
   els.main.style.gridTemplateColumns = cols.join(" ");
-  els.main.style.gridTemplateRows = "minmax(0, 1fr)";
+  els.main.style.gridTemplateRows = fileRow === "top" ? "auto minmax(0, 1fr)" : fileRow === "bottom" ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)";
+  const columnsRow = fileRow === "top" ? "2" : "1";
+  if (fileRow && fileEl) {
+    fileEl.style.gridColumn = "1 / -1";
+    fileEl.style.gridRow = fileRow === "top" ? "1" : "2";
+  }
 
   let col = 1;
   keys.forEach((key, index) => {
     const def = paneDef(key);
     if (!def?.el) return;
     def.el.style.gridColumn = String(col);
+    def.el.style.gridRow = columnsRow;
     col += 1;
     if (index < keys.length - 1) {
-      const leftKey = keys[index];
-      const rightKey = keys[index + 1];
-      if (!shouldShowSplitterBetween(leftKey, rightKey)) return;
-      const splitter = splitterForLayoutGap(leftKey, rightKey);
+      const splitter = splitterBetween(keys[index], keys[index + 1]);
       if (splitter) {
         splitter.hidden = false;
         splitter.style.gridColumn = String(col);
+        splitter.style.gridRow = columnsRow;
         col += 1;
       }
     }
@@ -7770,6 +7831,9 @@ function initToolbarOptions() {
   onToggle("markup", els.toggleMarkupPane);
   onToggle("reading", els.toggleReadingPane);
   document.getElementById("btn-reset-all-settings")?.addEventListener("click", resetAllSettings);
+  els.filePlacementToggle?.addEventListener("click", (e) => {
+    setFilePanePlacement(e.target.closest("[data-file-placement]")?.dataset.filePlacement);
+  });
   els.resetPaneLayoutBtn?.addEventListener("click", () => {
     if (!state) return;
     resetPaneLayout();
@@ -7850,7 +7914,7 @@ function startPaneDrag(e, physicalSplitterIndex) {
 function contentPaneAvailableWidthPx() {
   if (!els.main) return 1;
   const rect = els.main.getBoundingClientRect();
-  const keys = visiblePaneKeys();
+  const keys = columnPaneKeys(visiblePaneKeys());
   let reserved = 0;
   if (keys.includes("file")) reserved += resolvedFilePaneWidthPx();
   for (let i = 0; i < keys.length - 1; i++) {
@@ -7960,6 +8024,7 @@ function renderPage(pageNum) {
   selectedElementId = null;
 
   setPageIndicator(pageNum, pageCount);
+  if (els.btnFirst) els.btnFirst.disabled = pageNum <= 1;
   if (els.btnPrev) els.btnPrev.disabled = pageNum <= 1;
   if (els.btnNext) els.btnNext.disabled = pageNum >= pageCount;
   updateBboxNavButtons();
@@ -8503,7 +8568,11 @@ function setPageFitMode(mode) {
 /** The room a page of the Original has at 100%: its scrolling area, inside the scrollbar gutter and the page border. */
 function pageFitArea() {
   const port = els.pagePane?.querySelector(".page-view-port");
-  const { w, h } = port ? { w: port.clientWidth, h: port.clientHeight } : paneContentSize(els.pagePane);
+  let { w, h } = port ? { w: port.clientWidth, h: port.clientHeight } : paneContentSize(els.pagePane);
+  if (port) {
+    const style = getComputedStyle(port);
+    h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom); // the continuous stream's inset
+  }
   return { w: w - PAGE_VIEW_BORDER_PX, h: h - PAGE_VIEW_BORDER_PX };
 }
 
