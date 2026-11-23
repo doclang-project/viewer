@@ -2527,13 +2527,9 @@ svg.page-stream-connectors {
   user-select: none;
 }
 
+/* Focused for its keys (paging, panning), and like the other panes without a focus ring. */
 #page-pane:focus {
   outline: none;
-}
-
-#page-pane:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 .placeholder {
