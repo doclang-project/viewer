@@ -2538,7 +2538,14 @@ button.validation-issue:focus-visible {
   min-width: 0;
 }
 
+/* The pages scroll right up to the pane's edges, its scrollbars at them too: the pane's padding moves inside. */
+#page-pane:has(> .page-view-port) {
+  padding: 0;
+}
+
 .page-view-port {
+  box-sizing: border-box;
+  padding: 0.75rem;
   display: flex;
   overflow: auto;
   flex: 1 1 auto;
@@ -2589,16 +2596,9 @@ button.validation-issue:focus-visible {
   content: attr(data-page-label);
 }
 
-/* Continuous layout: the pages one above the other, centred when narrower than the pane. They scroll right up to the
-   pane's top and bottom edges: its padding there moves inside the scrolling area. */
-#page-pane:has(> .page-view-port.page-stream) {
-  padding-block: 0;
-}
-
+/* Continuous layout: the pages one above the other, centred when narrower than the pane. */
 .page-view-port.page-stream {
   display: block;
-  box-sizing: border-box;
-  padding-block: 0.75rem;
   /* The stream keeps the centre of the view in place itself when pages are resized. */
   overflow-anchor: none;
 }

@@ -8664,8 +8664,9 @@ function pageFitArea() {
   const port = els.pagePane?.querySelector(".page-view-port");
   let { w, h } = port ? { w: port.clientWidth, h: port.clientHeight } : paneContentSize(els.pagePane);
   if (port) {
-    const style = getComputedStyle(port);
-    h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom); // the continuous stream's inset
+    const style = getComputedStyle(port); // the pages' inset, inside the scrolling area
+    w -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
   }
   return { w: w - PAGE_VIEW_BORDER_PX, h: h - PAGE_VIEW_BORDER_PX };
 }
@@ -9006,7 +9007,9 @@ function scrollStreamToPage(pageNum) {
   const page = pageStream?.pages[pageNum - 1];
   if (!page) return;
   const port = pageStream.port;
-  port.scrollTop += page.wrap.getBoundingClientRect().top - port.getBoundingClientRect().top;
+  // The page lands below the stream's top padding, as the first one starts out: page 1 is at the very top.
+  const inset = parseFloat(getComputedStyle(port).paddingTop) || 0;
+  port.scrollTop += page.wrap.getBoundingClientRect().top - port.getBoundingClientRect().top - inset;
   pageStream.sticky = { page: pageNum, scrollTop: port.scrollTop };
 }
 
