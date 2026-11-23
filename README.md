@@ -27,6 +27,8 @@ Open [http://localhost:8080/](http://localhost:8080/) and click **Demo**.
 
 Supported types: `.dclx`, `.dclg`, `.xml`. The demo URLs are configured in [`demo-data.js`](demo-data.js).
 
+**Download** saves the open file, with any applied edits. When an archive carries its [original source](https://github.com/doclang-project/doclang/blob/main/spec.md#original-source-optional) (e.g. the PDF it was converted from), it also offers that **Original file**, under the name its source descriptor records.
+
 ### Opening from another page
 
 Tools that produce DocLang in the browser, such as the [docling-serve](https://github.com/docling-project/docling-serve) UI, can open the viewer with a document already loaded. The file is passed with `postMessage`, so it never needs a public URL:

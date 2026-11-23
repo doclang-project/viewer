@@ -325,6 +325,46 @@ header h1 {
   z-index: 1;
 }
 
+.file-download-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 11rem;
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.25rem 0;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--panel);
+  box-shadow: 0 0.5rem 1.25rem color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.file-download-menu-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0.35rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-download-menu-item:hover,
+.file-download-menu-item:focus-visible {
+  background: var(--bg);
+  outline: none;
+}
+
+.file-download-menu-name {
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-view-dirty {
   position: absolute;
   top: -0.25rem;
