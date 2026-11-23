@@ -925,6 +925,10 @@ document.addEventListener("keydown", (e) => {
   else if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
+  else if (tokenLens.playing) {
+    e.preventDefault(); // used: nothing else acts on this Esc
+    stopTokenReplay(); // a pause, as Space: Space plays on from there
+  }
 });
 // Esc deselects the element (and so closes the inspector) once nothing else is using the key.
 document.addEventListener("keydown", (e) => {
