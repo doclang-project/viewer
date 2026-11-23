@@ -2546,13 +2546,48 @@ const cursorHintEl = document.getElementById("cursor-hint");
 const CURSOR_HINT_OFFSET = 10;
 const CURSOR_HINT_MARGIN = 8;
 
+/**
+ * Hints appear once the pointer has been on something for a moment, so they don't flicker past while it crosses the
+ * page; once one is showing (or just was), the next one shows at once, so moving along a row of controls stays quick.
+ */
+const CURSOR_HINT_DELAY_MS = 300;
+let cursorHintTimer = 0;
+let cursorHintPending = null;
+let cursorHintHiddenAt = -Infinity;
+
+function scheduleCursorHint(render) {
+  const warm = !cursorHintEl.hidden || performance.now() - cursorHintHiddenAt < CURSOR_HINT_DELAY_MS;
+  if (warm) {
+    clearTimeout(cursorHintTimer);
+    cursorHintTimer = 0;
+    cursorHintPending = null;
+    render();
+    return;
+  }
+  cursorHintPending = render; // the latest content and position, when the wait is over
+  cursorHintTimer ||= setTimeout(() => {
+    cursorHintTimer = 0;
+    const pending = cursorHintPending;
+    cursorHintPending = null;
+    pending?.();
+  }, CURSOR_HINT_DELAY_MS);
+}
+
 function hideCursorHint() {
+  clearTimeout(cursorHintTimer);
+  cursorHintTimer = 0;
+  cursorHintPending = null;
+  if (!cursorHintEl.hidden) cursorHintHiddenAt = performance.now();
   cursorHintEl.hidden = true;
   cursorHintEl.classList.remove("cursor-hint-detail");
   cursorHintEl.replaceChildren();
 }
 
-function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
+function showCursorHint(content, clientX, clientY, options) {
+  scheduleCursorHint(() => renderCursorHint(content, clientX, clientY, options));
+}
+
+function renderCursorHint(content, clientX, clientY, { detail = false } = {}) {
   cursorHintEl.replaceChildren();
   if (typeof content === "string") {
     cursorHintEl.textContent = content;
@@ -2576,6 +2611,10 @@ function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
 }
 
 function showCursorHintHtml(html, clientX, clientY) {
+  scheduleCursorHint(() => renderCursorHintHtml(html, clientX, clientY));
+}
+
+function renderCursorHintHtml(html, clientX, clientY) {
   cursorHintEl.innerHTML = html;
   cursorHintEl.classList.add("cursor-hint-detail");
   cursorHintEl.hidden = false;
@@ -2627,8 +2666,8 @@ function initCursorHints() {
 }
 
 /**
- * Shows every `title` immediately, next to the cursor. The native tooltip appears only after a long delay and cannot be
- * styled, so the titles from the pointer's element up to the root are moved to `data-hint` as the pointer reaches them
+ * Shows every `title` next to the cursor, after a short delay (see CURSOR_HINT_DELAY_MS). The native tooltip appears only
+ * after a long delay and cannot be styled, so the titles from the pointer's element up to the root are moved to `data-hint` as the pointer reaches them
  * (and again whenever the code sets a new one), all of them, or the browser would show an outer title as well.
  */
 function moveTitlesToHints(target) {
