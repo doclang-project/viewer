@@ -11,6 +11,15 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="viewer.css">
+  <script>
+    // Set the theme before the first paint (viewer.js keeps it in step afterwards).
+    (() => {
+      let theme = "system";
+      try { theme = localStorage.getItem("doclang-viewer-theme") || theme; } catch { /* storage not accessible */ }
+      if (theme !== "light" && theme !== "dark") theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
 </head>
 <body class="demo-loading">
   <div id="cursor-hint" class="cursor-hint" role="tooltip" hidden></div>
@@ -149,6 +158,16 @@
               </div>
             </div>
             <div class="toolbar-options-divider" role="separator"></div>
+            <div class="toolbar-options-heading">Appearance</div>
+            <div class="toolbar-options-row toolbar-options-choice">
+              <span class="toolbar-options-choice-label" id="theme-label">Theme</span>
+              <div class="view-toggle" id="theme-toggle" role="group" aria-labelledby="theme-label">
+                <button type="button" class="view-toggle-btn" data-theme-choice="system" title="Follow the system" aria-pressed="true">System</button>
+                <button type="button" class="view-toggle-btn" data-theme-choice="light" aria-pressed="false">Light</button>
+                <button type="button" class="view-toggle-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
+              </div>
+            </div>
+            <div class="toolbar-options-divider" role="separator"></div>
             <div class="toolbar-options-features" id="toolbar-options-features">
               <label class="toolbar-options-item" data-switch="editing" title="Edit the document: inspector, bbox handles, add and remove elements, drag to reorder, edit the source">
                 <input type="checkbox" id="toggle-editing" role="menuitemcheckbox">
@@ -157,6 +176,10 @@
               <label class="toolbar-options-item" data-switch="tokens" title="Show tokens using an indicative DocLang-aware tokenizer based on Granite-Docling">
                 <input type="checkbox" id="toggle-tokens" role="menuitemcheckbox">
                 <span>Tokens</span>
+              </label>
+              <label class="toolbar-options-item" data-switch="demo" title="Load demo files when the viewer opens without a file">
+                <input type="checkbox" id="toggle-demo" role="menuitemcheckbox">
+                <span>Show demo on launch</span>
               </label>
             </div>
             <div class="toolbar-options-row">
@@ -187,9 +210,8 @@
           Open
           <input type="file" id="input-archive" multiple accept=".dclx,.zip,.dclg,.xml,application/zip,application/xml,text/xml">
         </label>
-        <button type="button" id="btn-reload-file" aria-disabled="true">Reload</button>
+        <button type="button" id="btn-download-file" aria-disabled="true" title="Download is available once a file is open">Download</button>
       </span>
-      <button type="button" id="btn-demo" title="Load the demo documents in place of the open files">Demo</button>
       <span class="header-divider" aria-hidden="true"></span>
       <a href="https://doclang.ai/" class="header-site-link">doclang.ai</a>
     </div>
@@ -291,6 +313,10 @@
               <span class="help-shortcut-keys"><kbd>Space</kbd></span>
               <span class="help-shortcut-desc">Play / pause the trace</span>
             </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>Esc</kbd></span>
+              <span class="help-shortcut-desc">Stop the trace</span>
+            </div>
           </div>
         </section>
         <section class="help-shortcut-group">
@@ -377,7 +403,7 @@
       <div class="empty-state-prompt" id="empty-state-prompt">
         <p class="empty-state-title">Drop a DocLang file here</p>
         <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
-        <p class="empty-state-action">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
+        <p class="empty-state-action" data-requires="demo">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
       </div>
     </div>
   </div>

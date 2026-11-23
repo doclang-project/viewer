@@ -19,8 +19,9 @@ const FEATURE_DEFAULTS = {
   editing: "on",
   "editing.ocr": "always",
   tokens: "off", // opt-in
+  demo: "on", // the demo when the viewer opens without a file; `never` also drops the start screen's "load demo"
 };
-const SWITCHABLE_FEATURES = new Set(["editing", "tokens"]);
+const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo"]);
 // Saved per deployment path, so deployments under different paths of one domain keep their own choices.
 const FEATURE_CHOICES_STORAGE_KEY = `doclang-viewer-feature-choices:${location.pathname.replace(/[^/]*$/, "")}`;
 const resolvedFeatures = resolveFeatures();
@@ -109,8 +110,6 @@ const SUPPORTED_FILE_EXTENSIONS = [".dclx", ".dclg"];
 const IS_APPLE_PLATFORM = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? "");
 const MOD_KEY_LABEL = IS_APPLE_PLATFORM ? "⌘" : "Ctrl+";
 const OPEN_FILE_HINT = `Open a DocLang file (${SUPPORTED_FILE_EXTENSIONS.join(", ")}) · ${MOD_KEY_LABEL}O`;
-const RELOAD_FILE_HINT = "Re-read the active file from disk";
-const RELOAD_FILE_UNAVAILABLE_HINT = "Reload is available for files opened from disk (file picker or drag-and-drop)";
 const VIRTUAL_TEXT_TAG_HINT = "DocLang virtual <text>; wrapping tags not included in source";
 const FORMULA_REWRITE_COPY = "Click to copy";
 const FORMULA_REWRITE_COPIED = "Copied";
@@ -458,6 +457,13 @@ const PAGE_VIEW_BORDER_PX = 2;
 const LAYOUT_STORAGE_KEY = "doclang-viewer-pane-layout";
 const OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-overlay-prefs";
 const HOTKEYS_STORAGE_KEY = "doclang-viewer-hotkeys-enabled";
+const THEME_STORAGE_KEY = "doclang-viewer-theme"; // also read by the inline script in index.html
+const THEMES = ["system", "light", "dark"];
+// Package relationships of the original source (DocLang 0.10, spec "Original source").
+const PACKAGE_RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
+const SOURCE_RELATIONSHIP_TYPE = "http://doclang.ai/ns/package/2026/relationships/source";
+const SOURCE_METADATA_RELATIONSHIP_TYPE = "http://doclang.ai/ns/package/2026/relationships/source-metadata";
+const SOURCE_METADATA_NS = "http://doclang.ai/ns/package/2026/source-metadata";
 const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
@@ -601,6 +607,9 @@ let paneRatios = [...DEFAULT_PANE_RATIOS];
 let filePaneWidthPx = null;
 let toolbarOptionsOpen = false;
 let hotkeysEnabled = true;
+let themePref = "system";
+let fileDownloadMenu = null;
+const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
 /** @type {MediaQueryList | null} */
@@ -727,6 +736,8 @@ const els = {
   readingLayoutPagedBtn: document.getElementById("btn-reading-layout-paged"),
   resetPaneLayoutBtn: document.getElementById("btn-reset-pane-layout"),
   toggleHotkeys: document.getElementById("toggle-hotkeys"),
+  downloadFileBtn: document.getElementById("btn-download-file"),
+  themeToggle: document.getElementById("theme-toggle"),
   hotkeysInfoBtn: document.getElementById("btn-hotkeys-info"),
   pageSettingsPanel: document.getElementById("page-settings"),
   overlaysReset: document.getElementById("btn-overlays-reset"),
@@ -753,7 +764,6 @@ const els = {
   validationClose: document.getElementById("btn-validation-close"),
 };
 
-document.getElementById("btn-demo")?.addEventListener("click", loadDemo);
 document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   loadDemo();
@@ -915,6 +925,10 @@ document.addEventListener("keydown", (e) => {
   else if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
+  else if (tokenLens.playing) {
+    e.preventDefault(); // used: nothing else acts on this Esc
+    stopTokenReplay(); // a pause, as Space: Space plays on from there
+  }
 });
 // Esc deselects the element (and so closes the inspector) once nothing else is using the key.
 document.addEventListener("keydown", (e) => {
@@ -1055,6 +1069,8 @@ loadLayoutPrefs();
 loadOverlayPrefs();
 removeUnavailableMarkup();
 initEditingToggle();
+initDemoToggle();
+initTheme();
 loadHotkeysPref();
 loadReadingLayoutMode();
 loadPageLayoutMode();
@@ -1089,14 +1105,14 @@ initOpenerHandoff();
 
 function setDemoLoading(loading) {
   document.body.classList.toggle("demo-loading", loading);
-  const btnDemo = document.getElementById("btn-demo");
-  if (btnDemo) btnDemo.disabled = loading;
 }
 
 // A file-handling launch (see initFileHandling) or an opener handoff (see
 // initOpenerHandoff) sets suppressDemoLoad synchronously, before this runs.
 setTimeout(() => {
-  if (!suppressDemoLoad && document.getElementById("btn-demo")) loadDemo();
+  if (suppressDemoLoad) return;
+  if (startsOn("demo")) loadDemo();
+  else setDemoLoading(false); // the page starts out showing "Loading demo…": the start screen instead
 }, 0);
 
 async function loadDemo() {
@@ -1142,7 +1158,7 @@ async function loadDemo() {
     );
   } finally {
     demoLoadInProgress = false;
-    setDemoLoading(false); // the button too: it stayed disabled once the demo had opened
+    setDemoLoading(false);
   }
 }
 
@@ -1350,6 +1366,9 @@ async function resolveCatalogEntryThumbnail(entry) {
 }
 
 function enrichCatalogEntryThumbnail(entry) {
+  resolveOriginalSource(entry).then((info) => {
+    if (info && entry === fileCatalog[activeFileIndex]) syncDownloadFileButton();
+  });
   resolveCatalogEntryThumbnail(entry).then((url) => {
     if (!fileCatalog.includes(entry)) {
       if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
@@ -1471,34 +1490,7 @@ changeBanner.reload?.addEventListener("click", async () => {
   pending.entry.validation = null;
   if (await refreshCatalogEntry(pending.entry, pending.file)) await switchToFile(activeFileIndex);
 });
-/** The explicit reload needs a file handle (Chromium file picker / drop); without one the button stays disabled. */
-function syncReloadFileButton() {
-  const btn = document.getElementById("btn-reload-file");
-  if (!btn) return;
-  btn.setAttribute("aria-disabled", String(!fileCatalog[activeFileIndex]?.handle));
-}
-
-/** Re-read the active file from disk, keeping the rest of the open files untouched. */
-async function reloadActiveFile() {
-  const entry = fileCatalog[activeFileIndex];
-  if (!entry?.handle) return;
-  if (entry.dirty && !confirm("Reloading discards your unsaved changes. Continue?")) return;
-  let file;
-  try {
-    file = await entry.handle.getFile();
-  } catch (err) {
-    alert(`Failed to reload ${entry.label}: ${err.message}`);
-    return;
-  }
-  hideChangeBanner();
-  stopEditing({ render: false });
-  entry.dirty = false;
-  entry.savedSource = null;
-  entry.validation = null;
-  fileHandles.set(file, entry.handle);
-  if (await refreshCatalogEntry(entry, file)) await switchToFile(activeFileIndex);
-}
-document.getElementById("btn-reload-file")?.addEventListener("click", reloadActiveFile);
+els.downloadFileBtn?.addEventListener("click", onFileDownloadClick);
 
 changeBanner.dismiss?.addEventListener("click", () => {
   if (changeBannerEntry) {
@@ -1748,6 +1740,8 @@ async function closeCatalogFile(index) {
 }
 
 function renderFileView() {
+  closeFileDownloadMenu();
+  syncDownloadFileButton();
   if (!els.filePane) return;
   els.filePane.replaceChildren();
   if (!fileCatalog.length) return;
@@ -1817,8 +1811,182 @@ function renderFileView() {
   activeCard?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
 
+/** Downloads an open file as it is now: its applied edits included, in its own format. */
+function downloadCatalogFile(entry) {
+  if (entry.kind === "folder") return;
+  downloadBlob(new Blob([entry.source]), entry.label);
+}
+
+async function downloadOriginalFile(entry) {
+  const info = await resolveOriginalSource(entry);
+  const part = info && (await readPackagePart(entry, info.path));
+  if (!part) {
+    alert(`The original file of ${entry.label} could not be read.`);
+    return;
+  }
+  downloadBlob(part, info.name);
+}
+
+/** Download is available for an open file, and for a folder that carries its original file. */
+function syncDownloadFileButton() {
+  const btn = els.downloadFileBtn;
+  if (!btn) return;
+  const entry = fileCatalog[activeFileIndex];
+  const original = entry?.originalSource?.info;
+  btn.setAttribute("aria-disabled", String(!entry || (entry.kind === "folder" && !original)));
+  btn.toggleAttribute("aria-haspopup", !!original);
+  btn.title = !entry
+    ? "Download is available once a file is open"
+    : original
+      ? "Download the active file, or the original file it was made from"
+      : entry.kind === "folder"
+        ? "Download is available for files, and for folders that carry their original file"
+        : "Download the active file, with any applied edits";
+}
+
+/** With an original file in the package, offers it next to the file itself; otherwise downloads the file. */
+async function onFileDownloadClick() {
+  const button = els.downloadFileBtn;
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry || button.getAttribute("aria-disabled") === "true") return;
+  const info = await resolveOriginalSource(entry);
+  if (!info) {
+    downloadCatalogFile(entry);
+    return;
+  }
+  const items = [];
+  if (entry.kind !== "folder") {
+    items.push({ label: entry.kind === "archive" ? "DocLang archive" : "DocLang document", name: entry.label, run: () => downloadCatalogFile(entry) });
+  }
+  items.push({ label: "Original file", name: info.name, run: () => downloadOriginalFile(entry) });
+  openFileDownloadMenu(button, items);
+}
+
+function closeFileDownloadMenu() {
+  if (!fileDownloadMenu) return;
+  fileDownloadMenu.button.setAttribute("aria-expanded", "false");
+  fileDownloadMenu.el.remove();
+  document.removeEventListener("pointerdown", fileDownloadMenu.onOutside, true);
+  document.removeEventListener("keydown", fileDownloadMenu.onKey, true);
+  fileDownloadMenu = null;
+}
+
+function openFileDownloadMenu(button, items) {
+  const reopen = fileDownloadMenu?.button !== button;
+  closeFileDownloadMenu();
+  if (!reopen) return;
+  const el = document.createElement("div");
+  el.className = "file-download-menu";
+  el.setAttribute("role", "menu");
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "menuitem");
+    btn.className = "file-download-menu-item";
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const name = document.createElement("span");
+    name.className = "file-download-menu-name";
+    name.textContent = item.name;
+    btn.append(label, name);
+    btn.addEventListener("click", () => {
+      closeFileDownloadMenu();
+      item.run();
+    });
+    el.append(btn);
+  }
+  document.body.append(el);
+  const rect = button.getBoundingClientRect();
+  const left = Math.min(rect.right - el.offsetWidth, window.innerWidth - el.offsetWidth - 8);
+  el.style.left = `${Math.max(8, left)}px`;
+  el.style.top = `${rect.bottom + 4}px`;
+  const onOutside = (e) => {
+    if (!el.contains(e.target) && !button.contains(e.target)) closeFileDownloadMenu();
+  };
+  const onKey = (e) => {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();
+    closeFileDownloadMenu();
+    button.focus();
+  };
+  document.addEventListener("pointerdown", onOutside, true);
+  document.addEventListener("keydown", onKey, true);
+  button.setAttribute("aria-expanded", "true");
+  fileDownloadMenu = { el, button, onOutside, onKey };
+  el.querySelector("button")?.focus();
+}
+
+// --- Original source (DocLang 0.10 packages, spec "Original source") ---
+
+/** Path of a folder file relative to the opened folder, as a part path. */
+function folderPartPath(file) {
+  const rel = file.webkitRelativePath || file.name;
+  return rel.includes("/") ? rel.slice(rel.indexOf("/") + 1) : rel;
+}
+
+/** A part of an open archive or folder, by its path from the package root, or null. */
+async function readPackagePart(entry, path) {
+  if (entry.kind === "archive") {
+    const buffer = entry.source instanceof File ? await entry.source.arrayBuffer() : entry.source;
+    const [part] = await unzip(buffer, { shouldExtract: (name) => name === path });
+    return part ? new Blob([part.data]) : null;
+  }
+  if (entry.kind === "folder") return entry.source.find((f) => folderPartPath(f) === path) ?? null;
+  return null;
+}
+
+/** The part a package-level relationship targets, as a path from the package root. */
+function packageRelationshipTarget(rels, type) {
+  const rel = [...rels.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, "Relationship")]
+    .find((r) => r.getAttribute("Type") === type && r.getAttribute("TargetMode") !== "External");
+  const target = rel?.getAttribute("Target");
+  if (!target) return null;
+  try {
+    return normalizeArchivePath(decodeURIComponent(target).replace(/^\/+/, ""));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The original file a package carries, as `{ path, name }`, or null. The name is the one its source descriptor records,
+ * else the open file's name with the extension(s) of the part. Cached per bytes of the entry.
+ */
+async function resolveOriginalSource(entry) {
+  if (entry.kind !== "archive" && entry.kind !== "folder") return null;
+  if (entry.originalSource && entry.originalSource.of === entry.source) return entry.originalSource.info;
+  let info = null;
+  try {
+    const relsPart = await readPackagePart(entry, "_rels/.rels");
+    const rels = relsPart && new DOMParser().parseFromString(await relsPart.text(), "application/xml");
+    const path = rels && packageRelationshipTarget(rels, SOURCE_RELATIONSHIP_TYPE);
+    if (path) {
+      let name = null;
+      const metadataPath = packageRelationshipTarget(rels, SOURCE_METADATA_RELATIONSHIP_TYPE);
+      const metadataPart = metadataPath && (await readPackagePart(entry, metadataPath));
+      if (metadataPart) {
+        const root = new DOMParser().parseFromString(await metadataPart.text(), "application/xml").documentElement;
+        if (root?.namespaceURI === SOURCE_METADATA_NS && root.localName === "source") {
+          name = root.getAttribute("name")?.split(/[\\/]/).pop()?.trim() || null;
+        }
+      }
+      info = { path, name: name || defaultOriginalFileName(entry.label, path) };
+    }
+  } catch {
+    info = null;
+  }
+  entry.originalSource = { of: entry.source, info };
+  return info;
+}
+
+function defaultOriginalFileName(label, path) {
+  const stem = label.replace(/\.(dclx|zip)$/i, "");
+  const base = path.split("/").pop() ?? "";
+  const dot = base.indexOf(".");
+  return dot > 0 ? stem + base.slice(dot) : stem;
+}
+
 function updateFileView() {
-  syncReloadFileButton();
   syncFilePaneDefault();
   syncFilePaneCloseAllButton();
   renderFileView();
@@ -2382,13 +2550,48 @@ const cursorHintEl = document.getElementById("cursor-hint");
 const CURSOR_HINT_OFFSET = 10;
 const CURSOR_HINT_MARGIN = 8;
 
+/**
+ * Hints appear once the pointer has been on something for a moment, so they don't flicker past while it crosses the
+ * page; once one is showing (or just was), the next one shows at once, so moving along a row of controls stays quick.
+ */
+const CURSOR_HINT_DELAY_MS = 300;
+let cursorHintTimer = 0;
+let cursorHintPending = null;
+let cursorHintHiddenAt = -Infinity;
+
+function scheduleCursorHint(render) {
+  const warm = !cursorHintEl.hidden || performance.now() - cursorHintHiddenAt < CURSOR_HINT_DELAY_MS;
+  if (warm) {
+    clearTimeout(cursorHintTimer);
+    cursorHintTimer = 0;
+    cursorHintPending = null;
+    render();
+    return;
+  }
+  cursorHintPending = render; // the latest content and position, when the wait is over
+  cursorHintTimer ||= setTimeout(() => {
+    cursorHintTimer = 0;
+    const pending = cursorHintPending;
+    cursorHintPending = null;
+    pending?.();
+  }, CURSOR_HINT_DELAY_MS);
+}
+
 function hideCursorHint() {
+  clearTimeout(cursorHintTimer);
+  cursorHintTimer = 0;
+  cursorHintPending = null;
+  if (!cursorHintEl.hidden) cursorHintHiddenAt = performance.now();
   cursorHintEl.hidden = true;
   cursorHintEl.classList.remove("cursor-hint-detail");
   cursorHintEl.replaceChildren();
 }
 
-function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
+function showCursorHint(content, clientX, clientY, options) {
+  scheduleCursorHint(() => renderCursorHint(content, clientX, clientY, options));
+}
+
+function renderCursorHint(content, clientX, clientY, { detail = false } = {}) {
   cursorHintEl.replaceChildren();
   if (typeof content === "string") {
     cursorHintEl.textContent = content;
@@ -2412,6 +2615,10 @@ function showCursorHint(content, clientX, clientY, { detail = false } = {}) {
 }
 
 function showCursorHintHtml(html, clientX, clientY) {
+  scheduleCursorHint(() => renderCursorHintHtml(html, clientX, clientY));
+}
+
+function renderCursorHintHtml(html, clientX, clientY) {
   cursorHintEl.innerHTML = html;
   cursorHintEl.classList.add("cursor-hint-detail");
   cursorHintEl.hidden = false;
@@ -2460,19 +2667,11 @@ function initCursorHints() {
   els.openFileBtn?.addEventListener("mouseleave", hideCursorHint);
   // The help names the modifier of this platform.
   for (const key of document.querySelectorAll("kbd.mod-key")) key.textContent = `${MOD_KEY_LABEL}${key.dataset.key}`;
-
-  // aria-disabled (not `disabled`) so the hint still shows on hover while inactive.
-  const reloadBtn = document.getElementById("btn-reload-file");
-  reloadBtn?.addEventListener("mousemove", (e) => {
-    const available = reloadBtn.getAttribute("aria-disabled") !== "true";
-    showCursorHint(available ? RELOAD_FILE_HINT : RELOAD_FILE_UNAVAILABLE_HINT, e.clientX, e.clientY);
-  });
-  reloadBtn?.addEventListener("mouseleave", hideCursorHint);
 }
 
 /**
- * Shows every `title` immediately, next to the cursor. The native tooltip appears only after a long delay and cannot be
- * styled, so the titles from the pointer's element up to the root are moved to `data-hint` as the pointer reaches them
+ * Shows every `title` next to the cursor, after a short delay (see CURSOR_HINT_DELAY_MS). The native tooltip appears only
+ * after a long delay and cannot be styled, so the titles from the pointer's element up to the root are moved to `data-hint` as the pointer reaches them
  * (and again whenever the code sets a new one), all of them, or the browser would show an outer title as well.
  */
 function moveTitlesToHints(target) {
@@ -3994,6 +4193,14 @@ function setEditingOn(on) {
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
   syncEditUi();
   if (on) resumeRawView();
+}
+
+/** The demo switch only decides the next launch: it loads or closes nothing now. */
+function initDemoToggle() {
+  const toggle = document.getElementById("toggle-demo");
+  if (!toggle) return;
+  toggle.checked = startsOn("demo");
+  toggle.addEventListener("change", () => saveFeatureChoice("demo", toggle.checked));
 }
 
 function initEditingToggle() {
@@ -7172,6 +7379,46 @@ function resetOverlayPrefs() {
   persistOverlayPrefs();
   syncLayoutSubtoggles();
   if (state) renderPage(state.currentPage);
+}
+
+function initTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (THEMES.includes(stored)) themePref = stored;
+  } catch {
+    /* storage not accessible */
+  }
+  els.themeToggle?.addEventListener("click", (e) => {
+    const choice = e.target.closest("[data-theme-choice]")?.dataset.themeChoice;
+    if (!THEMES.includes(choice) || choice === themePref) return;
+    themePref = choice;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, themePref);
+    } catch {
+      /* ignore quota / private mode */
+    }
+    applyTheme();
+  });
+  systemDarkQuery.addEventListener("change", () => {
+    if (themePref === "system") applyTheme();
+  });
+  applyTheme();
+}
+
+/** Sets the resolved theme on the root and refreshes what was coloured from the theme in JS. */
+function applyTheme() {
+  for (const btn of els.themeToggle?.querySelectorAll("[data-theme-choice]") ?? []) {
+    btn.setAttribute("aria-pressed", String(btn.dataset.themeChoice === themePref));
+  }
+  const theme = themePref === "system" ? (systemDarkQuery.matches ? "dark" : "light") : themePref;
+  if (document.documentElement.dataset.theme === theme) return;
+  document.documentElement.dataset.theme = theme;
+  populateArrowStyleControls();
+  refreshArrowMarkers();
+  const bboxColor = els.readingBboxFields?.querySelector('[data-reading-bbox="color"]');
+  if (bboxColor && !readingBboxStyle.color) {
+    bboxColor.value = toHexColor(getComputedStyle(document.documentElement).getPropertyValue("--accent"));
+  }
 }
 
 function loadHotkeysPref() {

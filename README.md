@@ -14,18 +14,20 @@ Serve this directory over HTTP so the demo can fetch example files:
 python3 -m http.server 8080
 ```
 
-Open [http://localhost:8080/](http://localhost:8080/) and click **Demo**.
+Open [http://localhost:8080/](http://localhost:8080/): the demo loads on its own.
 
 ## Opening files
 
 | Action | Description |
 |--------|-------------|
-| **Demo** | Fetches the demo archives, [`assets/2501.17887.dclx`](assets/2501.17887.dclx) and [`assets/artemis.dclx`](assets/artemis.dclx) (requires HTTP), in place of the open files. |
+| **Demo** | Fetches the demo archives, [`assets/2501.17887.dclx`](assets/2501.17887.dclx) and [`assets/artemis.dclx`](assets/artemis.dclx) (requires HTTP), when the viewer opens without a file (**Show demo on launch** in Settings), or from **load demo** on the start screen, in place of the open files. |
 | **Open** (⌘O / Ctrl+O) | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file; it opens next to the files already open. |
 | **Drag and drop** | Drop any supported file onto the page. |
 | **From another page** | A page that opens the viewer can hand it a file; see [Opening from another page](#opening-from-another-page). |
 
 Supported types: `.dclx`, `.dclg`, `.xml`. The demo URLs are configured in [`demo-data.js`](demo-data.js).
+
+**Download** saves the open file, with any applied edits. When an archive carries its [original source](https://github.com/doclang-project/doclang/blob/main/spec.md#original-source-optional) (e.g. the PDF it was converted from), it also offers that **Original file**, under the name its source descriptor records.
 
 ### Opening from another page
 
@@ -62,6 +64,7 @@ Each feature is in one of four modes:
 | `editing` | visual and source editing (inspector, bbox handles, add/remove, drag to reorder, the Raw view, save) | `on` |
 | `editing.ocr` | "Read from page" with Granite-Docling in the browser (downloads about 1.2 GB on first use); only while editing is on | `always` |
 | `tokens` | tokens in the DocLang source, token tracing, and the Tokens overlays | `off` |
+| `demo` | the demo when the viewer opens without a file (not when it opens with one); `never` also drops **load demo** from the start screen | `on` |
 
 A deployment overrides what it needs by replacing [`config.js`](config.js); features it doesn't mention keep their built-in mode:
 
@@ -69,7 +72,7 @@ A deployment overrides what it needs by replacing [`config.js`](config.js); feat
 window.DOCLANG_CONFIG = { features: { tokens: "always", "editing.ocr": "never" } };
 ```
 
-`editing` and `tokens` have a switch in Settings when they are `on` or `off`; the user's choice is remembered (per deployment path). `editing.ocr` has no switch of its own, so for it `on` means `always` and `off` means `never`. A child like `editing.ocr` is not there when its parent isn't.
+`editing`, `tokens` and `demo` have a switch in Settings when they are `on` or `off`; the user's choice is remembered (per deployment path). `editing.ocr` has no switch of its own, so for it `on` means `always` and `off` means `never`. A child like `editing.ocr` is not there when its parent isn't.
 
 For a single visit, the URL can set a feature's mode with the same words, e.g. `?tokens=on` or `?editing=never` (a read-only link). It cannot change an `always` from the config except to `never`, nor bring back a `never`. `on`/`off` from the URL leave the remembered choice as it is; switching the feature in Settings drops its parameter from the address, so a reload keeps the user's choice.
 
