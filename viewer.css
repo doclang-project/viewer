@@ -3755,6 +3755,64 @@ li.has-marker > .rendered-li-body {
   color: var(--text);
 }
 
+/* Storyboard: each frame opens a scene; what follows until the next frame is said over it. */
+.rendered-track-frames-toggle {
+  float: right;
+  padding: 0.05rem 0.45rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.rendered-track-frames-toggle:hover {
+  color: var(--text);
+}
+
+.rendered-track-frames-toggle[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--kind-track);
+  background: color-mix(in srgb, var(--kind-track) 12%, transparent);
+}
+
+.rendered-track-frame {
+  display: none;
+  width: 100%;
+  max-width: 24rem;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  margin: 0 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+
+.rendered-track-transcript-body.is-storyboard .rendered-track-frame {
+  display: block;
+}
+
+.rendered-track-transcript-body.is-storyboard .rendered-track-cue.has-frame:not(:first-child) {
+  margin-top: 0.5rem;
+  border-top: 2px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.rendered-track-transcript-body.is-storyboard .rendered-track-cue.is-current-scene .rendered-track-frame {
+  border-color: var(--kind-track);
+  box-shadow: 0 0 0 1px var(--kind-track);
+}
+
+.rendered-track-transcript-body:not(.is-storyboard) .rendered-track-cue.is-frame-only {
+  display: none;
+}
+
+.rendered-track-transcript-body.is-storyboard {
+  max-height: 36rem;
+}
+
 .rendered-table {
   width: 100%;
   margin: 0 0 0.75rem;

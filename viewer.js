@@ -1083,6 +1083,7 @@ initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
 let suppressDemoLoad = false;
+let launchSource;
 initFileHandling();
 initOpenerHandoff();
 
@@ -1157,6 +1158,23 @@ async function loadFromFileList(fileList) {
 }
 
 /**
+ * The `source` URL parameter (how the viewer was opened), dropped from the address once read:
+ * it describes the launch only, and a reload, which brings no files or handoff, would otherwise
+ * keep the demo suppressed and the loading state on forever.
+ */
+function takeLaunchSource() {
+  if (launchSource === undefined) {
+    const url = new URL(location.href);
+    launchSource = url.searchParams.get("source");
+    if (launchSource !== null) {
+      url.searchParams.delete("source");
+      history.replaceState(history.state, "", url);
+    }
+  }
+  return launchSource;
+}
+
+/**
  * Receive files opened with the installed PWA (manifest `file_handlers`).
  *
  * The OS launch opens the handler's action URL (`?source=file-handler`), which
@@ -1165,7 +1183,7 @@ async function loadFromFileList(fileList) {
  */
 function initFileHandling() {
   if (!("launchQueue" in window)) return;
-  if (new URLSearchParams(location.search).get("source") === "file-handler") suppressDemoLoad = true;
+  if (takeLaunchSource() === "file-handler") suppressDemoLoad = true;
   window.launchQueue.setConsumer(async (launchParams) => {
     if (!launchParams.files?.length) return;
     suppressDemoLoad = true;
@@ -1189,7 +1207,7 @@ function initFileHandling() {
  * Only messages from `window.opener` are accepted.
  */
 function initOpenerHandoff() {
-  if (!window.opener || new URLSearchParams(location.search).get("source") !== "opener") return;
+  if (!window.opener || takeLaunchSource() !== "opener") return;
   suppressDemoLoad = true;
   window.addEventListener("message", async (event) => {
     if (event.source !== window.opener) return;
@@ -12997,6 +13015,19 @@ function formatTrackTime(seconds) {
   return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
 }
 
+/** Cues in document order, except that among consecutive cues starting at the same time those with a frame come first. */
+function framesFirstAtSameTime(cues) {
+  const out = [];
+  for (let i = 0; i < cues.length;) {
+    let j = i + 1;
+    while (j < cues.length && Number.isFinite(cues[i].start) && cues[j].start === cues[i].start) j += 1;
+    const run = cues.slice(i, j);
+    out.push(...run.filter((c) => c.frameEl), ...run.filter((c) => !c.frameEl));
+    i = j;
+  }
+  return out;
+}
+
 function trackFrameUri(frameEl) {
   if (!frameEl) return null;
   const src = childElements(frameEl).find((c) => localName(c) === "src");
@@ -13129,6 +13160,26 @@ function wireActiveChapter(video, entries) {
   };
   video.addEventListener("timeupdate", update);
   video.addEventListener("seeked", update);
+}
+
+/** Mark the frame on screen: the last scene (frame) that starts at or before the playhead. */
+function wireActiveScene(media, entries) {
+  if (!entries.length) return;
+  let active = -1;
+  const update = () => {
+    const t = media.currentTime + 0.1;
+    let idx = -1;
+    for (let i = 0; i < entries.length; i += 1) {
+      if (entries[i].start <= t) idx = i;
+      else break;
+    }
+    if (idx === active) return;
+    if (active >= 0) entries[active].row.classList.remove("is-current-scene");
+    if (idx >= 0) entries[idx].row.classList.add("is-current-scene");
+    active = idx;
+  };
+  media.addEventListener("timeupdate", update);
+  media.addEventListener("seeked", update);
 }
 
 /**
@@ -13438,7 +13489,8 @@ function renderTrack(el, elementIds) {
     wireActiveChapter(mediaEl, chapterEntries);
   }
 
-  for (const cue of cues) {
+  const sceneEntries = [];
+  for (const cue of framesFirstAtSameTime(cues)) {
     const row = document.createElement("div");
     row.className = "rendered-el rendered-track-cue";
     const cueId = elementIds.get(cue.bdivEl);
@@ -13461,6 +13513,18 @@ function renderTrack(el, elementIds) {
 
     const turns = document.createElement("div");
     turns.className = "rendered-track-turns";
+    // Storyboard: a cue's frame opens a scene, the text up to the next frame is what is said over it.
+    const frameUri = cue.frameEl ? resolveArchiveUri(trackFrameUri(cue.frameEl)) : null;
+    if (frameUri) {
+      row.classList.add("has-frame");
+      const img = document.createElement("img");
+      img.className = "rendered-track-frame";
+      img.src = frameUri;
+      img.alt = `Frame at ${formatTrackTime(cue.start)}`;
+      img.loading = "lazy";
+      turns.appendChild(img);
+      sceneEntries.push({ start: cue.start ?? 0, row });
+    }
     if (cue.chapterEl) {
       const ch = document.createElement("p");
       ch.className = "rendered-track-cue-chapter";
@@ -13468,6 +13532,7 @@ function renderTrack(el, elementIds) {
       turns.appendChild(ch);
     }
     appendTrackTurns(turns, cue, elementIds);
+    if (frameUri && !cue.chapterEl && !turns.querySelector(".rendered-track-turn")) row.classList.add("is-frame-only");
     row.appendChild(turns);
 
     body.appendChild(row);
@@ -13475,7 +13540,27 @@ function renderTrack(el, elementIds) {
   }
   details.appendChild(body);
   figure.appendChild(details);
-  if (mediaUrl) wireActiveTranscriptRow(mediaEl, rowEntries, body);
+  if (sceneEntries.length) {
+    // Frames show by default (storyboard); the toggle folds the transcript back to text only.
+    body.classList.add("is-storyboard");
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "rendered-track-frames-toggle";
+    toggle.textContent = "Frames";
+    toggle.title = "Show the frames along the transcript";
+    toggle.setAttribute("aria-pressed", "true");
+    toggle.addEventListener("click", (e) => {
+      e.preventDefault(); // inside <summary>: don't fold the transcript
+      e.stopPropagation(); // nor select the track
+      const on = body.classList.toggle("is-storyboard");
+      toggle.setAttribute("aria-pressed", String(on));
+    });
+    summary.appendChild(toggle);
+  }
+  if (mediaUrl) {
+    wireActiveTranscriptRow(mediaEl, rowEntries, body);
+    wireActiveScene(mediaEl, sceneEntries);
+  }
 
   // Fall back to the standalone audio file if the video element errors out.
   if (videoUrl && audioUrl) {
@@ -13490,6 +13575,7 @@ function renderTrack(el, elementIds) {
       seekTo = makeTrackSeeker(fallback, true);
       wireActiveChapter(fallback, chapterEntries);
       wireActiveTranscriptRow(fallback, rowEntries, body);
+      wireActiveScene(fallback, sceneEntries);
     }, { once: true });
   }
 

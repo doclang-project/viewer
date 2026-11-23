@@ -1,4 +1,4 @@
-<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.9">
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.10">
   <page_header>
     <layer value="furniture"/>
     <location value="16"/>
@@ -158,14 +158,6 @@
     Document conversion is a well-established field with numerous solutions already available on the market. These solutions can be categorized along several key dimensions, including open vs. closed source, permissive vs. restrictive licensing, Web APIs vs. local code deployment, susceptibility<content> </content>
   </text>
   <page_break/>
-  <text>
-    <thread thread_id="3"/>
-    <location value="45"/>
-    <location value="208"/>
-    <location value="245"/>
-    <location value="221"/>
-    to hallucinations, conversion quality, time-to-solution, and compute resource requirements.
-  </text>
   <picture>
     <location value="77"/>
     <location value="35"/>
@@ -465,6 +457,14 @@
       images
     </text>
   </picture>
+  <text>
+    <thread thread_id="3"/>
+    <location value="45"/>
+    <location value="208"/>
+    <location value="245"/>
+    <location value="221"/>
+    to hallucinations, conversion quality, time-to-solution, and compute resource requirements.
+  </text>
   <text>
     <location value="45"/>
     <location value="222"/>
@@ -1557,14 +1557,6 @@
     Among the integrations created by the Docling team and the growing community, a few are worth mentioning as depicted in Figure 6. For popular generative AI application patterns, we provide native integration within LangChain (Chase 2022) and LlamaIndex (Liu 2022) for reading documents and chunking. Processing and transforming documents at scale for building large-scale multi-modal training datasets are enabled by the integration in the open IBM data-prep-kit (Wood et al. 2024). Agentic workloads can leverage the integration with the Bee framework (IBM Research 2024). For the fine-tuning of language models, Docling is integrated in InstructLab (Sudalairaj et al. 2024),<content> </content>
   </text>
   <page_break/>
-  <text>
-    <thread thread_id="9"/>
-    <location value="45"/>
-    <location value="405"/>
-    <location value="245"/>
-    <location value="417"/>
-    where it supports the enhancement of the knowledge taxonomy.
-  </text>
   <picture>
     <location value="88"/>
     <location value="35"/>
@@ -1892,6 +1884,14 @@
       L4 GPU
     </text>
   </picture>
+  <text>
+    <thread thread_id="9"/>
+    <location value="45"/>
+    <location value="405"/>
+    <location value="245"/>
+    <location value="417"/>
+    where it supports the enhancement of the knowledge taxonomy.
+  </text>
   <text>
     <location value="45"/>
     <location value="421"/>
