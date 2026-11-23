@@ -158,6 +158,16 @@
               </div>
             </div>
             <div class="toolbar-options-divider" role="separator"></div>
+            <div class="toolbar-options-heading">Appearance</div>
+            <div class="toolbar-options-row toolbar-options-choice">
+              <span class="toolbar-options-choice-label" id="theme-label">Theme</span>
+              <div class="view-toggle" id="theme-toggle" role="group" aria-labelledby="theme-label">
+                <button type="button" class="view-toggle-btn" data-theme-choice="system" title="Follow the system" aria-pressed="true">System</button>
+                <button type="button" class="view-toggle-btn" data-theme-choice="light" aria-pressed="false">Light</button>
+                <button type="button" class="view-toggle-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
+              </div>
+            </div>
+            <div class="toolbar-options-divider" role="separator"></div>
             <div class="toolbar-options-features" id="toolbar-options-features">
               <label class="toolbar-options-item" data-switch="editing" title="Edit the document: inspector, bbox handles, add and remove elements, drag to reorder, edit the source">
                 <input type="checkbox" id="toggle-editing" role="menuitemcheckbox">
@@ -186,16 +196,6 @@
                 aria-controls="help-overlay"
                 title="Keyboard shortcuts"
               >i</button>
-            </div>
-            <div class="toolbar-options-divider" role="separator"></div>
-            <div class="toolbar-options-heading">Appearance</div>
-            <div class="toolbar-options-row toolbar-options-choice">
-              <span class="toolbar-options-choice-label" id="theme-label">Theme</span>
-              <div class="view-toggle" id="theme-toggle" role="group" aria-labelledby="theme-label">
-                <button type="button" class="view-toggle-btn" data-theme-choice="system" title="Follow the system" aria-pressed="true">System</button>
-                <button type="button" class="view-toggle-btn" data-theme-choice="light" aria-pressed="false">Light</button>
-                <button type="button" class="view-toggle-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
-              </div>
             </div>
             <div class="toolbar-options-divider" role="separator"></div>
             <button type="button" class="toolbar-options-reset" id="btn-reset-all-settings" role="menuitem" title="Clear all saved settings of every pane and reload">
