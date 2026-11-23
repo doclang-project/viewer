@@ -996,12 +996,12 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   toggleOverlayCheckbox(els[elsKey]);
 });
-// 1–4 show or hide the panes, numbered left to right.
+// 0 shows or hides Files (on whichever side it is), 1–3 the content panes, numbered left to right.
 const PANE_SHORTCUT_KEYS = {
-  1: "toggleFilePane",
-  2: "togglePagePane",
-  3: "toggleMarkupPane",
-  4: "toggleReadingPane",
+  0: "toggleFilePane",
+  1: "togglePagePane",
+  2: "toggleMarkupPane",
+  3: "toggleReadingPane",
 };
 document.addEventListener("keydown", (e) => {
   const elsKey = PANE_SHORTCUT_KEYS[e.key];
