@@ -1,9 +1,11 @@
-:root {
+/* The Paged Preview's page is a sheet of paper, like the page image beside it: light in either theme. */
+:root,
+:root[data-theme="dark"] .paged-canvas {
   color-scheme: light;
   --bg: #f4f4f5;
   --panel: #ffffff;
-  /* The Paged Preview's page: a sheet of paper, kept apart from --panel so that a host recolouring the chrome
-     (doclang-viewer:configure) leaves it white, like the page image beside it. */
+  /* The Paged Preview's page, kept apart from --panel so that a host recolouring the chrome
+     (doclang-viewer:configure) leaves it white. */
   --page-bg: #ffffff;
   --border: #d4d4d8;
   --text: #18181b;
@@ -74,7 +76,6 @@
   color-scheme: dark;
   --bg: #09090b;
   --panel: #18181b;
-  --page-bg: #18181b;
   --border: #3f3f46;
   --text: #fafafa;
   --muted: #a1a1aa;
@@ -1830,6 +1831,7 @@ body.pane-drag-active .pane-splitter {
   flex-shrink: 0;
   margin: auto;
   background: var(--page-bg);
+  color: var(--text); /* its own: inherited, the text would keep the dark theme's colour */
   border: 1px solid var(--border);
   border-radius: 0.25rem;
 }
@@ -4337,8 +4339,9 @@ li.has-marker > .rendered-li-body {
   color: var(--muted);
 }
 
+/* On the page image: white, whatever the theme. */
 .overlay .bbox-handle {
-  fill: var(--panel);
+  fill: #ffffff;
   stroke: var(--accent);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
