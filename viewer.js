@@ -4564,10 +4564,15 @@ function setEditingOn(on) {
   editingOn = on;
   if (els.editingToggle) els.editingToggle.checked = on;
   if (!state) return syncEditUi();
-  // Rebuild the views, so drag grips and handles come or go, and keep the selection.
+  // Rebuild the views, so drag grips and handles come or go, and keep the selection and where the panes are. A
+  // continuous pane keeps its stream while the document is the same: it is built anew here.
   const keep = selectedElementId;
+  const panes = [els.markupPane, els.renderedPane].filter(Boolean);
+  const scrolls = panes.map((pane) => pane.scrollTop);
+  for (const pane of panes) pane.streamState = null;
   renderPage(state.currentPage);
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
+  panes.forEach((pane, i) => { pane.scrollTop = scrolls[i]; });
   syncEditUi();
   if (on) resumeRawView();
 }
