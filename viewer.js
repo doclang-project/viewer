@@ -511,7 +511,8 @@ let pagedPaneResizeObserver = null;
 let selectedElementId = null;
 /** Whether editing is switched on (Settings > Editing); never on when the deployment lacks it. */
 let editingOn = startsOn("editing");
-const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
+// `live`: a document still being written by its host traces itself, the cursor at the end of what is written so far.
+const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, live: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
 /** @type {{ svg: SVGSVGElement, range: { start: number, end: number }, items: object[], current: object | null } | null} */
 let tokenLayer = null;
 /**
@@ -626,6 +627,12 @@ function fileNamesOnly() {
 let toolbarOptionsOpen = false;
 let hotkeysEnabled = true;
 let themePref = "system";
+/** The theme the host page set (`doclang-viewer:configure`), over the user's choice; not saved. */
+let hostTheme = null;
+/** The host window and its origin, once it has posted. */
+let hostLink = null;
+/** Extensions of the files the host takes, e.g. `[".png", ".pdf"]` (`doclang-viewer:configure`). */
+let hostAccept = [];
 let fileDownloadMenu = null;
 const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
@@ -1092,6 +1099,7 @@ els.layoutTypesFields?.addEventListener("change", (e) => {
   applyBboxVisibility();
 });
 loadLayoutPrefs();
+applyUrlHeader();
 loadOverlayPrefs();
 removeUnavailableMarkup();
 initEditingToggle();
@@ -1128,14 +1136,14 @@ let demoLoadInProgress = false;
 let suppressDemoLoad = false;
 let launchSource;
 initFileHandling();
-initOpenerHandoff();
+initHostHandoff();
 
 function setDemoLoading(loading) {
   document.body.classList.toggle("demo-loading", loading);
 }
 
 // A file-handling launch (see initFileHandling) or an opener handoff (see
-// initOpenerHandoff) sets suppressDemoLoad synchronously, before this runs.
+// initHostHandoff) sets suppressDemoLoad synchronously, before this runs.
 setTimeout(() => {
   if (suppressDemoLoad) return;
   if (startsOn("demo")) loadDemo();
@@ -1197,6 +1205,8 @@ async function loadFromFileList(fileList) {
     return;
   }
   const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  const forHost = files.filter((f) => !supported.includes(f) && isHostFile(f));
+  if (forHost.length) await handOffToHost(forHost);
   if (supported.length) await addFilesToCatalog(supported, { replace: false });
 }
 
@@ -1240,27 +1250,211 @@ function initFileHandling() {
 }
 
 /**
- * Receive a document from the page that opened the viewer, e.g. the
- * docling-serve UI, which cannot pass its in-memory conversion result by URL.
+ * Receive a document from the page that hosts the viewer: the page that opened it (`?source=opener`), e.g. the
+ * docling-serve UI, which cannot pass its in-memory conversion result by URL, or the page that embeds it in an
+ * iframe (`?source=embed`).
  *
- * The opener opens the viewer with `?source=opener` and posts
- * `{type: "doclang-viewer:ping"}` until the viewer answers
- * `{type: "doclang-viewer:ready"}`; it then posts
- * `{type: "doclang-viewer:open", name, buffer}` with the file as an ArrayBuffer.
- * Only messages from `window.opener` are accepted.
+ * The host posts `{type: "doclang-viewer:ping"}` until the viewer answers `{type: "doclang-viewer:ready"}`; it
+ * then posts either
+ * - `{type: "doclang-viewer:open", name, buffer}` with a file as an ArrayBuffer, or
+ * - `{type: "doclang-viewer:show", name, markup, pages}` with DocLang markup as a string and, optionally, its page
+ *   images as `{[pageNo]: Blob | ArrayBuffer}`. Posting `show` again with the same `name` replaces that document,
+ *   so a host can show a document while it is still being written. A host that generated the markup can add the
+ *   model's `tokens`, `[[text, id, special?], …]` in the order they were generated; the token lens then shows those
+ *   instead of the viewer's own tokenization (see alignHostTokens()). `complete: true` says the document is done:
+ *   only then is it validated, so a document still being written is not checked against the schema at every step.
+ * It may also post `{type: "doclang-viewer:configure", theme, style, accept}` to fit the viewer into its own look,
+ * and to take the files it can process (see applyHostConfig()). Those are handed back to it when the user drops or
+ * opens one, as `{type: "doclang-viewer:file", name, buffer}`.
+ * Only messages from the host window are accepted.
  */
-function initOpenerHandoff() {
-  if (!window.opener || takeLaunchSource() !== "opener") return;
+function initHostHandoff() {
+  const source = takeLaunchSource();
+  const host = source === "opener" ? window.opener : source === "embed" && window.parent !== window ? window.parent : null;
+  if (!host) return;
   suppressDemoLoad = true;
+  // An opener is about to hand over a file; an embedding page may never: the start screen, to drop one on.
+  if (source === "embed") setDemoLoading(false);
   window.addEventListener("message", async (event) => {
-    if (event.source !== window.opener) return;
-    const { type, name, buffer } = event.data ?? {};
+    if (event.source !== host) return;
+    hostLink = { window: host, origin: event.origin };
+    const { type, name, buffer, markup, pages, tokens, complete } = event.data ?? {};
     if (type === "doclang-viewer:ping") {
-      window.opener.postMessage({ type: "doclang-viewer:ready" }, event.origin);
+      host.postMessage({ type: "doclang-viewer:ready" }, event.origin);
     } else if (type === "doclang-viewer:open" && buffer instanceof ArrayBuffer) {
       await loadFromFileList([new File([buffer], name || "document.dclx")]);
+    } else if (type === "doclang-viewer:show" && typeof markup === "string") {
+      await showLiveDocument({ name: name || "document.dclg", markup, pages, tokens, complete: complete === true });
+    } else if (type === "doclang-viewer:configure") {
+      applyHostConfig(event.data);
     }
   });
+}
+
+/**
+ * A host's look, for this visit only: `theme` ("light" or "dark") over the user's choice, and `style`, values for
+ * the viewer's own colour variables (e.g. `{"--bg": "#fbf6ee"}`). Anything else is ignored: other names, and values
+ * that could load something (`url(…)`) or reach past the one declaration. `accept` lists the extensions of the
+ * files the host takes; the start screen and the Open dialog offer them next to the viewer's own.
+ */
+function applyHostConfig({ theme, style, accept }) {
+  if (Array.isArray(accept)) {
+    hostAccept = accept.filter((ext) => typeof ext === "string" && /^\.[a-z0-9]+$/i.test(ext)).map((ext) => ext.toLowerCase());
+    initFileTypeHints();
+  }
+  if (theme === "light" || theme === "dark") {
+    hostTheme = theme;
+    applyTheme();
+  }
+  if (!style || typeof style !== "object") return;
+  const root = document.documentElement;
+  const known = getComputedStyle(root);
+  for (const [name, value] of Object.entries(style)) {
+    if (!/^--[a-z][a-z0-9-]*$/.test(name) || !known.getPropertyValue(name)) continue;
+    if (typeof value !== "string" || /url\(|image-set\(|[;{}<>\\]/i.test(value)) continue;
+    root.style.setProperty(name, value);
+  }
+}
+
+function isHostFile(file) {
+  const name = file.name.toLowerCase();
+  return hostLink !== null && hostAccept.some((ext) => name.endsWith(ext));
+}
+
+/** Files the viewer cannot open but the host takes (a page image to convert, say) go to the host. */
+async function handOffToHost(files) {
+  for (const file of files) {
+    const buffer = await file.arrayBuffer();
+    hostLink.window.postMessage({ type: "doclang-viewer:file", name: file.name, buffer }, hostLink.origin, [buffer]);
+  }
+}
+
+let liveShowPending = null;
+let liveShowRunning = false;
+
+/** Shows the latest `show` only: one that arrives while another is being rendered supersedes those queued before it. */
+async function showLiveDocument(doc) {
+  liveShowPending = doc;
+  if (liveShowRunning) return;
+  liveShowRunning = true;
+  try {
+    while (liveShowPending) {
+      const next = liveShowPending;
+      liveShowPending = null;
+      await applyLiveDocument(next);
+    }
+  } finally {
+    liveShowRunning = false;
+  }
+}
+
+/**
+ * The page image URLs of a live entry. The host hands its images over again with every version of the document;
+ * an image the same as before keeps its URL, so it is not loaded again and nothing flickers while the document grows.
+ */
+function livePageImageUrls(entry) {
+  entry.liveUrls ??= new Map();
+  const urls = new Map();
+  for (const [page, blob] of entry.source.pages) {
+    const key = `${blob.size}:${blob.type}`;
+    let known = entry.liveUrls.get(page);
+    if (known?.key !== key) {
+      if (known) revokeLivePageUrl(known.url);
+      known = { key, url: URL.createObjectURL(blob) };
+      entry.liveUrls.set(page, known);
+    }
+    urls.set(page, known.url);
+  }
+  for (const [page, known] of entry.liveUrls) {
+    if (urls.has(page)) continue;
+    revokeLivePageUrl(known.url);
+    entry.liveUrls.delete(page);
+  }
+  return urls;
+}
+
+function revokeLivePageUrl(url) {
+  pageImageElementCache.delete(url);
+  URL.revokeObjectURL(url);
+}
+
+/** How close to the end of the DocLang pane still counts as at the end, for following a live document. */
+const LIVE_FOLLOW_SLACK_PX = 24;
+
+/** A `live` entry holds markup and page images handed over by the host, not file bytes. */
+async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
+  const pageBlobs = new Map();
+  for (const [page, image] of Object.entries(pages ?? {})) {
+    const pageNo = Number(page);
+    if (!Number.isInteger(pageNo) || pageNo < 1) continue;
+    if (image instanceof Blob) pageBlobs.set(pageNo, image);
+    else if (image instanceof ArrayBuffer) pageBlobs.set(pageNo, new Blob([image]));
+  }
+  const hostTokens = Array.isArray(tokens)
+    ? tokens.filter((t) => Array.isArray(t) && typeof t[0] === "string" && Number.isInteger(t[1]))
+    : null;
+  const source = { markupXml: markup, pages: pageBlobs, tokens: hostTokens, complete };
+  let index = fileCatalog.findIndex((entry) => entry.kind === "live" && entry.label === name);
+  if (index === -1) {
+    fileCatalog.push({
+      id: crypto.randomUUID(),
+      label: name,
+      kind: "live",
+      source,
+      currentPage: 1,
+      pageZoom: PAGE_ZOOM_DEFAULT,
+      snapshot: null,
+      thumbnailUrl: null,
+    });
+    index = fileCatalog.length - 1;
+  } else {
+    const entry = fileCatalog[index];
+    if (entry.snapshot && index !== activeFileIndex) revokeDocumentState(entry.snapshot);
+    entry.snapshot = null;
+    entry.source = source;
+    entry.validation = null; // another version: validated once it is complete
+  }
+  // While the end of what is written is in view, the viewer follows it: to the page being written, and in the DocLang
+  // pane to its last line (not the pane's end: the pages still to come are there, empty). Scrolled away, it stays.
+  const pane = els.markupPane;
+  const end = pane && index === activeFileIndex && state ? writtenMarkupEnd(pane, liveWritingPage(state)) : null;
+  const following = !pane || end === null
+    || (end >= pane.scrollTop - LIVE_FOLLOW_SLACK_PX && end <= pane.scrollTop + pane.clientHeight + LIVE_FOLLOW_SLACK_PX);
+  const scroll = pane?.scrollTop ?? 0;
+  await switchToFile(index);
+  if (!pane || !state) return;
+  if (!following) {
+    pane.scrollTop = scroll;
+    return;
+  }
+  const page = liveWritingPage(state);
+  // Only when the writing moves on to another page: going to the page it is on would render it all again.
+  if (page !== state.currentPage) goToPage(page);
+  const block = pane.querySelector(`:scope > .pane-page-block[data-page="${page}"]`);
+  const top = block ? offsetInPane(pane, block.getBoundingClientRect().top) : 0;
+  const bottom = writtenMarkupEnd(pane, page);
+  if (bottom !== null) pane.scrollTop = Math.max(top, bottom - pane.clientHeight + LIVE_FOLLOW_SLACK_PX / 2);
+}
+
+/** The last page with markup: in a document still being written, the page being written. */
+function liveWritingPage(docState) {
+  for (let i = docState.segments.length - 1; i >= 0; i -= 1) {
+    if (segmentHasMarkup(docState.segments[i])) return i + 1;
+  }
+  return 1;
+}
+
+/** A viewport y as an offset in `pane`'s scrolled content. */
+function offsetInPane(pane, y) {
+  return y - pane.getBoundingClientRect().top + pane.scrollTop;
+}
+
+/** Where the DocLang pane's markup of `page` ends, in the pane's scrolled content; null when nothing shows. */
+function writtenMarkupEnd(pane, page) {
+  const block = pane.querySelector(`:scope > .pane-page-block[data-page="${page}"]`) ?? pane;
+  const lines = [...block.querySelectorAll(".markup-line")].filter((line) => line.getClientRects().length);
+  const last = lines[lines.length - 1];
+  return last ? offsetInPane(pane, last.getBoundingClientRect().bottom) : null;
 }
 
 /** File System Access handles for files that came with one, keyed by their `File`. */
@@ -1410,6 +1604,8 @@ function revokeCatalogEntry(entry) {
     URL.revokeObjectURL(entry.thumbnailUrl);
   }
   if (entry) entry.thumbnailUrl = null;
+  for (const { url } of entry?.liveUrls?.values() ?? []) revokeLivePageUrl(url);
+  entry?.liveUrls?.clear();
 }
 
 function createFileViewThumbnail(entry) {
@@ -1687,6 +1883,15 @@ async function parseCatalogEntry(entry) {
       const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
       return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false, altChoices: entry.altChoices });
     }
+    if (entry.kind === "live") {
+      const docState = buildDocumentState(entry.source.markupXml, livePageImageUrls(entry), entry.label, new Map(), { markupOnly: false, altChoices: entry.altChoices });
+      if (!docState) return null;
+      docState.sharedPageUrls = true; // the entry's, kept from one version to the next: see livePageImageUrls()
+      if (entry.source.tokens?.length) docState.hostTokens = entry.source.tokens;
+      // Tokens before the first paint: the trace's effects would otherwise flash off while they are worked out.
+      if (tokenLens.active) await ensureTokenData(docState).catch(() => {});
+      return docState;
+    }
     if (entry.kind === "folder") {
       const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
       return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false, altChoices: entry.altChoices });
@@ -1923,6 +2128,10 @@ if (els.filePane) {
 /** Downloads an open file as it is now: its applied edits included, in its own format. */
 function downloadCatalogFile(entry) {
   if (entry.kind === "folder") return;
+  if (entry.kind === "live") {
+    downloadBlob(new Blob([entry.source.markupXml], { type: "application/xml" }), entry.label);
+    return;
+  }
   downloadBlob(new Blob([entry.source]), entry.label);
 }
 
@@ -2752,9 +2961,18 @@ function renderCursorHintHtml(html, clientX, clientY) {
 }
 
 function initFileTypeHints() {
-  if (!els.emptyStateFileTypes) return;
-  const markup = SUPPORTED_FILE_EXTENSIONS.map((ext) => `<code>${ext}</code>`).join(", ");
-  els.emptyStateFileTypes.innerHTML = markup;
+  const extensions = [...hostAccept, ...SUPPORTED_FILE_EXTENSIONS];
+  if (els.emptyStateFileTypes) {
+    els.emptyStateFileTypes.innerHTML = extensions.map((ext) => `<code>${ext}</code>`).join(", ");
+  }
+  const title = document.querySelector("#empty-state-prompt .empty-state-title");
+  if (title) title.textContent = hostAccept.length ? "Drop a file here" : "Drop a DocLang file here";
+  const input = document.getElementById("input-archive");
+  const ownAccept = input?.dataset.ownAccept ?? input?.accept;
+  if (input) {
+    input.dataset.ownAccept = ownAccept;
+    input.accept = [...hostAccept, ownAccept].filter(Boolean).join(",");
+  }
 }
 
 function initCursorHints() {
@@ -3002,7 +3220,9 @@ function ensureTokenData(docState) {
       if (node) node.denseEnd = dense.length;
     }
 
-    const tokens = stdExt.encode(dense).filter((t) => t.end > t.start);
+    const tokens = docState.hostTokens
+      ? alignHostTokens(dense, docState.hostTokens, stdExt)
+      : stdExt.encode(dense).filter((t) => t.end > t.start);
     const denseToToken = new Int32Array(dense.length).fill(-1);
     tokens.forEach((t, ti) => {
       for (let d = t.start; d < t.end; d += 1) denseToToken[d] = ti;
@@ -3035,7 +3255,8 @@ function ensureTokenData(docState) {
       elementTokens.set(elements[k], { start, end, closeStart });
     });
 
-    return { tokenizer: stdExt, tokens, elementTokens };
+    // With the host's tokens, the source view takes each line's tokens from these, not from the tokenizer.
+    return { tokenizer: stdExt, tokens, elementTokens, dense: docState.hostTokens ? dense : null };
   })();
   return docState.tokenDataPromise.then(
     (data) => {
@@ -3047,6 +3268,55 @@ function ensureTokenData(docState) {
       throw err;
     },
   );
+}
+
+/** How far ahead a host token is looked for: past markup the model did not write, like a page break. */
+const HOST_TOKEN_LOOKAHEAD = 32;
+
+/**
+ * The host's tokens (the model's own, as generated) placed on the text the viewer tokenizes. Text the model did not
+ * write (the root or page breaks a host adds around its pages) is tokenized by `fallback`; a token not found close
+ * ahead (an end-of-text marker, whitespace the canonical form drops, what is generated past the shown markup) is
+ * left out.
+ */
+function alignHostTokens(dense, hostTokens, fallback) {
+  const tokens = [];
+  let pos = 0;
+  const fill = (to) => {
+    if (to <= pos) return;
+    for (const t of fallback.encode(dense.slice(pos, to))) {
+      if (t.end > t.start) tokens.push({ ...t, start: t.start + pos, end: t.end + pos });
+    }
+    pos = to;
+  };
+  for (const [text, id, special] of hostTokens) {
+    if (!text) continue;
+    const at = dense.startsWith(text, pos) ? pos : dense.indexOf(text, pos);
+    if (at < 0 || at - pos > HOST_TOKEN_LOOKAHEAD || (at > pos && !text.trim())) continue;
+    fill(at);
+    tokens.push({ id, start: at, end: at + text.length, special: Boolean(special) });
+    pos = at + text.length;
+  }
+  fill(dense.length);
+  return tokens;
+}
+
+/**
+ * A source line's share of the document's tokens, from token `first` on, or null when the line's text does not
+ * follow them (then it is tokenized on its own). A token that runs past the line's end is cut there.
+ */
+function lineTokensFromDocument(data, text, first) {
+  const out = [];
+  let i = 0;
+  for (let ti = first; i < text.length && ti < data.tokens.length; ti += 1) {
+    const t = data.tokens[ti];
+    const piece = data.dense.slice(t.start, t.end);
+    const end = text.startsWith(piece, i) ? i + piece.length : piece.startsWith(text.slice(i)) ? text.length : -1;
+    if (end < 0) return null;
+    out.push({ id: t.id, start: i, end, special: t.special });
+    i = end;
+  }
+  return i === text.length ? out : null;
 }
 
 /** Token range of an element; a list item or table cell runs from its token up to the next one. */
@@ -3098,7 +3368,8 @@ function decorateMarkupTokens() {
       if (!n.parentElement.closest(TOKENS_SKIPPED_MARKUP)) textNodes.push(n);
     }
     const text = textNodes.map((n) => n.nodeValue).join("");
-    const tokens = data.tokenizer.encode(text).filter((t) => t.end > t.start);
+    const tokens = (data.dense && lineTokensFromDocument(data, text, pos))
+      ?? data.tokenizer.encode(text).filter((t) => t.end > t.start);
     line.dataset.tokenStart = String(pos);
     let offset = 0;
     let ti = 0;
@@ -3258,16 +3529,25 @@ function currentTokenRange() {
 }
 
 /**
+ * No trace playback for a document a host streams in (a `live` entry), while it is written and after: the trace
+ * shows how it was generated as it happens, and the host offers what comes after.
+ */
+function tracePlaybackOff() {
+  return tokenLens.live || fileCatalog[activeFileIndex]?.kind === "live";
+}
+
+/**
  * True while a replay is under way: playing, or paused somewhere inside the page. At either end the
  * page shows as usual, so a fresh page (cursor at its start) is not veiled until it plays.
  */
 function isReplayShown(range) {
-  return !!range && (tokenLens.playing || (tokenLens.cursor > range.start && tokenLens.cursor < range.end));
+  return !!range && (tokenLens.playing || tokenLens.live || (tokenLens.cursor > range.start && tokenLens.cursor < range.end));
 }
 
 /** Brings every token view (page layer, highlight, controls, source view) in line with the replay cursor. */
 function updateTokenReplay() {
   const range = currentTokenRange();
+  if (range && tokenLens.live) tokenLens.cursor = range.end;
   if (range && !(tokenLens.cursor >= range.start && tokenLens.cursor <= range.end)) {
     tokenLens.cursor = range.start;
   }
@@ -3296,7 +3576,7 @@ function syncReplaySelection(range) {
   }
   const id = resolveSelectionElementId(innermost);
   if (!id) return;
-  if (tokenLens.playing) {
+  if (tokenLens.playing || tokenLens.live) {
     // While playing, the traced element is only highlighted: the inspector would flicker open and closed.
     if (id !== tokenLens.currentId) highlightReplayElement(id);
     return;
@@ -3317,6 +3597,7 @@ function syncReplaySelection(range) {
 
 /** With tokens on, selecting an element seeks the trace to the element's first token. */
 function seekTraceToElement(elementId) {
+  if (tracePlaybackOff()) return; // the trace follows the document being written
   const range = currentTokenRange();
   if (!range) return;
   const el = state.idToElement?.get(elementId);
@@ -3402,7 +3683,9 @@ function syncTokenLayer(img) {
   const lo = Math.min(...logs);
   const hi = Math.max(...logs);
 
-  const svg = svgEl("svg", { class: "token-layer", viewBox: `0 0 ${W} ${H}` });
+  // Already veiled when the trace shows it: a rebuilt layer (a live document's next version) does not fade in again.
+  const shown = isReplayShown(currentTokenRange()) && tokenLens.effects && !!els.tokenScanToggle?.checked;
+  const svg = svgEl("svg", { class: `token-layer${shown ? " is-replaying" : ""}`, viewBox: `0 0 ${W} ${H}` });
   const mask = svgEl("mask", { id: "token-veil-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: W, height: H });
   mask.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "white" }));
   const defs = svgEl("defs");
@@ -3487,7 +3770,8 @@ function syncTraceUpcomingPages(range) {
   const tracing = isReplayShown(range) && tokenLens.effects;
   const veil = tracing && !!els.tokenScanToggle?.checked;
   const empty = tracing && !!els.tokenRenderToggle?.checked;
-  const current = state?.currentPage ?? 0;
+  // A live document's upcoming pages follow the page being written, wherever the user is looking.
+  const current = tokenLens.live && state ? liveWritingPage(state) : state?.currentPage ?? 0;
   for (const { pageNum, wrap } of pageStream?.pages ?? []) wrap.classList.toggle("token-upcoming", veil && pageNum > current);
   for (const { pageNum, el } of previewPageEls()) el.classList.toggle("token-upcoming", empty && pageNum > current);
 }
@@ -3576,24 +3860,29 @@ function syncTokenBar(range = currentTokenRange()) {
   const bar = els.tokenBar;
   if (!bar || bar.hidden) return;
   const data = state?.tokenData;
-  if (els.tokenStartBtn) els.tokenStartBtn.disabled = !range || (tokenLens.cursor <= range.start && !tokenLens.playing);
-  if (els.tokenPrevBtn) els.tokenPrevBtn.disabled = !range || tokenLens.cursor <= range.start;
-  if (els.tokenNextBtn) els.tokenNextBtn.disabled = !range || tokenLens.cursor >= range.end;
+  // A document a host streams in has no trace playback: no controls (see tracePlaybackOff()).
+  const live = tracePlaybackOff();
+  if (els.tokenNav) els.tokenNav.hidden = live;
+  if (els.tokenStartBtn) els.tokenStartBtn.disabled = live || !range || (tokenLens.cursor <= range.start && !tokenLens.playing);
+  if (els.tokenPrevBtn) els.tokenPrevBtn.disabled = live || !range || tokenLens.cursor <= range.start;
+  if (els.tokenNextBtn) els.tokenNextBtn.disabled = live || !range || tokenLens.cursor >= range.end;
   if (els.tokenPlayBtn) {
-    els.tokenPlayBtn.disabled = !range;
+    els.tokenPlayBtn.disabled = live || !range;
     const icon = tokenLens.playing ? "pause" : "play";
     if (els.tokenPlayBtn.dataset.icon !== icon) {
       els.tokenPlayBtn.dataset.icon = icon;
       els.tokenPlayBtn.innerHTML = tokenLens.playing ? TOKEN_PAUSE_ICON : TOKEN_PLAY_ICON;
     }
-    const hint = tokenLens.playing
-      ? "Pause the trace"
-      : "Trace DocLang, token by token";
+    const hint = live
+      ? "Tracing follows the document as it is generated"
+      : tokenLens.playing
+        ? "Pause the trace"
+        : "Trace DocLang, token by token";
     els.tokenPlayBtn.dataset.hint = hint; // shown at once by the quick hints
     els.tokenPlayBtn.setAttribute("aria-label", hint);
   }
   if (els.tokenScrub) {
-    els.tokenScrub.disabled = !range;
+    els.tokenScrub.disabled = live || !range;
     if (range) {
       els.tokenScrub.min = String(range.start);
       els.tokenScrub.max = String(range.end);
@@ -3616,6 +3905,7 @@ const TOKEN_PAUSE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-h
 
 /** Steps the replay by single tokens; stepping back from the full page starts a replay at its last token. */
 function stepTokenReplay(delta) {
+  if (tracePlaybackOff()) return;
   const range = currentTokenRange();
   if (!range) return;
   if (tokenLens.playing) stopTokenReplay();
@@ -3624,6 +3914,7 @@ function stepTokenReplay(delta) {
 }
 
 function startTokenReplay() {
+  if (tracePlaybackOff()) return;
   const range = currentTokenRange();
   if (!range) return;
   if (tokenLens.cursor >= range.end) tokenLens.cursor = range.start;
@@ -3678,7 +3969,7 @@ function initTokenLens() {
   els.tokenPlayBtn?.addEventListener("click", toggleTokenReplay);
   els.tokenStartBtn?.addEventListener("click", () => {
     const range = currentTokenRange();
-    if (!range) return;
+    if (!range || tracePlaybackOff()) return;
     if (tokenLens.playing) stopTokenReplay();
     tokenLens.cursor = range.start;
     updateTokenReplay();
@@ -3686,12 +3977,14 @@ function initTokenLens() {
   els.tokenPrevBtn?.addEventListener("click", () => stepTokenReplay(-1));
   els.tokenNextBtn?.addEventListener("click", () => stepTokenReplay(1));
   els.tokenScrub?.addEventListener("input", () => {
+    if (tracePlaybackOff()) return;
     if (tokenLens.playing) stopTokenReplay();
     tokenLens.cursor = Number(els.tokenScrub.value);
     tokenLens.effects = true;
     updateTokenReplay();
   });
   els.tokenScrub?.addEventListener("change", () => {
+    if (tracePlaybackOff()) return;
     tokenLens.effects = false; // released: paused, like after a pause
     updateTokenReplay();
   });
@@ -3712,7 +4005,7 @@ function initTokenLens() {
   els.markupPane?.addEventListener("click", (e) => {
     const span = e.target.closest?.(".token-span");
     const range = span && currentTokenRange();
-    if (!range) return;
+    if (!range || tracePlaybackOff()) return;
     tokenLens.cursor = Math.min(range.end, Number(span.dataset.tokenIndex) + 1);
     if (!tokenLens.playing) tokenLens.effects = false; // a click moves the trace without its effects
     updateTokenReplay();
@@ -3927,6 +4220,8 @@ async function loadFromDrop(dataTransfer) {
     return;
   }
   const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  const forHost = files.filter((f) => !supported.includes(f) && isHostFile(f));
+  if (forHost.length) await handOffToHost(forHost);
   if (supported.length) await addFilesToCatalog(supported, { replace: false });
 }
 
@@ -4188,26 +4483,41 @@ function activateDocument(docState, entry) {
   }
   updatePageZoomResetButton();
   syncPageZoomRange();
+  // A live document's next version keeps its continuous stream: the same pages, their images already shown. It is
+  // not rebuilt (renderPageStream refreshes its overlays), so nothing is redrawn blank while the document grows.
+  const keepStream = entry.kind === "live" && pageStream?.entry === entry && pageStream.port.isConnected;
   // The same file opened again (after a visual edit, say): a continuous stream is built anew but keeps its place.
-  streamRestore = pageStream?.entry === entry
+  streamRestore = !keepStream && pageStream?.entry === entry
     ? { scrollTop: pageStream.port.scrollTop, scrollLeft: pageStream.port.scrollLeft, fallbackAspect: pageStream.fallbackAspect }
     : null;
-  const port = pageViewScrollPane();
-  if (port) {
-    port.scrollLeft = 0;
-    port.scrollTop = 0;
+  if (!keepStream) {
+    const port = pageViewScrollPane();
+    if (port) {
+      port.scrollLeft = 0;
+      port.scrollTop = 0;
+    }
+    pageStream = null; // another document state: a continuous stream is built anew, at its current page
   }
-  pageStream = null; // another document state: a continuous stream is built anew, at its current page
 
   stopEditing({ render: false });
-  stopTokenReplay();
+  // A live document still being written traces itself (see tokenLens), from the start of its rendering. Its next
+  // version keeps the effects on throughout: switched off and on again, the veils' fades would start and flash.
+  const live = tokenLens.active && entry.kind === "live" && !entry.source.complete;
+  if (live) {
+    tokenLens.playing = false;
+    cancelAnimationFrame(tokenLens.frame);
+  } else {
+    stopTokenReplay();
+  }
   tokenLens.cursor = -Infinity;
-  tokenLens.effects = false;
+  tokenLens.live = live;
+  tokenLens.effects = live;
   setDocLabel(entry.label);
   setDocumentOpen(true, { markupOnly: state.markupOnly });
   setPageViewVisible(state.hasPageView);
   syncReadingLayoutButtons();
   renderPage(state.currentPage);
+  if (tokenLens.live) updateTokenReplay();
   streamRestore = null;
   if (pageStream) pageStream.entry = entry;
   updateFileView();
@@ -7019,7 +7329,8 @@ function syncValidationForActiveDocument() {
     return;
   }
   renderValidationUi(entry);
-  if (!entry.validation) validateActiveDocument();
+  // A live document is validated once its host says it is complete, not at every step of being written.
+  if (!entry.validation && (entry.kind !== "live" || entry.source.complete)) validateActiveDocument();
 }
 
 /** Opens/closes the results panel at the user's request; remembered per file. */
@@ -7361,7 +7672,37 @@ function visiblePaneRatios(keys) {
   return weights.map((w) => w / sum);
 }
 
+/**
+ * A page embedding the viewer picks what it shows by URL, e.g. `?panes=reading&reading=paged`: the panes (from
+ * file, page, markup, reading) and the reading layout. Both hold for this visit only: the stored layout is left
+ * as it is.
+ */
+function urlPaneKeys() {
+  const raw = new URLSearchParams(location.search).get("panes");
+  const keys = raw?.split(",").map((key) => key.trim()).filter((key) => PANE_KEYS.includes(key)) ?? [];
+  return keys.length ? keys : null;
+}
+
+function urlReadingLayoutMode() {
+  const mode = new URLSearchParams(location.search).get("reading");
+  return mode === "paged" || mode === "pageless" ? mode : null;
+}
+
+/** `?header=hide`: the page embedding the viewer brings its own chrome, so the viewer's header goes. */
+function applyUrlHeader() {
+  if (new URLSearchParams(location.search).get("header") === "hide") document.body.classList.add("header-hidden");
+}
+
 function loadLayoutPrefs() {
+  loadStoredLayoutPrefs();
+  const keys = urlPaneKeys();
+  if (keys) {
+    for (const key of PANE_KEYS) userPaneVisible[key] = keys.includes(key);
+    filePaneUserToggled = true;
+  }
+}
+
+function loadStoredLayoutPrefs() {
   try {
     const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
     if (!raw) return;
@@ -7392,6 +7733,7 @@ function loadLayoutPrefs() {
 }
 
 function saveLayoutPrefs() {
+  if (urlPaneKeys()) return;
   try {
     localStorage.setItem(
       LAYOUT_STORAGE_KEY,
@@ -7552,7 +7894,7 @@ function applyTheme() {
   for (const btn of els.themeToggle?.querySelectorAll("[data-theme-choice]") ?? []) {
     btn.setAttribute("aria-pressed", String(btn.dataset.themeChoice === themePref));
   }
-  const theme = themePref === "system" ? (systemDarkQuery.matches ? "dark" : "light") : themePref;
+  const theme = hostTheme ?? (themePref === "system" ? (systemDarkQuery.matches ? "dark" : "light") : themePref);
   if (document.documentElement.dataset.theme === theme) return;
   document.documentElement.dataset.theme = theme;
   populateArrowStyleControls();
@@ -7587,9 +7929,11 @@ function loadReadingLayoutMode() {
   } catch {
     /* ignore invalid stored reading-layout-mode pref */
   }
+  readingLayoutMode = urlReadingLayoutMode() ?? readingLayoutMode;
 }
 
 function persistReadingLayoutMode() {
+  if (urlReadingLayoutMode()) return;
   try {
     localStorage.setItem(READING_LAYOUT_MODE_STORAGE_KEY, readingLayoutMode);
   } catch {
@@ -8929,6 +9273,12 @@ function buildPageStream(urls) {
     fallbackAspect: OVERLAY_REF_IMAGE_HEIGHT / OVERLAY_REF_IMAGE_WIDTH,
   };
   const stream = pageStream;
+  // Pages not written yet are veiled from the start while tracing, not once the next trace update gets to them.
+  syncTraceUpcomingPages(currentTokenRange());
+  // An image loaded before (a live document's next version) is laid out before the next paint, not on its load event.
+  queueMicrotask(() => {
+    for (const page of pages) if (page.img.complete && page.img.naturalWidth) onStreamImageLoad(page);
+  });
   port.addEventListener("scroll", () => {
     if (pageStream !== stream || stream.scrollFrame) return;
     stream.scrollFrame = requestAnimationFrame(() => {
@@ -14696,7 +15046,7 @@ function resolveArchiveUri(uri) {
 
 function revokeDocumentState(docState) {
   if (!docState) return;
-  for (const url of docState.pageImages.values()) {
+  for (const url of docState.sharedPageUrls ? [] : docState.pageImages.values()) {
     pageImageElementCache.delete(url);
     if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   }
