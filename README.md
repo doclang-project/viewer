@@ -24,6 +24,7 @@ Open [http://localhost:8080/](http://localhost:8080/): the demo loads on its own
 | **Open** (⌘O / Ctrl+O) | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file; it opens next to the files already open. |
 | **Drag and drop** | Drop any supported file onto the page. |
 | **From another page** | A page that opens the viewer can hand it a file; see [Opening from another page](#opening-from-another-page). |
+| **In another page** | A page that embeds the viewer can show its own documents in it, also while it is still writing them; see [Embedding in a page](#embedding-in-a-page). |
 
 Supported types: `.dclx`, `.dclg`, `.xml`. The demo URLs are configured in [`demo-data.js`](demo-data.js).
 
@@ -49,6 +50,40 @@ window.addEventListener("message", (event) => {
 ```
 
 The viewer only accepts these messages from the window that opened it.
+
+### Embedding in a page
+
+A page can embed the viewer in an `<iframe>` and show its own documents in it, for example a conversion it runs, while the model is still writing it. Open the viewer with `?source=embed` and use the same handshake as above, with the embedding page in place of the opener: post `{type: "doclang-viewer:ping"}` until the viewer answers `{type: "doclang-viewer:ready"}`. The viewer only accepts messages from the page that embeds it. Then:
+
+| Message | What it does |
+|---------|--------------|
+| `{type: "doclang-viewer:show", name, markup, pages, tokens, complete}` | Shows `markup` (DocLang, as a string) with its page images, `pages` as `{[pageNo]: Blob \| ArrayBuffer}`. Posting `show` again with the same `name` replaces the document, so the page can show it while it is still being written. `tokens` (optional) are the tokens the model generated, `[[text, id, special], …]` in order; the token views show them in place of the viewer's own tokenizer. `complete: true` says the document is done. |
+| `{type: "doclang-viewer:configure", theme, style, accept}` | Fits the viewer into the page: `theme` (`"light"` or `"dark"`) over the user's choice, `style` sets the viewer's colour variables (e.g. `{"--bg": "#f3ede2"}`; other names, and values that could load something, are ignored), `accept` lists extensions of files the page takes itself (e.g. `[".png", ".pdf"]`). |
+| `{type: "doclang-viewer:open", name, buffer}` | Opens a file, as from an opener. |
+
+A file of a type in `accept` that the user drops or opens in the viewer goes to the embedding page, as `{type: "doclang-viewer:file", name, buffer}`; the start screen lists those types next to the viewer's own.
+
+While a shown document is not complete:
+
+- the views follow its end: the page being written becomes the current page, and the DocLang pane keeps its last written line in view (scrolled away, it stays);
+- with tokens on, it traces itself as it grows: Reveal and Render while tracing apply, and the element being written is highlighted;
+- it is not validated: validation runs once it is complete.
+
+A shown document has no trace playback, also once complete: it was traced as it was written.
+
+The URL can also set what the viewer shows, for that visit only (the stored layout is left as it is):
+
+| Parameter | |
+|-----------|--|
+| `panes` | the panes to show, from `file`, `page`, `markup`, `reading`, e.g. `panes=markup,reading` |
+| `reading` | the reading layout, `paged` or `pageless` |
+| `header` | `hide` leaves out the header, for a page that brings its own |
+
+with the [features](#features-per-deployment) as usual, e.g.:
+
+```html
+<iframe src="https://doclang.ai/viewer/?source=embed&panes=page,markup,reading&header=hide&editing=never&tokens=on"></iframe>
+```
 
 ## Features per deployment
 

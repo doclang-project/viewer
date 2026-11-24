@@ -2,6 +2,9 @@
   color-scheme: light;
   --bg: #f4f4f5;
   --panel: #ffffff;
+  /* The Paged Preview's page: a sheet of paper, kept apart from --panel so that a host recolouring the chrome
+     (doclang-viewer:configure) leaves it white, like the page image beside it. */
+  --page-bg: #ffffff;
   --border: #d4d4d8;
   --text: #18181b;
   --muted: #71717a;
@@ -71,6 +74,7 @@
   color-scheme: dark;
   --bg: #09090b;
   --panel: #18181b;
+  --page-bg: #18181b;
   --border: #3f3f46;
   --text: #fafafa;
   --muted: #a1a1aa;
@@ -150,6 +154,10 @@ body.drag-over {
 body.drag-over .empty-state {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
+}
+
+body.header-hidden > header {
+  display: none;
 }
 
 header {
@@ -1821,7 +1829,7 @@ body.pane-drag-active .pane-splitter {
   position: relative;
   flex-shrink: 0;
   margin: auto;
-  background: var(--panel);
+  background: var(--page-bg);
   border: 1px solid var(--border);
   border-radius: 0.25rem;
 }
@@ -2451,6 +2459,10 @@ button.validation-issue:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.token-nav[hidden] {
+  display: none;
 }
 
 .token-scrub {
