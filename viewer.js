@@ -3375,6 +3375,20 @@ function syncTokenLayer(img) {
     }
   }
   svg.appendChild(badgeGroup);
+  // The bboxes' label badges read as on top of the veil: it leaves them out. They stay in the overlay, which handles
+  // their clicks and hints, so the veil has a hole where each one is.
+  const imgRect = img.getBoundingClientRect();
+  if (imgRect.width && imgRect.height) {
+    const sx = W / imgRect.width;
+    const sy = H / imgRect.height;
+    for (const badge of img.parentElement?.querySelectorAll("svg.overlay .element-badge") ?? []) {
+      const r = badge.getBoundingClientRect();
+      if (!r.width) continue;
+      mask.appendChild(svgEl("rect", {
+        x: (r.left - imgRect.left) * sx, y: (r.top - imgRect.top) * sy, width: r.width * sx, height: r.height * sy, fill: "black",
+      }));
+    }
+  }
 
   // Above the bbox overlay, so the veil darkens it too; clicks pass through to the overlay.
   img.parentElement.appendChild(svg);
@@ -8350,16 +8364,19 @@ function makePageBlock(pageNum) {
   return block;
 }
 
-/** Fills a pane with a block per page; a pane that showed them already keeps its place, else it goes to `pageNum`. */
-function fillPageStream(pane, pageNum, buildPage) {
+/**
+ * Fills a pane with a block per page; a pane that showed them already keeps its place, else it goes to `pageNum`.
+ * A page without markup gets an empty block, unless `emptyPages` builds it too (the Paged Preview's blank page): in a
+ * continuous view, a page with nothing to show shows nothing.
+ */
+function fillPageStream(pane, pageNum, buildPage, { emptyPages = false } = {}) {
   const wasStream = Boolean(pane.querySelector(":scope > .pane-page-block"));
   const scroll = pane.scrollTop;
   pane.innerHTML = "";
   for (let n = 1; n <= state.pageCount; n += 1) {
     const block = makePageBlock(n);
     const ctx = pageContextFor(n);
-    if (segmentHasMarkup(ctx.segment)) block.appendChild(buildPage(ctx, n));
-    else block.insertAdjacentHTML("beforeend", `<div class="placeholder">${NO_MARKUP}</div>`);
+    if (emptyPages || segmentHasMarkup(ctx.segment)) block.appendChild(buildPage(ctx, n));
     pane.appendChild(block);
   }
   pane.streamState = state;
@@ -8401,7 +8418,7 @@ function buildReadingStream(pageNum) {
       applyRtlBlocks(canvas);
       setPagedCanvasAspect(canvas, n);
       return canvas;
-    });
+    }, { emptyPages: true });
     fitPagedCanvas();
     observePagedPaneResize();
     mirrorPanes();
@@ -9238,8 +9255,8 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   els.renderedPane.innerHTML = "";
   els.renderedPane.classList.remove("reading-stream");
 
-  if (!segmentHasMarkup(segment)) {
-    els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+  // A page without markup: a blank page when Paged, nothing when Flowing.
+  if (!segmentHasMarkup(segment) && effectiveReadingLayoutMode() !== "paged") {
     els.renderedPane.classList.remove("reading-mode-paged");
     return;
   }
@@ -12419,14 +12436,8 @@ function buildRenderedView(segment, elementIds, { joins = null, pageNum = 0 } = 
   return root;
 }
 
+/** A page without markup comes out blank: a page of the page's size with nothing on it. */
 function buildPagedView(segment, elementIds, boxes, defaultResolution) {
-  if (!segmentHasMarkup(segment)) {
-    const placeholder = document.createElement("div");
-    placeholder.className = "placeholder";
-    placeholder.innerHTML = NO_MARKUP;
-    return placeholder;
-  }
-
   const boxById = new Map(boxes.map((b) => [b.elementId, b]));
 
   const canvas = document.createElement("div");
