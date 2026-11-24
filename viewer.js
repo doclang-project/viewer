@@ -542,7 +542,7 @@ let clickableLinks = false;
 let showPictureDetails = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "paged";
-/** The DocLang pane's view of choice; it applies to any document that can be edited. @type {"visual" | "raw"} */
+/** The DocLang pane's view of choice, for any document; Raw is read-only for one that cannot be edited. @type {"visual" | "raw"} */
 let markupViewMode = "visual";
 let showLayoutBody = true;
 let showLayoutFurniture = true;
@@ -917,7 +917,7 @@ els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
-els.viewVisualBtn?.addEventListener("click", () => applyEdit());
+els.viewVisualBtn?.addEventListener("click", () => (editableEntry() ? applyEdit() : closeRawView()));
 els.viewRawBtn?.addEventListener("click", openRawView);
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
@@ -1378,6 +1378,9 @@ function revokeLivePageUrl(url) {
   URL.revokeObjectURL(url);
 }
 
+/** Where a live document's Raw view was last put, to tell whether the user has scrolled it since. */
+let liveRawScrollTop = 0;
+
 /** How close to the end of the DocLang pane still counts as at the end, for following a live document. */
 const LIVE_FOLLOW_SLACK_PX = 24;
 
@@ -1421,7 +1424,17 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   const following = !pane || end === null
     || (end >= pane.scrollTop - LIVE_FOLLOW_SLACK_PX && end <= pane.scrollTop + pane.clientHeight + LIVE_FOLLOW_SLACK_PX);
   const scroll = pane?.scrollTop ?? 0;
+  // A Raw view follows the end too: until the user scrolls it (it is not where it was put), or once they are back at it.
+  const raw = markupEditor;
+  const rawFollowing = raw && (Math.abs(raw.scrollTop - liveRawScrollTop) < 2
+    || raw.scrollHeight - raw.scrollTop - raw.clientHeight < LIVE_FOLLOW_SLACK_PX);
+  const rawScroll = raw?.scrollTop ?? 0;
   await switchToFile(index);
+  if (raw && markupEditor) {
+    markupEditor.scrollTop = rawFollowing ? markupEditor.scrollHeight : rawScroll;
+    liveRawScrollTop = markupEditor.scrollTop;
+    syncEditorCurrentLine();
+  }
   if (!pane || !state) return;
   if (!following) {
     pane.scrollTop = scroll;
@@ -4571,7 +4584,7 @@ function setEditError(message) {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "e" || e.defaultPrevented || e.repeat || !hotkeysEnabled) return;
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
-  if (!editableEntry()) return;
+  if (!state) return;
   e.preventDefault();
   openRawView();
 });
@@ -4579,9 +4592,12 @@ document.addEventListener("keydown", (e) => {
 function syncEditUi() {
   const entry = editableEntry();
   const editing = !!markupEditor;
-  if (els.markupViewToggle) els.markupViewToggle.hidden = !entry;
+  // Raw is there for any document: the source to edit when it can be edited, to read when it cannot.
+  if (els.markupViewToggle) els.markupViewToggle.hidden = !state;
   els.viewVisualBtn?.setAttribute("aria-pressed", String(!editing));
   els.viewRawBtn?.setAttribute("aria-pressed", String(editing));
+  if (els.viewVisualBtn) els.viewVisualBtn.title = entry ? "Edit visually" : "Show the formatted DocLang";
+  if (els.viewRawBtn) els.viewRawBtn.title = entry ? "Edit the raw DocLang source (E)" : "Show the raw DocLang source (E)";
   syncHistoryButtons();
   syncAddButtons();
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
@@ -4636,7 +4652,7 @@ function setEditingOn(on) {
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
   panes.forEach((pane, i) => { pane.scrollTop = scrolls[i]; });
   syncEditUi();
-  if (on) resumeRawView();
+  resumeRawView(); // a Raw view stays one: editable now, or read-only
 }
 
 /** The demo switch only decides the next launch: it loads or closes nothing now. */
@@ -4679,6 +4695,12 @@ function openRawView() {
   else startEditing();
 }
 
+/** Back to the formatted DocLang from a Raw view there is nothing to apply from (read-only). */
+function closeRawView() {
+  setMarkupViewMode("visual");
+  stopEditing({ render: true });
+}
+
 /** A document opens in the view of choice; the keyboard stays with the viewer's shortcuts until asked for. */
 function resumeRawView() {
   if (markupViewMode === "raw") startEditing({ focus: false });
@@ -4689,12 +4711,14 @@ function focusEditor() {
   scrollEditorToCaret();
 }
 
+/** The Raw view: the source in an editor, read-only for a document that cannot be edited (editing off, say). */
 function startEditing({ focus = true } = {}) {
-  if (markupEditor || !editableEntry() || !els.markupPane) return;
+  if (markupEditor || !state || !els.markupPane) return;
   cancelDrawing(); // what was being drawn is a visual edit
   markupEditor = document.createElement("textarea");
   markupEditor.className = "markup-editor";
   markupEditor.spellcheck = false;
+  markupEditor.readOnly = !editableEntry();
   markupEditor.value = state.markupXml;
   markupEditor.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {

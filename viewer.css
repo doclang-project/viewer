@@ -2237,6 +2237,15 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
+/* A read-only Raw view (editing off) is for reading: no caret. */
+.markup-editor[readonly] {
+  caret-color: transparent;
+}
+
+.markup-editor-wrap:has(.markup-editor[readonly]) .markup-editor-caret::before {
+  display: none;
+}
+
 .markup-editor-no-current-line {
   background: none;
 }
