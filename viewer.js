@@ -813,8 +813,19 @@ document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   resetViewer();
 });
+document.getElementById("sample-page-link")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  requestHostSample();
+});
+// The start screen's "choose a file" opens the same dialog as the header's Open (which an embedding page may hide).
+document.getElementById("choose-file-link")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  document.getElementById("input-archive")?.click();
+});
 document.getElementById("input-archive")?.addEventListener("click", async (e) => {
-  if (!window.showOpenFilePicker) return;
+  // The file picker keeps a handle to save to; it offers DocLang files only, so with files a host takes as well the
+  // plain dialog opens (its `accept` lists both, see initFileTypeHints()).
+  if (!window.showOpenFilePicker || hostAccept.length) return;
   e.preventDefault();
   try {
     const handles = await window.showOpenFilePicker({
@@ -838,10 +849,13 @@ document.getElementById("input-archive")?.addEventListener("click", async (e) =>
   }
 });
 document.getElementById("input-archive")?.addEventListener("change", async (e) => {
-  const files = [...e.target.files].filter((f) => isArchiveFile(f) || isMarkupFile(f));
-  if (!files.length) return;
-  await addFilesToCatalog(files);
+  const files = [...e.target.files];
   e.target.value = "";
+  // As if dropped: DocLang files open, and files a host takes go to it.
+  const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  const forHost = files.filter((f) => !supported.includes(f) && isHostFile(f));
+  if (forHost.length) await handOffToHost(forHost);
+  if (supported.length) await addFilesToCatalog(supported);
 });
 els.btnFirst?.addEventListener("click", () => goToPage(1));
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
@@ -1316,12 +1330,14 @@ function initHostHandoff() {
  * that could load something (`url(…)`) or reach past the one declaration. `accept` lists the extensions of the
  * files the host takes; the start screen and the Open dialog offer them next to the viewer's own.
  */
-function applyHostConfig({ theme, style, accept, indicator }) {
+function applyHostConfig({ theme, style, accept, sample, indicator }) {
   if (indicator === "dots" || indicator === "placeholder") liveIndicator = indicator;
   if (Array.isArray(accept)) {
     hostAccept = accept.filter((ext) => typeof ext === "string" && /^\.[a-z0-9]+$/i.test(ext)).map((ext) => ext.toLowerCase());
     initFileTypeHints();
   }
+  if (typeof sample === "boolean") hostWantsSample = sample;
+  syncSamplePageAction();
   if (theme === "light" || theme === "dark") {
     hostTheme = theme;
     applyTheme();
@@ -1339,6 +1355,19 @@ function applyHostConfig({ theme, style, accept, indicator }) {
 function isHostFile(file) {
   const name = file.name.toLowerCase();
   return hostLink !== null && hostAccept.some((ext) => name.endsWith(ext));
+}
+
+/** Whether the host offers a sample of its own, for "try a sample" on the start screen (configure's `sample`). */
+let hostWantsSample = false;
+
+function syncSamplePageAction() {
+  const button = document.getElementById("sample-page-link");
+  if (button) button.hidden = !(hostWantsSample && hostLink);
+}
+
+/** Asks the host for its sample: it hands it over as it would a file dropped on the viewer. */
+function requestHostSample() {
+  hostLink?.window.postMessage({ type: "doclang-viewer:sample" }, hostLink.origin);
 }
 
 /** Files the viewer cannot open but the host takes (a page image to convert, say) go to the host. */
