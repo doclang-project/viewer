@@ -551,6 +551,8 @@ let readingBboxStyle = {};
 let cropPictures = true;
 /** Whether a click on a Preview link opens its target. */
 let clickableLinks = false;
+/** The Preview's chips on pictures, with their class and description (see pictureDetailsChip()). */
+let showPictureDetails = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "paged";
 /** The DocLang pane's view of choice, for any document; Raw is read-only for one that cannot be edited. @type {"visual" | "raw"} */
@@ -703,6 +705,7 @@ const els = {
   cropPictures: document.getElementById("crop-pictures"),
   cropPicturesLabel: document.getElementById("crop-pictures-label"),
   clickableLinks: document.getElementById("clickable-links"),
+  pictureDetails: document.getElementById("picture-details"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   layoutLayersLabel: document.getElementById("layout-layers-label"),
@@ -1082,6 +1085,11 @@ els.clickableLinks?.addEventListener("change", () => {
   els.renderedPane?.classList.toggle("links-clickable", clickableLinks);
   persistReadingOverlayPrefs();
 });
+els.pictureDetails?.addEventListener("change", () => {
+  showPictureDetails = els.pictureDetails.checked;
+  els.renderedPane?.classList.toggle("picture-details-hidden", !showPictureDetails);
+  persistReadingOverlayPrefs();
+});
 // Unless links are clickable, a click on one only selects (any button, any modifier).
 for (const type of ["click", "auxclick"]) {
   els.renderedPane?.addEventListener(type, (e) => {
@@ -1136,6 +1144,7 @@ initFileTypeHints();
 initCursorHints();
 initQuickHints();
 initFormulaRewriteHints();
+initPictureDetailsHints();
 initTokenLens();
 initBboxHints();
 initDragDrop();
@@ -3113,6 +3122,8 @@ function syncReadingLayerCheckboxes() {
   if (els.cropPictures) els.cropPictures.checked = cropPictures;
   if (els.clickableLinks) els.clickableLinks.checked = clickableLinks;
   els.renderedPane?.classList.toggle("links-clickable", clickableLinks);
+  if (els.pictureDetails) els.pictureDetails.checked = showPictureDetails;
+  els.renderedPane?.classList.toggle("picture-details-hidden", !showPictureDetails);
 }
 
 function applyReadingBboxStyle() {
@@ -3159,6 +3170,7 @@ function loadReadingOverlayPrefs() {
     if (data?.bboxStyle && typeof data.bboxStyle === "object") readingBboxStyle = data.bboxStyle;
     if (typeof data?.cropPictures === "boolean") cropPictures = data.cropPictures;
     if (typeof data?.clickableLinks === "boolean") clickableLinks = data.clickableLinks;
+    if (typeof data?.pictureDetails === "boolean") showPictureDetails = data.pictureDetails;
   } catch {
     /* ignore invalid stored prefs */
   }
@@ -3166,7 +3178,7 @@ function loadReadingOverlayPrefs() {
 
 function persistReadingOverlayPrefs() {
   try {
-    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures, clickableLinks }));
+    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures, clickableLinks, pictureDetails: showPictureDetails }));
   } catch {
     /* ignore quota / private mode */
   }
@@ -3185,6 +3197,9 @@ function collectElementHeadInfo(el, defaultResolution) {
   const customEl = firstHeadChild(el, "custom");
   const locs = elementHeadLocations(el);
   const rows = [{ key: "element", value: elementLabel(el), isDefault: false }];
+  if (el.hasAttribute("class") || localName(el) === "picture") {
+    rows.push({ key: "class", value: el.getAttribute("class") ?? "undefined", isDefault: !el.hasAttribute("class") });
+  }
 
   rows.push({
     key: "label",
@@ -4232,7 +4247,7 @@ function pagedTraceItems(canvas) {
     const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       const node = walker.currentNode;
-      if (!node.nodeValue.trim() || node.parentElement.closest(".katex-mathml, .formula-rewrite-badge")) continue;
+      if (!node.nodeValue.trim() || node.parentElement.closest(".katex-mathml, .formula-rewrite-badge, .picture-chip")) continue;
       texts.push(node);
       total += node.length;
     }
@@ -13353,6 +13368,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
     slot.style.zIndex = layer === "background" ? "0" : "1";
     slot.appendChild(node);
     if (node?.dataset?.rewrittenLatex) slot.appendChild(makeFormulaRewriteBadge(node.dataset.rewrittenLatex));
+    if (node?.pictureChip) slot.appendChild(node.pictureChip);
     canvas.appendChild(slot);
   };
 
@@ -14094,6 +14110,156 @@ function withRewriteBadge(wrapper, rewritten, ctx) {
   return wrapper;
 }
 
+/** A head child's text, whitespace collapsed; empty without one. */
+function headChildText(el, tag) {
+  return firstHeadChild(el, tag)?.textContent.replace(/\s+/g, " ").trim() ?? "";
+}
+
+/** What a picture says about itself: its label and class (not the defaults), description, summary, custom. */
+function pictureDetails(el) {
+  const label = firstHeadChild(el, "label")?.getAttribute("value");
+  const cls = el.getAttribute("class");
+  return {
+    label: label && label !== "undefined" ? label : "",
+    class: cls && cls !== "undefined" ? cls : "",
+    description: headChildText(el, "description"),
+    summary: headChildText(el, "summary"),
+    custom: headChildText(el, "custom"),
+  };
+}
+
+/**
+ * A chip at a picture's top corner in the Preview: its label and class, and a card with all its details on hover
+ * (initPictureDetailsHints()). None for a picture that says nothing about itself.
+ */
+function pictureDetailsChip(el) {
+  const details = pictureDetails(el);
+  if (!Object.values(details).some(Boolean)) return null;
+  const chip = document.createElement("span");
+  chip.className = "picture-chip";
+  chip.textContent = [details.label, details.class].filter(Boolean).join(" · ") || "i";
+  chip.classList.toggle("picture-chip-info", !details.label && !details.class);
+  chip.setAttribute("aria-label", Object.entries(details).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("; "));
+  chip.pictureEl = el;
+  return chip;
+}
+
+function pictureDetailsHtml(el) {
+  const rows = Object.entries(pictureDetails(el))
+    .filter(([, value]) => value)
+    .map(([key, value]) => `<tr><th scope="row">${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`)
+    .join("");
+  return `<table class="head-tooltip picture-details"><tbody>${rows}</tbody></table>`;
+}
+
+/** Text longer than this is clamped in the details line, with "more" to see all of it. */
+const PICTURE_DETAILS_CLAMP_CHARS = 160;
+
+/**
+ * Under a picture in the Flowing preview, what it says about itself, to read: its label and class as tags, then its
+ * description, summary and custom text, clamped to two lines when long. None for a picture that says nothing.
+ */
+function pictureDetailsLine(el) {
+  const details = pictureDetails(el);
+  if (!Object.values(details).some(Boolean)) return null;
+  const line = document.createElement("div");
+  line.className = "picture-details-line";
+  for (const tag of [details.label, details.class].filter(Boolean)) {
+    line.appendChild(document.createElement("span")).className = "picture-tag";
+    line.lastChild.textContent = tag;
+  }
+  const texts = [["", details.description], ["Summary", details.summary], ["Custom", details.custom]].filter(([, t]) => t);
+  if (texts.length) {
+    const body = line.appendChild(document.createElement("span"));
+    body.className = "picture-details-text";
+    for (const [name, text] of texts) {
+      const part = body.appendChild(document.createElement("span"));
+      if (name) part.appendChild(document.createElement("strong")).textContent = `${name}: `;
+      part.append(text);
+    }
+    if (texts.reduce((n, [, t]) => n + t.length, 0) > PICTURE_DETAILS_CLAMP_CHARS) {
+      body.classList.add("is-clamped");
+      const more = line.appendChild(document.createElement("button"));
+      more.type = "button";
+      more.className = "picture-details-more";
+      more.textContent = "more";
+      more.addEventListener("click", (e) => {
+        e.stopPropagation(); // not a click on the picture: it selects nothing
+        const clamped = body.classList.toggle("is-clamped");
+        more.textContent = clamped ? "more" : "less";
+      });
+    }
+  }
+  return line;
+}
+
+/** The card a chip's click pins, to read (and select, copy) a picture's details; closed by a click elsewhere, Esc, or scrolling. */
+let pinnedPictureCard = null;
+
+function closePictureCard() {
+  pinnedPictureCard?.card.remove();
+  pinnedPictureCard = null;
+}
+
+function pinPictureCard(chip) {
+  closePictureCard();
+  const card = document.createElement("div");
+  card.className = "cursor-hint cursor-hint-detail picture-card";
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-label", "Picture details");
+  card.innerHTML = pictureDetailsHtml(chip.pictureEl);
+  document.body.appendChild(card);
+  const r = chip.getBoundingClientRect();
+  const c = card.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.right - c.width, window.innerWidth - c.width - 8));
+  const top = r.bottom + 4 + c.height <= window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - 4 - c.height);
+  Object.assign(card.style, { left: `${left}px`, top: `${top}px` });
+  pinnedPictureCard = { card, el: chip.pictureEl };
+}
+
+function initPictureDetailsHints() {
+  els.renderedPane?.addEventListener("mousemove", (e) => {
+    const chip = e.target.closest?.(".picture-chip");
+    if (chip?.pictureEl && pinnedPictureCard?.el !== chip.pictureEl) {
+      showCursorHintHtml(pictureDetailsHtml(chip.pictureEl), e.clientX, e.clientY);
+    }
+  });
+  // Capture phase: a click on a chip pins its card, and does not also select the picture under it.
+  els.renderedPane?.addEventListener("click", (e) => {
+    const chip = e.target.closest?.(".picture-chip");
+    if (!chip?.pictureEl) return;
+    e.stopPropagation();
+    hideCursorHint();
+    if (pinnedPictureCard?.el === chip.pictureEl) closePictureCard();
+    else pinPictureCard(chip);
+  }, true);
+  document.addEventListener("mousedown", (e) => {
+    if (pinnedPictureCard && !e.target.closest?.(".picture-card, .picture-chip")) closePictureCard();
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pinnedPictureCard) closePictureCard();
+  });
+  // It is placed where its chip was: scrolled away, it would be next to something else.
+  document.addEventListener("scroll", (e) => {
+    if (pinnedPictureCard && !pinnedPictureCard.card.contains(e.target)) closePictureCard();
+  }, true);
+}
+
+/**
+ * A picture without an image shows its description in its box in the Paged Preview, where it has one, instead of
+ * nothing but an icon (the Flowing preview has it under the picture already, in its details line).
+ */
+function showPictureDescriptionInstead(img, el) {
+  const text = el ? headChildText(el, "description") : "";
+  if (!text || !img.closest(".paged-el-slot") || img.nextElementSibling?.classList.contains("rendered-picture-description")) return;
+  const desc = document.createElement("span");
+  desc.className = "rendered-picture-description";
+  desc.textContent = text;
+  img.after(desc);
+  const slot = img.closest(".paged-el-slot");
+  if (slot) fitSlotContent(slot);
+}
+
 function markPictureUnavailable(img) {
   img.classList.add("rendered-picture-unavailable");
   img.alt = "\u00A0";
@@ -14158,12 +14324,13 @@ async function applyPictureCropFallback(img, el, elementIds) {
   if (!dataUrl) {
     markPictureUnavailable(img);
     img.src = PICTURE_UNAVAILABLE_SRC;
+    showPictureDescriptionInstead(img, el);
     return;
   }
 
   img.classList.remove("rendered-picture-unavailable");
   img.removeAttribute("aria-label");
-  img.alt = "";
+  img.alt = el ? headChildText(el, "description") : "";
   img.src = dataUrl;
   img.addEventListener(
     "load",
@@ -14181,7 +14348,7 @@ function appendPictureFigureImage(figure, uri, captionEl, elementIds, ctx, el) {
 
   const resolved = uri ? resolveArchiveUri(uri) : null;
   if (resolved) {
-    img.alt = "";
+    img.alt = headChildText(el, "description"); // what it shows, for screen readers and copying
     img.src = resolved;
     img.addEventListener("error", () => applyPictureCropFallback(img, el, elementIds), { once: true });
   } else {
@@ -14238,7 +14405,17 @@ function renderPicture(el, elementIds, ctx) {
     }
   }
 
-  return wrapRendered(el, figure, elementIds.get(el));
+  const wrap = wrapRendered(el, figure, elementIds.get(el));
+  // Paged: a chip at the picture's corner (makeSlot adds it outside the box its content is scaled in);
+  // Flowing, with room to read: a line under the picture, after its caption.
+  if (ctx?.paged) {
+    wrap.pictureChip = pictureDetailsChip(el);
+  } else {
+    const line = pictureDetailsLine(el);
+    const after = figure.querySelector(":scope > figcaption") ?? figure.querySelector(":scope > img");
+    if (line) after.after(line);
+  }
+  return wrap;
 }
 
 function appendPictureBodyContent(container, nodes, startIdx, elementIds) {
