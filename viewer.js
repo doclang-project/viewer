@@ -13227,6 +13227,10 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
   return canvas;
 }
 
+/** Fits found by fitSlotContent(), by the box's size and content; the oldest go first past the limit. */
+const slotFitCache = new Map();
+const SLOT_FIT_CACHE_MAX = 4000;
+
 /**
  * Sizes a paged-view slot's content to use the maximum space its bbox allows, by
  * binary-searching a CSS `zoom` factor (not `transform: scale`) so text re-wraps at
@@ -13242,6 +13246,17 @@ function fitSlotContent(slot) {
   const targetW = slotRect.width;
   const targetH = slotRect.height;
   if (!(targetW > 0 && targetH > 0)) return;
+
+  // The same content in a box of the same size fits the same: a page built again (a live document's next version,
+  // say) takes its fits from the last time instead of searching each again.
+  content.style.zoom = "";
+  if (!content.getAttribute("style")) content.removeAttribute("style"); // fitted before or not, the same content
+  const key = `${Math.round(targetW * 2)}x${Math.round(targetH * 2)}|${content.outerHTML}`;
+  const known = slotFitCache.get(key);
+  if (known !== undefined) {
+    content.style.zoom = String(known);
+    return;
+  }
 
   // A block fills its slot's width however long its text is, so its own box never reveals horizontal overflow
   // (a word wider than the box, e.g. a chart label). The extent of the text itself does, but only what is
@@ -13269,6 +13284,8 @@ function fitSlotContent(slot) {
   }
   fitsAt(lo);
   slot.classList.remove("paged-el-slot-fitting");
+  if (slotFitCache.size >= SLOT_FIT_CACHE_MAX) slotFitCache.delete(slotFitCache.keys().next().value);
+  slotFitCache.set(key, lo);
 }
 
 function wrapRendered(el, node, elementId, extraClass) {
