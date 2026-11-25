@@ -1860,6 +1860,112 @@ body.pane-drag-active .pane-splitter {
   outline-offset: calc(-1 * var(--reading-bbox-width, 1px));
 }
 
+/* A document still being written: dots, pulsing, where the writing is (see applyPagedLiveProgress()). */
+.live-waiting {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  pointer-events: none;
+}
+
+.paged-canvas > .live-waiting {
+  position: absolute;
+  z-index: 2;
+  gap: 1.5%;
+}
+
+.rendered-doc > .live-waiting {
+  height: 1.5em;
+  margin: 0.5em 0;
+}
+
+.live-waiting > span {
+  height: 55%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-waiting-dot 1.2s ease-in-out infinite;
+}
+
+.rendered-doc > .live-waiting > span {
+  height: 0.5em;
+}
+
+.live-waiting > span:nth-child(2) {
+  animation-delay: -1s;
+}
+
+.live-waiting > span:nth-child(3) {
+  animation-delay: -0.8s;
+}
+
+/* The text placeholder (configure's `indicator: "placeholder"`): lines, shimmering, as the playground had them. */
+.live-waiting.is-placeholder {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 0;
+}
+
+.rendered-doc > .live-waiting.is-placeholder {
+  height: auto;
+  gap: 8px;
+}
+
+.live-waiting.is-placeholder > span {
+  display: block;
+  aspect-ratio: auto;
+  height: calc(100% / var(--lines, 3) * 0.55);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 7%, transparent) 0%,
+    color-mix(in srgb, var(--text) 3%, transparent) 45%,
+    color-mix(in srgb, var(--text) 7%, transparent) 90%
+  );
+  background-size: 320px 100%;
+  opacity: 1;
+  transform: none;
+  animation: live-waiting-shimmer 1.15s linear infinite;
+}
+
+.rendered-doc > .live-waiting.is-placeholder > span {
+  height: 9px;
+}
+
+@keyframes live-waiting-shimmer {
+  from {
+    background-position: -320px 0;
+  }
+  to {
+    background-position: 320px 0;
+  }
+}
+
+@keyframes live-waiting-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-25%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-waiting > span {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .live-waiting.is-placeholder > span {
+    opacity: 1;
+  }
+}
+
 .paged-el-slot-fitting .katex-mathml {
   display: none;
 }

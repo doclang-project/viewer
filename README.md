@@ -60,13 +60,14 @@ A page can embed the viewer in an `<iframe>` and show its own documents in it, f
 | Message | What it does |
 |---------|--------------|
 | `{type: "doclang-viewer:show", name, markup, pages, tokens, complete}` | Shows `markup` (DocLang, as a string) with its page images, `pages` as `{[pageNo]: Blob \| ArrayBuffer}`. Posting `show` again with the same `name` replaces the document, so the page can show it while it is still being written. `tokens` (optional) are the tokens the model generated, `[[text, id, special], …]` in order; the token views show them in place of the viewer's own tokenizer. `complete: true` says the document is done. Until then, `markup` can be cut off anywhere, as the model wrote it so far: the viewer closes what is still open. |
-| `{type: "doclang-viewer:configure", theme, style, accept}` | Fits the viewer into the page: `theme` (`"light"` or `"dark"`) over the user's choice, `style` sets the viewer's colour variables (e.g. `{"--bg": "#f3ede2"}`; other names, and values that could load something, are ignored), `accept` lists extensions of files the page takes itself (e.g. `[".png", ".pdf"]`). |
+| `{type: "doclang-viewer:configure", theme, style, accept, indicator}` | Fits the viewer into the page: `theme` (`"light"` or `"dark"`) over the user's choice, `style` sets the viewer's colour variables (e.g. `{"--bg": "#f3ede2"}`; other names, and values that could load something, are ignored), `accept` lists extensions of files the page takes itself (e.g. `[".png", ".pdf"]`). `indicator` sets how the previews show where a document is being written: `"dots"` (the default) or `"placeholder"` (shimmering lines of text). |
 | `{type: "doclang-viewer:open", name, buffer}` | Opens a file, as from an opener. |
 
 A file of a type in `accept` that the user drops or opens in the viewer goes to the embedding page, as `{type: "doclang-viewer:file", name, buffer}`; the start screen lists those types next to the viewer's own.
 
 While a shown document is not complete:
 
+- the previews show pulsing dots where it is being written: in the Paged Preview below the last element, in the Flowing preview after what is written;
 - the Raw view shows the markup as written; the other views show it with what is still open closed (a host can also send it closed itself);
 - the views follow its end: the page being written becomes the current page, and the DocLang pane keeps its last written line in view (scrolled away, it stays);
 - it shows its tokens and traces itself as it grows, whether tokens are on or off: the Original is veiled but for what is written, the Paged Preview is built up as it is written, and the element being written is highlighted; once it is complete, its tokens show as the `tokens` feature says;
