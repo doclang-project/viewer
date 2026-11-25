@@ -105,6 +105,7 @@ Each feature is in one of four modes:
 | `tokens` | tokens in the DocLang source, token tracing, and the Tokens overlays | `off` |
 | `demo` | the demo when the viewer opens without a file (not when it opens with one); `never` also drops **load demo** from the start screen | `on` |
 | `stream` | documents a host [streams in](#embedding-in-a-page) while they are written: the viewer closes their unfinished markup and shows where they are being written | `always` |
+| `stream.demo` | **Stream demo** in Settings: plays an opened file in as if a model were writing it (start delay, speed, a wait after each element), to see a document being streamed in without a model | `off` |
 
 A deployment overrides what it needs by replacing [`config.js`](config.js); features it doesn't mention keep their built-in mode:
 
@@ -112,7 +113,7 @@ A deployment overrides what it needs by replacing [`config.js`](config.js); feat
 window.DOCLANG_CONFIG = { features: { tokens: "always", "editing.ocr": "never" } };
 ```
 
-`editing`, `tokens` and `demo` have a switch in Settings when they are `on` or `off`; the user's choice is remembered (per deployment path). `editing.ocr` has no switch of its own, so for it `on` means `always` and `off` means `never`. A child like `editing.ocr` is not there when its parent isn't.
+`editing`, `tokens`, `demo` and `stream.demo` have a switch in Settings when they are `on` or `off`; the user's choice is remembered (per deployment path). `editing.ocr` has no switch of its own, so for it `on` means `always` and `off` means `never`. A child like `editing.ocr` is not there when its parent isn't.
 
 For a single visit, the URL can set a feature's mode with the same words, e.g. `?tokens=on` or `?editing=never` (a read-only link). It cannot change an `always` from the config except to `never`, nor bring back a `never`. `on`/`off` from the URL leave the remembered choice as it is; switching the feature in Settings drops its parameter from the address, so a reload keeps the user's choice.
 

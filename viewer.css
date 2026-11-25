@@ -4849,3 +4849,45 @@ figure:has(> .rendered-picture-description) > img {
 .edit-draft-problem[hidden] {
   display: none;
 }
+
+/* The stream demo's bar (stream.demo): the trace's controls, over the viewer at the bottom. */
+.stream-demo-bar {
+  position: fixed;
+  z-index: 50;
+  bottom: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 1.5rem);
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  color: var(--muted);
+  font: 0.75rem var(--font-ui);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, #000 22%, transparent);
+}
+
+.stream-demo-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 0.25rem;
+}
+
+.stream-demo-bar .token-speed-btn {
+  white-space: nowrap;
+}
+
+.stream-demo-bar .token-scrub {
+  width: 12rem;
+}
+
+.stream-demo-counter {
+  min-width: 6.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stream-demo-close {
+  font-size: 1rem;
+  color: var(--muted);
+}

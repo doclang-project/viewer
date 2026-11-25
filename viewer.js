@@ -21,8 +21,9 @@ const FEATURE_DEFAULTS = {
   tokens: "off", // opt-in
   demo: "on", // the demo when the viewer opens without a file; `never` also drops the start screen's "load demo"
   stream: "always", // documents a host streams in, still being written (see closeStreamedMarkup())
+  "stream.demo": "off", // plays an opened file in as if a model were writing it (see the stream demo below)
 };
-const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo"]);
+const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo", "stream.demo"]);
 // Saved per deployment path, so deployments under different paths of one domain keep their own choices.
 const FEATURE_CHOICES_STORAGE_KEY = `doclang-viewer-feature-choices:${location.pathname.replace(/[^/]*$/, "")}`;
 const resolvedFeatures = resolveFeatures();
@@ -513,7 +514,18 @@ let selectedElementId = null;
 /** Whether editing is switched on (Settings > Editing); never on when the deployment lacks it. */
 let editingOn = startsOn("editing");
 // `live`: a document still being written by its host traces itself, the cursor at the end of what is written so far.
+/** Trace speeds, in tokens per second; the stream demo plays at them too. */
+const TRACE_SPEEDS = [5, 10, 50, 100, 500, 1000];
 const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, live: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
+/** The stream demo (stream.demo): what it plays, and its bar; see initStreamDemo(). */
+/**
+ * @type {null | { label: string, text: string, cuts: number[], at: number, pages: Map<number, Blob>, frame: number,
+ *   playing: boolean, waitUntil: number, lastTs: number }}
+ */
+let streamDemo = null;
+/** Seconds before the first token, and after each element written (the speed is the trace's: tokenLens.speed). */
+const streamDemoSettings = { startDelay: 0, elementWait: 0 };
+let streamDemoBar = null;
 /** @type {{ svg: SVGSVGElement, range: { start: number, end: number }, items: object[], current: object | null } | null} */
 let tokenLayer = null;
 /**
@@ -1109,6 +1121,7 @@ loadOverlayPrefs();
 removeUnavailableMarkup();
 initEditingToggle();
 initDemoToggle();
+initStreamDemo();
 initTheme();
 loadHotkeysPref();
 loadReadingLayoutMode();
@@ -1667,6 +1680,255 @@ function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
 /** In the Flowing preview: the dots after what is written. */
 function applyFlowingLiveProgress(root, segment) {
   if (isLiveWritingSegment(segment)) root.appendChild(buildLiveWaiting());
+}
+
+// --- The stream demo (`stream.demo`): an opened file played in as if a model were writing it ---
+//
+// It goes the way a host's document does (showLiveDocument()), cut off anywhere, so it shows the streaming mode
+// without a model: a copy of the file, written chunk by chunk (a tag, a few characters or a run of spaces, about a
+// token each), with its page images as it gets to them. A start delay and a wait after each element written stand
+// in for a model that is slow to start, or to get on.
+
+
+function initStreamDemo() {
+  const toggle = document.getElementById("toggle-stream-demo");
+  if (toggle) {
+    toggle.checked = startsOn("stream.demo");
+    toggle.addEventListener("change", () => {
+      saveFeatureChoice("stream.demo", toggle.checked);
+      if (!toggle.checked) stopStreamDemo();
+      syncStreamDemoBar();
+    });
+  }
+}
+
+function streamDemoOn() {
+  const toggle = document.getElementById("toggle-stream-demo");
+  return isAvailable("stream.demo") && (toggle ? toggle.checked : startsOn("stream.demo"));
+}
+
+/** Whether the document shown is the one the demo plays in. */
+function streamDemoShown() {
+  const entry = fileCatalog[activeFileIndex];
+  return !!streamDemo && entry?.kind === "live" && entry.label === streamDemo.label;
+}
+
+/** The demo's bar: shown with a document open, to play it in, or while the demo plays one. */
+function syncStreamDemoBar() {
+  const own = streamDemoShown();
+  const shown = streamDemoOn() && !!state && (own || fileCatalog[activeFileIndex]?.kind !== "live");
+  if (!shown) {
+    streamDemoBar?.remove();
+    streamDemoBar = null;
+    return;
+  }
+  streamDemoBar ??= buildStreamDemoBar();
+  if (!streamDemoBar.isConnected) document.body.appendChild(streamDemoBar);
+  const { start, play, scrub, counter } = streamDemoBar.controls;
+  const playing = own && streamDemo.playing;
+  const icon = playing ? "pause" : "play";
+  if (play.dataset.icon !== icon) {
+    play.dataset.icon = icon;
+    play.innerHTML = playing ? TOKEN_PAUSE_ICON : TOKEN_PLAY_ICON;
+  }
+  const hint = playing ? "Pause the stream" : own ? "Play the stream on" : "Play this document in as if a model were writing it";
+  play.title = hint;
+  play.setAttribute("aria-label", hint);
+  const last = own ? streamDemo.cuts.length - 1 : 0;
+  const at = own ? Math.floor(streamDemo.at) : 0;
+  start.disabled = !own || (at === 0 && !playing);
+  scrub.disabled = !own;
+  scrub.max = String(last);
+  scrub.value = String(at);
+  scrub.style.setProperty("--scrub-progress", `${last ? (100 * at) / last : 0}%`);
+  counter.innerHTML = own ? `<strong>${at.toLocaleString()}</strong> / ${last.toLocaleString()}` : "";
+}
+
+/** A pick menu like the trace speed's, for one of the demo's settings. */
+function buildStreamDemoPick(label, choices, value, onPick) {
+  const wrap = document.createElement("span");
+  wrap.className = "token-speed-wrap";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "token-speed-btn";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+  button.title = label;
+  const menu = document.createElement("ul");
+  menu.className = "token-speed-menu";
+  menu.setAttribute("role", "listbox");
+  menu.setAttribute("aria-label", label);
+  menu.hidden = true;
+  const select = document.createElement("select");
+  select.hidden = true;
+  for (const [text, v] of choices) select.add(new Option(text, String(v), false, v === value));
+  select.addEventListener("change", () => {
+    onPick(Number(select.value));
+    syncPickMenu(select, button, menu);
+  });
+  wrap.append(button, menu, select);
+  initPickMenu(select, button, menu);
+  return { wrap, sync: (v) => { select.value = String(v); syncPickMenu(select, button, menu); } };
+}
+
+function buildStreamDemoBar() {
+  const bar = document.createElement("div");
+  bar.className = "stream-demo-bar token-nav";
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "Stream demo");
+  const navButton = (html, label, onClick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "page-nav-btn";
+    b.innerHTML = html;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.addEventListener("click", onClick);
+    return b;
+  };
+  const start = navButton(
+    '<svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4.5 3.5v9M12 3.5 7 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
+    "Back to the start",
+    () => {
+      if (!streamDemoShown()) return;
+      pauseStreamDemo();
+      streamDemo.at = 0;
+      showStreamDemo();
+    },
+  );
+  const play = navButton("", "", () => {
+    if (!streamDemoShown()) startStreamDemo();
+    else if (streamDemo.playing) pauseStreamDemo();
+    else playStreamDemo();
+  });
+  play.classList.add("token-play-btn");
+  const scrub = document.createElement("input");
+  scrub.type = "range";
+  scrub.className = "token-scrub";
+  scrub.min = "0";
+  scrub.setAttribute("aria-label", "Tokens written");
+  scrub.addEventListener("input", () => {
+    if (!streamDemoShown()) return;
+    pauseStreamDemo();
+    streamDemo.at = Number(scrub.value);
+    showStreamDemo();
+  });
+  const counter = document.createElement("span");
+  counter.className = "token-counter stream-demo-counter";
+  const speed = buildStreamDemoPick("Speed", TRACE_SPEEDS.map((v) => [`${v} tok/s`, v]), tokenLens.speed, (v) => {
+    tokenLens.speed = v; // one speed for the trace and the demo
+    if (els.tokenSpeed) els.tokenSpeed.value = String(v);
+    syncTokenSpeedButton();
+    persistTokenPrefs();
+  });
+  const startDelay = buildStreamDemoPick("Start after", [0, 2, 5, 10].map((v) => [`start ${v ? `after ${v} s` : "at once"}`, v]),
+    streamDemoSettings.startDelay, (v) => { streamDemoSettings.startDelay = v; });
+  const elementWait = buildStreamDemoPick("Wait after each element", [0, 1, 3].map((v) => [v ? `${v} s per element` : "no wait", v]),
+    streamDemoSettings.elementWait, (v) => { streamDemoSettings.elementWait = v; });
+  const close = navButton("×", "Turn the stream demo off", () => {
+    const toggle = document.getElementById("toggle-stream-demo");
+    if (!toggle) return;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event("change"));
+  });
+  close.classList.add("stream-demo-close");
+  const title = document.createElement("span");
+  title.className = "stream-demo-title";
+  title.textContent = "Stream";
+  bar.append(title, start, play, scrub, counter, speed.wrap, startDelay.wrap, elementWait.wrap, close);
+  bar.controls = { start, play, scrub, counter, syncSpeed: () => speed.sync(tokenLens.speed) };
+  return bar;
+}
+
+/** Where the demo cuts the file: after each tag, each run of spaces, and every few characters of text. */
+function streamDemoCuts(text) {
+  const cuts = [0];
+  for (const m of text.matchAll(/<!\[CDATA\[|\]\]>|<[^>]*>|\s+|[^\s<\]]{1,4}|./gs)) cuts.push(m.index + m[0].length);
+  return cuts;
+}
+
+async function startStreamDemo() {
+  if (!state) return;
+  stopStreamDemo();
+  const entry = fileCatalog[activeFileIndex];
+  const pages = new Map();
+  for (const [page, url] of state.pageImages ?? []) {
+    try {
+      pages.set(page, await (await fetch(url)).blob());
+    } catch {
+      /* a page without its image */
+    }
+  }
+  const text = state.markupXml;
+  streamDemo = { label: `${entry?.label ?? "document"} (stream)`, text, cuts: streamDemoCuts(text), at: 0, pages, frame: 0, playing: false, waitUntil: 0, lastTs: 0 };
+  await showStreamDemo();
+  playStreamDemo({ delay: streamDemoSettings.startDelay });
+}
+
+/** Whether the demo's chunk `i` ends an element at the top (none open after it): the model takes a while then. */
+function streamDemoElementDone(demo, i) {
+  const chunk = demo.text.slice(demo.cuts[i - 1], demo.cuts[i]);
+  return (chunk.startsWith("</") || chunk.endsWith("/>")) && closeStreamedMarkup(demo.text.slice(0, demo.cuts[i])).open === 0;
+}
+
+/** Plays on, frame by frame at the trace's speed, as the trace does; the views show the latest position. */
+function playStreamDemo({ delay = 0 } = {}) {
+  const demo = streamDemo;
+  if (!demo) return;
+  if (demo.at >= demo.cuts.length - 1) demo.at = 0;
+  demo.playing = true;
+  demo.waitUntil = performance.now() + delay * 1000;
+  demo.lastTs = 0;
+  const step = (ts) => {
+    if (streamDemo !== demo || !demo.playing) return;
+    const dt = demo.lastTs ? Math.min(0.25, (ts - demo.lastTs) / 1000) : 0;
+    demo.lastTs = ts;
+    if (ts >= demo.waitUntil) {
+      const from = Math.floor(demo.at);
+      demo.at = Math.min(demo.cuts.length - 1, demo.at + dt * tokenLens.speed);
+      // An element written whole: the stream stops there for the wait after it.
+      for (let i = from + 1; streamDemoSettings.elementWait && i <= Math.floor(demo.at); i += 1) {
+        if (!streamDemoElementDone(demo, i)) continue;
+        demo.at = i;
+        demo.waitUntil = ts + streamDemoSettings.elementWait * 1000;
+        break;
+      }
+      if (Math.floor(demo.at) !== from) showStreamDemo();
+    }
+    if (demo.at >= demo.cuts.length - 1) {
+      demo.playing = false;
+      syncStreamDemoBar();
+      return;
+    }
+    demo.frame = requestAnimationFrame(step);
+  };
+  demo.frame = requestAnimationFrame(step);
+  syncStreamDemoBar();
+}
+
+function pauseStreamDemo() {
+  if (!streamDemo) return;
+  cancelAnimationFrame(streamDemo.frame);
+  streamDemo.playing = false;
+  syncStreamDemoBar();
+}
+
+function stopStreamDemo() {
+  pauseStreamDemo();
+  streamDemo = null;
+}
+
+/** Hands the demo's document, as far as it is written, to the viewer as a host would. */
+async function showStreamDemo() {
+  const demo = streamDemo;
+  const at = Math.floor(demo.at);
+  const written = demo.text.slice(0, demo.cuts[at]);
+  const complete = at >= demo.cuts.length - 1;
+  const pageCount = (written.match(/<page_break\b/g) ?? []).length + 1;
+  const pages = {};
+  for (const [page, blob] of demo.pages) if (page <= pageCount) pages[page] = blob;
+  await showLiveDocument({ name: demo.label, markup: written, pages, tokens: null, complete });
+  syncStreamDemoBar();
 }
 
 /** File System Access handles for files that came with one, keyed by their `File`. */
@@ -2517,6 +2779,7 @@ function defaultOriginalFileName(label, path) {
 }
 
 function updateFileView() {
+  syncStreamDemoBar();
   syncFilePaneDefault();
   syncFilePaneCloseAllButton();
   renderFileView();
@@ -4264,6 +4527,7 @@ function loadTokenPrefs() {
   } catch {
     /* ignore invalid stored token prefs */
   }
+  if (els.tokenSpeed && !els.tokenSpeed.options.length) fillTraceSpeeds(els.tokenSpeed);
   const speed = String(prefs.speed);
   if (els.tokenSpeed && [...els.tokenSpeed.options].some((o) => o.value === speed)) els.tokenSpeed.value = speed;
   tokenLens.speed = Number(els.tokenSpeed?.value) || 100;
@@ -4271,18 +4535,33 @@ function loadTokenPrefs() {
 }
 
 function syncTokenSpeedButton() {
-  const option = els.tokenSpeed?.selectedOptions[0];
-  if (els.tokenSpeedBtn && option) els.tokenSpeedBtn.textContent = option.textContent;
-  for (const item of els.tokenSpeedMenu?.children ?? []) {
-    item.setAttribute("aria-selected", String(item.dataset.value === els.tokenSpeed?.value));
-  }
+  syncPickMenu(els.tokenSpeed, els.tokenSpeedBtn, els.tokenSpeedMenu);
+  streamDemoBar?.controls.syncSpeed();
+}
+
+
+/** Fills a <select> with the trace speeds, the default one chosen. */
+function fillTraceSpeeds(select) {
+  for (const speed of TRACE_SPEEDS) select.add(new Option(`${speed} tok/s`, String(speed), speed === 100, speed === 100));
+}
+
+/** Shows a pick menu's choice on its button and in its list. */
+function syncPickMenu(select, button, menu) {
+  const option = select?.selectedOptions[0];
+  if (button && option) button.textContent = option.textContent;
+  for (const item of menu?.children ?? []) item.setAttribute("aria-selected", String(item.dataset.value === select?.value));
 }
 
 /** The menu of trace speeds: it opens above its button, all of it in view, and picks into the hidden <select>. */
 function initTokenSpeedMenu() {
-  const select = els.tokenSpeed;
-  const button = els.tokenSpeedBtn;
-  const menu = els.tokenSpeedMenu;
+  initPickMenu(els.tokenSpeed, els.tokenSpeedBtn, els.tokenSpeedMenu);
+}
+
+/**
+ * A pick menu (the trace speed's, say): a button showing the choice of a hidden <select>, with a list that opens above
+ * it, all of it in view (a <select> at the bottom of the window opens on its choice, the ones after it out of view).
+ */
+function initPickMenu(select, button, menu) {
   if (!select || !button || !menu) return;
   for (const option of select.options) {
     const item = document.createElement("li");
@@ -4334,9 +4613,9 @@ function initTokenSpeedMenu() {
     e.stopPropagation();
   });
   document.addEventListener("pointerdown", (e) => {
-    if (!menu.hidden && !e.target.closest(".token-speed-wrap")) setOpen(false);
+    if (!menu.hidden && !menu.parentElement.contains(e.target)) setOpen(false);
   });
-  syncTokenSpeedButton();
+  syncPickMenu(select, button, menu);
 }
 
 function persistTokenPrefs() {
