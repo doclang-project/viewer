@@ -1,9 +1,17 @@
-// Demo archives fetched by the "Load demo" button. The first entry is the
-// primary demo (replaces the catalog); any others are appended after it.
-const DEMO_ARCHIVE_URLS = [
-  "assets/2501.17887.dclx",
-  "assets/artemis.dclx",
+// The samples the start screen offers, one card each: `file` is the archive the card opens, `thumb` a small picture
+// for the card. The first opens when the viewer starts without a file (the `demo` feature). A deployment can offer
+// others with `samples` in config.js; a page that embeds the viewer, its own (see the README).
+const DEFAULT_SAMPLES = [
+  {
+    title: "Docling paper",
+    subtitle: "Eight pages from arXiv",
+    file: "assets/2501.17887.dclx",
+    thumb: "assets/samples/2501.17887.jpg",
+  },
+  {
+    title: "Artemis",
+    subtitle: "A video clip with chapters",
+    file: "assets/artemis.dclx",
+    thumb: "assets/samples/artemis.jpg",
+  },
 ];
-
-// Back-compat alias for the primary demo URL.
-const DEMO_ARCHIVE_URL = DEMO_ARCHIVE_URLS[0];

@@ -19,7 +19,7 @@ const FEATURE_DEFAULTS = {
   editing: "on",
   "editing.ocr": "always",
   tokens: "off", // opt-in
-  demo: "on", // the demo when the viewer opens without a file; `never` also drops the start screen's "load demo"
+  demo: "on", // the first sample opens when the viewer opens without a file; `never` also drops the sample cards
   stream: "always", // documents a host streams in, still being written (see closeStreamedMarkup())
   "stream.demo": "off", // plays an opened file in as if a model were writing it (see the stream demo below)
 };
@@ -805,17 +805,9 @@ const els = {
   validationClose: document.getElementById("btn-validation-close"),
 };
 
-document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  loadDemo();
-});
 document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
   resetViewer();
-});
-document.getElementById("sample-page-link")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  requestHostSample();
 });
 // The start screen's "choose a file" opens the same dialog as the header's Open (which an embedding page may hide).
 document.getElementById("choose-file-link")?.addEventListener("click", (e) => {
@@ -1166,6 +1158,8 @@ initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
+/** The host's samples while it offers its own (configure's `samples`), else null: the viewer's. */
+let hostSamples = null;
 let suppressDemoLoad = false;
 let launchSource;
 initFileHandling();
@@ -1177,52 +1171,78 @@ function setDemoLoading(loading) {
 
 // A file-handling launch (see initFileHandling) or an opener handoff (see
 // initHostHandoff) sets suppressDemoLoad synchronously, before this runs.
+renderSampleCards();
 setTimeout(() => {
   if (suppressDemoLoad) return;
-  if (startsOn("demo")) loadDemo();
-  else setDemoLoading(false); // the page starts out showing "Loading demo…": the start screen instead
+  const first = viewerSamples()[0];
+  if (startsOn("demo") && first) openSample(first, { atLaunch: true });
+  else setDemoLoading(false); // the page starts out showing "Loading sample…": the start screen instead
 }, 0);
 
-async function loadDemo() {
+/**
+ * The start screen's samples: the deployment's (`samples` in config.js), else the built-in ones (demo-data.js).
+ * Each is `{title, subtitle, file, thumb}`: `file` the archive the card opens, `thumb` a picture for the card.
+ */
+function viewerSamples() {
+  const configured = window.DOCLANG_CONFIG?.samples;
+  const samples = Array.isArray(configured) ? configured : typeof DEFAULT_SAMPLES !== "undefined" ? DEFAULT_SAMPLES : [];
+  return samples.filter((sample) => typeof sample?.file === "string" && typeof sample.title === "string");
+}
+
+/** The sample cards: the host's, which it converts itself, or the viewer's, which open their archive. */
+function renderSampleCards() {
+  const box = document.getElementById("sample-cards");
+  if (!box) return;
+  const samples = hostSamples ?? viewerSamples();
+  box.replaceChildren(...samples.map((sample) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "sample-card";
+    const thumb = document.createElement("span");
+    thumb.className = "sample-card-thumb";
+    if (sample.thumb) {
+      const img = document.createElement("img");
+      img.src = sample.thumb;
+      img.alt = "";
+      img.loading = "lazy";
+      thumb.append(img);
+    }
+    const title = document.createElement("span");
+    title.className = "sample-card-title";
+    title.textContent = sample.title;
+    card.append(thumb, title);
+    if (sample.subtitle) {
+      const subtitle = document.createElement("span");
+      subtitle.className = "sample-card-subtitle";
+      subtitle.textContent = sample.subtitle;
+      card.append(subtitle);
+    }
+    card.addEventListener("click", () => (hostSamples ? requestHostSample(sample.id) : openSample(sample)));
+    return card;
+  }));
+  box.hidden = samples.length === 0;
+}
+
+/** Opens a sample's archive in place of the open files; at launch, unless a document arrives meanwhile. */
+async function openSample(sample, { atLaunch = false } = {}) {
   if (demoLoadInProgress) return;
-  // The demo takes the place of the open files: asked first, before anything is downloaded.
+  // The sample takes the place of the open files: asked first, before anything is downloaded.
   if (!confirmDiscardEditor() || !confirmDiscardUnsavedFiles()) return;
   demoLoadInProgress = true;
+  const label = document.getElementById("empty-state-loading-name");
+  if (label) label.textContent = sample.title;
   setDemoLoading(true);
   try {
-    const urls = typeof DEMO_ARCHIVE_URLS !== "undefined" && DEMO_ARCHIVE_URLS.length
-      ? DEMO_ARCHIVE_URLS
-      : [DEMO_ARCHIVE_URL];
-    // Always asks the server: a cached demo can otherwise stay stale for days after the file changes.
-    const primary = await fetch(urls[0], { cache: "no-cache" });
-    if (!primary.ok) throw new Error(`HTTP ${primary.status}`);
-    const primaryBuffer = await primary.arrayBuffer();
-    // A document may have arrived while the demo was downloading; don't replace it.
-    if (suppressDemoLoad) return;
-    await addArchiveBufferToCatalog(
-      primaryBuffer,
-      urls[0].split("/").pop() || "demo.dclx",
-      { replace: true },
-    );
-    for (const url of urls.slice(1)) {
-      if (suppressDemoLoad) return;
-      try {
-        const res = await fetch(url, { cache: "no-cache" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const buffer = await res.arrayBuffer();
-        if (suppressDemoLoad) return;
-        await addArchiveBufferToCatalog(
-          buffer,
-          url.split("/").pop() || "demo.dclx",
-          { replace: false, activate: false },
-        );
-      } catch (extraErr) {
-        console.warn(`Skipped demo archive ${url}: ${extraErr.message}`);
-      }
-    }
+    // Always asks the server: a cached sample can otherwise stay stale for days after the file changes.
+    const res = await fetch(sample.file, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    // At launch, a document may have arrived while the sample was downloading; don't replace it.
+    if (atLaunch && suppressDemoLoad) return;
+    await addArchiveBufferToCatalog(buffer, sample.file.split("/").pop() || "sample.dclx", { replace: true });
   } catch (err) {
     alert(
-      `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
+      `Failed to load the sample: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
     );
   } finally {
     demoLoadInProgress = false;
@@ -1296,15 +1316,20 @@ function initFileHandling() {
  *   model's `tokens`, `[[text, id, special?], …]` in the order they were generated; the token lens then shows those
  *   instead of the viewer's own tokenization (see alignHostTokens()). `complete: true` says the document is done:
  *   only then is it validated, so a document still being written is not checked against the schema at every step.
- * It may also post `{type: "doclang-viewer:configure", theme, style, accept}` to fit the viewer into its own look,
- * and to take the files it can process (see applyHostConfig()). Those are handed back to it when the user drops or
+ * `{type: "doclang-viewer:close"}` closes what is open and goes back to the start screen.
+ * It may also post `{type: "doclang-viewer:configure", theme, style, accept, samples, indicator}` to fit the viewer
+ * into its own look, to take the files it can process, and to offer samples it converts itself (see applyHostConfig()). Those are handed back to it when the user drops or
  * opens one, as `{type: "doclang-viewer:file", name, buffer}`.
  * Only messages from the host window are accepted.
  */
 function initHostHandoff() {
   const source = takeLaunchSource();
   const host = source === "opener" ? window.opener : source === "embed" && window.parent !== window ? window.parent : null;
-  if (!host) return;
+  // Embedded, the viewer stays hidden (index.html) until the page configures it or hands over a document, so its own
+  // look and samples don't flash first; a page that does neither gets it as it is, shortly.
+  const reveal = () => document.documentElement.classList.remove("host-pending");
+  if (!host) return reveal();
+  setTimeout(reveal, 1500);
   suppressDemoLoad = true;
   // An opener is about to hand over a file; an embedding page may never: the start screen, to drop one on.
   if (source === "embed") setDemoLoading(false);
@@ -1312,6 +1337,7 @@ function initHostHandoff() {
     if (event.source !== host) return;
     hostLink = { window: host, origin: event.origin };
     const { type, name, buffer, markup, pages, tokens, complete } = event.data ?? {};
+    if (type !== "doclang-viewer:ping") queueMicrotask(reveal); // after this message has been applied
     if (type === "doclang-viewer:ping") {
       host.postMessage({ type: "doclang-viewer:ready" }, event.origin);
     } else if (type === "doclang-viewer:open" && buffer instanceof ArrayBuffer) {
@@ -1320,6 +1346,10 @@ function initHostHandoff() {
       await showLiveDocument({ name: name || "document.dclg", markup, pages, tokens, complete: complete === true });
     } else if (type === "doclang-viewer:configure") {
       applyHostConfig(event.data);
+    } else if (type === "doclang-viewer:close") {
+      // Back to the start screen, as the header's home link (which an embedding page may hide).
+      liveShowPending = null;
+      resetViewer();
     }
   });
 }
@@ -1328,16 +1358,16 @@ function initHostHandoff() {
  * A host's look, for this visit only: `theme` ("light" or "dark") over the user's choice, and `style`, values for
  * the viewer's own colour variables (e.g. `{"--bg": "#fbf6ee"}`). Anything else is ignored: other names, and values
  * that could load something (`url(…)`) or reach past the one declaration. `accept` lists the extensions of the
- * files the host takes; the start screen and the Open dialog offer them next to the viewer's own.
+ * files the host takes; the start screen and the Open dialog offer them next to the viewer's own. `samples`: see
+ * setHostSamples().
  */
-function applyHostConfig({ theme, style, accept, sample, indicator }) {
+function applyHostConfig({ theme, style, accept, samples, indicator }) {
   if (indicator === "dots" || indicator === "placeholder") liveIndicator = indicator;
   if (Array.isArray(accept)) {
     hostAccept = accept.filter((ext) => typeof ext === "string" && /^\.[a-z0-9]+$/i.test(ext)).map((ext) => ext.toLowerCase());
     initFileTypeHints();
   }
-  if (typeof sample === "boolean") hostWantsSample = sample;
-  syncSamplePageAction();
+  if (Array.isArray(samples)) setHostSamples(samples);
   if (theme === "light" || theme === "dark") {
     hostTheme = theme;
     applyTheme();
@@ -1357,17 +1387,26 @@ function isHostFile(file) {
   return hostLink !== null && hostAccept.some((ext) => name.endsWith(ext));
 }
 
-/** Whether the host offers a sample of its own, for "try a sample" on the start screen (configure's `sample`). */
-let hostWantsSample = false;
-
-function syncSamplePageAction() {
-  const button = document.getElementById("sample-page-link");
-  if (button) button.hidden = !(hostWantsSample && hostLink);
+/**
+ * The host's own samples, `[{id, title, subtitle, thumb}]` (configure's `samples`), in place of the viewer's: their
+ * cards ask the host for the sample, by `id`, and it converts it itself. `thumb` is an image URL (http(s) or a `data:`
+ * image) or a Blob.
+ */
+function setHostSamples(samples) {
+  for (const sample of hostSamples ?? []) if (sample.thumbUrl) URL.revokeObjectURL(sample.thumbUrl);
+  hostSamples = samples
+    .filter((sample) => typeof sample?.id === "string" && typeof sample.title === "string")
+    .map(({ id, title, subtitle, thumb }) => {
+      const thumbUrl = thumb instanceof Blob ? URL.createObjectURL(thumb) : null;
+      const safe = typeof thumb === "string" && /^(https?:|data:image\/)/i.test(thumb) ? thumb : null;
+      return { id, title, subtitle: typeof subtitle === "string" ? subtitle : "", thumb: thumbUrl ?? safe, thumbUrl };
+    });
+  renderSampleCards();
 }
 
-/** Asks the host for its sample: it hands it over as it would a file dropped on the viewer. */
-function requestHostSample() {
-  hostLink?.window.postMessage({ type: "doclang-viewer:sample" }, hostLink.origin);
+/** Asks the host for one of its samples: it shows it as it shows its conversions. */
+function requestHostSample(id) {
+  hostLink?.window.postMessage({ type: "doclang-viewer:sample", id }, hostLink.origin);
 }
 
 /** Files the viewer cannot open but the host takes (a page image to convert, say) go to the host. */

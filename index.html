@@ -18,6 +18,8 @@
       try { theme = localStorage.getItem("doclang-viewer-theme") || theme; } catch { /* storage not accessible */ }
       if (theme !== "light" && theme !== "dark") theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
       document.documentElement.dataset.theme = theme;
+      // Embedded: nothing shows until the page has said how (its look, its samples), see initHostHandoff().
+      if (new URLSearchParams(location.search).get("source") === "embed") document.documentElement.classList.add("host-pending");
     })();
   </script>
 </head>
@@ -186,9 +188,9 @@
                 <input type="checkbox" id="toggle-editing" role="menuitemcheckbox">
                 <span>Editing</span>
               </label>
-              <label class="toolbar-options-item" data-switch="demo" title="Load demo files when the viewer opens without a file">
+              <label class="toolbar-options-item" data-switch="demo" title="Open the first sample when the viewer opens without a file">
                 <input type="checkbox" id="toggle-demo" role="menuitemcheckbox">
-                <span>Show demo on launch</span>
+                <span>Open a sample on launch</span>
               </label>
               <label class="toolbar-options-item" data-switch="stream.demo" title="Play an opened document in as if a model were writing it, to see a document being streamed in">
                 <input type="checkbox" id="toggle-stream-demo" role="menuitemcheckbox">
@@ -408,19 +410,18 @@
 
   <div class="empty-state" id="empty-state">
     <div class="empty-state-inner">
-      <div class="empty-state-loading" id="empty-state-loading" role="status" aria-live="polite" aria-label="Loading demo document">
+      <div class="empty-state-loading" id="empty-state-loading" role="status" aria-live="polite" aria-label="Loading a sample">
         <div class="loading-spinner" aria-hidden="true"></div>
-        <p class="empty-state-title">Loading demo…</p>
-        <p class="empty-state-meta">Preparing the sample document</p>
+        <p class="empty-state-title">Loading sample…</p>
+        <p class="empty-state-meta" id="empty-state-loading-name">Preparing the document</p>
       </div>
       <div class="empty-state-prompt" id="empty-state-prompt">
         <p class="empty-state-title">Drop a DocLang file here</p>
         <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
         <div class="empty-state-buttons">
           <button type="button" class="empty-state-btn is-primary" id="choose-file-link">Choose a file</button>
-          <button type="button" class="empty-state-btn" id="sample-page-link" hidden>Try a sample</button>
-          <button type="button" class="empty-state-btn" id="demo-empty-link" data-requires="demo">Load demo</button>
         </div>
+        <div class="sample-cards" id="sample-cards" data-requires="demo" aria-label="Samples" hidden></div>
       </div>
     </div>
   </div>

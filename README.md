@@ -26,7 +26,13 @@ Open [http://localhost:8080/](http://localhost:8080/): the demo loads on its own
 | **From another page** | A page that opens the viewer can hand it a file; see [Opening from another page](#opening-from-another-page). |
 | **In another page** | A page that embeds the viewer can show its own documents in it, also while it is still writing them; see [Embedding in a page](#embedding-in-a-page). |
 
-Supported types: `.dclx`, `.dclg`, `.xml`. The demo URLs are configured in [`demo-data.js`](demo-data.js).
+Supported types: `.dclx`, `.dclg`, `.xml`.
+
+The start screen also offers **samples**, one card each; the first opens when the viewer starts without a file (the `demo` [feature](#features-per-deployment)). The built-in ones are in [`demo-data.js`](demo-data.js); a deployment can offer its own with `samples` in [`config.js`](config.js), each `{title, subtitle, file, thumb}` (`file` the archive the card opens, `thumb` a small picture for the card):
+
+```js
+window.DOCLANG_CONFIG = { samples: [{ title: "Report", subtitle: "Twelve pages", file: "samples/report.dclx", thumb: "samples/report.jpg" }] };
+```
 
 **Download** saves the open file, with any applied edits. When an archive carries its [original source](https://github.com/doclang-project/doclang/blob/main/spec.md#original-source-optional) (e.g. the PDF it was converted from), it also offers that **Original file**, under the name its source descriptor records.
 
@@ -58,8 +64,11 @@ A page can embed the viewer in an `<iframe>` and show its own documents in it, f
 | Message | What it does |
 |---------|--------------|
 | `{type: "doclang-viewer:show", name, markup, pages, tokens, complete}` | Shows `markup` (DocLang, as a string) with its page images, `pages` as `{[pageNo]: Blob \| ArrayBuffer}`. Posting `show` again with the same `name` replaces the document, so the page can show it while it is still being written. `tokens` (optional) are the tokens the model generated, `[[text, id, special], …]` in order; the token views show them in place of the viewer's own tokenizer. `complete: true` says the document is done. Until then, `markup` can be cut off anywhere, as the model wrote it so far: the viewer closes what is still open. |
-| `{type: "doclang-viewer:configure", theme, style, accept, sample, indicator}` | Fits the viewer into the page: `theme` (`"light"` or `"dark"`) over the user's choice, `style` sets the viewer's colour variables (e.g. `{"--bg": "#f3ede2"}`; other names, and values that could load something, are ignored), `accept` lists extensions of files the page takes itself (e.g. `[".png", ".pdf"]`). `sample: true` offers "Try a sample" on the start screen: a click posts `{type: "doclang-viewer:sample"}` to the page, which hands over a sample of its own (as a file, or by `show`). `indicator` sets how the previews show where a document is being written: `"dots"` (the default) or `"placeholder"` (shimmering lines of text). |
+| `{type: "doclang-viewer:configure", theme, style, accept, samples, indicator}` | Fits the viewer into the page: `theme` (`"light"` or `"dark"`) over the user's choice, `style` sets the viewer's colour variables (e.g. `{"--bg": "#f3ede2"}`; other names, and values that could load something, are ignored), `accept` lists extensions of files the page takes itself (e.g. `[".png", ".pdf"]`). `samples` puts the page's own samples on the start screen in place of the viewer's, `[{id, title, subtitle, thumb}]` (`thumb`: an image URL, http(s) or `data:`, or a Blob): a click posts `{type: "doclang-viewer:sample", id}` to the page, which shows the sample itself (e.g. converts it and streams it in with `show`). `indicator` sets how the previews show where a document is being written: `"dots"` (the default) or `"placeholder"` (shimmering lines of text). |
 | `{type: "doclang-viewer:open", name, buffer}` | Opens a file, as from an opener. |
+| `{type: "doclang-viewer:close"}` | Closes what is open and goes back to the start screen (with its samples), as the header's home link does: for a page that hides the header. A `show` posted after it opens that document again, so the page stops streaming first. |
+
+Embedded, the viewer stays hidden until the page's first message after `ready` (or for a moment and a half, if none comes), so its own look and samples don't flash before the page's.
 
 A file of a type in `accept` that the user drops or opens in the viewer goes to the embedding page, as `{type: "doclang-viewer:file", name, buffer}`; the start screen lists those types next to the viewer's own, and its file dialog ("Choose a file", also there with the header hidden) offers them too.
 
@@ -101,7 +110,7 @@ Each feature is in one of four modes:
 | `editing` | visual and source editing (inspector, bbox handles, add/remove, drag to reorder, the Raw view, save) | `on` |
 | `editing.ocr` | "Read from page" with Granite-Docling in the browser (downloads about 1.2 GB on first use); only while editing is on | `always` |
 | `tokens` | tokens in the DocLang source, token tracing, and the Tokens overlays | `off` |
-| `demo` | the demo when the viewer opens without a file (not when it opens with one); `never` also drops **load demo** from the start screen | `on` |
+| `demo` | the first [sample](#opening-files) opens when the viewer opens without a file (not when it opens with one); `never` also drops the sample cards from the start screen | `on` |
 | `stream` | documents a host [streams in](#embedding-in-a-page) while they are written: the viewer closes their unfinished markup and shows where they are being written | `always` |
 | `stream.demo` | **Stream demo** in Settings: plays an opened file in as if a model were writing it (start delay, speed, a wait after each element), to see a document being streamed in without a model | `off` |
 
@@ -118,7 +127,7 @@ For a single visit, the URL can set a feature's mode with the same words, e.g. `
 ## Files
 
 - `config.js` — per-deployment features (see above)
-- `demo-data.js` — demo archive URL
+- `demo-data.js` — the built-in samples
 - `index.html` — shell UI
 - `viewer.js` — parsing, page alignment, bbox overlay
 - `viewer.css` — layout and theme
