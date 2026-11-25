@@ -190,6 +190,10 @@
                 <input type="checkbox" id="toggle-demo" role="menuitemcheckbox">
                 <span>Show demo on launch</span>
               </label>
+              <label class="toolbar-options-item" data-switch="stream.demo" title="Play an opened document in as if a model were writing it, to see a document being streamed in">
+                <input type="checkbox" id="toggle-stream-demo" role="menuitemcheckbox">
+                <span>Stream demo</span>
+              </label>
             </div>
             <div class="toolbar-options-row">
               <label class="toolbar-options-item toolbar-options-item-flex" id="toggle-hotkeys-label">
@@ -866,14 +870,7 @@
               >100 tok/s</button>
               <ul class="token-speed-menu" id="token-speed-menu" role="listbox" aria-label="Trace speed" hidden></ul>
             </span>
-            <select class="token-speed" id="token-speed" hidden tabindex="-1" aria-hidden="true">
-              <option value="5">5 tok/s</option>
-              <option value="10">10 tok/s</option>
-              <option value="50">50 tok/s</option>
-              <option value="100" selected>100 tok/s</option>
-              <option value="500">500 tok/s</option>
-              <option value="1000">1000 tok/s</option>
-            </select>
+            <select class="token-speed" id="token-speed" hidden tabindex="-1" aria-hidden="true"></select>
           </div>
           <span class="token-counter" id="token-counter"></span>
         </div>
