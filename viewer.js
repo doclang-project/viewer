@@ -575,6 +575,7 @@ const OVERLAY_PREF_ACCESSORS = {
 };
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
+let markupSettingsOpen = false;
 let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** "single": one page at a time; "continuous": every page in one vertical stream, fit to the pane's width. */
@@ -664,6 +665,10 @@ const els = {
   showLayoutBadgesLabel: document.getElementById("show-layout-badges-label"),
   settingsToggle: document.getElementById("btn-settings-toggle"),
   readingSettingsToggle: document.getElementById("btn-reading-settings-toggle"),
+  markupSettingsToggle: document.getElementById("btn-markup-settings-toggle"),
+  markupSettingsLayer: document.getElementById("markup-settings-layer"),
+  markupSettingsScrim: document.getElementById("markup-settings-scrim"),
+  markupSettingsClose: document.getElementById("btn-markup-settings-close"),
   pageSettingsLayer: document.getElementById("page-settings-layer"),
   pageSettingsScrim: document.getElementById("page-settings-scrim"),
   pageSettingsClose: document.getElementById("btn-page-settings-close"),
@@ -732,11 +737,6 @@ const els = {
   tokenSpeedBtn: document.getElementById("token-speed-btn"),
   tokenSpeedMenu: document.getElementById("token-speed-menu"),
   tokenCounter: document.getElementById("token-counter"),
-  tokenHeatToggle: document.getElementById("token-heat"),
-  tokenCountsToggle: document.getElementById("token-counts"),
-  tokenScanToggle: document.getElementById("token-scan"),
-  tokenRenderToggle: document.getElementById("token-render"),
-  tokenOverlayOptions: document.getElementById("token-overlay-options"),
   renderedPane: document.getElementById("rendered-pane"),
   pagePane: document.getElementById("page-pane"),
   paneFile: document.querySelector(".pane-file"),
@@ -913,6 +913,9 @@ els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpe
 els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
 els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
+els.markupSettingsToggle?.addEventListener("click", () => setMarkupSettingsOpen(!markupSettingsOpen));
+els.markupSettingsClose?.addEventListener("click", () => setMarkupSettingsOpen(false));
+els.markupSettingsScrim?.addEventListener("click", () => setMarkupSettingsOpen(false));
 els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
@@ -952,6 +955,7 @@ document.addEventListener("keydown", (e) => {
   else if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
+  else if (markupSettingsOpen) setMarkupSettingsOpen(false);
   else if (tokenLens.playing) {
     e.preventDefault(); // used: nothing else acts on this Esc
     stopTokenReplay(); // a pause, as Space: Space plays on from there
@@ -960,7 +964,7 @@ document.addEventListener("keydown", (e) => {
 // Esc deselects the element (and so closes the inspector) once nothing else is using the key.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented || !selectedElementId || markupEditor || drawing) return;
-  if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen) return;
+  if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen || markupSettingsOpen) return;
   const active = document.activeElement;
   if (isTypingTarget(active)) {
     active.blur(); // finish typing first; the next Esc deselects
@@ -3508,6 +3512,10 @@ function setHoveredMarkupToken(span) {
  * --------------------------------------------------------------------- */
 
 const TOKEN_BADGE_MIN_SCREEN_PX = { w: 70, h: 13 };
+/** While tracing, the Original is revealed and the Paged Preview built up as tokens are written. */
+const TOKEN_TRACE_REVEAL = true;
+const TOKEN_TRACE_RENDER = true;
+
 
 function setTokenLensActive(active) {
   if (active && !isAvailable("tokens")) return;
@@ -3697,7 +3705,7 @@ function syncTokenLayer(img) {
   const hi = Math.max(...logs);
 
   // Already veiled when the trace shows it: a rebuilt layer (a live document's next version) does not fade in again.
-  const shown = isReplayShown(currentTokenRange()) && tokenLens.effects && !!els.tokenScanToggle?.checked;
+  const shown = isReplayShown(currentTokenRange()) && tokenLens.effects && TOKEN_TRACE_REVEAL;
   const svg = svgEl("svg", { class: `token-layer${shown ? " is-replaying" : ""}`, viewBox: `0 0 ${W} ${H}` });
   const mask = svgEl("mask", { id: "token-veil-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: W, height: H });
   mask.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "white" }));
@@ -3733,24 +3741,29 @@ function syncTokenLayer(img) {
     }
   }
   svg.appendChild(badgeGroup);
-  // The bboxes' label badges read as on top of the veil: it leaves them out. They stay in the overlay, which handles
-  // their clicks and hints, so the veil has a hole where each one is.
+  // The bboxes' label badges are veiled until their element starts being written, then shown whole, over the veil.
+  // They stay in the overlay, which handles their clicks and hints: the veil gets a hole where each one is, opened
+  // once the element's first token is written (see updateTokenLayer).
+  const badgeHoles = [];
   const imgRect = img.getBoundingClientRect();
   if (imgRect.width && imgRect.height) {
     const sx = W / imgRect.width;
     const sy = H / imgRect.height;
     for (const badge of img.parentElement?.querySelectorAll("svg.overlay .element-badge") ?? []) {
       const r = badge.getBoundingClientRect();
+      const el = docState.idToElement?.get(badge.getAttribute("data-element-id"));
+      const span = el && elementTokenSpan(data, el);
       if (!r.width) continue;
-      mask.appendChild(svgEl("rect", {
-        x: (r.left - imgRect.left) * sx, y: (r.top - imgRect.top) * sy, width: r.width * sx, height: r.height * sy, fill: "black",
-      }));
+      const h = r.height * sy;
+      const hole = svgEl("rect", { x: (r.left - imgRect.left) * sx, y: (r.top - imgRect.top) * sy, width: r.width * sx, height: h, fill: "black" });
+      mask.appendChild(hole);
+      badgeHoles.push({ hole, h, start: span ? span.start : -Infinity });
     }
   }
 
   // Above the bbox overlay, so the veil darkens it too; clicks pass through to the overlay.
   img.parentElement.appendChild(svg);
-  tokenLayer = { svg, items };
+  tokenLayer = { svg, items, badgeHoles };
   const highlighted = tokenLens.currentId;
   tokenLens.currentId = null; // the page's bboxes are new: highlight them again
   highlightReplayElement(highlighted);
@@ -3762,7 +3775,7 @@ function updateTokenLayer(range) {
   const layer = tokenLayer;
   if (!layer?.svg.isConnected || !range) return;
   // Without Reveal the page keeps the overlay's own look; the replay only highlights the element being written.
-  const shown = isReplayShown(range) && tokenLens.effects && !!els.tokenScanToggle?.checked;
+  const shown = isReplayShown(range) && tokenLens.effects && TOKEN_TRACE_REVEAL;
   const c = shown ? tokenLens.cursor : range.end;
   layer.svg.classList.toggle("is-replaying", shown);
   for (const it of layer.items) {
@@ -3772,6 +3785,7 @@ function updateTokenLayer(range) {
     it.heat?.setAttribute("height", h);
     it.badge?.classList.toggle("is-shown", progress >= 1);
   }
+  for (const { hole, h, start } of layer.badgeHoles ?? []) hole.setAttribute("height", String(c > start ? h : 0));
 }
 
 /**
@@ -3781,8 +3795,8 @@ function updateTokenLayer(range) {
  */
 function syncTraceUpcomingPages(range) {
   const tracing = isReplayShown(range) && tokenLens.effects;
-  const veil = tracing && !!els.tokenScanToggle?.checked;
-  const empty = tracing && !!els.tokenRenderToggle?.checked;
+  const veil = tracing && TOKEN_TRACE_REVEAL;
+  const empty = tracing && TOKEN_TRACE_RENDER;
   // A live document's upcoming pages follow the page being written, wherever the user is looking.
   const current = tokenLens.live && state ? liveWritingPage(state) : state?.currentPage ?? 0;
   for (const { pageNum, wrap } of pageStream?.pages ?? []) wrap.classList.toggle("token-upcoming", veil && pageNum > current);
@@ -3839,7 +3853,7 @@ function unwrittenTextRange(item, written) {
 /** While tracing, the Paged Preview is built up in reading order: each slot appears as its tokens are written. */
 function syncPagedTraceRender(range) {
   const canvas = els.renderedPane && livePaneRoot(els.renderedPane).querySelector(".paged-canvas");
-  const active = !!canvas && isReplayShown(range) && tokenLens.effects && !!els.tokenRenderToggle?.checked;
+  const active = !!canvas && isReplayShown(range) && tokenLens.effects && TOKEN_TRACE_RENDER;
   const wasActive = canvas?.classList.contains("token-rendering");
   if (!active) {
     if (!wasActive) return;
@@ -4002,18 +4016,6 @@ function initTokenLens() {
     updateTokenReplay();
   });
   loadTokenPrefs();
-  els.tokenHeatToggle?.addEventListener("change", () => {
-    els.pagePane?.classList.toggle("token-heat", els.tokenHeatToggle.checked);
-    persistTokenPrefs();
-  });
-  els.tokenScanToggle?.addEventListener("change", () => {
-    updateTokenReplay();
-    persistTokenPrefs();
-  });
-  els.tokenRenderToggle?.addEventListener("change", () => {
-    updateTokenReplay();
-    persistTokenPrefs();
-  });
   // Clicking a token in the source seeks the trace to it (that token written last); a playing trace plays on.
   els.markupPane?.addEventListener("click", (e) => {
     const span = e.target.closest?.(".token-span");
@@ -4022,10 +4024,6 @@ function initTokenLens() {
     tokenLens.cursor = Math.min(range.end, Number(span.dataset.tokenIndex) + 1);
     if (!tokenLens.playing) tokenLens.effects = false; // a click moves the trace without its effects
     updateTokenReplay();
-  });
-  els.tokenCountsToggle?.addEventListener("change", () => {
-    els.pagePane?.classList.toggle("token-counts", els.tokenCountsToggle.checked);
-    persistTokenPrefs();
   });
   els.tokenSpeed?.addEventListener("change", () => {
     tokenLens.speed = Number(els.tokenSpeed.value) || 100; // tokens per second
@@ -4059,12 +4057,6 @@ function loadTokenPrefs() {
   } catch {
     /* ignore invalid stored token prefs */
   }
-  if (els.tokenHeatToggle) els.tokenHeatToggle.checked = prefs.heatmap === true;
-  if (els.tokenCountsToggle) els.tokenCountsToggle.checked = prefs.counts === true;
-  if (els.tokenScanToggle) els.tokenScanToggle.checked = prefs.reveal !== false; // on unless switched off
-  if (els.tokenRenderToggle) els.tokenRenderToggle.checked = prefs.render !== false;
-  els.pagePane?.classList.toggle("token-heat", !!els.tokenHeatToggle?.checked);
-  els.pagePane?.classList.toggle("token-counts", !!els.tokenCountsToggle?.checked);
   const speed = String(prefs.speed);
   if (els.tokenSpeed && [...els.tokenSpeed.options].some((o) => o.value === speed)) els.tokenSpeed.value = speed;
   tokenLens.speed = Number(els.tokenSpeed?.value) || 100;
@@ -4142,13 +4134,7 @@ function initTokenSpeedMenu() {
 
 function persistTokenPrefs() {
   try {
-    localStorage.setItem(TOKEN_PREFS_STORAGE_KEY, JSON.stringify({
-      heatmap: !!els.tokenHeatToggle?.checked,
-      counts: !!els.tokenCountsToggle?.checked,
-      reveal: !!els.tokenScanToggle?.checked,
-      render: !!els.tokenRenderToggle?.checked,
-      speed: tokenLens.speed,
-    }));
+    localStorage.setItem(TOKEN_PREFS_STORAGE_KEY, JSON.stringify({ speed: tokenLens.speed }));
   } catch {
     /* ignore quota / private mode */
   }
@@ -4598,6 +4584,7 @@ function syncEditUi() {
   els.viewRawBtn?.setAttribute("aria-pressed", String(editing));
   if (els.viewVisualBtn) els.viewVisualBtn.title = entry ? "Edit visually" : "Show the formatted DocLang";
   if (els.viewRawBtn) els.viewRawBtn.title = entry ? "Edit the raw DocLang source (E)" : "Show the raw DocLang source (E)";
+  syncMarkupSettingsToggle();
   syncHistoryButtons();
   syncAddButtons();
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
@@ -7573,7 +7560,6 @@ function syncTokenLensControls() {
   if (els.tokenBar) els.tokenBar.hidden = !open || !tokenLens.active;
   if (els.tokenNav) els.tokenNav.hidden = !open || !tokenLens.active;
   // Heatmap, counts and reveal draw on page images.
-  if (els.tokenOverlayOptions) els.tokenOverlayOptions.hidden = !open || !tokenLens.active || !state.hasPageView;
   syncTokenBar();
 }
 
@@ -7589,6 +7575,19 @@ function setPageSettingsOpen(open) {
   pageSettingsOpen = open;
   if (els.pageSettingsLayer) els.pageSettingsLayer.hidden = !open;
   if (els.settingsToggle) els.settingsToggle.setAttribute("aria-expanded", String(open));
+}
+
+/** The DocLang pane's overlays: the tokens, over the formatted view (Raw shows the source as it is). */
+function setMarkupSettingsOpen(open) {
+  markupSettingsOpen = open;
+  if (els.markupSettingsLayer) els.markupSettingsLayer.hidden = !open;
+  if (els.markupSettingsToggle) els.markupSettingsToggle.setAttribute("aria-expanded", String(open));
+}
+
+function syncMarkupSettingsToggle() {
+  const shown = Boolean(state) && !markupEditor && Boolean(els.tokenLensToggle?.isConnected);
+  if (els.markupSettingsToggle) els.markupSettingsToggle.hidden = !shown;
+  if (!shown && markupSettingsOpen) setMarkupSettingsOpen(false);
 }
 
 function setReadingSettingsOpen(open) {
