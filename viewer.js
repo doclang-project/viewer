@@ -1294,7 +1294,8 @@ function initHostHandoff() {
  * that could load something (`url(…)`) or reach past the one declaration. `accept` lists the extensions of the
  * files the host takes; the start screen and the Open dialog offer them next to the viewer's own.
  */
-function applyHostConfig({ theme, style, accept }) {
+function applyHostConfig({ theme, style, accept, indicator }) {
+  if (indicator === "dots" || indicator === "placeholder") liveIndicator = indicator;
   if (Array.isArray(accept)) {
     hostAccept = accept.filter((ext) => typeof ext === "string" && /^\.[a-z0-9]+$/i.test(ext)).map((ext) => ext.toLowerCase());
     initFileTypeHints();
@@ -1524,6 +1525,108 @@ function writtenMarkupEnd(pane, page) {
   const lines = [...block.querySelectorAll(".markup-line")].filter((line) => line.getClientRects().length);
   const last = lines[lines.length - 1];
   return last ? offsetInPane(pane, last.getBoundingClientRect().bottom) : null;
+}
+
+// --- What a document still being written is writing ---
+//
+// While a host streams a document in, the previews show that it is being written, however long the model takes:
+// dots, pulsing, where the writing is. In the Paged Preview, below the last box (where the element being written is,
+// or reading order mostly carries on, down its column), or at the top of a page with none yet; in the Flowing
+// preview, after what is written.
+
+/** The dots' pulse stays in step across rebuilds (a live document's views are built again with every version). */
+const LIVE_STEADY_ANIMATIONS = new Set(["live-waiting-dot", "live-waiting-shimmer"]);
+
+/** Whether `segment` is the page a document still being written is at. */
+function isLiveWritingSegment(segment) {
+  const entry = fileCatalog[activeFileIndex];
+  return entry?.kind === "live" && !entry.source.complete && !!state
+    && segment === state.segments[liveWritingPage(state) - 1];
+}
+
+/** Keeps the steady animations under `node` in step with the clock, so a rebuilt one carries on where it was. */
+function keepLiveAnimationsInStep(node) {
+  queueMicrotask(() => {
+    if (!node.isConnected) return;
+    for (const animation of node.getAnimations({ subtree: true })) {
+      if (LIVE_STEADY_ANIMATIONS.has(animation.animationName)) animation.startTime = 0;
+    }
+  });
+}
+
+/**
+ * How the previews show where a document is being written: pulsing dots, or a text placeholder (shimmering lines,
+ * ragged like a paragraph's). A host picks it (configure's `indicator`).
+ */
+let liveIndicator = "dots";
+
+/** The indicator; a placeholder of `lines` lines (one: a short one). */
+function buildLiveWaiting(lines = 3) {
+  const el = document.createElement("div");
+  el.className = `live-waiting${liveIndicator === "placeholder" ? " is-placeholder" : ""}`;
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-label", "Writing");
+  if (liveIndicator === "placeholder") {
+    el.style.setProperty("--lines", String(lines));
+    for (const width of lines === 1 ? [100] : [100, 97, 62]) el.appendChild(document.createElement("span")).style.width = `${width}%`;
+  } else {
+    for (let i = 0; i < 3; i += 1) el.appendChild(document.createElement("span"));
+  }
+  keepLiveAnimationsInStep(el);
+  return el;
+}
+
+/**
+ * In the Paged Preview: the dots below the last element written of the page being written, all of it: its own box
+ * and those of its parts, as a table's caption, written after the table's box, can be at its top.
+ */
+function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
+  if (!isLiveWritingSegment(segment)) return;
+  const boxById = new Map(boxes.map((b) => [b.elementId, b]));
+  let last = null; // in page fractions
+  for (const top of segment) {
+    if (top.nodeType !== Node.ELEMENT_NODE) continue;
+    let union = null;
+    for (const el of [top, ...top.getElementsByTagName("*")]) {
+      const b = boxById.get(elementIds.get(el));
+      if (!b) continue;
+      const r = { x0: b.x0 / b.resW, y0: b.y0 / b.resH, x1: b.x1 / b.resW, y1: b.y1 / b.resH };
+      union = union
+        ? { x0: Math.min(union.x0, r.x0), y0: Math.min(union.y0, r.y0), x1: Math.max(union.x1, r.x1), y1: Math.max(union.y1, r.y1) }
+        : r;
+    }
+    last = union ?? last;
+  }
+  // Heights in % of the page's: the dots a line high; the placeholder three lines of body text, or one where only one
+  // fits below.
+  const placeholder = liveIndicator === "placeholder";
+  const line = placeholder ? 1.6 : 2;
+  let lines = placeholder ? 3 : 1;
+  let left = 8;
+  let top = 5;
+  let width = 84;
+  const below = last ? 99 - (last.y1 * 100 + 1) : Infinity; // the room below the last element
+  if (placeholder && below < lines * line) lines = 1;
+  if (last && below >= lines * line) {
+    left = last.x0 * 100;
+    width = Math.max(8, (last.x1 - last.x0) * 100);
+    top = last.y1 * 100 + 1;
+  } else if (last) {
+    // No room below (a page number, say, at the very bottom): beside it, on its last line, after it where there is
+    // room, else before it.
+    width = 6;
+    const lastLine = Math.min(3, (last.y1 - last.y0) * 100); // a line's height, at most
+    top = last.y1 * 100 - lastLine / 2 - line / 2;
+    left = last.x1 * 100 + 1 + width <= 99 ? last.x1 * 100 + 1 : Math.max(1, last.x0 * 100 - 1 - width);
+  }
+  const indicator = buildLiveWaiting(lines);
+  Object.assign(indicator.style, { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${lines * line}%` });
+  canvas.appendChild(indicator);
+}
+
+/** In the Flowing preview: the dots after what is written. */
+function applyFlowingLiveProgress(root, segment) {
+  if (isLiveWritingSegment(segment)) root.appendChild(buildLiveWaiting());
 }
 
 /** File System Access handles for files that came with one, keyed by their `File`. */
@@ -8834,7 +8937,8 @@ function fillPageStream(pane, pageNum, buildPage, { emptyPages = false } = {}) {
   for (let n = 1; n <= state.pageCount; n += 1) {
     const block = makePageBlock(n);
     const ctx = pageContextFor(n);
-    if (emptyPages || segmentHasMarkup(ctx.segment)) block.appendChild(buildPage(ctx, n));
+    // The page a document is being written at shows that, also before anything is written of it.
+    if (emptyPages || segmentHasMarkup(ctx.segment) || isLiveWritingSegment(ctx.segment)) block.appendChild(buildPage(ctx, n));
     pane.appendChild(block);
   }
   pane.streamState = state;
@@ -9720,7 +9824,7 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   els.renderedPane.classList.remove("reading-stream");
 
   // A page without markup: a blank page when Paged, nothing when Flowing.
-  if (!segmentHasMarkup(segment) && effectiveReadingLayoutMode() !== "paged") {
+  if (!segmentHasMarkup(segment) && effectiveReadingLayoutMode() !== "paged" && !isLiveWritingSegment(segment)) {
     els.renderedPane.classList.remove("reading-mode-paged");
     return;
   }
@@ -12897,6 +13001,7 @@ function buildRenderedView(segment, elementIds, { joins = null, pageNum = 0 } = 
     if (elementId) selectElement(elementId, clickFacet(e.target, ".rendered-el-virtual-text", ".rendered-marker"));
   });
   applyReadingLayerClasses(root);
+  applyFlowingLiveProgress(root, segment);
   return root;
 }
 
@@ -13076,6 +13181,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
     if (elementId) selectElement(elementId);
   });
   applyReadingLayerClasses(canvas);
+  applyPagedLiveProgress(canvas, segment, elementIds, boxes);
 
   // Initial fit happens synchronously via fitPagedCanvas(), called by renderPage()
   // right after this canvas is appended to the DOM (and again whenever the canvas
