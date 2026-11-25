@@ -1860,6 +1860,12 @@ body.pane-drag-active .pane-splitter {
   outline-offset: calc(-1 * var(--reading-bbox-width, 1px));
 }
 
+/* While a document streams in: room after the last page of a continuous view, to bring it to the top. */
+.live-stream-room {
+  flex: none;
+  pointer-events: none;
+}
+
 /* A document still being written: dots, pulsing, where the writing is (see applyPagedLiveProgress()). */
 .live-waiting {
   display: flex;

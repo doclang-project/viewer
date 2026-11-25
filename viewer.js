@@ -1514,6 +1514,38 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   if (bottom !== null) pane.scrollTop = Math.max(top, bottom - pane.clientHeight + LIVE_FOLLOW_SLACK_PX / 2);
 }
 
+/**
+ * While a document streams in, the continuous views have room after their last page (the one being written: the host
+ * hands over no page after it) to bring it to the top. Without, a view following it rests against the end of what
+ * there is, and that end moves with every version (a page image loading, a box fitted), and the view with it.
+ */
+function syncLiveStreamRoom() {
+  const live = isStreamingEntry(fileCatalog[activeFileIndex]);
+  const room = (container, pane, last) => {
+    if (!container) return;
+    let spacer = container.querySelector(":scope > .live-stream-room");
+    if (!live || !pane || !last) {
+      spacer?.remove();
+      return;
+    }
+    // A whole view's height, whatever the page's: its size may yet change (its image still loading, its boxes not yet
+    // fitted), and room measured by it would then fall short.
+    const height = pane.clientHeight;
+    if (!spacer) {
+      spacer = document.createElement("div");
+      spacer.className = "live-stream-room";
+      spacer.setAttribute("aria-hidden", "true");
+    }
+    container.appendChild(spacer); // after the last page, also when pages were added since
+    spacer.style.height = `${height}px`;
+  };
+  const streamPages = pageStream?.pages ?? [];
+  room(pageStream?.inner, pageStream?.port, streamPages[streamPages.length - 1]?.wrap);
+  const pane = els.renderedPane;
+  const blocks = pane && isReadingStreamLayout() ? pane.querySelectorAll(":scope > .pane-page-block") : [];
+  room(pane, pane, blocks[blocks.length - 1]);
+}
+
 /** The last page with markup: in a document still being written, the page being written. */
 function liveWritingPage(docState) {
   for (let i = docState.segments.length - 1; i >= 0; i -= 1) {
@@ -4693,6 +4725,7 @@ function activateDocument(docState, entry) {
   setPageViewVisible(state.hasPageView);
   syncReadingLayoutButtons();
   renderPage(state.currentPage);
+  syncLiveStreamRoom();
   if (tokenLens.live) updateTokenReplay();
   streamRestore = null;
   if (pageStream) pageStream.entry = entry;
@@ -9027,6 +9060,9 @@ function makePageBlock(pageNum) {
 function fillPageStream(pane, pageNum, buildPage, { emptyPages = false } = {}) {
   const wasStream = Boolean(pane.querySelector(":scope > .pane-page-block"));
   const scroll = pane.scrollTop;
+  // The room a document streaming in has after its last page (syncLiveStreamRoom()) stays while the pages are built
+  // again: without it for a moment, the place to go back to may be out of reach.
+  const room = pane.querySelector(":scope > .live-stream-room");
   pane.innerHTML = "";
   for (let n = 1; n <= state.pageCount; n += 1) {
     const block = makePageBlock(n);
@@ -9035,6 +9071,7 @@ function fillPageStream(pane, pageNum, buildPage, { emptyPages = false } = {}) {
     if (emptyPages || segmentHasMarkup(ctx.segment) || isLiveWritingSegment(ctx.segment)) block.appendChild(buildPage(ctx, n));
     pane.appendChild(block);
   }
+  if (room) pane.appendChild(room);
   pane.streamState = state;
   if (wasStream) pane.scrollTop = scroll;
   else scrollPaneToPageBlock(pane, pageNum);
