@@ -20,6 +20,7 @@ const FEATURE_DEFAULTS = {
   "editing.ocr": "always",
   tokens: "off", // opt-in
   demo: "on", // the demo when the viewer opens without a file; `never` also drops the start screen's "load demo"
+  stream: "always", // documents a host streams in, still being written (see closeStreamedMarkup())
 };
 const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo"]);
 // Saved per deployment path, so deployments under different paths of one domain keep their own choices.
@@ -1388,6 +1389,56 @@ let liveRawScrollTop = 0;
 /** How close to the end of the DocLang pane still counts as at the end, for following a live document. */
 const LIVE_FOLLOW_SLACK_PX = 24;
 
+/** Tags a model writes without closing them (or that close themselves): no element is open after one. */
+const STREAM_VOID_TAGS = new Set(["location", "label", "br", "page_break", ...CELL_TOKENS]);
+const STREAM_TOKEN_RE = /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\s*\/\s*([A-Za-z][\w.-]*)\s*>|<\s*([A-Za-z][\w.-]*)((?:'[^']*'|"[^"]*"|[^>'"])*)>/g;
+
+/**
+ * A document still being written, as far as it is written, made well-formed: what is cut off at the very end (a tag,
+ * a comment, a CDATA section or an entity) is left out until it is complete, and the elements still open are closed,
+ * innermost first. Returns the markup and how many elements are open, the root not counted. With nothing written yet,
+ * it is an empty document. Markup that closes its root is taken as it is, as complete or closed by the host, where
+ * what is open is not known (null).
+ */
+function closeStreamedMarkup(text) {
+  const root = /<\s*(doclang|doctag)\b[^>]*>/i.exec(text);
+  const rootTag = root ? root[1] : "doclang";
+  const rootOpen = root ? root[0] : "<doclang>";
+  const start = root ? root.index + root[0].length : 0;
+  let end = text.length;
+  // A CDATA section still being written shows what it has (it is closed with the elements); its text is not markup.
+  const cdata = text.lastIndexOf("<![CDATA[");
+  const inCdata = cdata >= start && !text.slice(cdata).includes("]]>");
+  let scanEnd = inCdata ? cdata : end;
+  for (const [opener, closer] of [["<!--", "-->"], ["<", ">"]]) {
+    const at = text.lastIndexOf(opener, scanEnd - 1);
+    if (at >= start && !text.slice(at, scanEnd).includes(closer)) scanEnd = end = at;
+  }
+  // An entity cut off can only be at the very end (an `&` before, in a CDATA section say, is not one).
+  if (!inCdata) {
+    const amp = /&[#\w]*$/.exec(text.slice(0, end));
+    if (amp && amp.index >= start) end = amp.index;
+  }
+  const open = [];
+  const scanned = text.slice(0, scanEnd);
+  STREAM_TOKEN_RE.lastIndex = start;
+  for (let m; (m = STREAM_TOKEN_RE.exec(scanned));) {
+    const [, closeName, openName, attrs] = m;
+    if (closeName) {
+      if (closeName.toLowerCase() === rootTag.toLowerCase()) return { markup: text, open: null };
+      const at = open.map((n) => n.toLowerCase()).lastIndexOf(closeName.toLowerCase());
+      if (at >= 0) open.length = at; // a stray closing tag closes nothing
+      continue;
+    }
+    if (!openName) continue; // a comment or CDATA section
+    const name = openName.toLowerCase();
+    if (!(attrs ?? "").trim().endsWith("/") && !STREAM_VOID_TAGS.has(name) && !/^loc_\d+$/.test(name)) open.push(openName);
+  }
+  const closing = (inCdata && end > cdata ? "]]>" : "") + open.toReversed().map((n) => `</${n}>`).join("");
+  const written = root ? text.slice(0, end) : `${rootOpen}${text.slice(0, end)}`; // as written, a prefix of the markup
+  return { markup: `${written}${closing}</${rootTag}>`, open: open.length };
+}
+
 /** A `live` entry holds markup and page images handed over by the host, not file bytes. */
 async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   const pageBlobs = new Map();
@@ -1400,7 +1451,16 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   const hostTokens = Array.isArray(tokens)
     ? tokens.filter((t) => Array.isArray(t) && typeof t[0] === "string" && Number.isInteger(t[1]))
     : null;
-  const source = { markupXml: markup, pages: pageBlobs, tokens: hostTokens, complete };
+  // While it is written, the host may hand it over cut off anywhere: the viewer closes what is open (`stream`).
+  const streamed = !complete && isAvailable("stream") ? closeStreamedMarkup(markup) : null;
+  const source = {
+    markupXml: streamed?.markup ?? markup,
+    writtenXml: markup, // as written, for the Raw view
+    open: streamed?.open ?? null, // how many elements are open; null: not known
+    pages: pageBlobs,
+    tokens: hostTokens,
+    complete,
+  };
   let index = fileCatalog.findIndex((entry) => entry.kind === "live" && entry.label === name);
   if (index === -1) {
     fileCatalog.push({
@@ -4609,7 +4669,7 @@ function syncHistoryButtons() {
 
 function hasUnappliedEditorText() {
   // Without a document (released while another opens) there is nothing the text would apply to.
-  return !!markupEditor && !!state && markupEditor.value !== editorTextOf(state.markupXml);
+  return !!markupEditor && !markupEditor.readOnly && !!state && markupEditor.value !== editorTextOf(state.markupXml);
 }
 
 function setEditingOn(on) {
@@ -4698,6 +4758,15 @@ function focusEditor() {
   scrollEditorToCaret();
 }
 
+/**
+ * The text of the Raw view: the source, and of a document still being written, what is written of it (the markup
+ * shown elsewhere has what is still open closed; what is written is a prefix of it, so their offsets agree).
+ */
+function rawViewText() {
+  const source = fileCatalog[activeFileIndex]?.source;
+  return source?.open != null ? source.writtenXml : state.markupXml;
+}
+
 /** The Raw view: the source in an editor, read-only for a document that cannot be edited (editing off, say). */
 function startEditing({ focus = true } = {}) {
   if (markupEditor || !state || !els.markupPane) return;
@@ -4706,7 +4775,7 @@ function startEditing({ focus = true } = {}) {
   markupEditor.className = "markup-editor";
   markupEditor.spellcheck = false;
   markupEditor.readOnly = !editableEntry();
-  markupEditor.value = state.markupXml;
+  markupEditor.value = rawViewText();
   markupEditor.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
