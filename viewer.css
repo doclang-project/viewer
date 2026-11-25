@@ -3659,6 +3659,129 @@ li.has-marker > .rendered-li-body {
   opacity: 1;
 }
 
+/* A picture's label and class, at its top corner; its details on hover (pictureDetailsChip()). */
+.picture-chip {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 2;
+  max-width: calc(100% - 0.5rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.05rem 0.4rem;
+  font: 600 0.625rem/1.4 var(--font-ui);
+  letter-spacing: 0.02em;
+  color: var(--kind-picture, var(--accent));
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kind-picture, var(--accent)) 45%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 15%, transparent);
+  cursor: help;
+  opacity: 0.85;
+}
+
+.picture-chip:hover {
+  opacity: 1;
+}
+
+/* On a Paged page, the chip is the page's: it scales with it, not with the interface (a small page, a small chip). */
+.paged-canvas {
+  container-type: inline-size;
+}
+
+.paged-el-slot > .picture-chip {
+  top: 0.4cqw;
+  right: 0.4cqw;
+  padding: 0.05cqw 0.6cqw;
+  font-size: clamp(4px, 1.1cqw, 0.625rem);
+  border-width: max(0.5px, 0.1cqw);
+}
+
+.picture-chip-info {
+  font-style: italic;
+  font-family: serif;
+}
+
+.picture-details-hidden :is(.picture-chip, .picture-details-line) {
+  display: none;
+}
+
+/* Under a picture in the Flowing preview: its label and class as tags, then its description (pictureDetailsLine()). */
+.picture-details-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.4rem;
+  margin-top: 0.4rem;
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.picture-tag {
+  padding: 0 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--kind-picture, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--kind-picture, var(--accent)) 45%, transparent);
+  border-radius: 999px;
+}
+
+.picture-details-text {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.picture-details-text > span + span::before {
+  content: " · ";
+}
+
+.picture-details-text strong {
+  font-weight: 600;
+}
+
+.picture-details-text.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.picture-details-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* A chip's card, pinned by a click: it stays, to read, select and copy (pinPictureCard()). */
+.picture-card {
+  pointer-events: auto;
+  user-select: text;
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, #000 22%, transparent);
+}
+
+figure:has(> .rendered-picture-description) > img {
+  display: block;
+  margin-inline: auto;
+}
+
+/* A picture without an image, in place of nothing but its icon: what it shows, as described. */
+.rendered-picture-description {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8em;
+  font-style: italic;
+  color: var(--muted);
+  text-align: center;
+}
+
 .rendered-formula-inline {
   display: inline;
 }
