@@ -57,7 +57,7 @@ A page can embed the viewer in an `<iframe>` and show its own documents in it, f
 
 | Message | What it does |
 |---------|--------------|
-| `{type: "doclang-viewer:show", name, markup, pages, tokens, complete}` | Shows `markup` (DocLang, as a string) with its page images, `pages` as `{[pageNo]: Blob \| ArrayBuffer}`. Posting `show` again with the same `name` replaces the document, so the page can show it while it is still being written. `tokens` (optional) are the tokens the model generated, `[[text, id, special], …]` in order; the token views show them in place of the viewer's own tokenizer. `complete: true` says the document is done. |
+| `{type: "doclang-viewer:show", name, markup, pages, tokens, complete}` | Shows `markup` (DocLang, as a string) with its page images, `pages` as `{[pageNo]: Blob \| ArrayBuffer}`. Posting `show` again with the same `name` replaces the document, so the page can show it while it is still being written. `tokens` (optional) are the tokens the model generated, `[[text, id, special], …]` in order; the token views show them in place of the viewer's own tokenizer. `complete: true` says the document is done. Until then, `markup` can be cut off anywhere, as the model wrote it so far: the viewer closes what is still open. |
 | `{type: "doclang-viewer:configure", theme, style, accept}` | Fits the viewer into the page: `theme` (`"light"` or `"dark"`) over the user's choice, `style` sets the viewer's colour variables (e.g. `{"--bg": "#f3ede2"}`; other names, and values that could load something, are ignored), `accept` lists extensions of files the page takes itself (e.g. `[".png", ".pdf"]`). |
 | `{type: "doclang-viewer:open", name, buffer}` | Opens a file, as from an opener. |
 
@@ -65,6 +65,7 @@ A file of a type in `accept` that the user drops or opens in the viewer goes to 
 
 While a shown document is not complete:
 
+- the Raw view shows the markup as written; the other views show it with what is still open closed (a host can also send it closed itself);
 - the views follow its end: the page being written becomes the current page, and the DocLang pane keeps its last written line in view (scrolled away, it stays);
 - with tokens on, it traces itself as it grows: the Original is veiled but for what is written, the Paged Preview is built up as it is written, and the element being written is highlighted;
 - it is not validated: validation runs once it is complete.
@@ -100,6 +101,7 @@ Each feature is in one of four modes:
 | `editing.ocr` | "Read from page" with Granite-Docling in the browser (downloads about 1.2 GB on first use); only while editing is on | `always` |
 | `tokens` | tokens in the DocLang source, token tracing, and the Tokens overlays | `off` |
 | `demo` | the demo when the viewer opens without a file (not when it opens with one); `never` also drops **load demo** from the start screen | `on` |
+| `stream` | documents a host [streams in](#embedding-in-a-page) while they are written: the viewer closes their unfinished markup and shows where they are being written | `always` |
 
 A deployment overrides what it needs by replacing [`config.js`](config.js); features it doesn't mention keep their built-in mode:
 
