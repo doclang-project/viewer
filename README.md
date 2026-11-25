@@ -67,7 +67,7 @@ While a shown document is not complete:
 
 - the Raw view shows the markup as written; the other views show it with what is still open closed (a host can also send it closed itself);
 - the views follow its end: the page being written becomes the current page, and the DocLang pane keeps its last written line in view (scrolled away, it stays);
-- with tokens on, it traces itself as it grows: the Original is veiled but for what is written, the Paged Preview is built up as it is written, and the element being written is highlighted;
+- it shows its tokens and traces itself as it grows, whether tokens are on or off: the Original is veiled but for what is written, the Paged Preview is built up as it is written, and the element being written is highlighted; once it is complete, its tokens show as the `tokens` feature says;
 - it is not validated: validation runs once it is complete.
 
 A shown document has no trace playback, also once complete: it was traced as it was written.
