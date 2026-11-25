@@ -3618,6 +3618,11 @@ body.demo-loading .empty-state-prompt {
   margin: 0 0 0.75rem;
 }
 
+/* Body text, in both previews, justified as on a page (headings, captions, code, formulas and table cells keep theirs). */
+:is(.rendered-doc, .paged-canvas) :is(.rendered-text, .rendered-footnote, .rendered-list li):not(:is(td, th) *) {
+  text-align: justify;
+}
+
 .rendered-doc h1,
 .rendered-doc h2,
 .rendered-doc h3,
