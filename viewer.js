@@ -8184,14 +8184,17 @@ function applyPaneLayout() {
   resetPaneGridStyles();
 
   if (stacked) {
-    els.main.style.gridTemplateRows = "";
     els.main.style.gridTemplateColumns = "1fr";
-    let row = 1;
+    // Each pane a share of the height, whatever it holds: sized by its content, a pane would follow what is fitted to
+    // its size (the Paged Preview's page), which follows the pane, round and round. The files keep their own height.
+    const rows = [];
     for (const key of keys) {
       const def = paneDef(key);
       if (!def?.el) continue;
-      def.el.style.gridRow = String(row++);
+      rows.push(key === "file" ? "auto" : "minmax(0, 1fr)");
+      def.el.style.gridRow = String(rows.length);
     }
+    els.main.style.gridTemplateRows = rows.join(" ");
     refreshPageViewLayout();
     if (els.readingSettingsToggle) {
       els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
