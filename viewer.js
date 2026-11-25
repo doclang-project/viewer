@@ -1966,7 +1966,7 @@ async function parseCatalogEntry(entry) {
       docState.sharedPageUrls = true; // the entry's, kept from one version to the next: see livePageImageUrls()
       if (entry.source.tokens?.length) docState.hostTokens = entry.source.tokens;
       // Tokens before the first paint: the trace's effects would otherwise flash off while they are worked out.
-      if (tokenLens.active) await ensureTokenData(docState).catch(() => {});
+      if (tokenLens.active || isStreamingEntry(entry)) await ensureTokenData(docState).catch(() => {});
       return docState;
     }
     if (entry.kind === "folder") {
@@ -3505,12 +3505,12 @@ function undecorateMarkupRoot(root) {
 /** Shows or hides the tokens of the source view to match the lens; called whenever the view is rebuilt. */
 function syncMarkupTokens() {
   undecorateOtherPagesTokens();
-  if (!tokenLens.active || !state) return undecorateMarkupTokens();
+  if (!tokensShown() || !state) return undecorateMarkupTokens();
   if (state.tokenData) return decorateMarkupTokens();
   const docState = state;
   ensureTokenData(docState)
     .then(() => {
-      if (state !== docState || !tokenLens.active) return;
+      if (state !== docState || !tokensShown()) return;
       decorateMarkupTokens();
       updateTokenReplay();
     })
@@ -3576,6 +3576,18 @@ const TOKEN_BADGE_MIN_SCREEN_PX = { w: 70, h: 13 };
 const TOKEN_TRACE_REVEAL = true;
 const TOKEN_TRACE_RENDER = true;
 
+/** A document a host streams in, still being written. */
+function isStreamingEntry(entry) {
+  return entry?.kind === "live" && !entry.source.complete;
+}
+
+/**
+ * Whether the tokens show: as the tokens feature says, and while a document streams in, whatever it says: they are how
+ * it is being written (and traced). Once it is complete, the feature decides again.
+ */
+function tokensShown() {
+  return tokenLens.active || isStreamingEntry(fileCatalog[activeFileIndex]);
+}
 
 function setTokenLensActive(active) {
   if (active && !isAvailable("tokens")) return;
@@ -3585,7 +3597,7 @@ function setTokenLensActive(active) {
   highlightReplayElement(null);
   if (!active) stopTokenReplay();
   if (els.tokenLensToggle) els.tokenLensToggle.checked = active;
-  els.pagePane?.classList.toggle("token-lens", active);
+  els.pagePane?.classList.toggle("token-lens", tokensShown());
   syncTokenLensControls();
   refreshPageViewLayout();
   syncMarkupTokens();
@@ -3606,7 +3618,7 @@ function pageTokenRange(data) {
 /** The current page's token range, or null while the tokenizer loads or the page holds no markup. */
 function currentTokenRange() {
   const data = state?.tokenData;
-  return tokenLens.active && data ? pageTokenRange(data) : null;
+  return tokensShown() && data ? pageTokenRange(data) : null;
 }
 
 /**
@@ -3729,7 +3741,7 @@ function svgEl(tag, attrs = {}) {
 function syncTokenLayer(img) {
   img.parentElement?.querySelector("svg.token-layer")?.remove();
   tokenLayer = null;
-  if (!tokenLens.active || !state?.hasPageView || !img.naturalWidth) return syncTokenBar();
+  if (!tokensShown() || !state?.hasPageView || !img.naturalWidth) return syncTokenBar();
   const docState = state;
   const data = docState.tokenData;
   if (!data) {
@@ -4561,7 +4573,9 @@ function activateDocument(docState, entry) {
   stopEditing({ render: false });
   // A live document still being written traces itself (see tokenLens), from the start of its rendering. Its next
   // version keeps the effects on throughout: switched off and on again, the veils' fades would start and flash.
-  const live = tokenLens.active && entry.kind === "live" && !entry.source.complete;
+  // Its tokens show while it is written, whatever the tokens feature says (see tokensShown()).
+  const live = isStreamingEntry(entry);
+  els.pagePane?.classList.toggle("token-lens", tokensShown());
   if (live) {
     tokenLens.playing = false;
     cancelAnimationFrame(tokenLens.frame);
@@ -7626,8 +7640,8 @@ function setPageViewVisible(visible) {
 
 function syncTokenLensControls() {
   const open = isAvailable("tokens") && !!state && document.body.classList.contains("viewer-loaded");
-  if (els.tokenBar) els.tokenBar.hidden = !open || !tokenLens.active;
-  if (els.tokenNav) els.tokenNav.hidden = !open || !tokenLens.active;
+  if (els.tokenBar) els.tokenBar.hidden = !open || !tokensShown();
+  if (els.tokenNav) els.tokenNav.hidden = !open || !tokensShown();
   // Heatmap, counts and reveal draw on page images.
   syncTokenBar();
 }
