@@ -420,7 +420,11 @@
       <div class="empty-state-prompt" id="empty-state-prompt">
         <p class="empty-state-title">Drop a DocLang file here</p>
         <p class="empty-state-meta">Supported file types: <span id="empty-state-file-types"></span></p>
-        <p class="empty-state-action" data-requires="demo">or <a href="#" class="text-link" id="demo-empty-link">load demo</a></p>
+        <div class="empty-state-buttons">
+          <button type="button" class="empty-state-btn is-primary" id="choose-file-link">Choose a file</button>
+          <button type="button" class="empty-state-btn" id="sample-page-link" hidden>Try a sample</button>
+          <button type="button" class="empty-state-btn" id="demo-empty-link" data-requires="demo">Load demo</button>
+        </div>
       </div>
     </div>
   </div>
