@@ -60,7 +60,7 @@ They hold for the visit they are on: what the user has chosen and saved is left 
 | `header` | `hide` | leaves out the header, for a host that brings its own |
 | a feature's name | `on`, `off`, `always`, `never` | the feature's mode, e.g. `tokens=on`, or `editing=never` for a read-only link |
 
-A feature's parameter cannot change an `always` from `config.js` except to `never`, nor bring back a `never`. `on`/`off` leave the user's remembered choice as it is; switching the feature in Settings drops its parameter from the address, so a reload keeps the user's choice.
+A feature's parameter cannot change an `always` from `config.js` except to `never`, nor bring back a `never`. `on`/`off` set how the feature starts until the user switches it; from then on, the user's choice wins (remembered per deployment path), also over a URL that says otherwise, such as an embedding page's at every load.
 
 ```html
 <iframe src="https://doclang.ai/viewer/?source=embed&panes=original,doclang,preview&header=hide&editing=never&tokens=on"></iframe>
