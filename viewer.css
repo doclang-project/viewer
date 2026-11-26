@@ -3491,8 +3491,9 @@ body.demo-loading .empty-state-prompt {
   margin: 0 0 0.75rem;
 }
 
-/* Body text, in both previews, justified as on a page (headings, captions, code, formulas and table cells keep theirs). */
-:is(.rendered-doc, .paged-canvas) :is(.rendered-text, .rendered-footnote, .rendered-list li):not(:is(td, th) *) {
+/* Body text and captions, in both previews, justified as on a page (a one-line caption stays as it is; headings, code,
+   formulas and table cells keep their alignment). */
+:is(.rendered-doc, .paged-canvas) :is(.rendered-text, .rendered-caption, .rendered-footnote, .rendered-list li):not(:is(td, th) *) {
   text-align: justify;
 }
 
