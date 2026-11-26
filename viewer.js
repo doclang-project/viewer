@@ -506,6 +506,8 @@ const changeBanner = {
 /** The entry the banner currently refers to, and the version already dismissed. */
 let changeBannerEntry = null;
 let dismissedChange = null;
+/** Hides a note the banner shows on its own (showFileNote()). */
+let changeBannerTimer = 0;
 let activeFileIndex = -1;
 let filePaneUserToggled = false;
 /** @type {ResizeObserver | null} */
@@ -1038,6 +1040,7 @@ document.addEventListener("keydown", (e) => {
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
   if (!state?.hasPageView) return;
   const key = e.key.toLowerCase();
+  if (key === "r" && e.shiftKey) return; // Shift+R reloads the file (see reloadActiveFileFromDisk())
   if (key === "l") {
     e.preventDefault();
     toggleOverlayCheckbox(els.showAllBboxes);
@@ -2271,8 +2274,56 @@ async function addFilesToCatalog(files, { replace = false } = {}) {
 
 function hideChangeBanner() {
   changeBannerEntry = null;
+  clearTimeout(changeBannerTimer);
   if (changeBanner.root) changeBanner.root.hidden = true;
+  if (changeBanner.reload) changeBanner.reload.hidden = false;
 }
+
+/** A note in the banner, without Reload, for a few seconds. */
+function showFileNote(text) {
+  if (!changeBanner.root) return;
+  hideChangeBanner();
+  changeBanner.text.textContent = text;
+  if (changeBanner.reload) changeBanner.reload.hidden = true;
+  changeBanner.root.hidden = false;
+  changeBannerTimer = setTimeout(hideChangeBanner, 4000);
+}
+
+/**
+ * Shift+R: the active file again from disk, whether or not it changed (unsaved changes asked about first). Only a file
+ * opened with a handle to it can be: one from the Open dialog or dropped in a browser that hands them out.
+ */
+async function reloadActiveFileFromDisk() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry) return;
+  if (!entry.handle) {
+    showFileNote(`${entry.label} was not opened from a file on disk: nothing to reload.`);
+    return;
+  }
+  let file;
+  try {
+    file = await entry.handle.getFile();
+  } catch {
+    showFileNote(`${entry.label} could not be read from disk (moved, deleted, or no permission).`);
+    return;
+  }
+  if (fileCatalog[activeFileIndex] !== entry) return;
+  if (entry.dirty && !confirm("Reloading discards your unsaved changes. Continue?")) return;
+  if (!confirmDiscardEditor()) return;
+  hideChangeBanner();
+  fileHandles.set(file, entry.handle);
+  stopEditing({ render: false });
+  entry.dirty = false;
+  entry.savedSource = null;
+  entry.validation = null;
+  if (await refreshCatalogEntry(entry, file)) await switchToFile(activeFileIndex);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "R" || !e.shiftKey || !hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  reloadActiveFileFromDisk();
+});
 
 /** Look for edits to the active file on disk and offer to reload it. */
 async function checkActiveFileChanged() {
