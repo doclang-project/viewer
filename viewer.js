@@ -7,8 +7,9 @@
  * The viewer decides each feature (FEATURE_DEFAULTS); a deployment's optional config.js (loaded before this
  * script) overrides what it mentions:
  *   window.DOCLANG_CONFIG = { features: { tokens: "always", "editing.ocr": "never" } };
- * A switchable feature (on/off) then starts as the user last chose (saved per deployment path), and for one visit as
- * the URL says (?tokens=on|off|always|never). The URL cannot change an `always` except to `never`, nor a `never`.
+ * A switchable feature (on/off) starts as the URL says (?tokens=on|off), else as the mode says, until the user switches
+ * it: from then on, as they last chose (saved per deployment path). The URL's always/never fix it for the visit; it
+ * cannot change an `always` except to `never`, nor a `never`.
  * Only features with a switch in the UI (SWITCHABLE_FEATURES) can be on/off; for the others on means always and
  * off means never. A dotted name is a child: "editing.ocr" only counts while editing is there (and, at runtime, on).
  * Markup marked data-requires="…" is removed when its feature is not there; data-switch="…" marks a feature's
@@ -44,8 +45,10 @@ function resolveFeatures() {
       fixed = true;
       on = false;
     } else if (!fixed) {
-      if (typeof saved[name] === "boolean") on = saved[name];
+      // The URL's on/off is how it starts until the user switches it; from then on, their choice wins (an embedding
+      // page sets the same URL at every load, so it would otherwise undo the choice each time).
       if (fromUrl === "on" || fromUrl === "off") on = fromUrl === "on";
+      if (typeof saved[name] === "boolean") on = saved[name];
       if (fromUrl === "always") fixed = on = true;
     }
     const parent = name.includes(".") ? resolved[name.slice(0, name.lastIndexOf("."))] : null;
@@ -79,9 +82,9 @@ function loadFeatureChoices() {
 }
 
 /**
- * Saves a choice the user made in Settings (the URL's overrides are never saved), and drops the feature's URL
- * parameter: the link decided how the visit started, the user's own choice decides from now on, also on reload.
- * Only the address is rewritten (no request, no reload, no new history entry).
+ * Saves a choice the user made (what the URL says is never saved): it wins over the URL's on/off from now on. The
+ * feature's URL parameter is dropped from the address, which no longer says how it is. Only the address is rewritten
+ * (no request, no reload, no new history entry).
  */
 function saveFeatureChoice(name, on) {
   try {
