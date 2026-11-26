@@ -1676,23 +1676,26 @@ function offsetInPane(pane, y) {
   return y - pane.getBoundingClientRect().top + pane.scrollTop;
 }
 
-/** Where the DocLang pane's markup of `page` ends, in the pane's scrolled content; null when nothing shows. */
+/**
+ * Where the DocLang pane's markup of `page` ends, in the pane's scrolled content; null when nothing shows. The skeleton
+ * after the last written line counts as its end: following the writing keeps it in view too.
+ */
 function writtenMarkupEnd(pane, page) {
   const block = pane.querySelector(`:scope > .pane-page-block[data-page="${page}"]`) ?? pane;
   const lines = [...block.querySelectorAll(".markup-line")].filter((line) => line.getClientRects().length);
-  const last = lines[lines.length - 1];
+  const last = block.querySelector(".markup > .live-waiting") ?? lines[lines.length - 1];
   return last ? offsetInPane(pane, last.getBoundingClientRect().bottom) : null;
 }
 
 // --- What a document still being written is writing ---
 //
 // While a host streams a document in, the previews show that it is being written, however long the model takes:
-// dots, pulsing, where the writing is. In the Paged Preview, below the last box (where the element being written is,
+// a skeleton of text, shimmering, where the writing is. In the Paged Preview, below the last box (where the element being written is,
 // or reading order mostly carries on, down its column), or at the top of a page with none yet; in the Flowing
-// preview, after what is written.
+// preview and the DocLang pane, after what is written (the DocLang pane, following the writing, keeps it in view).
 
-/** The dots' pulse stays in step across rebuilds (a live document's views are built again with every version). */
-const LIVE_STEADY_ANIMATIONS = new Set(["live-waiting-dot"]);
+/** The skeleton's shimmer stays in step across rebuilds (a live document's views are built again with every version). */
+const LIVE_STEADY_ANIMATIONS = new Set(["live-waiting-shimmer"]);
 
 /** Whether `segment` is the page a document still being written is at. */
 function isLiveWritingSegment(segment) {
@@ -1711,19 +1714,20 @@ function keepLiveAnimationsInStep(node) {
   });
 }
 
-/** Where a document is being written, in the previews: pulsing dots. */
-function buildLiveWaiting() {
+/** Where a document is being written, in the previews: a skeleton of `lines` lines of text (one: a short one). */
+function buildLiveWaiting(lines = 3) {
   const el = document.createElement("div");
   el.className = "live-waiting";
   el.setAttribute("role", "status");
   el.setAttribute("aria-label", "Writing");
-  for (let i = 0; i < 3; i += 1) el.appendChild(document.createElement("span"));
+  el.style.setProperty("--lines", String(lines));
+  for (const width of lines === 1 ? [100] : [100, 97, 62]) el.appendChild(document.createElement("span")).style.width = `${width}%`;
   keepLiveAnimationsInStep(el);
   return el;
 }
 
 /**
- * In the Paged Preview: the dots below the last element written of the page being written, all of it: its own box
+ * In the Paged Preview: the skeleton below the last element written of the page being written, all of it: its own box
  * and those of its parts, as a table's caption, written after the table's box, can be at its top.
  */
 function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
@@ -1743,12 +1747,15 @@ function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
     }
     last = union ?? last;
   }
-  const line = 2; // the dots' height, in % of the page's
+  // Heights in % of the page's: three lines of body text, or one where only one fits below.
+  const line = 1.6;
+  let lines = 3;
   let left = 8;
   let top = 5;
   let width = 84;
   const below = last ? 99 - (last.y1 * 100 + 1) : Infinity; // the room below the last element
-  if (last && below >= line) {
+  if (below < lines * line) lines = 1;
+  if (last && below >= lines * line) {
     left = last.x0 * 100;
     width = Math.max(8, (last.x1 - last.x0) * 100);
     top = last.y1 * 100 + 1;
@@ -1760,12 +1767,12 @@ function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
     top = last.y1 * 100 - lastLine / 2 - line / 2;
     left = last.x1 * 100 + 1 + width <= 99 ? last.x1 * 100 + 1 : Math.max(1, last.x0 * 100 - 1 - width);
   }
-  const indicator = buildLiveWaiting();
-  Object.assign(indicator.style, { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${line}%` });
+  const indicator = buildLiveWaiting(lines);
+  Object.assign(indicator.style, { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${lines * line}%` });
   canvas.appendChild(indicator);
 }
 
-/** In the Flowing preview: the dots after what is written. */
+/** In the Flowing preview: the skeleton after what is written. */
 function applyFlowingLiveProgress(root, segment) {
   if (isLiveWritingSegment(segment)) root.appendChild(buildLiveWaiting());
 }
@@ -4166,6 +4173,8 @@ function highlightReplayElement(id) {
   ];
   for (const el of targets) el?.classList.add("selected", "token-current");
   renderedEl?.scrollIntoView({ block: "nearest" });
+  // While a document is being written, the skeleton after it too, in the Flowing preview (in the Paged one it is on the page).
+  if (renderedEl && tokenLens.live) livePaneRoot(els.renderedPane).querySelector(".rendered-doc > .live-waiting")?.scrollIntoView({ block: "nearest" });
   applyBboxVisibility();
 }
 
@@ -9171,7 +9180,7 @@ function renderPage(pageNum) {
     if (!isPaneStreamCurrent(els.markupPane)) buildMarkupStream(pageNum);
     markLivePageBlocks(pageNum); // before the tokens: they go on the current page's source
     syncMarkupTokens();
-  } else if (segmentHasMarkup(segment)) {
+  } else if (segmentHasMarkup(segment) || isLiveWritingSegment(segment)) {
     els.markupPane.appendChild(buildMarkupView(segment, elementIds));
     syncMarkupTokens();
   } else {
@@ -12602,6 +12611,7 @@ function buildMarkupView(segment, elementIds) {
       root.appendChild(buildMarkupElement(el, 0, elementIds));
     }
   }
+  if (isLiveWritingSegment(segment)) root.appendChild(buildLiveWaiting()); // where the next lines will come
   root.addEventListener("click", (e) => {
     const attrToggle = e.target.closest(".xml-attr-value-chip");
     if (attrToggle) {
