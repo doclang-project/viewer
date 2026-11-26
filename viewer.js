@@ -808,9 +808,15 @@ const els = {
   validationClose: document.getElementById("btn-validation-close"),
 };
 
+// Back to the start screen (its samples): the logo and title. Open files close, so unsaved changes are asked about
+// first, as when opening a sample.
+function goHome() {
+  if (!confirmDiscardEditor() || !confirmDiscardUnsavedFiles()) return;
+  resetViewer();
+}
 document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
-  resetViewer();
+  goHome();
 });
 // The start screen's "choose a file" opens the same dialog as the header's Open (which an embedding page may hide).
 document.getElementById("choose-file-link")?.addEventListener("click", (e) => {
