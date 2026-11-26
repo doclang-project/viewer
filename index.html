@@ -421,7 +421,11 @@
         <div class="empty-state-buttons">
           <button type="button" class="empty-state-btn is-primary" id="choose-file-link">Choose a file</button>
         </div>
-        <div class="sample-cards" id="sample-cards" data-requires="demo" aria-label="Samples" hidden></div>
+        <section class="empty-state-samples" id="empty-state-samples" data-requires="demo" aria-labelledby="empty-state-samples-title" hidden>
+          <p class="empty-state-or" aria-hidden="true"><span>or</span></p>
+          <h2 class="empty-state-heading" id="empty-state-samples-title">Try a sample</h2>
+          <div class="sample-cards" id="sample-cards"></div>
+        </section>
       </div>
     </div>
   </div>

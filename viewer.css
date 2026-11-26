@@ -3452,7 +3452,7 @@ html.host-pending body {
 .empty-state {
   flex: 1 1 0;
   display: flex;
-  align-items: center;
+  align-items: safe center; /* taller than the window (many samples): from the top, not cut off there */
   justify-content: center;
   min-height: 0;
   margin: 1rem;
@@ -3465,6 +3465,7 @@ html.host-pending body {
 }
 
 .empty-state-inner {
+  width: 100%; /* the sample cards' grid fills it, a row of them, not a column */
   max-width: 44rem;
 }
 
@@ -3540,6 +3541,35 @@ body.demo-loading .empty-state-prompt {
 
 .empty-state-btn[hidden] {
   display: none;
+}
+
+/* The samples, the start screen's other way in: apart from opening one's own file, under an "or" and a heading. */
+.empty-state-samples[hidden] {
+  display: none;
+}
+
+.empty-state-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.75rem auto 1.25rem !important;
+  max-width: 20rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.empty-state-or::before,
+.empty-state-or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.empty-state-heading {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: inherit;
+  color: var(--text);
 }
 
 .sample-cards {
