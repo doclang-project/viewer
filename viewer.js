@@ -2490,7 +2490,7 @@ async function parseCatalogEntry(entry) {
       docState.sharedPageUrls = true; // the entry's, kept from one version to the next: see livePageImageUrls()
       if (entry.source.tokens?.length) docState.hostTokens = entry.source.tokens;
       // Tokens before the first paint: the trace's effects would otherwise flash off while they are worked out.
-      if (tokenLens.active || isStreamingEntry(entry)) await ensureTokenData(docState).catch(() => {});
+      if (tokenLens.active) await ensureTokenData(docState).catch(() => {});
       return docState;
     }
     if (entry.kind === "folder") {
@@ -4107,11 +4107,11 @@ function isStreamingEntry(entry) {
 }
 
 /**
- * Whether the tokens show: as the tokens feature says, and while a document streams in, whatever it says: they are how
- * it is being written (and traced). Once it is complete, the feature decides again.
+ * Whether the tokens show: as the Tokens switch says (the tokens feature), also while a document streams in: on, it is
+ * traced as it is written; off, it just grows, and it is not tokenized at all.
  */
 function tokensShown() {
-  return tokenLens.active || isStreamingEntry(fileCatalog[activeFileIndex]);
+  return tokenLens.active;
 }
 
 function setTokenLensActive(active) {
@@ -5114,10 +5114,10 @@ function activateDocument(docState, entry) {
   }
 
   stopEditing({ render: false });
-  // A live document still being written traces itself (see tokenLens), from the start of its rendering. Its next
-  // version keeps the effects on throughout: switched off and on again, the veils' fades would start and flash.
-  // Its tokens show while it is written, whatever the tokens feature says (see tokensShown()).
-  const live = isStreamingEntry(entry);
+  // A live document still being written traces itself (see tokenLens), from the start of its rendering, while the
+  // Tokens switch is on (see tokensShown()). Its next version keeps the effects on throughout: switched off and on
+  // again, the veils' fades would start and flash.
+  const live = isStreamingEntry(entry) && tokensShown();
   els.pagePane?.classList.toggle("token-lens", tokensShown());
   if (live) {
     tokenLens.playing = false;
