@@ -16,13 +16,13 @@ Serve this directory over HTTP so the samples can be fetched:
 python3 -m http.server 8080
 ```
 
-Open [http://localhost:8080/](http://localhost:8080/): the first sample opens on its own.
+Open [http://localhost:8080/](http://localhost:8080/): the samples open on their own.
 
 ## Opening files
 
 | Action | Description |
 |--------|-------------|
-| **Samples** | Cards on the start screen; a card opens its archive (requires HTTP) in place of the open files, and the first opens when the viewer opens without a file (**Open a sample on launch** in Settings). See below. |
+| **Samples** | Cards on the start screen; a card opens its archive (requires HTTP) in place of the open files, and all of them open when the viewer opens without a file (**Open samples on launch** in Settings). See below. |
 | **Open** (⌘O / Ctrl+O) | Select a `.dclx` archive, or a standalone `.dclg` / `.xml` markup file; it opens next to the files already open. |
 | **Drag and drop** | Drop any supported file onto the page. |
 | **From another page** | A page that opens the viewer can hand it a file; see [Hosting the viewer](#hosting-the-viewer). |
@@ -30,7 +30,7 @@ Open [http://localhost:8080/](http://localhost:8080/): the first sample opens on
 
 Supported types: `.dclx`, `.dclg`, `.xml`.
 
-The start screen also offers **samples**, one card each; the first opens when the viewer starts without a file (the `demo` [feature](API.md#features)). The built-in ones are in [`demo-data.js`](demo-data.js); a deployment can offer its own (see [`config.js`](API.md#configjs)).
+The start screen also offers **samples**, one card each; all of them open when the viewer starts without a file, the first shown (the `demo` [feature](API.md#features)). The built-in ones are in [`demo-data.js`](demo-data.js); a deployment can offer its own (see [`config.js`](API.md#configjs)).
 
 **Download** saves the open file, with any applied edits. When an archive carries its [original source](https://github.com/doclang-project/doclang/blob/main/spec.md#original-source-optional) (e.g. the PDF it was converted from), it also offers that **Original file**, under the name its source descriptor records.
 
