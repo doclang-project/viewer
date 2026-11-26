@@ -26,7 +26,7 @@ A deployment decides which features the viewer has. Each is in one of four modes
 | `editing` | visual and source editing (inspector, bbox handles, add/remove, drag to reorder, the Raw view, save) | `on` |
 | `editing.ocr` | "Read from page" with Granite-Docling in the browser (downloads about 1.2 GB on first use); only while editing is on | `always` |
 | `tokens` | tokens in the DocLang source, token tracing, and the Tokens overlays | `off` |
-| `demo` | the first [sample](#configjs) opens when the viewer opens without a file (not when it opens with one); `never` also drops the sample cards from the start screen | `on` |
+| `demo` | the [samples](#configjs) open when the viewer opens without a file (not when it opens with one), the first shown; `never` also drops the sample cards from the start screen | `on` |
 
 `editing`, `tokens` and `demo` have a switch in Settings when they are `on` or `off`; the user's choice is remembered (per deployment path). `editing.ocr` has no switch of its own, so for it `on` means `always` and `off` means `never`. A child like `editing.ocr` is not there when its parent isn't.
 

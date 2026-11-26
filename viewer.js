@@ -19,7 +19,7 @@ const FEATURE_DEFAULTS = {
   editing: "on",
   "editing.ocr": "always",
   tokens: "off", // opt-in
-  demo: "on", // the first sample opens when the viewer opens without a file; `never` also drops the sample cards
+  demo: "on", // the samples open when the viewer opens without a file; `never` also drops the sample cards
   // For development only, not part of the documented features (it may change or go): plays an opened file in as if
   // a model were writing it (see the stream demo below). Not a child: there is no `streaming` feature.
   "streaming.demo": "off",
@@ -1183,8 +1183,8 @@ function setDemoLoading(loading) {
 renderSampleCards();
 setTimeout(() => {
   if (suppressDemoLoad) return;
-  const first = viewerSamples()[0];
-  if (startsOn("demo") && first) openSample(first, { atLaunch: true });
+  const samples = viewerSamples();
+  if (startsOn("demo") && samples.length) openSamplesAtLaunch(samples);
   else setDemoLoading(false); // the page starts out showing "Loading sample…": the start screen instead
 }, 0);
 
@@ -1231,6 +1231,28 @@ function renderSampleCards() {
   }));
   const section = document.getElementById("empty-state-samples"); // with its "or" and heading
   if (section) section.hidden = samples.length === 0;
+}
+
+/**
+ * At launch (the `demo` feature), every sample: the first shown, the others open next to it. A sample that cannot be
+ * had is left out (only the first's failure is reported). A document that arrives meanwhile wins: none replaces it.
+ */
+async function openSamplesAtLaunch(samples) {
+  const [first, ...others] = samples;
+  await openSample(first, { atLaunch: true });
+  if (!fileCatalog.length) return; // the first failed, and was reported
+  for (const sample of others) {
+    if (suppressDemoLoad) return;
+    try {
+      const res = await fetch(sample.file, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buffer = await res.arrayBuffer();
+      if (suppressDemoLoad) return;
+      await addArchiveBufferToCatalog(buffer, sample.file.split("/").pop() || "sample.dclx", { activate: false });
+    } catch (err) {
+      console.warn(`Skipped the sample ${sample.title}: ${err.message}`);
+    }
+  }
 }
 
 /** Opens a sample's archive in place of the open files; at launch, unless a document arrives meanwhile. */
