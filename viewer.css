@@ -1808,6 +1808,8 @@ body.pane-drag-active .pane-splitter {
 #rendered-pane.reading-mode-paged {
   display: flex;
   overflow: auto;
+  /* The Original's inset (.page-view-port): the same room for the page, so both show it at one size and place. */
+  padding: 0.75rem;
   /* A scrollbar that comes and goes would change the room the page is fitted to. */
   scrollbar-gutter: stable;
 }
@@ -1825,7 +1827,9 @@ body.pane-drag-active .pane-splitter {
   margin-top: 12px;
 }
 
+/* Its size is the page's (sizePagedCanvas()), with the border outside it, as the Original's image in its .page-view. */
 .paged-canvas {
+  box-sizing: content-box;
   position: relative;
   flex-shrink: 0;
   margin: auto;
