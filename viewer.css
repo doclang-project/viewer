@@ -2181,7 +2181,8 @@ body.pane-drag-active .pane-splitter {
 }
 
 .validate-btn[data-status="invalid"],
-.validate-btn[data-status="error"] {
+.validate-btn[data-status="error"],
+.validate-btn[data-status="malformed"] {
   color: var(--status-error);
   border-color: color-mix(in srgb, var(--status-error) 40%, transparent);
   background: color-mix(in srgb, var(--status-error) 8%, transparent);
@@ -2344,7 +2345,8 @@ body.pane-drag-active .pane-splitter {
 }
 
 .validation-panel[data-status="invalid"],
-.validation-panel[data-status="error"] {
+.validation-panel[data-status="error"],
+.validation-panel[data-status="malformed"] {
   background: var(--status-error-bg);
   border-top-color: color-mix(in srgb, var(--status-error) 25%, var(--border));
 }

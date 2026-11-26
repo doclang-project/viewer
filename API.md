@@ -118,10 +118,11 @@ A page can embed the viewer in an `<iframe>` with `?source=embed`, shake hands t
 
 Until it is complete, `markup` can be cut off anywhere, as written: the viewer closes what is still open (a host can also send it closed itself), and
 
-- the previews show pulsing dots where it is being written;
 - the views follow its end: the page being written becomes the current page, and the DocLang pane keeps its last written line in view (scrolled away, it stays);
 - it shows its tokens and traces itself as it grows, whether the `tokens` feature is on or off; once complete, its tokens show as the feature says. A shown document has no trace playback, also once complete: it was traced as it was written;
 - it is validated only once it is complete.
+
+A version that is not well-formed even so (the model's own mistakes, such as a stray closing tag), or not DocLang, is not shown: the viewer keeps the last version that was, and its validation badge says **Not well-formed**, with the parser's message. Send the complete document all the same: the viewer then treats it as done.
 
 `tokens` (optional, *experimental*) are the tokens the model generated, in order, `[text, id, special]` each: the token's text as decoded, its id in the model's vocabulary, and (optional) `true` for a special token. The token views show them in place of the viewer's own tokenizer; markup the model did not write (e.g. page breaks the host adds) is tokenized by the viewer.
 
