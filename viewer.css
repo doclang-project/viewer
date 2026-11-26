@@ -47,6 +47,8 @@
   --xml-cdata-delimiter: #6a737d;
   --status-ok: #15803d;
   --status-error: #b91c1c;
+  --status-warn: #a16207;
+  --status-warn-bg: #fef9c3;
   --status-error-bg: #fff1f3;
   --status-dirty: #f59e0b;
   --file-thumb-size: 3.75rem;
@@ -116,6 +118,8 @@
   --xml-cdata-delimiter: #808080;
   --status-ok: #4ade80;
   --status-error: #f87171;
+  --status-warn: #facc15;
+  --status-warn-bg: rgb(250 204 21 / 0.14);
   --status-error-bg: #2d1519;
 }
 
@@ -2061,6 +2065,28 @@ body.pane-drag-active .pane-splitter {
 .paged-canvas figcaption {
   font-size: 0.875rem;
   color: var(--muted);
+}
+
+/* A page with nothing placed on it flows in it instead (buildPagedView()). */
+.paged-flow-slot .paged-flow {
+  max-width: none;
+  margin: 0;
+}
+
+/* A warning: the page's content has no place on it. */
+.paged-flow-note {
+  padding: 0.1rem 0.5rem;
+  font: 600 0.6875rem/1.4 var(--font-ui);
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border: 1px solid color-mix(in srgb, var(--status-warn) 45%, transparent);
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.paged-flow-note[hidden] {
+  display: none;
 }
 
 .paged-canvas pre {
