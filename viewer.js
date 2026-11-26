@@ -470,11 +470,9 @@ const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
 const READING_OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-reading-overlay-prefs";
-const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
 const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
-const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 
 const ARROW_STYLE_STORAGE_KEY = "doclang-viewer-arrow-styles";
 /** Arrow-based overlay layers and the plumbing that maps each to its CSS + SVG marker. */
@@ -651,8 +649,6 @@ let fileDownloadMenu = null;
 const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
-/** @type {MediaQueryList | null} */
-let layoutStackQuery = null;
 // Generated before `els` so the per-type "contents" checkboxes it creates resolve below.
 buildOverlayTypeControls(document.getElementById("arrow-fields-types"));
 const els = {
@@ -8164,8 +8160,9 @@ function visiblePaneKeys() {
   return PANE_KEYS.filter((key) => isPaneVisible(key));
 }
 
-function paneMinRatio(key) {
-  return PANE_MIN_RATIO;
+/** The narrowest a content pane gets side by side, whether by dragging a splitter or by narrowing the window. */
+function paneMinWidthPx() {
+  return cssLengthPx("--pane-min-width", 160);
 }
 
 function filePaneFitWidthPx() {
@@ -8532,15 +8529,30 @@ function resetPaneLayout() {
 }
 
 function isLayoutStacked() {
-  return Boolean(layoutStackQuery?.matches);
+  return Boolean(els.main?.classList.contains("layout-stacked"));
 }
 
+/**
+ * True when the visible panes fit side by side in the main area: each content pane at its minimum width, Files in a
+ * column at its own width, plus the splitters between them. A lone pane always fits.
+ */
+function panesFitSideBySide() {
+  const keys = columnPaneKeys(visiblePaneKeys());
+  if (keys.length <= 1) return true;
+  const contentCount = keys.filter((key) => key !== "file").length;
+  const fileWidth = keys.includes("file") ? resolvedFilePaneWidthPx() : 0;
+  const needed = contentCount * paneMinWidthPx() + fileWidth + (keys.length - 1);
+  return needed <= els.main.clientWidth;
+}
+
+/** Stacks the panes when the main area gets too narrow for them side by side, and back when they fit again. */
 function initLayoutStackListener() {
   if (!els.main) return;
-  layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
-  const onChange = () => applyPaneLayout();
-  layoutStackQuery.addEventListener("change", onChange);
-  onChange();
+  new ResizeObserver(() => {
+    if (!document.body.classList.contains("viewer-loaded")) return;
+    if (isLayoutStacked() === panesFitSideBySide()) applyPaneLayout();
+  }).observe(els.main);
+  applyPaneLayout();
 }
 
 function setToolbarOptionsOpen(open) {
@@ -8727,7 +8739,7 @@ function applyPaneLayout() {
   if (!els.main) return;
   syncFilePlacementButtons();
 
-  const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
+  const stacked = document.body.classList.contains("viewer-loaded") && !panesFitSideBySide();
   els.main.classList.toggle("layout-stacked", stacked);
 
   for (const key of PANE_KEYS) {
@@ -8793,7 +8805,9 @@ function applyPaneLayout() {
     if (key === "file") {
       cols.push(`${resolvedFilePaneWidthPx()}px`);
     } else {
-      cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
+      // Never below the minimum: as the window narrows, a pane stops there and the others give way, until none can.
+      // Weights scaled up: once a pane stops, the others' weights summing below 1 would leave part of the room empty.
+      cols.push(`minmax(min(var(--pane-min-width), 100%), ${(contentFr[contentFrIndex++] * 1000).toFixed(3)}fr)`);
     }
     if (index < keys.length - 1 && splitterBetween(keys[index], keys[index + 1])) {
       cols.push("1px");
@@ -9019,9 +9033,9 @@ function onPaneDragMove(e) {
   if (!(pairStoredTotal > 0) || leftIndex < 0 || rightIndex < 0) return;
 
   let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-  const leftMin = Math.min(paneMinRatio(paneDrag.leftKey), pairStoredTotal / 2);
-  const rightMin = Math.min(paneMinRatio(paneDrag.rightKey), pairStoredTotal / 2);
-  nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
+  // The same minimum width as narrowing the window stops at, as a share of the pair.
+  const minShare = Math.min((paneMinWidthPx() / pairPixels) * pairStoredTotal, pairStoredTotal / 2);
+  nextLeft = Math.min(Math.max(nextLeft, minShare), pairStoredTotal - minShare);
   paneRatios[leftIndex] = nextLeft;
   paneRatios[rightIndex] = pairStoredTotal - nextLeft;
   applyPaneLayout();
