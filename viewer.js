@@ -1226,7 +1226,8 @@ function renderSampleCards() {
     card.addEventListener("click", () => (hostSamples ? requestHostSample(sample.id) : openSample(sample)));
     return card;
   }));
-  box.hidden = samples.length === 0;
+  const section = document.getElementById("empty-state-samples"); // with its "or" and heading
+  if (section) section.hidden = samples.length === 0;
 }
 
 /** Opens a sample's archive in place of the open files; at launch, unless a document arrives meanwhile. */
