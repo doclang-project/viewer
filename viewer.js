@@ -1530,6 +1530,18 @@ function closeStreamedMarkup(text) {
   return { markup: `${written}${closing}</${rootTag}>`, open: open.length };
 }
 
+/** Why a live document's markup cannot be shown (not well-formed, or not DocLang), or null when it can. */
+function liveMarkupError(markupXml) {
+  const doc = new DOMParser().parseFromString(markupXml, "application/xml");
+  const error = doc.querySelector("parsererror");
+  if (error) {
+    // Chrome puts the message in a <div> of its own ("error on line 1 at column 59: …"); Firefox on the first line.
+    const message = (error.querySelector("div")?.textContent || error.textContent || "").trim().split("\n")[0].replace(/\.$/, "");
+    return `Not well-formed XML${message ? ` (${message})` : ""}`;
+  }
+  return localName(doc.documentElement) === "doclang" ? null : "The root element is not <doclang>";
+}
+
 /** A `live` entry holds markup and page images handed over by the host, not file bytes. */
 async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   const pageBlobs = new Map();
@@ -1544,15 +1556,29 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
     : null;
   // While it is written, the host may hand it over cut off anywhere: the viewer closes what is open.
   const streamed = complete ? null : closeStreamedMarkup(markup);
-  const source = {
+  let index = fileCatalog.findIndex((entry) => entry.kind === "live" && entry.label === name);
+  let source = {
     markupXml: streamed?.markup ?? markup,
     writtenXml: markup, // as written, for the Raw view
     open: streamed?.open ?? null, // how many elements are open; null: not known
     pages: pageBlobs,
     tokens: hostTokens,
     complete,
+    malformed: null,
   };
-  let index = fileCatalog.findIndex((entry) => entry.kind === "live" && entry.label === name);
+  // What a model writes need not be well-formed, even closed (a stray closing tag, say), and then neither is any later
+  // version: the last version that was stays shown, and the validation badge says why (no alert, which would come back
+  // with every version). Its pages and whether it is complete are the new version's.
+  const malformed = liveMarkupError(source.markupXml);
+  if (malformed) {
+    const last = index === -1 ? null : fileCatalog[index].source;
+    source = {
+      ...(last ?? { markupXml: "<doclang></doclang>", writtenXml: "", open: 0, tokens: null }),
+      pages: pageBlobs,
+      complete,
+      malformed,
+    };
+  }
   if (index === -1) {
     fileCatalog.push({
       id: crypto.randomUUID(),
@@ -1572,6 +1598,7 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
     entry.source = source;
     entry.validation = null; // another version: validated once it is complete
   }
+  if (source.malformed) fileCatalog[index].validation = { status: "malformed", error: source.malformed };
   // While the end of what is written is in view, the viewer follows it: to the page being written, and in the DocLang
   // pane to its last line (not the pane's end: the pages still to come are there, empty). Scrolled away, it stays.
   const pane = els.markupPane;
@@ -7873,6 +7900,7 @@ const VALIDATE_BTN_LABELS = {
   running: "Validating…",
   valid: "XSD",
   error: "Validation failed",
+  malformed: "Not well-formed",
 };
 
 function renderValidationUi(entry) {
@@ -7892,7 +7920,9 @@ function renderValidationUi(entry) {
   btn.textContent = v.status === "valid" ? xsd
     : v.status === "invalid" ? [xsd, ...issueCounts].join(" · ")
     : VALIDATE_BTN_LABELS[v.status];
-  btn.title = v.status === "idle" || v.status === "error"
+  btn.title = v.status === "malformed"
+    ? `${v.error}. Shown: the last version that was well-formed`
+    : v.status === "idle" || v.status === "error"
     ? "Validate against the DocLang XSD"
     : v.status === "valid"
       ? `Valid against ${schema}. Click for details`
@@ -7906,13 +7936,15 @@ function renderValidationUi(entry) {
     els.validationSummary.textContent = archiveCount ? `${againstSchema}; ${countOf(archiveCount, "archive issue")}` : againstSchema;
   } else if (v.status === "error") {
     els.validationSummary.textContent = `Could not validate: ${v.error}`;
+  } else if (v.status === "malformed") {
+    els.validationSummary.textContent = `${v.error}. Shown: the last version that was well-formed`;
   } else {
     els.validationSummary.textContent = "";
   }
   els.validationIssues.replaceChildren(...(v.status === "invalid" ? v.issues.map(buildValidationIssueItem) : []));
   els.validationPanel?.setAttribute("data-status", v.status);
   // Issues are shown expanded unless the user closed them for this file.
-  const hasResult = v.status === "valid" || v.status === "invalid" || v.status === "error";
+  const hasResult = ["valid", "invalid", "error", "malformed"].includes(v.status);
   applyValidationPanelOpen(hasResult && (entry.validationPanelOpen ?? v.status === "invalid"));
 }
 
