@@ -3812,14 +3812,24 @@ li.has-marker > .rendered-li-body {
   padding: 0;
 }
 
-.rendered-code-label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Flowing: the code's language, in a strip above the code, ruled off from it (renderCode()). */
+.rendered-code-head {
+  display: flex;
+  margin: -0.75rem -1rem 0.6rem;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  border-radius: 0.375rem 0.375rem 0 0;
+  user-select: none;
+}
+
+.code-tag {
+  padding: 0 0.45rem;
+  font: 600 0.6875rem/1.5 var(--font-ui);
+  letter-spacing: 0.02em;
+  color: var(--kind-code);
+  border: 1px solid color-mix(in srgb, var(--kind-code) 45%, transparent);
+  border-radius: 999px;
 }
 
 .rendered-formula {
@@ -3859,8 +3869,10 @@ li.has-marker > .rendered-li-body {
   opacity: 1;
 }
 
-/* A picture's label and class, at its top corner; its details on hover (pictureDetailsChip()). */
-.picture-chip {
+/* A picture's label and class, at its top corner; its details on hover (pictureDetailsChip()). A code block's
+   language, the same way (renderCode()). */
+.picture-chip,
+.code-chip {
   position: absolute;
   top: 0.25rem;
   right: 0.25rem;
@@ -3890,12 +3902,18 @@ li.has-marker > .rendered-li-body {
   container-type: inline-size;
 }
 
-.paged-el-slot > .picture-chip {
+.paged-el-slot > :is(.picture-chip, .code-chip) {
   top: 0.4cqw;
   right: 0.4cqw;
   padding: 0.05cqw 0.6cqw;
   font-size: clamp(4px, 1.1cqw, 0.625rem);
   border-width: max(0.5px, 0.1cqw);
+}
+
+.code-chip {
+  color: var(--kind-code);
+  border-color: color-mix(in srgb, var(--kind-code) 45%, transparent);
+  cursor: default;
 }
 
 .picture-chip-info {

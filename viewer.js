@@ -13436,7 +13436,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
     slot.style.zIndex = layer === "background" ? "0" : "1";
     slot.appendChild(node);
     if (node?.dataset?.rewrittenLatex) slot.appendChild(makeFormulaRewriteBadge(node.dataset.rewrittenLatex));
-    if (node?.pictureChip) slot.appendChild(node.pictureChip);
+    if (node?.cornerChip) slot.appendChild(node.cornerChip);
     canvas.appendChild(slot);
   };
 
@@ -14046,15 +14046,27 @@ function renderCode(el, elementIds, ctx) {
     return code;
   }
 
+  // The code's language: Paged, a chip at the block's corner, as a picture's (makeSlot adds it outside the box its
+  // content is scaled in); Flowing, a tag in a strip above the code, apart from it (and left out when it is copied).
+  const language = labelValue && labelValue !== "undefined" ? labelValue : "";
   const pre = document.createElement("pre");
-  if (labelValue && labelValue !== "undefined") {
-    const label = document.createElement("span");
-    label.className = "rendered-code-label";
-    label.textContent = labelValue;
-    pre.appendChild(label);
+  if (language && !ctx?.paged) {
+    const head = pre.appendChild(document.createElement("div"));
+    head.className = "rendered-code-head";
+    const tag = head.appendChild(document.createElement("span"));
+    tag.className = "code-tag";
+    tag.textContent = language;
   }
   pre.appendChild(code);
-  return wrapRendered(el, pre, elementIds.get(el));
+  const wrap = wrapRendered(el, pre, elementIds.get(el));
+  if (language && ctx?.paged) {
+    const chip = document.createElement("span");
+    chip.className = "code-chip";
+    chip.textContent = language;
+    chip.setAttribute("aria-label", `language: ${language}`);
+    wrap.cornerChip = chip;
+  }
+  return wrap;
 }
 
 function formulaSourceText(el) {
@@ -14477,7 +14489,7 @@ function renderPicture(el, elementIds, ctx) {
   // Paged: a chip at the picture's corner (makeSlot adds it outside the box its content is scaled in);
   // Flowing, with room to read: a line under the picture, after its caption.
   if (ctx?.paged) {
-    wrap.pictureChip = pictureDetailsChip(el);
+    wrap.cornerChip = pictureDetailsChip(el);
   } else {
     const line = pictureDetailsLine(el);
     const after = figure.querySelector(":scope > figcaption") ?? figure.querySelector(":scope > img");
