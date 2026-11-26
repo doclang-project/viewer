@@ -8132,6 +8132,19 @@ function commitPageNumberInput() {
   goToPage(n);
 }
 
+/**
+ * The Preview header's note that the current page flows in the Paged Preview: nothing on it has a place on the
+ * page (buildPagedView()). Hidden for a placed page, and in Flowing.
+ */
+function syncPagedFlowNote() {
+  const note = document.getElementById("paged-flow-note");
+  if (!note) return;
+  const pane = els.renderedPane;
+  const root = pane && (isReadingStreamLayout() ? pageBlockFor(pane, state?.currentPage) : livePaneRoot(pane));
+  const canvas = root?.querySelector(".paged-canvas");
+  note.hidden = !(effectiveReadingLayoutMode() === "paged" && canvas?.dataset.flowFallback === "true");
+}
+
 function setPageIndicator(pageNum, pageCount) {
   if (!els.pageIndicator) return;
   if (els.pageCountIndicator) els.pageCountIndicator.textContent = `\u00A0of ${pageCount}`;
@@ -8189,6 +8202,7 @@ function renderPage(pageNum) {
     buildReadingStream(pageNum);
   }
   if (continuous) markLivePageBlocks(pageNum);
+  syncPagedFlowNote();
 
   // Without page images nothing waits for an image to load: select what navigation went to right away.
   if (!state.hasPageView && state.pendingSelectElement) {
@@ -12624,6 +12638,21 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
       appendRenderedBody(node, el, elementIds, { inline: true, paged: true });
     }
     makeSlot(box.elementId, box, node);
+  }
+
+  // A page with content but nothing with a place on it (e.g. a model asked for some tasks only, without `<layout>`)
+  // would come out blank: its content flows in the page instead, fitted to it as a slot's, and the Preview's header
+  // says so (syncPagedFlowNote()). Not for a page still being written while it has but one element: its location
+  // may be on its way.
+  const elementCount = segment.filter((el) => el.nodeType === Node.ELEMENT_NODE && localName(el) !== "page_break").length;
+  if (!canvas.querySelector(".paged-el-slot") && elementCount && !(isLiveWritingSegment(segment) && elementCount < 2)) {
+    const flow = buildRenderedView(segment, elementIds);
+    flow.classList.add("paged-flow");
+    makeSlot("", { x0: 6, y0: 5, x1: 94, y1: 95, resW: 100, resH: 100 }, flow);
+    const slot = canvas.lastElementChild;
+    slot.removeAttribute("data-element-id");
+    slot.classList.add("paged-flow-slot");
+    canvas.dataset.flowFallback = "true";
   }
 
   canvas.addEventListener("click", (e) => {
