@@ -3582,11 +3582,6 @@ body.demo-loading .empty-state-prompt {
   grid-template-columns: repeat(auto-fit, 8.5rem);
   justify-content: center;
   gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-
-.sample-cards[hidden] {
-  display: none;
 }
 
 .sample-card {
