@@ -468,11 +468,9 @@ const TOKEN_PREFS_STORAGE_KEY = "doclang-viewer-token-prefs";
 const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
 const READING_OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-reading-overlay-prefs";
-const PANE_MIN_RATIO = 0.12;
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
 const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
-const LAYOUT_STACK_BREAKPOINT_PX = 1200;
 
 const ARROW_STYLE_STORAGE_KEY = "doclang-viewer-arrow-styles";
 /** Arrow-based overlay layers and the plumbing that maps each to its CSS + SVG marker. */
@@ -501,6 +499,8 @@ const changeBanner = {
 /** The entry the banner currently refers to, and the version already dismissed. */
 let changeBannerEntry = null;
 let dismissedChange = null;
+/** Hides a note the banner shows on its own (showFileNote()). */
+let changeBannerTimer = 0;
 let activeFileIndex = -1;
 let filePaneUserToggled = false;
 /** @type {ResizeObserver | null} */
@@ -537,6 +537,8 @@ let readingBboxStyle = {};
 let cropPictures = true;
 /** Whether a click on a Preview link opens its target. */
 let clickableLinks = false;
+/** The Preview's chips on pictures, with their class and description (see pictureDetailsChip()). */
+let showPictureDetails = true;
 /** @type {"pageless" | "paged"} */
 let readingLayoutMode = "paged";
 /** The DocLang pane's view of choice; it applies to any document that can be edited. @type {"visual" | "raw"} */
@@ -628,8 +630,6 @@ let fileDownloadMenu = null;
 const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 /** @type {{ physicalSplitterIndex: number, leftKey: string, rightKey: string, startX: number, leftStart: number, rightStart: number, pointerId: number } | null} */
 let paneDrag = null;
-/** @type {MediaQueryList | null} */
-let layoutStackQuery = null;
 // Generated before `els` so the per-type "contents" checkboxes it creates resolve below.
 buildOverlayTypeControls(document.getElementById("arrow-fields-types"));
 const els = {
@@ -678,6 +678,7 @@ const els = {
   cropPictures: document.getElementById("crop-pictures"),
   cropPicturesLabel: document.getElementById("crop-pictures-label"),
   clickableLinks: document.getElementById("clickable-links"),
+  pictureDetails: document.getElementById("picture-details"),
   showCaptionLinks: document.getElementById("show-caption-links"),
   showCaptionLinksLabel: document.getElementById("show-caption-links-label"),
   layoutLayersLabel: document.getElementById("layout-layers-label"),
@@ -998,6 +999,7 @@ document.addEventListener("keydown", (e) => {
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
   if (!state?.hasPageView) return;
   const key = e.key.toLowerCase();
+  if (key === "r" && e.shiftKey) return; // Shift+R reloads the file (see reloadActiveFileFromDisk())
   if (key === "l") {
     e.preventDefault();
     toggleOverlayCheckbox(els.showAllBboxes);
@@ -1058,6 +1060,11 @@ els.clickableLinks?.addEventListener("change", () => {
   els.renderedPane?.classList.toggle("links-clickable", clickableLinks);
   persistReadingOverlayPrefs();
 });
+els.pictureDetails?.addEventListener("change", () => {
+  showPictureDetails = els.pictureDetails.checked;
+  els.renderedPane?.classList.toggle("picture-details-hidden", !showPictureDetails);
+  persistReadingOverlayPrefs();
+});
 // Unless links are clickable, a click on one only selects (any button, any modifier).
 for (const type of ["click", "auxclick"]) {
   els.renderedPane?.addEventListener(type, (e) => {
@@ -1110,6 +1117,7 @@ initFileTypeHints();
 initCursorHints();
 initQuickHints();
 initFormulaRewriteHints();
+initPictureDetailsHints();
 initTokenLens();
 initBboxHints();
 initDragDrop();
@@ -1469,8 +1477,56 @@ async function addFilesToCatalog(files, { replace = false } = {}) {
 
 function hideChangeBanner() {
   changeBannerEntry = null;
+  clearTimeout(changeBannerTimer);
   if (changeBanner.root) changeBanner.root.hidden = true;
+  if (changeBanner.reload) changeBanner.reload.hidden = false;
 }
+
+/** A note in the banner, without Reload, for a few seconds. */
+function showFileNote(text) {
+  if (!changeBanner.root) return;
+  hideChangeBanner();
+  changeBanner.text.textContent = text;
+  if (changeBanner.reload) changeBanner.reload.hidden = true;
+  changeBanner.root.hidden = false;
+  changeBannerTimer = setTimeout(hideChangeBanner, 4000);
+}
+
+/**
+ * Shift+R: the active file again from disk, whether or not it changed (unsaved changes asked about first). Only a file
+ * opened with a handle to it can be: one from the Open dialog or dropped in a browser that hands them out.
+ */
+async function reloadActiveFileFromDisk() {
+  const entry = fileCatalog[activeFileIndex];
+  if (!entry) return;
+  if (!entry.handle) {
+    showFileNote(`${entry.label} was not opened from a file on disk: nothing to reload.`);
+    return;
+  }
+  let file;
+  try {
+    file = await entry.handle.getFile();
+  } catch {
+    showFileNote(`${entry.label} could not be read from disk (moved, deleted, or no permission).`);
+    return;
+  }
+  if (fileCatalog[activeFileIndex] !== entry) return;
+  if (entry.dirty && !confirm("Reloading discards your unsaved changes. Continue?")) return;
+  if (!confirmDiscardEditor()) return;
+  hideChangeBanner();
+  fileHandles.set(file, entry.handle);
+  stopEditing({ render: false });
+  entry.dirty = false;
+  entry.savedSource = null;
+  entry.validation = null;
+  if (await refreshCatalogEntry(entry, file)) await switchToFile(activeFileIndex);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "R" || !e.shiftKey || !hotkeysEnabled) return;
+  if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
+  e.preventDefault();
+  reloadActiveFileFromDisk();
+});
 
 /** Look for edits to the active file on disk and offer to reload it. */
 async function checkActiveFileChanged() {
@@ -2429,6 +2485,8 @@ function syncReadingLayerCheckboxes() {
   if (els.cropPictures) els.cropPictures.checked = cropPictures;
   if (els.clickableLinks) els.clickableLinks.checked = clickableLinks;
   els.renderedPane?.classList.toggle("links-clickable", clickableLinks);
+  if (els.pictureDetails) els.pictureDetails.checked = showPictureDetails;
+  els.renderedPane?.classList.toggle("picture-details-hidden", !showPictureDetails);
 }
 
 function applyReadingBboxStyle() {
@@ -2475,6 +2533,7 @@ function loadReadingOverlayPrefs() {
     if (data?.bboxStyle && typeof data.bboxStyle === "object") readingBboxStyle = data.bboxStyle;
     if (typeof data?.cropPictures === "boolean") cropPictures = data.cropPictures;
     if (typeof data?.clickableLinks === "boolean") clickableLinks = data.clickableLinks;
+    if (typeof data?.pictureDetails === "boolean") showPictureDetails = data.pictureDetails;
   } catch {
     /* ignore invalid stored prefs */
   }
@@ -2482,7 +2541,7 @@ function loadReadingOverlayPrefs() {
 
 function persistReadingOverlayPrefs() {
   try {
-    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures, clickableLinks }));
+    localStorage.setItem(READING_OVERLAY_PREFS_STORAGE_KEY, JSON.stringify({ furniture: showReadingFurniture, background: showReadingBackground, bboxes: showReadingBboxes, bboxStyle: readingBboxStyle, cropPictures, clickableLinks, pictureDetails: showPictureDetails }));
   } catch {
     /* ignore quota / private mode */
   }
@@ -2501,6 +2560,9 @@ function collectElementHeadInfo(el, defaultResolution) {
   const customEl = firstHeadChild(el, "custom");
   const locs = elementHeadLocations(el);
   const rows = [{ key: "element", value: elementLabel(el), isDefault: false }];
+  if (el.hasAttribute("class") || localName(el) === "picture") {
+    rows.push({ key: "class", value: el.getAttribute("class") ?? "undefined", isDefault: !el.hasAttribute("class") });
+  }
 
   rows.push({
     key: "label",
@@ -3375,6 +3437,20 @@ function syncTokenLayer(img) {
     }
   }
   svg.appendChild(badgeGroup);
+  // The bboxes' label badges read as on top of the veil: it leaves them out. They stay in the overlay, which handles
+  // their clicks and hints, so the veil has a hole where each one is.
+  const imgRect = img.getBoundingClientRect();
+  if (imgRect.width && imgRect.height) {
+    const sx = W / imgRect.width;
+    const sy = H / imgRect.height;
+    for (const badge of img.parentElement?.querySelectorAll("svg.overlay .element-badge") ?? []) {
+      const r = badge.getBoundingClientRect();
+      if (!r.width) continue;
+      mask.appendChild(svgEl("rect", {
+        x: (r.left - imgRect.left) * sx, y: (r.top - imgRect.top) * sy, width: r.width * sx, height: r.height * sy, fill: "black",
+      }));
+    }
+  }
 
   // Above the bbox overlay, so the veil darkens it too; clicks pass through to the overlay.
   img.parentElement.appendChild(svg);
@@ -3437,7 +3513,7 @@ function pagedTraceItems(canvas) {
     const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       const node = walker.currentNode;
-      if (!node.nodeValue.trim() || node.parentElement.closest(".katex-mathml, .formula-rewrite-badge")) continue;
+      if (!node.nodeValue.trim() || node.parentElement.closest(".katex-mathml, .formula-rewrite-badge, .picture-chip")) continue;
       texts.push(node);
       total += node.length;
     }
@@ -4240,10 +4316,15 @@ function setEditingOn(on) {
   editingOn = on;
   if (els.editingToggle) els.editingToggle.checked = on;
   if (!state) return syncEditUi();
-  // Rebuild the views, so drag grips and handles come or go, and keep the selection.
+  // Rebuild the views, so drag grips and handles come or go, and keep the selection and where the panes are. A
+  // continuous pane keeps its stream while the document is the same: it is built anew here.
   const keep = selectedElementId;
+  const panes = [els.markupPane, els.renderedPane].filter(Boolean);
+  const scrolls = panes.map((pane) => pane.scrollTop);
+  for (const pane of panes) pane.streamState = null;
   renderPage(state.currentPage);
   if (keep && state.idToElement?.has(keep)) selectElement(keep);
+  panes.forEach((pane, i) => { pane.scrollTop = scrolls[i]; });
   syncEditUi();
   if (on) resumeRawView();
 }
@@ -7230,8 +7311,9 @@ function visiblePaneKeys() {
   return PANE_KEYS.filter((key) => isPaneVisible(key));
 }
 
-function paneMinRatio(key) {
-  return PANE_MIN_RATIO;
+/** The narrowest a content pane gets side by side, whether by dragging a splitter or by narrowing the window. */
+function paneMinWidthPx() {
+  return cssLengthPx("--pane-min-width", 160);
 }
 
 function filePaneFitWidthPx() {
@@ -7565,15 +7647,30 @@ function resetPaneLayout() {
 }
 
 function isLayoutStacked() {
-  return Boolean(layoutStackQuery?.matches);
+  return Boolean(els.main?.classList.contains("layout-stacked"));
 }
 
+/**
+ * True when the visible panes fit side by side in the main area: each content pane at its minimum width, Files in a
+ * column at its own width, plus the splitters between them. A lone pane always fits.
+ */
+function panesFitSideBySide() {
+  const keys = columnPaneKeys(visiblePaneKeys());
+  if (keys.length <= 1) return true;
+  const contentCount = keys.filter((key) => key !== "file").length;
+  const fileWidth = keys.includes("file") ? resolvedFilePaneWidthPx() : 0;
+  const needed = contentCount * paneMinWidthPx() + fileWidth + (keys.length - 1);
+  return needed <= els.main.clientWidth;
+}
+
+/** Stacks the panes when the main area gets too narrow for them side by side, and back when they fit again. */
 function initLayoutStackListener() {
   if (!els.main) return;
-  layoutStackQuery = window.matchMedia(`(max-width: ${LAYOUT_STACK_BREAKPOINT_PX}px)`);
-  const onChange = () => applyPaneLayout();
-  layoutStackQuery.addEventListener("change", onChange);
-  onChange();
+  new ResizeObserver(() => {
+    if (!document.body.classList.contains("viewer-loaded")) return;
+    if (isLayoutStacked() === panesFitSideBySide()) applyPaneLayout();
+  }).observe(els.main);
+  applyPaneLayout();
 }
 
 function setToolbarOptionsOpen(open) {
@@ -7760,7 +7857,7 @@ function applyPaneLayout() {
   if (!els.main) return;
   syncFilePlacementButtons();
 
-  const stacked = document.body.classList.contains("viewer-loaded") && isLayoutStacked();
+  const stacked = document.body.classList.contains("viewer-loaded") && !panesFitSideBySide();
   els.main.classList.toggle("layout-stacked", stacked);
 
   for (const key of PANE_KEYS) {
@@ -7798,14 +7895,17 @@ function applyPaneLayout() {
   resetPaneGridStyles();
 
   if (stacked) {
-    els.main.style.gridTemplateRows = "";
     els.main.style.gridTemplateColumns = "1fr";
-    let row = 1;
+    // Each pane a share of the height, whatever it holds: sized by its content, a pane would follow what is fitted to
+    // its size (the Paged Preview's page), which follows the pane, round and round. The files keep their own height.
+    const rows = [];
     for (const key of keys) {
       const def = paneDef(key);
       if (!def?.el) continue;
-      def.el.style.gridRow = String(row++);
+      rows.push(key === "file" ? "auto" : "minmax(0, 1fr)");
+      def.el.style.gridRow = String(rows.length);
     }
+    els.main.style.gridTemplateRows = rows.join(" ");
     refreshPageViewLayout();
     if (els.readingSettingsToggle) {
       els.readingSettingsToggle.hidden = !state || !isPaneVisible("reading");
@@ -7823,7 +7923,9 @@ function applyPaneLayout() {
     if (key === "file") {
       cols.push(`${resolvedFilePaneWidthPx()}px`);
     } else {
-      cols.push(`minmax(0, ${contentFr[contentFrIndex++].toFixed(6)}fr)`);
+      // Never below the minimum: as the window narrows, a pane stops there and the others give way, until none can.
+      // Weights scaled up: once a pane stops, the others' weights summing below 1 would leave part of the room empty.
+      cols.push(`minmax(min(var(--pane-min-width), 100%), ${(contentFr[contentFrIndex++] * 1000).toFixed(3)}fr)`);
     }
     if (index < keys.length - 1 && splitterBetween(keys[index], keys[index + 1])) {
       cols.push("1px");
@@ -8049,9 +8151,9 @@ function onPaneDragMove(e) {
   if (!(pairStoredTotal > 0) || leftIndex < 0 || rightIndex < 0) return;
 
   let nextLeft = paneDrag.leftStart + deltaRatio * pairStoredTotal;
-  const leftMin = Math.min(paneMinRatio(paneDrag.leftKey), pairStoredTotal / 2);
-  const rightMin = Math.min(paneMinRatio(paneDrag.rightKey), pairStoredTotal / 2);
-  nextLeft = Math.min(Math.max(nextLeft, leftMin), pairStoredTotal - rightMin);
+  // The same minimum width as narrowing the window stops at, as a share of the pair.
+  const minShare = Math.min((paneMinWidthPx() / pairPixels) * pairStoredTotal, pairStoredTotal / 2);
+  nextLeft = Math.min(Math.max(nextLeft, minShare), pairStoredTotal - minShare);
   paneRatios[leftIndex] = nextLeft;
   paneRatios[rightIndex] = pairStoredTotal - nextLeft;
   applyPaneLayout();
@@ -8094,6 +8196,19 @@ function commitPageNumberInput() {
     return;
   }
   goToPage(n);
+}
+
+/**
+ * The Preview header's note that the current page flows in the Paged Preview: nothing on it has a place on the
+ * page (buildPagedView()). Hidden for a placed page, and in Flowing.
+ */
+function syncPagedFlowNote() {
+  const note = document.getElementById("paged-flow-note");
+  if (!note) return;
+  const pane = els.renderedPane;
+  const root = pane && (isReadingStreamLayout() ? pageBlockFor(pane, state?.currentPage) : livePaneRoot(pane));
+  const canvas = root?.querySelector(".paged-canvas");
+  note.hidden = !(effectiveReadingLayoutMode() === "paged" && canvas?.dataset.flowFallback === "true");
 }
 
 function setPageIndicator(pageNum, pageCount) {
@@ -8153,6 +8268,7 @@ function renderPage(pageNum) {
     buildReadingStream(pageNum);
   }
   if (continuous) markLivePageBlocks(pageNum);
+  syncPagedFlowNote();
 
   // Without page images nothing waits for an image to load: select what navigation went to right away.
   if (!state.hasPageView && state.pendingSelectElement) {
@@ -8350,16 +8466,19 @@ function makePageBlock(pageNum) {
   return block;
 }
 
-/** Fills a pane with a block per page; a pane that showed them already keeps its place, else it goes to `pageNum`. */
-function fillPageStream(pane, pageNum, buildPage) {
+/**
+ * Fills a pane with a block per page; a pane that showed them already keeps its place, else it goes to `pageNum`.
+ * A page without markup gets an empty block, unless `emptyPages` builds it too (the Paged Preview's blank page): in a
+ * continuous view, a page with nothing to show shows nothing.
+ */
+function fillPageStream(pane, pageNum, buildPage, { emptyPages = false } = {}) {
   const wasStream = Boolean(pane.querySelector(":scope > .pane-page-block"));
   const scroll = pane.scrollTop;
   pane.innerHTML = "";
   for (let n = 1; n <= state.pageCount; n += 1) {
     const block = makePageBlock(n);
     const ctx = pageContextFor(n);
-    if (segmentHasMarkup(ctx.segment)) block.appendChild(buildPage(ctx, n));
-    else block.insertAdjacentHTML("beforeend", `<div class="placeholder">${NO_MARKUP}</div>`);
+    if (emptyPages || segmentHasMarkup(ctx.segment)) block.appendChild(buildPage(ctx, n));
     pane.appendChild(block);
   }
   pane.streamState = state;
@@ -8401,7 +8520,7 @@ function buildReadingStream(pageNum) {
       applyRtlBlocks(canvas);
       setPagedCanvasAspect(canvas, n);
       return canvas;
-    });
+    }, { emptyPages: true });
     fitPagedCanvas();
     observePagedPaneResize();
     mirrorPanes();
@@ -9238,8 +9357,8 @@ function renderReadingPane(segment, elementIds, boxes, defaultResolution) {
   els.renderedPane.innerHTML = "";
   els.renderedPane.classList.remove("reading-stream");
 
-  if (!segmentHasMarkup(segment)) {
-    els.renderedPane.innerHTML = `<div class="placeholder">${NO_MARKUP}</div>`;
+  // A page without markup: a blank page when Paged, nothing when Flowing.
+  if (!segmentHasMarkup(segment) && effectiveReadingLayoutMode() !== "paged") {
     els.renderedPane.classList.remove("reading-mode-paged");
     return;
   }
@@ -12419,14 +12538,8 @@ function buildRenderedView(segment, elementIds, { joins = null, pageNum = 0 } = 
   return root;
 }
 
+/** A page without markup comes out blank: a page of the page's size with nothing on it. */
 function buildPagedView(segment, elementIds, boxes, defaultResolution) {
-  if (!segmentHasMarkup(segment)) {
-    const placeholder = document.createElement("div");
-    placeholder.className = "placeholder";
-    placeholder.innerHTML = NO_MARKUP;
-    return placeholder;
-  }
-
   const boxById = new Map(boxes.map((b) => [b.elementId, b]));
 
   const canvas = document.createElement("div");
@@ -12457,6 +12570,7 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
     slot.style.zIndex = layer === "background" ? "0" : "1";
     slot.appendChild(node);
     if (node?.dataset?.rewrittenLatex) slot.appendChild(makeFormulaRewriteBadge(node.dataset.rewrittenLatex));
+    if (node?.cornerChip) slot.appendChild(node.cornerChip);
     canvas.appendChild(slot);
   };
 
@@ -12593,6 +12707,21 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
     makeSlot(box.elementId, box, node);
   }
 
+  // A page with content but nothing with a place on it (e.g. a model asked for some tasks only, without `<layout>`)
+  // would come out blank: its content flows in the page instead, fitted to it as a slot's, and the Preview's header
+  // says so (syncPagedFlowNote()). Not for a page still being written while it has but one element: its location
+  // may be on its way.
+  const elementCount = segment.filter((el) => el.nodeType === Node.ELEMENT_NODE && localName(el) !== "page_break").length;
+  if (!canvas.querySelector(".paged-el-slot") && elementCount && !(isLiveWritingSegment(segment) && elementCount < 2)) {
+    const flow = buildRenderedView(segment, elementIds);
+    flow.classList.add("paged-flow");
+    makeSlot("", { x0: 6, y0: 5, x1: 94, y1: 95, resW: 100, resH: 100 }, flow);
+    const slot = canvas.lastElementChild;
+    slot.removeAttribute("data-element-id");
+    slot.classList.add("paged-flow-slot");
+    canvas.dataset.flowFallback = "true";
+  }
+
   canvas.addEventListener("click", (e) => {
     activatePageBlockOf(e.target, els.renderedPane);
     // Fall back to the slot itself for boxes with no rendered content (empty text, container bboxes).
@@ -12609,6 +12738,10 @@ function buildPagedView(segment, elementIds, boxes, defaultResolution) {
   return canvas;
 }
 
+/** Fits found by fitSlotContent(), by the box's size and content; the oldest go first past the limit. */
+const slotFitCache = new Map();
+const SLOT_FIT_CACHE_MAX = 4000;
+
 /**
  * Sizes a paged-view slot's content to use the maximum space its bbox allows, by
  * binary-searching a CSS `zoom` factor (not `transform: scale`) so text re-wraps at
@@ -12624,6 +12757,17 @@ function fitSlotContent(slot) {
   const targetW = slotRect.width;
   const targetH = slotRect.height;
   if (!(targetW > 0 && targetH > 0)) return;
+
+  // The same content in a box of the same size fits the same: a page built again (a live document's next version,
+  // say) takes its fits from the last time instead of searching each again.
+  content.style.zoom = "";
+  if (!content.getAttribute("style")) content.removeAttribute("style"); // fitted before or not, the same content
+  const key = `${Math.round(targetW * 2)}x${Math.round(targetH * 2)}|${content.outerHTML}`;
+  const known = slotFitCache.get(key);
+  if (known !== undefined) {
+    content.style.zoom = String(known);
+    return;
+  }
 
   // A block fills its slot's width however long its text is, so its own box never reveals horizontal overflow
   // (a word wider than the box, e.g. a chart label). The extent of the text itself does, but only what is
@@ -12651,6 +12795,8 @@ function fitSlotContent(slot) {
   }
   fitsAt(lo);
   slot.classList.remove("paged-el-slot-fitting");
+  if (slotFitCache.size >= SLOT_FIT_CACHE_MAX) slotFitCache.delete(slotFitCache.keys().next().value);
+  slotFitCache.set(key, lo);
 }
 
 function wrapRendered(el, node, elementId, extraClass) {
@@ -13048,15 +13194,27 @@ function renderCode(el, elementIds, ctx) {
     return code;
   }
 
+  // The code's language: Paged, a chip at the block's corner, as a picture's (makeSlot adds it outside the box its
+  // content is scaled in); Flowing, a tag in a strip above the code, apart from it (and left out when it is copied).
+  const language = labelValue && labelValue !== "undefined" ? labelValue : "";
   const pre = document.createElement("pre");
-  if (labelValue && labelValue !== "undefined") {
-    const label = document.createElement("span");
-    label.className = "rendered-code-label";
-    label.textContent = labelValue;
-    pre.appendChild(label);
+  if (language && !ctx?.paged) {
+    const head = pre.appendChild(document.createElement("div"));
+    head.className = "rendered-code-head";
+    const tag = head.appendChild(document.createElement("span"));
+    tag.className = "code-tag";
+    tag.textContent = language;
   }
   pre.appendChild(code);
-  return wrapRendered(el, pre, elementIds.get(el));
+  const wrap = wrapRendered(el, pre, elementIds.get(el));
+  if (language && ctx?.paged) {
+    const chip = document.createElement("span");
+    chip.className = "code-chip";
+    chip.textContent = language;
+    chip.setAttribute("aria-label", `language: ${language}`);
+    wrap.cornerChip = chip;
+  }
+  return wrap;
 }
 
 function formulaSourceText(el) {
@@ -13180,6 +13338,156 @@ function withRewriteBadge(wrapper, rewritten, ctx) {
   return wrapper;
 }
 
+/** A head child's text, whitespace collapsed; empty without one. */
+function headChildText(el, tag) {
+  return firstHeadChild(el, tag)?.textContent.replace(/\s+/g, " ").trim() ?? "";
+}
+
+/** What a picture says about itself: its label and class (not the defaults), description, summary, custom. */
+function pictureDetails(el) {
+  const label = firstHeadChild(el, "label")?.getAttribute("value");
+  const cls = el.getAttribute("class");
+  return {
+    label: label && label !== "undefined" ? label : "",
+    class: cls && cls !== "undefined" ? cls : "",
+    description: headChildText(el, "description"),
+    summary: headChildText(el, "summary"),
+    custom: headChildText(el, "custom"),
+  };
+}
+
+/**
+ * A chip at a picture's top corner in the Preview: its label and class, and a card with all its details on hover
+ * (initPictureDetailsHints()). None for a picture that says nothing about itself.
+ */
+function pictureDetailsChip(el) {
+  const details = pictureDetails(el);
+  if (!Object.values(details).some(Boolean)) return null;
+  const chip = document.createElement("span");
+  chip.className = "picture-chip";
+  chip.textContent = [details.label, details.class].filter(Boolean).join(" · ") || "i";
+  chip.classList.toggle("picture-chip-info", !details.label && !details.class);
+  chip.setAttribute("aria-label", Object.entries(details).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("; "));
+  chip.pictureEl = el;
+  return chip;
+}
+
+function pictureDetailsHtml(el) {
+  const rows = Object.entries(pictureDetails(el))
+    .filter(([, value]) => value)
+    .map(([key, value]) => `<tr><th scope="row">${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`)
+    .join("");
+  return `<table class="head-tooltip picture-details"><tbody>${rows}</tbody></table>`;
+}
+
+/** Text longer than this is clamped in the details line, with "more" to see all of it. */
+const PICTURE_DETAILS_CLAMP_CHARS = 160;
+
+/**
+ * Under a picture in the Flowing preview, what it says about itself, to read: its label and class as tags, then its
+ * description, summary and custom text, clamped to two lines when long. None for a picture that says nothing.
+ */
+function pictureDetailsLine(el) {
+  const details = pictureDetails(el);
+  if (!Object.values(details).some(Boolean)) return null;
+  const line = document.createElement("div");
+  line.className = "picture-details-line";
+  for (const tag of [details.label, details.class].filter(Boolean)) {
+    line.appendChild(document.createElement("span")).className = "picture-tag";
+    line.lastChild.textContent = tag;
+  }
+  const texts = [["", details.description], ["Summary", details.summary], ["Custom", details.custom]].filter(([, t]) => t);
+  if (texts.length) {
+    const body = line.appendChild(document.createElement("span"));
+    body.className = "picture-details-text";
+    for (const [name, text] of texts) {
+      const part = body.appendChild(document.createElement("span"));
+      if (name) part.appendChild(document.createElement("strong")).textContent = `${name}: `;
+      part.append(text);
+    }
+    if (texts.reduce((n, [, t]) => n + t.length, 0) > PICTURE_DETAILS_CLAMP_CHARS) {
+      body.classList.add("is-clamped");
+      const more = line.appendChild(document.createElement("button"));
+      more.type = "button";
+      more.className = "picture-details-more";
+      more.textContent = "more";
+      more.addEventListener("click", (e) => {
+        e.stopPropagation(); // not a click on the picture: it selects nothing
+        const clamped = body.classList.toggle("is-clamped");
+        more.textContent = clamped ? "more" : "less";
+      });
+    }
+  }
+  return line;
+}
+
+/** The card a chip's click pins, to read (and select, copy) a picture's details; closed by a click elsewhere, Esc, or scrolling. */
+let pinnedPictureCard = null;
+
+function closePictureCard() {
+  pinnedPictureCard?.card.remove();
+  pinnedPictureCard = null;
+}
+
+function pinPictureCard(chip) {
+  closePictureCard();
+  const card = document.createElement("div");
+  card.className = "cursor-hint cursor-hint-detail picture-card";
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-label", "Picture details");
+  card.innerHTML = pictureDetailsHtml(chip.pictureEl);
+  document.body.appendChild(card);
+  const r = chip.getBoundingClientRect();
+  const c = card.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.right - c.width, window.innerWidth - c.width - 8));
+  const top = r.bottom + 4 + c.height <= window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - 4 - c.height);
+  Object.assign(card.style, { left: `${left}px`, top: `${top}px` });
+  pinnedPictureCard = { card, el: chip.pictureEl };
+}
+
+function initPictureDetailsHints() {
+  els.renderedPane?.addEventListener("mousemove", (e) => {
+    const chip = e.target.closest?.(".picture-chip");
+    if (chip?.pictureEl && pinnedPictureCard?.el !== chip.pictureEl) {
+      showCursorHintHtml(pictureDetailsHtml(chip.pictureEl), e.clientX, e.clientY);
+    }
+  });
+  // Capture phase: a click on a chip pins its card, and does not also select the picture under it.
+  els.renderedPane?.addEventListener("click", (e) => {
+    const chip = e.target.closest?.(".picture-chip");
+    if (!chip?.pictureEl) return;
+    e.stopPropagation();
+    hideCursorHint();
+    if (pinnedPictureCard?.el === chip.pictureEl) closePictureCard();
+    else pinPictureCard(chip);
+  }, true);
+  document.addEventListener("mousedown", (e) => {
+    if (pinnedPictureCard && !e.target.closest?.(".picture-card, .picture-chip")) closePictureCard();
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pinnedPictureCard) closePictureCard();
+  });
+  // It is placed where its chip was: scrolled away, it would be next to something else.
+  document.addEventListener("scroll", (e) => {
+    if (pinnedPictureCard && !pinnedPictureCard.card.contains(e.target)) closePictureCard();
+  }, true);
+}
+
+/**
+ * A picture without an image shows its description in its box in the Paged Preview, where it has one, instead of
+ * nothing but an icon (the Flowing preview has it under the picture already, in its details line).
+ */
+function showPictureDescriptionInstead(img, el) {
+  const text = el ? headChildText(el, "description") : "";
+  if (!text || !img.closest(".paged-el-slot") || img.nextElementSibling?.classList.contains("rendered-picture-description")) return;
+  const desc = document.createElement("span");
+  desc.className = "rendered-picture-description";
+  desc.textContent = text;
+  img.after(desc);
+  const slot = img.closest(".paged-el-slot");
+  if (slot) fitSlotContent(slot);
+}
+
 function markPictureUnavailable(img) {
   img.classList.add("rendered-picture-unavailable");
   img.alt = "\u00A0";
@@ -13244,12 +13552,13 @@ async function applyPictureCropFallback(img, el, elementIds) {
   if (!dataUrl) {
     markPictureUnavailable(img);
     img.src = PICTURE_UNAVAILABLE_SRC;
+    showPictureDescriptionInstead(img, el);
     return;
   }
 
   img.classList.remove("rendered-picture-unavailable");
   img.removeAttribute("aria-label");
-  img.alt = "";
+  img.alt = el ? headChildText(el, "description") : "";
   img.src = dataUrl;
   img.addEventListener(
     "load",
@@ -13267,7 +13576,7 @@ function appendPictureFigureImage(figure, uri, captionEl, elementIds, ctx, el) {
 
   const resolved = uri ? resolveArchiveUri(uri) : null;
   if (resolved) {
-    img.alt = "";
+    img.alt = headChildText(el, "description"); // what it shows, for screen readers and copying
     img.src = resolved;
     img.addEventListener("error", () => applyPictureCropFallback(img, el, elementIds), { once: true });
   } else {
@@ -13324,7 +13633,17 @@ function renderPicture(el, elementIds, ctx) {
     }
   }
 
-  return wrapRendered(el, figure, elementIds.get(el));
+  const wrap = wrapRendered(el, figure, elementIds.get(el));
+  // Paged: a chip at the picture's corner (makeSlot adds it outside the box its content is scaled in);
+  // Flowing, with room to read: a line under the picture, after its caption.
+  if (ctx?.paged) {
+    wrap.cornerChip = pictureDetailsChip(el);
+  } else {
+    const line = pictureDetailsLine(el);
+    const after = figure.querySelector(":scope > figcaption") ?? figure.querySelector(":scope > img");
+    if (line) after.after(line);
+  }
+  return wrap;
 }
 
 function appendPictureBodyContent(container, nodes, startIdx, elementIds) {

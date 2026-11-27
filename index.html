@@ -259,6 +259,10 @@
               <span class="help-shortcut-keys"><kbd class="mod-key" data-key="O">Ctrl+O</kbd></span>
               <span class="help-shortcut-desc">Open a file</span>
             </div>
+            <div class="help-shortcut-row">
+              <span class="help-shortcut-keys"><kbd>Shift</kbd><kbd>R</kbd></span>
+              <span class="help-shortcut-desc">Reload the file from disk</span>
+            </div>
           </div>
         </section>
         <section class="help-shortcut-group">
@@ -903,6 +907,12 @@
               aria-pressed="true"
             >Paged</button>
           </div>
+          <span
+            class="paged-flow-note"
+            id="paged-flow-note"
+            title="Nothing on this page has a place on it, so the Paged Preview shows it as flowing text"
+            hidden
+          >No locations · flowing</span>
             <button
             type="button"
             class="pane-settings-toggle"
@@ -984,6 +994,10 @@
               <label class="settings-option settings-option-primary" id="crop-pictures-label" title="Show a picture that has a bbox but no image of its own as a crop of the page image; otherwise, as a placeholder">
                 <input type="checkbox" id="crop-pictures" checked>
                 <span>Picture crops</span>
+              </label>
+              <label class="settings-option settings-option-primary" title="Show a chip on each picture with its label and class, and its description on hover">
+                <input type="checkbox" id="picture-details" checked>
+                <span>Picture details</span>
               </label>
               <label class="settings-option settings-option-primary" title="Open a link's target when clicking it; otherwise, a click only selects">
                 <input type="checkbox" id="clickable-links">

@@ -2,6 +2,8 @@
 
 Browser-based viewer for DocLang markup and [archives](https://github.com/doclang-project/doclang/blob/main/spec.md#doclang-archive-format): a preview, the formatted DocLang, and—when opening an archive with page images—the original pages with linked selection and bounding-box overlays.
 
+The preview is **Flowing** (the content in reading order) or **Paged** (each element in its place on the page). A page with nothing placed on it, e.g. from a model asked for some tasks only, flows inside the page in the Paged Preview, and its header says so (**No locations · flowing**).
+
 Standalone `.dclg` or `.xml` files show the DocLang and the preview only. `.dclx` archives may also include page images and assets; layout and page-alignment rules are in the [DocLang specification](https://github.com/doclang-project/doclang) ([archive format section](https://github.com/doclang-project/doclang/blob/main/spec.md#doclang-archive-format)).
 
 <img src="assets/viewer.png" alt="DocLang Viewer showing the original, DocLang and preview panes" width="1400" />

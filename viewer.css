@@ -42,6 +42,8 @@
   --xml-cdata-delimiter: #6a737d;
   --status-ok: #15803d;
   --status-error: #b91c1c;
+  --status-warn: #a16207;
+  --status-warn-bg: #fef9c3;
   --status-error-bg: #fff1f3;
   --status-dirty: #f59e0b;
   --file-thumb-size: 3.75rem;
@@ -56,6 +58,9 @@
   );
   /* Files on the left or right, with the names only (turned to read along the column). */
   --file-pane-names-width: 2.75rem;
+  /* The narrowest a content pane gets side by side, dragged or with the window narrowed; when the visible ones don't
+     fit, they stack (applyPaneLayout()). */
+  --pane-min-width: 10rem;
   --token-bg0: rgba(234, 179, 8, 0.22);
   --token-bg1: rgba(34, 197, 94, 0.22);
   --token-bg2: rgba(59, 130, 246, 0.22);
@@ -108,6 +113,8 @@
   --xml-cdata-delimiter: #808080;
   --status-ok: #4ade80;
   --status-error: #f87171;
+  --status-warn: #facc15;
+  --status-warn-bg: rgb(250 204 21 / 0.14);
   --status-error-bg: #2d1519;
 }
 
@@ -990,7 +997,8 @@ label.file-btn input {
 }
 
 /* A pane's title is on the left, its view switch and what acts on it are on the right. */
-.pane-header-actions {
+.pane-header-actions,
+.pane-page-controls {
   margin-left: auto;
 }
 
@@ -1060,10 +1068,12 @@ label.file-btn input {
   outline-offset: -2px;
 }
 
+/* In a narrow pane, the slider gives up width before the control wraps or spills. */
 .page-zoom-control {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
   user-select: none;
 }
 
@@ -1078,7 +1088,7 @@ label.file-btn input {
 
 .page-zoom-control input[type="range"] {
   display: block;
-  width: 5.5rem;
+  width: 100%;
   height: 1rem;
   margin: 0;
   cursor: pointer;
@@ -1088,6 +1098,8 @@ label.file-btn input {
 .page-zoom-track {
   position: relative;
   display: block;
+  flex: 0 1 5.5rem;
+  min-width: 2.5rem;
   --zoom-thumb: 0.875rem;
 }
 
@@ -1800,6 +1812,8 @@ body.pane-drag-active .pane-splitter {
 #rendered-pane.reading-mode-paged {
   display: flex;
   overflow: auto;
+  /* The Original's inset (.page-view-port): the same room for the page, so both show it at one size and place. */
+  padding: 0.75rem;
   /* A scrollbar that comes and goes would change the room the page is fitted to. */
   scrollbar-gutter: stable;
 }
@@ -1817,7 +1831,9 @@ body.pane-drag-active .pane-splitter {
   margin-top: 12px;
 }
 
+/* Its size is the page's (sizePagedCanvas()), with the border outside it, as the Original's image in its .page-view. */
 .paged-canvas {
+  box-sizing: content-box;
   position: relative;
   flex-shrink: 0;
   margin: auto;
@@ -1929,6 +1945,28 @@ body.pane-drag-active .pane-splitter {
   color: var(--muted);
 }
 
+/* A page with nothing placed on it flows in it instead (buildPagedView()). */
+.paged-flow-slot .paged-flow {
+  max-width: none;
+  margin: 0;
+}
+
+/* A warning: the page's content has no place on it. */
+.paged-flow-note {
+  padding: 0.1rem 0.5rem;
+  font: 600 0.6875rem/1.4 var(--font-ui);
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border: 1px solid color-mix(in srgb, var(--status-warn) 45%, transparent);
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.paged-flow-note[hidden] {
+  display: none;
+}
+
 .paged-canvas pre {
   padding: 0.5rem 0.75rem;
   font-family: var(--font-mono);
@@ -2007,8 +2045,8 @@ body.pane-drag-active .pane-splitter {
   padding: 1rem;
 }
 
-/* The source header carries the edit actions: when they do not fit next to the title they wrap onto further lines. */
-.pane-markup-header {
+/* A content pane's controls: when they do not fit next to the title they wrap onto further lines. */
+:is(.pane-page-header, .pane-markup-header, .pane-reading-header) {
   flex-wrap: wrap;
   height: auto;
   min-height: 2.125rem;
@@ -2017,7 +2055,7 @@ body.pane-drag-active .pane-splitter {
   row-gap: 0.25rem;
 }
 
-.pane-markup-header .pane-header-actions {
+:is(.pane-page-header, .pane-markup-header, .pane-reading-header) :is(.pane-header-actions, .pane-page-controls) {
   flex-shrink: 1;
   flex-wrap: wrap;
   min-width: 0;
@@ -3453,6 +3491,12 @@ body.demo-loading .empty-state-prompt {
   margin: 0 0 0.75rem;
 }
 
+/* Body text and captions, in both previews, justified as on a page (a one-line caption stays as it is; headings, code,
+   formulas and table cells keep their alignment). */
+:is(.rendered-doc, .paged-canvas) :is(.rendered-text, .rendered-caption, .rendered-footnote, .rendered-list li):not(:is(td, th) *) {
+  text-align: justify;
+}
+
 .rendered-doc h1,
 .rendered-doc h2,
 .rendered-doc h3,
@@ -3568,14 +3612,24 @@ li.has-marker > .rendered-li-body {
   padding: 0;
 }
 
-.rendered-code-label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Flowing: the code's language, in a strip above the code, ruled off from it (renderCode()). */
+.rendered-code-head {
+  display: flex;
+  margin: -0.75rem -1rem 0.6rem;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  border-radius: 0.375rem 0.375rem 0 0;
+  user-select: none;
+}
+
+.code-tag {
+  padding: 0 0.45rem;
+  font: 600 0.6875rem/1.5 var(--font-ui);
+  letter-spacing: 0.02em;
+  color: var(--kind-code);
+  border: 1px solid color-mix(in srgb, var(--kind-code) 45%, transparent);
+  border-radius: 999px;
 }
 
 .rendered-formula {
@@ -3613,6 +3667,137 @@ li.has-marker > .rendered-li-body {
 
 .formula-rewrite-badge:hover {
   opacity: 1;
+}
+
+/* A picture's label and class, at its top corner; its details on hover (pictureDetailsChip()). A code block's
+   language, the same way (renderCode()). */
+.picture-chip,
+.code-chip {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 2;
+  max-width: calc(100% - 0.5rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.05rem 0.4rem;
+  font: 600 0.625rem/1.4 var(--font-ui);
+  letter-spacing: 0.02em;
+  color: var(--kind-picture, var(--accent));
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kind-picture, var(--accent)) 45%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 15%, transparent);
+  cursor: help;
+  opacity: 0.85;
+}
+
+.picture-chip:hover {
+  opacity: 1;
+}
+
+/* On a Paged page, the chip is the page's: it scales with it, not with the interface (a small page, a small chip). */
+.paged-canvas {
+  container-type: inline-size;
+}
+
+.paged-el-slot > :is(.picture-chip, .code-chip) {
+  top: 0.4cqw;
+  right: 0.4cqw;
+  padding: 0.05cqw 0.6cqw;
+  font-size: clamp(4px, 1.1cqw, 0.625rem);
+  border-width: max(0.5px, 0.1cqw);
+}
+
+.code-chip {
+  color: var(--kind-code);
+  border-color: color-mix(in srgb, var(--kind-code) 45%, transparent);
+  cursor: default;
+}
+
+.picture-chip-info {
+  font-style: italic;
+  font-family: serif;
+}
+
+.picture-details-hidden :is(.picture-chip, .picture-details-line) {
+  display: none;
+}
+
+/* Under a picture in the Flowing preview: its label and class as tags, then its description (pictureDetailsLine()). */
+.picture-details-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.4rem;
+  margin-top: 0.4rem;
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.picture-tag {
+  padding: 0 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--kind-picture, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--kind-picture, var(--accent)) 45%, transparent);
+  border-radius: 999px;
+}
+
+.picture-details-text {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.picture-details-text > span + span::before {
+  content: " · ";
+}
+
+.picture-details-text strong {
+  font-weight: 600;
+}
+
+.picture-details-text.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.picture-details-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* A chip's card, pinned by a click: it stays, to read, select and copy (pinPictureCard()). */
+.picture-card {
+  pointer-events: auto;
+  user-select: text;
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, #000 22%, transparent);
+}
+
+figure:has(> .rendered-picture-description) > img {
+  display: block;
+  margin-inline: auto;
+}
+
+/* A picture without an image, in place of nothing but its icon: what it shows, as described. */
+.rendered-picture-description {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8em;
+  font-style: italic;
+  color: var(--muted);
+  text-align: center;
 }
 
 .rendered-formula-inline {
@@ -4211,17 +4396,6 @@ li.has-marker > .rendered-li-body {
 
 .rendered-checkbox-wrap {
   display: inline;
-}
-
-@media (max-width: 1200px) {
-  body.viewer-loaded #main.layout-stacked .pane {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-
-  body.viewer-loaded #main.layout-stacked .pane-layout-last {
-    border-bottom: none;
-  }
 }
 
 /* Alternative representations in the source view: options are clickable; clicking a replaced host restores it. */
