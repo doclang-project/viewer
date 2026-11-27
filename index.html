@@ -186,13 +186,13 @@
                 <input type="checkbox" id="toggle-editing" role="menuitemcheckbox">
                 <span>Editing</span>
               </label>
-              <label class="toolbar-options-item" data-switch="tokens" title="Show tokens using an indicative DocLang-aware tokenizer based on Granite-Docling">
-                <input type="checkbox" id="toggle-tokens" role="menuitemcheckbox">
-                <span>Tokens</span>
-              </label>
               <label class="toolbar-options-item" data-switch="demo" title="Load demo files when the viewer opens without a file">
                 <input type="checkbox" id="toggle-demo" role="menuitemcheckbox">
                 <span>Show demo on launch</span>
+              </label>
+              <label class="toolbar-options-item" data-switch="stream.demo" title="Play an opened document in as if a model were writing it, to see a document being streamed in">
+                <input type="checkbox" id="toggle-stream-demo" role="menuitemcheckbox">
+                <span>Stream demo</span>
               </label>
             </div>
             <div class="toolbar-options-row">
@@ -756,29 +756,6 @@
                 </label>
               </div>
 
-              <div id="token-overlay-options" data-requires="tokens" hidden>
-                <div class="settings-divider" role="separator"></div>
-                <span class="settings-option settings-option-primary settings-option-heading">Tokens</span>
-                <div class="settings-subgroup">
-                  <label class="settings-option settings-option-sub" title="Shade each element by its tokens per page area">
-                    <input type="checkbox" id="token-heat">
-                    <span>Heatmap</span>
-                  </label>
-                  <label class="settings-option settings-option-sub" title="Show each element's token count">
-                    <input type="checkbox" id="token-counts">
-                    <span>Counts</span>
-                  </label>
-                  <label class="settings-option settings-option-sub" title="While tracing, darken the page and uncover each element as its tokens are written">
-                    <input type="checkbox" id="token-scan">
-                    <span>Reveal while tracing</span>
-                  </label>
-                  <label class="settings-option settings-option-sub" title="While tracing, build up the Paged Preview as its tokens are written">
-                    <input type="checkbox" id="token-render">
-                    <span>Render while tracing</span>
-                  </label>
-                </div>
-              </div>
-
               <div class="settings-divider" role="separator"></div>
               <button type="button" class="overlays-reset" id="btn-overlays-reset">Reset all</button>
             </div>
@@ -800,19 +777,58 @@
         <span class="pane-header-title">DocLang</span>
         <div class="pane-header-actions">
           <div class="view-toggle" id="markup-view-toggle" role="group" aria-label="DocLang view" hidden>
-            <button type="button" class="view-toggle-btn" id="btn-view-visual" aria-pressed="true" title="Edit visually">Visual</button>
             <button type="button" class="view-toggle-btn" id="btn-view-raw" aria-pressed="false" title="Edit the raw DocLang source (E)">Raw</button>
+            <button type="button" class="view-toggle-btn" id="btn-view-visual" aria-pressed="true" title="Edit visually">Visual</button>
           </div>
             <!-- Undo / redo icons: Lucide (https://lucide.dev, ISC license, see vendor/lucide/LICENSE), inlined. -->
           <button type="button" class="pane-action-btn icon-btn" id="btn-undo" title="Undo the last edit (Ctrl/Cmd+Z)" aria-label="Undo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
           <button type="button" class="pane-action-btn icon-btn" id="btn-redo" title="Redo the undone edit (Ctrl/Cmd+Shift+Z)" aria-label="Redo" hidden><svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button>
           <button type="button" class="pane-action-btn" id="btn-revert" title="Discard unsaved changes and go back to the last saved version" hidden>Discard</button>
           <button type="button" class="pane-action-btn primary" id="btn-save" title="Save the changes to the file" hidden>Save</button>
+          <button
+            type="button"
+            class="pane-settings-toggle"
+            id="btn-markup-settings-toggle"
+            hidden
+            aria-expanded="false"
+            aria-controls="markup-settings"
+          >
+            Overlays
+          </button>
         </div>
       </div>
       <div class="edit-error" id="edit-error" role="alert" hidden></div>
       <div class="inspector" id="inspector" aria-label="Selected element" hidden></div>
-      <div class="pane-body" id="markup-pane" tabindex="-1"></div>
+      <div class="pane-reading-layout pane-markup-layout">
+        <div class="pane-body" id="markup-pane" tabindex="-1"></div>
+        <div class="viewer-settings-layer" id="markup-settings-layer" hidden>
+          <button
+            type="button"
+            class="viewer-settings-scrim"
+            id="markup-settings-scrim"
+            tabindex="-1"
+            aria-label="Close overlays"
+          ></button>
+          <aside
+            class="viewer-settings"
+            id="markup-settings"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="markup-settings-title"
+          >
+            <div class="viewer-settings-header">
+              <h2 class="viewer-settings-title" id="markup-settings-title">Overlays</h2>
+              <button type="button" class="viewer-settings-close" id="btn-markup-settings-close" aria-label="Close overlays">×</button>
+            </div>
+            <div class="viewer-settings-body">
+              <label class="settings-option settings-option-primary" data-switch="tokens" title="Show tokens using an indicative DocLang-aware tokenizer based on Granite-Docling">
+                <input type="checkbox" id="toggle-tokens">
+                <span>Tokens</span>
+              </label>
+            </div>
+          </aside>
+        </div>
+      </div>
       <div class="validation-panel" id="validation-panel" role="region" aria-label="Validation results" hidden>
         <div class="validation-panel-header">
           <span class="validation-panel-summary" id="validation-summary"></span>
@@ -858,14 +874,7 @@
               >100 tok/s</button>
               <ul class="token-speed-menu" id="token-speed-menu" role="listbox" aria-label="Trace speed" hidden></ul>
             </span>
-            <select class="token-speed" id="token-speed" hidden tabindex="-1" aria-hidden="true">
-              <option value="5">5 tok/s</option>
-              <option value="10">10 tok/s</option>
-              <option value="50">50 tok/s</option>
-              <option value="100" selected>100 tok/s</option>
-              <option value="500">500 tok/s</option>
-              <option value="1000">1000 tok/s</option>
-            </select>
+            <select class="token-speed" id="token-speed" hidden tabindex="-1" aria-hidden="true"></select>
           </div>
           <span class="token-counter" id="token-counter"></span>
         </div>

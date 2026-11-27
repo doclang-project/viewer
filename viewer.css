@@ -1,7 +1,12 @@
-:root {
+/* The Paged Preview's page is a sheet of paper, like the page image beside it: light in either theme. */
+:root,
+:root[data-theme="dark"] .paged-canvas {
   color-scheme: light;
   --bg: #f4f4f5;
   --panel: #ffffff;
+  /* The Paged Preview's page, kept apart from --panel so that a host recolouring the chrome
+     (doclang-viewer:configure) leaves it white. */
+  --page-bg: #ffffff;
   --border: #d4d4d8;
   --text: #18181b;
   --muted: #71717a;
@@ -157,6 +162,10 @@ body.drag-over {
 body.drag-over .empty-state {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--placeholder-bg));
+}
+
+body.header-hidden > header {
+  display: none;
 }
 
 header {
@@ -1837,7 +1846,8 @@ body.pane-drag-active .pane-splitter {
   position: relative;
   flex-shrink: 0;
   margin: auto;
-  background: var(--panel);
+  background: var(--page-bg);
+  color: var(--text); /* its own: inherited, the text would keep the dark theme's colour */
   border: 1px solid var(--border);
   border-radius: 0.25rem;
 }
@@ -1848,6 +1858,118 @@ body.pane-drag-active .pane-splitter {
   transform-origin: top left;
   outline: var(--reading-bbox-width, 1px) var(--reading-bbox-line, solid) var(--reading-bbox-color, color-mix(in srgb, var(--accent) 70%, transparent));
   outline-offset: calc(-1 * var(--reading-bbox-width, 1px));
+}
+
+/* While a document streams in: room after the last page of a continuous view, to bring it to the top. */
+.live-stream-room {
+  flex: none;
+  pointer-events: none;
+}
+
+/* A document still being written: dots, pulsing, where the writing is (see applyPagedLiveProgress()). */
+.live-waiting {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  pointer-events: none;
+}
+
+.paged-canvas > .live-waiting {
+  position: absolute;
+  z-index: 2;
+  gap: 1.5%;
+}
+
+.rendered-doc > .live-waiting {
+  height: 1.5em;
+  margin: 0.5em 0;
+}
+
+.live-waiting > span {
+  height: 55%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-waiting-dot 1.2s ease-in-out infinite;
+}
+
+.rendered-doc > .live-waiting > span {
+  height: 0.5em;
+}
+
+.live-waiting > span:nth-child(2) {
+  animation-delay: -1s;
+}
+
+.live-waiting > span:nth-child(3) {
+  animation-delay: -0.8s;
+}
+
+/* The text placeholder (configure's `indicator: "placeholder"`): lines, shimmering, as the playground had them. */
+.live-waiting.is-placeholder {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 0;
+}
+
+.rendered-doc > .live-waiting.is-placeholder {
+  height: auto;
+  gap: 8px;
+}
+
+.live-waiting.is-placeholder > span {
+  display: block;
+  aspect-ratio: auto;
+  height: calc(100% / var(--lines, 3) * 0.55);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 7%, transparent) 0%,
+    color-mix(in srgb, var(--text) 3%, transparent) 45%,
+    color-mix(in srgb, var(--text) 7%, transparent) 90%
+  );
+  background-size: 320px 100%;
+  opacity: 1;
+  transform: none;
+  animation: live-waiting-shimmer 1.15s linear infinite;
+}
+
+.rendered-doc > .live-waiting.is-placeholder > span {
+  height: 9px;
+}
+
+@keyframes live-waiting-shimmer {
+  from {
+    background-position: -320px 0;
+  }
+  to {
+    background-position: 320px 0;
+  }
+}
+
+@keyframes live-waiting-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-25%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-waiting > span {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .live-waiting.is-placeholder > span {
+    opacity: 1;
+  }
 }
 
 .paged-el-slot-fitting .katex-mathml {
@@ -2227,6 +2349,15 @@ body.pane-drag-active .pane-splitter {
   display: none;
 }
 
+/* A read-only Raw view (editing off) is for reading: no caret. */
+.markup-editor[readonly] {
+  caret-color: transparent;
+}
+
+.markup-editor-wrap:has(.markup-editor[readonly]) .markup-editor-caret::before {
+  display: none;
+}
+
 .markup-editor-no-current-line {
   background: none;
 }
@@ -2489,6 +2620,10 @@ button.validation-issue:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.token-nav[hidden] {
+  display: none;
 }
 
 .token-scrub {
@@ -4499,8 +4634,9 @@ figure:has(> .rendered-picture-description) > img {
   color: var(--muted);
 }
 
+/* On the page image: white, whatever the theme. */
 .overlay .bbox-handle {
-  fill: var(--panel);
+  fill: #ffffff;
   stroke: var(--accent);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
@@ -4712,4 +4848,46 @@ figure:has(> .rendered-picture-description) > img {
 
 .edit-draft-problem[hidden] {
   display: none;
+}
+
+/* The stream demo's bar (stream.demo): the trace's controls, over the viewer at the bottom. */
+.stream-demo-bar {
+  position: fixed;
+  z-index: 50;
+  bottom: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 1.5rem);
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  color: var(--muted);
+  font: 0.75rem var(--font-ui);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, #000 22%, transparent);
+}
+
+.stream-demo-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 0.25rem;
+}
+
+.stream-demo-bar .token-speed-btn {
+  white-space: nowrap;
+}
+
+.stream-demo-bar .token-scrub {
+  width: 12rem;
+}
+
+.stream-demo-counter {
+  min-width: 6.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stream-demo-close {
+  font-size: 1rem;
+  color: var(--muted);
 }
