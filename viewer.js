@@ -539,7 +539,7 @@ const TRACE_SPEEDS = [5, 10, 50, 100, 500, 1000];
 const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, live: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
 /** The stream demo (streaming.demo): what it plays, and its bar; see streamDemoOn(). */
 /**
- * @type {null | { label: string, text: string, cuts: number[], at: number, pages: Map<number, Blob>, frame: number,
+ * @type {null | { entry: object, text: string, cuts: number[], at: number, pages: Map<number, Blob>, frame: number,
  *   playing: boolean, waitUntil: number, lastTs: number }}
  */
 let streamDemo = null;
@@ -1483,7 +1483,10 @@ async function handOffToHost(files) {
 let liveShowPending = null;
 let liveShowRunning = false;
 
-/** Shows the latest `show` only: one that arrives while another is being rendered supersedes those queued before it. */
+/**
+ * Shows the latest `show` only: one that arrives while another is being rendered supersedes those queued before it.
+ * It may also be a function, run in turn (the stream demo's end, say), so it does not race with a version shown.
+ */
 async function showLiveDocument(doc) {
   liveShowPending = doc;
   if (liveShowRunning) return;
@@ -1492,7 +1495,7 @@ async function showLiveDocument(doc) {
     while (liveShowPending) {
       const next = liveShowPending;
       liveShowPending = null;
-      await applyLiveDocument(next);
+      await (typeof next === "function" ? next() : applyLiveDocument(next));
     }
   } finally {
     liveShowRunning = false;
@@ -1506,7 +1509,7 @@ async function showLiveDocument(doc) {
 function livePageImageUrls(entry) {
   entry.liveUrls ??= new Map();
   const urls = new Map();
-  for (const [page, blob] of entry.source.pages) {
+  for (const [page, blob] of liveSource(entry).pages) {
     const key = `${blob.size}:${blob.type}`;
     let known = entry.liveUrls.get(page);
     if (known?.key !== key) {
@@ -1597,8 +1600,11 @@ function liveMarkupError(markupXml) {
   return localName(doc.documentElement) === "doclang" ? null : "The root element is not <doclang>";
 }
 
-/** A `live` entry holds markup and page images handed over by the host, not file bytes. */
-async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
+/**
+ * A `live` entry holds markup and page images handed over by the host, not file bytes. With `into`, the document is
+ * played into that open file instead (see liveSource()): the file itself, its source, edits and validation, is untouched.
+ */
+async function applyLiveDocument({ name, markup, pages, tokens, complete, into = null }) {
   const pageBlobs = new Map();
   for (const [page, image] of Object.entries(pages ?? {})) {
     const pageNo = Number(page);
@@ -1611,7 +1617,8 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
     : null;
   // While it is written, the host may hand it over cut off anywhere: the viewer closes what is open.
   const streamed = complete ? null : closeStreamedMarkup(markup);
-  let index = fileCatalog.findIndex((entry) => entry.kind === "live" && entry.label === name);
+  let index = into ? fileCatalog.indexOf(into) : fileCatalog.findIndex((entry) => entry.kind === "live" && entry.label === name);
+  if (into && index !== activeFileIndex) return; // closed or left meanwhile
   let source = {
     markupXml: streamed?.markup ?? markup,
     writtenXml: markup, // as written, for the Raw view
@@ -1626,7 +1633,7 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   // with every version). Its pages and whether it is complete are the new version's.
   const malformed = liveMarkupError(source.markupXml);
   if (malformed) {
-    const last = index === -1 ? null : fileCatalog[index].source;
+    const last = index === -1 ? null : liveSource(fileCatalog[index]);
     source = {
       ...(last ?? { markupXml: "<doclang></doclang>", writtenXml: "", open: 0, tokens: null }),
       pages: pageBlobs,
@@ -1634,7 +1641,11 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
       malformed,
     };
   }
-  if (index === -1) {
+  if (into) {
+    if (into.snapshot && index !== activeFileIndex) revokeDocumentState(into.snapshot);
+    into.snapshot = null;
+    into.playing = source; // its validation is paused meanwhile: see validationShown()
+  } else if (index === -1) {
     fileCatalog.push({
       id: crypto.randomUUID(),
       label: name,
@@ -1653,7 +1664,7 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
     entry.source = source;
     entry.validation = null; // another version: validated once it is complete
   }
-  if (source.malformed) fileCatalog[index].validation = { status: "malformed", error: source.malformed };
+  if (source.malformed && !into) fileCatalog[index].validation = { status: "malformed", error: source.malformed };
   // While the end of what is written is in view, the viewer follows it: to the page being written, and in the DocLang
   // pane to its last line (not the pane's end: the pages still to come are there, empty). Scrolled away, it stays.
   const pane = els.markupPane;
@@ -1755,7 +1766,7 @@ const LIVE_STEADY_ANIMATIONS = new Set(["live-waiting-shimmer"]);
 /** Whether `segment` is the page a document still being written is at. */
 function isLiveWritingSegment(segment) {
   const entry = fileCatalog[activeFileIndex];
-  return entry?.kind === "live" && !entry.source.complete && !!state
+  return isStreamingEntry(entry) && !!state
     && segment === state.segments[liveWritingPage(state) - 1];
 }
 
@@ -1835,9 +1846,11 @@ function applyFlowingLiveProgress(root, segment) {
 // --- The stream demo (`streaming.demo`, for development only): an opened file played in as if a model were writing it ---
 //
 // It goes the way a host's document does (showLiveDocument()), cut off anywhere, so it shows the streaming mode
-// without a model: a copy of the file, written chunk by chunk (a tag, a few characters or a run of spaces, about a
+// without a model: the open file, written in place chunk by chunk (a tag, a few characters or a run of spaces, about a
 // token each), with its page images as it gets to them. A start delay and a wait after each element written stand
-// in for a model that is slow to start, or to get on.
+// in for a model that is slow to start, or to get on. What is written so far is the file's `playing` (see
+// liveSource()); its editing, validation and download wait meanwhile. Once the demo ends, is stopped (back to the start,
+// or at the end) or the file is left, the file shows as it was: its own source, edits and validation are untouched.
 
 
 /** The demo's bar, closed for the rest of the visit (there is no switch to turn it back on: reload with the URL). */
@@ -1849,12 +1862,12 @@ function streamDemoOn() {
 
 /** Whether the document shown is the one the demo plays in. */
 function streamDemoShown() {
-  const entry = fileCatalog[activeFileIndex];
-  return !!streamDemo && entry?.kind === "live" && entry.label === streamDemo.label;
+  return !!streamDemo && fileCatalog[activeFileIndex] === streamDemo.entry;
 }
 
 /** The demo's bar: shown with a document open, to play it in, or while the demo plays one. */
 function syncStreamDemoBar() {
+  if (streamDemo && !streamDemoShown()) stopStreamDemo(); // another file shown, or the file closed
   const own = streamDemoShown();
   const shown = streamDemoOn() && !!state && (own || fileCatalog[activeFileIndex]?.kind !== "live");
   if (!shown) {
@@ -1930,10 +1943,7 @@ function buildStreamDemoBar() {
     '<svg class="page-nav-chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4.5 3.5v9M12 3.5 7 8l5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     "Back to the start",
     () => {
-      if (!streamDemoShown()) return;
-      pauseStreamDemo();
-      streamDemo.at = 0;
-      showStreamDemo();
+      if (streamDemoShown()) stopStreamDemo();
     },
   );
   const play = navButton("", "", () => {
@@ -1949,9 +1959,11 @@ function buildStreamDemoBar() {
   scrub.setAttribute("aria-label", "Tokens written");
   scrub.addEventListener("input", () => {
     if (!streamDemoShown()) return;
+    const at = Number(scrub.value); // before pausing, which puts the scrub back where the demo is
     pauseStreamDemo();
-    streamDemo.at = Number(scrub.value);
-    showStreamDemo();
+    streamDemo.at = at;
+    if (streamDemo.at >= streamDemo.cuts.length - 1) stopStreamDemo(); // at the end: the file as it is
+    else showStreamDemo();
   });
   const counter = document.createElement("span");
   counter.className = "token-counter stream-demo-counter";
@@ -1987,9 +1999,9 @@ function streamDemoCuts(text) {
 }
 
 async function startStreamDemo() {
-  if (!state) return;
-  stopStreamDemo();
   const entry = fileCatalog[activeFileIndex];
+  if (!state || !entry || entry.kind === "live" || !confirmDiscardEditor()) return;
+  stopStreamDemo();
   const pages = new Map();
   for (const [page, url] of state.pageImages ?? []) {
     try {
@@ -1998,8 +2010,9 @@ async function startStreamDemo() {
       /* a page without its image */
     }
   }
+  if (fileCatalog[activeFileIndex] !== entry || !state) return; // another file opened meanwhile
   const text = state.markupXml;
-  streamDemo = { label: `${entry?.label ?? "document"} (stream)`, text, cuts: streamDemoCuts(text), at: 0, pages, frame: 0, playing: false, waitUntil: 0, lastTs: 0 };
+  streamDemo = { entry, text, cuts: streamDemoCuts(text), at: 0, pages, frame: 0, playing: false, waitUntil: 0, lastTs: 0 };
   await showStreamDemo();
   playStreamDemo({ delay: streamDemoSettings.startDelay });
 }
@@ -2035,8 +2048,7 @@ function playStreamDemo({ delay = 0 } = {}) {
       if (Math.floor(demo.at) !== from) showStreamDemo();
     }
     if (demo.at >= demo.cuts.length - 1) {
-      demo.playing = false;
-      syncStreamDemoBar();
+      stopStreamDemo(); // written whole: the file as it is
       return;
     }
     demo.frame = requestAnimationFrame(step);
@@ -2052,21 +2064,41 @@ function pauseStreamDemo() {
   syncStreamDemoBar();
 }
 
+/** Ends the demo: its file shows as it is again (in turn with the versions shown, so none comes after). */
 function stopStreamDemo() {
-  pauseStreamDemo();
+  const demo = streamDemo;
+  if (!demo) return;
+  cancelAnimationFrame(demo.frame);
+  demo.playing = false;
   streamDemo = null;
+  syncStreamDemoBar();
+  showLiveDocument(async () => {
+    const { entry } = demo;
+    if (!entry.playing) return;
+    entry.playing = null;
+    for (const { url } of entry.liveUrls?.values() ?? []) revokeLivePageUrl(url);
+    entry.liveUrls = null;
+    if (entry.validation?.status === "running") entry.validation = null; // its result was dropped: the text had moved on
+    const index = fileCatalog.indexOf(entry);
+    if (index !== -1 && index === activeFileIndex) {
+      await switchToFile(index);
+    } else if (entry.snapshot) {
+      revokeDocumentState(entry.snapshot);
+      entry.snapshot = null;
+    }
+  });
 }
 
-/** Hands the demo's document, as far as it is written, to the viewer as a host would. */
+/** Hands the demo's document, as far as it is written, to the viewer as a host would, into the file it plays in. */
 async function showStreamDemo() {
   const demo = streamDemo;
+  if (!demo) return;
   const at = Math.floor(demo.at);
   const written = demo.text.slice(0, demo.cuts[at]);
-  const complete = at >= demo.cuts.length - 1;
   const pageCount = (written.match(/<page_break\b/g) ?? []).length + 1;
   const pages = {};
   for (const [page, blob] of demo.pages) if (page <= pageCount) pages[page] = blob;
-  await showLiveDocument({ name: demo.label, markup: written, pages, tokens: null, complete });
+  await showLiveDocument({ markup: written, pages, tokens: null, complete: false, into: demo.entry });
   syncStreamDemoBar();
 }
 
@@ -2483,6 +2515,19 @@ async function extractArchiveFromFiles(files) {
 
 async function parseCatalogEntry(entry) {
   try {
+    // A live entry, or a file the stream demo plays into: what is written so far (failing that, the file itself).
+    const live = liveSource(entry);
+    const docState = live && buildDocumentState(live.markupXml, livePageImageUrls(entry), entry.label, new Map(), { markupOnly: entry.kind === "markup", altChoices: entry.altChoices });
+    if (live && (docState || !entry.playing)) {
+      if (!docState) return null;
+      docState.sharedPageUrls = true; // the entry's, kept from one version to the next: see livePageImageUrls()
+      if (live.tokens?.length) docState.hostTokens = live.tokens;
+      // Tokens before the first paint: the trace's effects would otherwise flash off while they are worked out.
+      if (tokenLens.active || (isStreamingEntry(entry) && isAvailable("streaming.tokens"))) {
+        await ensureTokenData(docState).catch(() => {});
+      }
+      return docState;
+    }
     if (entry.kind === "markup") {
       const text = entry.source instanceof File
         ? await entry.source.text()
@@ -2495,17 +2540,6 @@ async function parseCatalogEntry(entry) {
         : entry.source;
       const { markupXml, pageImages, assetUrls } = await extractArchiveFromZipBuffer(buffer);
       return buildDocumentState(markupXml, pageImages, entry.label, assetUrls, { markupOnly: false, altChoices: entry.altChoices });
-    }
-    if (entry.kind === "live") {
-      const docState = buildDocumentState(entry.source.markupXml, livePageImageUrls(entry), entry.label, new Map(), { markupOnly: false, altChoices: entry.altChoices });
-      if (!docState) return null;
-      docState.sharedPageUrls = true; // the entry's, kept from one version to the next: see livePageImageUrls()
-      if (entry.source.tokens?.length) docState.hostTokens = entry.source.tokens;
-      // Tokens before the first paint: the trace's effects would otherwise flash off while they are worked out.
-      if (tokenLens.active || (isStreamingEntry(entry) && isAvailable("streaming.tokens"))) {
-        await ensureTokenData(docState).catch(() => {});
-      }
-      return docState;
     }
     if (entry.kind === "folder") {
       const { markupXml, pageImages, assetUrls } = await extractArchiveFromFiles(entry.source);
@@ -2766,10 +2800,12 @@ function syncDownloadFileButton() {
   if (!btn) return;
   const entry = fileCatalog[activeFileIndex];
   const original = entry?.originalSource?.info;
-  btn.setAttribute("aria-disabled", String(!entry || (entry.kind === "folder" && !original)));
+  btn.setAttribute("aria-disabled", String(!entry || !!entry.playing || (entry.kind === "folder" && !original)));
   btn.toggleAttribute("aria-haspopup", !!original);
   btn.title = !entry
     ? "Download is available once a file is open"
+    : entry.playing
+    ? "Download is paused while the stream demo plays"
     : original
       ? "Download the active file, or the original file it was made from"
       : entry.kind === "folder"
@@ -4115,9 +4151,18 @@ const TOKEN_BADGE_MIN_SCREEN_PX = { w: 70, h: 13 };
 const TOKEN_TRACE_REVEAL = true;
 const TOKEN_TRACE_RENDER = true;
 
-/** A document a host streams in, still being written. */
+/**
+ * The markup a document streamed in has so far (markupXml, writtenXml, open, pages, tokens, complete, malformed): a
+ * `live` entry's source, or what the stream demo has played into an open file so far (its `playing`), or null.
+ */
+function liveSource(entry) {
+  return entry?.playing ?? (entry?.kind === "live" ? entry.source : null);
+}
+
+/** A document a host streams in (or the stream demo plays in), still being written. */
 function isStreamingEntry(entry) {
-  return entry?.kind === "live" && !entry.source.complete;
+  const source = liveSource(entry);
+  return !!source && !source.complete;
 }
 
 /**
@@ -4165,7 +4210,7 @@ function currentTokenRange() {
  * shows how it was generated as it happens, and the host offers what comes after.
  */
 function tracePlaybackOff() {
-  return tokenLens.live || fileCatalog[activeFileIndex]?.kind === "live";
+  return tokenLens.live || !!liveSource(fileCatalog[activeFileIndex]);
 }
 
 /**
@@ -4324,7 +4369,7 @@ function syncLiveVeil(img) {
 
 /** The element being written: the innermost one still open at the end of what is written, else the last one. */
 function liveWritingElement() {
-  const open = fileCatalog[activeFileIndex]?.source.open ?? 0;
+  const open = liveSource(fileCatalog[activeFileIndex])?.open ?? 0;
   const lastElement = (node) => [...node.children].reverse().find((el) => localName(el) !== "page_break") ?? null;
   let el = state?.docRoot ? lastElement(state.docRoot) : null;
   for (let depth = 1; el && depth < open; depth += 1) el = lastElement(el) ?? el;
@@ -5188,7 +5233,7 @@ function activateDocument(docState, entry) {
   syncPageZoomRange();
   // A live document's next version keeps its continuous stream: the same pages, their images already shown. It is
   // not rebuilt (renderPageStream refreshes its overlays), so nothing is redrawn blank while the document grows.
-  const keepStream = entry.kind === "live" && pageStream?.entry === entry && pageStream.port.isConnected;
+  const keepStream = !!liveSource(entry) && pageStream?.entry === entry && pageStream.live && pageStream.port.isConnected;
   // The same file opened again (after a visual edit, say): a continuous stream is built anew but keeps its place.
   streamRestore = !keepStream && pageStream?.entry === entry
     ? { scrollTop: pageStream.port.scrollTop, scrollLeft: pageStream.port.scrollLeft, fallbackAspect: pageStream.fallbackAspect }
@@ -5226,7 +5271,7 @@ function activateDocument(docState, entry) {
   if (tokenLens.live) updateTokenReplay();
   else syncLiveEffects();
   streamRestore = null;
-  if (pageStream) pageStream.entry = entry;
+  if (pageStream) Object.assign(pageStream, { entry, live: !!liveSource(entry) });
   updateFileView();
   syncValidationForActiveDocument();
   syncEditUi();
@@ -5266,7 +5311,7 @@ let rawUndoGroupUntil = 0;
 function editableEntry() {
   if (!editingOn) return null; // every editing control goes through here
   const entry = fileCatalog[activeFileIndex];
-  return entry && state && (entry.kind === "markup" || entry.kind === "archive") ? entry : null;
+  return entry && state && !entry.playing && (entry.kind === "markup" || entry.kind === "archive") ? entry : null;
 }
 
 function setEditError(message) {
@@ -5296,6 +5341,11 @@ function syncEditUi() {
   if (els.viewVisualBtn) els.viewVisualBtn.hidden = isAvailable("tokens") && !isSwitchable("tokens") && startsOn("tokens");
   if (els.viewVisualBtn) els.viewVisualBtn.title = entry ? "Edit visually" : "Show the formatted DocLang";
   if (els.viewRawBtn) els.viewRawBtn.title = entry ? "Edit the raw DocLang source (E)" : "Show the raw DocLang source (E)";
+  if (els.viewTokensBtn) {
+    els.viewTokensBtn.title = state?.hostTokens
+      ? "The formatted DocLang with the tokens the model generated"
+      : "The formatted DocLang with its tokens, using an indicative DocLang-aware tokenizer based on Granite-Docling";
+  }
   syncHistoryButtons();
   syncAddButtons();
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
@@ -5417,7 +5467,7 @@ function focusEditor() {
  * shown elsewhere has what is still open closed; what is written is a prefix of it, so their offsets agree).
  */
 function rawViewText() {
-  const source = fileCatalog[activeFileIndex]?.source;
+  const source = liveSource(fileCatalog[activeFileIndex]);
   return source?.open != null ? source.writtenXml : state.markupXml;
 }
 
@@ -8023,7 +8073,7 @@ function archiveIssues(docState) {
 /** @param {{ quiet?: boolean }} [opts] quiet: the last result stays up until this one is in */
 async function validateActiveDocument({ quiet = false } = {}) {
   const entry = fileCatalog[activeFileIndex];
-  if (!entry || !state) return;
+  if (!entry || !state || entry.playing) return;
   if (quiet) {
     entry.validationPanelOpen ??= !els.validationPanel?.hidden; // the badge tells: the panel must not open while typing
   } else {
@@ -8044,8 +8094,8 @@ async function validateActiveDocument({ quiet = false } = {}) {
 async function onValidateClick() {
   const entry = fileCatalog[activeFileIndex];
   if (!entry) return;
-  const status = entry.validation?.status ?? "idle";
-  if (status === "running") return;
+  const status = validationShown(entry).status;
+  if (status === "running" || status === "paused") return;
   if (status === "idle" || status === "error") {
     await validateActiveDocument();
     if (fileCatalog[activeFileIndex] === entry) setValidationPanelOpen(true);
@@ -8064,7 +8114,8 @@ function syncValidationForActiveDocument() {
   }
   renderValidationUi(entry);
   // A live document is validated once its host says it is complete, not at every step of being written.
-  if (!entry.validation && (entry.kind !== "live" || entry.source.complete)) validateActiveDocument();
+  const live = liveSource(entry);
+  if (!entry.validation && (!live || live.complete)) validateActiveDocument();
 }
 
 /** Opens/closes the results panel at the user's request; remembered per file. */
@@ -8086,14 +8137,22 @@ const VALIDATE_BTN_LABELS = {
   valid: "XSD",
   error: "Validation failed",
   malformed: "Not well-formed",
+  paused: "Validation paused",
 };
+
+/** The validation result shown for a file: its own, or, while the stream demo plays into it, none (paused). */
+function validationShown(entry) {
+  const playing = entry?.playing;
+  if (playing) return playing.malformed ? { status: "malformed", error: playing.malformed } : { status: "paused" };
+  return entry?.validation ?? { status: "idle" };
+}
 
 function renderValidationUi(entry) {
   const btn = els.validateBtn;
   if (!btn) return;
-  const v = entry?.validation ?? { status: "idle" };
+  const v = validationShown(entry);
   btn.dataset.status = v.status;
-  btn.disabled = v.status === "running";
+  btn.disabled = v.status === "running" || v.status === "paused";
   // "XSD <version>", plus the issue count when there are issues; the colour says valid or not.
   // A document that declares no version is validated against the latest: "(assumed)" tells the two apart.
   const xsd = `XSD${v.schemaVersion ? ` ${v.schemaVersion}` : ""}${v.versionAssumed ? " (assumed)" : ""}`;
@@ -8107,6 +8166,8 @@ function renderValidationUi(entry) {
     : VALIDATE_BTN_LABELS[v.status];
   btn.title = v.status === "malformed"
     ? `${v.error}. Shown: the last version that was well-formed`
+    : v.status === "paused"
+    ? "Validation is paused while the stream demo plays"
     : v.status === "idle" || v.status === "error"
     ? "Validate against the DocLang XSD"
     : v.status === "valid"
