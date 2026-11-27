@@ -1872,61 +1872,66 @@ body.pane-drag-active .pane-splitter {
 }
 
 /* A document still being written: dots, pulsing, where the writing is (see applyPagedLiveProgress()). */
+/* Where a document is being written: a skeleton of text, lines shimmering, ragged like a paragraph's. */
 .live-waiting {
   display: flex;
-  align-items: center;
-  gap: 0.35em;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-around;
   pointer-events: none;
 }
 
 .paged-canvas > .live-waiting {
   position: absolute;
   z-index: 2;
-  gap: 1.5%;
 }
 
 .rendered-doc > .live-waiting {
-  height: 1.5em;
+  gap: 8px;
   margin: 0.5em 0;
 }
 
 .live-waiting > span {
-  height: 55%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: live-waiting-dot 1.2s ease-in-out infinite;
+  display: block;
+  height: calc(100% / var(--lines, 3) * 0.55);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 7%, transparent) 0%,
+    color-mix(in srgb, var(--text) 3%, transparent) 45%,
+    color-mix(in srgb, var(--text) 7%, transparent) 90%
+  );
+  background-size: 320px 100%;
+  animation: live-waiting-shimmer 1.15s linear infinite;
 }
 
 .rendered-doc > .live-waiting > span {
-  height: 0.5em;
+  height: 9px;
 }
 
-.live-waiting > span:nth-child(2) {
-  animation-delay: -1s;
+/* In the DocLang pane: lines of source, after the last written one. */
+.markup > .live-waiting {
+  gap: 7px;
+  max-width: 28rem;
+  margin: 0.5rem 0 0.5rem 1.25rem;
 }
 
-.live-waiting > span:nth-child(3) {
-  animation-delay: -0.8s;
+.markup > .live-waiting > span {
+  height: 8px;
 }
 
-@keyframes live-waiting-dot {
-  0%,
-  60%,
-  100% {
-    opacity: 0.25;
-    transform: none;
+@keyframes live-waiting-shimmer {
+  from {
+    background-position: -320px 0;
   }
-  30% {
-    opacity: 1;
-    transform: translateY(-25%);
+  to {
+    background-position: 320px 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .live-waiting > span {
     animation: none;
-    opacity: 0.6;
   }
 }
 
@@ -2181,7 +2186,8 @@ body.pane-drag-active .pane-splitter {
 }
 
 .validate-btn[data-status="invalid"],
-.validate-btn[data-status="error"] {
+.validate-btn[data-status="error"],
+.validate-btn[data-status="malformed"] {
   color: var(--status-error);
   border-color: color-mix(in srgb, var(--status-error) 40%, transparent);
   background: color-mix(in srgb, var(--status-error) 8%, transparent);
@@ -2344,7 +2350,8 @@ body.pane-drag-active .pane-splitter {
 }
 
 .validation-panel[data-status="invalid"],
-.validation-panel[data-status="error"] {
+.validation-panel[data-status="error"],
+.validation-panel[data-status="malformed"] {
   background: var(--status-error-bg);
   border-top-color: color-mix(in srgb, var(--status-error) 25%, var(--border));
 }
