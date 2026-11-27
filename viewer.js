@@ -7,8 +7,9 @@
  * The viewer decides each feature (FEATURE_DEFAULTS); a deployment's optional config.js (loaded before this
  * script) overrides what it mentions:
  *   window.DOCLANG_CONFIG = { features: { tokens: "always", "editing.ocr": "never" } };
- * A switchable feature (on/off) then starts as the user last chose (saved per deployment path), and for one visit as
- * the URL says (?tokens=on|off|always|never). The URL cannot change an `always` except to `never`, nor a `never`.
+ * A switchable feature (on/off) starts as the URL says (?tokens=on|off), else as the mode says, until the user switches
+ * it: from then on, as they last chose (saved per deployment path). The URL's always/never fix it for the visit; it
+ * cannot change an `always` except to `never`, nor a `never`.
  * Only features with a switch in the UI (SWITCHABLE_FEATURES) can be on/off; for the others on means always and
  * off means never. A dotted name is a child: "editing.ocr" only counts while editing is there (and, at runtime, on).
  * Markup marked data-requires="…" is removed when its feature is not there; data-switch="…" marks a feature's
@@ -19,11 +20,12 @@ const FEATURE_DEFAULTS = {
   editing: "on",
   "editing.ocr": "always",
   tokens: "off", // opt-in
-  demo: "on", // the demo when the viewer opens without a file; `never` also drops the start screen's "load demo"
-  stream: "always", // documents a host streams in, still being written (see closeStreamedMarkup())
-  "stream.demo": "off", // plays an opened file in as if a model were writing it (see the stream demo below)
+  demo: "on", // the samples open when the viewer opens without a file; `never` also drops the sample cards
+  // For development only, not part of the documented features (it may change or go): plays an opened file in as if
+  // a model were writing it (see the stream demo below). Not a child: there is no `streaming` feature.
+  "streaming.demo": "off",
 };
-const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo", "stream.demo"]);
+const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo", "streaming.demo"]);
 // Saved per deployment path, so deployments under different paths of one domain keep their own choices.
 const FEATURE_CHOICES_STORAGE_KEY = `doclang-viewer-feature-choices:${location.pathname.replace(/[^/]*$/, "")}`;
 const resolvedFeatures = resolveFeatures();
@@ -43,8 +45,10 @@ function resolveFeatures() {
       fixed = true;
       on = false;
     } else if (!fixed) {
-      if (typeof saved[name] === "boolean") on = saved[name];
+      // The URL's on/off is how it starts until the user switches it; from then on, their choice wins (an embedding
+      // page sets the same URL at every load, so it would otherwise undo the choice each time).
       if (fromUrl === "on" || fromUrl === "off") on = fromUrl === "on";
+      if (typeof saved[name] === "boolean") on = saved[name];
       if (fromUrl === "always") fixed = on = true;
     }
     const parent = name.includes(".") ? resolved[name.slice(0, name.lastIndexOf("."))] : null;
@@ -78,9 +82,9 @@ function loadFeatureChoices() {
 }
 
 /**
- * Saves a choice the user made in Settings (the URL's overrides are never saved), and drops the feature's URL
- * parameter: the link decided how the visit started, the user's own choice decides from now on, also on reload.
- * Only the address is rewritten (no request, no reload, no new history entry).
+ * Saves a choice the user made (what the URL says is never saved): it wins over the URL's on/off from now on. The
+ * feature's URL parameter is dropped from the address, which no longer says how it is. Only the address is rewritten
+ * (no request, no reload, no new history entry).
  */
 function saveFeatureChoice(name, on) {
   try {
@@ -471,6 +475,10 @@ const READING_LAYOUT_MODE_STORAGE_KEY = "doclang-viewer-reading-layout-mode";
 const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
 const READING_OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-reading-overlay-prefs";
 const PANE_KEYS = ["file", "page", "markup", "reading"];
+/** The panes by the names the UI gives them, as the URL takes them (`?panes=original,preview`): their keys. */
+const URL_PANE_NAMES = { files: "file", original: "page", doclang: "markup", preview: "reading" };
+/** The reading layouts by their UI names (`?reading=flowing`). */
+const URL_READING_NAMES = { paged: "paged", flowing: "pageless" };
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
 const DEFAULT_USER_PANE_VISIBLE = { file: false, page: true, markup: true, reading: true };
 
@@ -517,7 +525,7 @@ let editingOn = startsOn("editing");
 /** Trace speeds, in tokens per second; the stream demo plays at them too. */
 const TRACE_SPEEDS = [5, 10, 50, 100, 500, 1000];
 const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, live: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
-/** The stream demo (stream.demo): what it plays, and its bar; see initStreamDemo(). */
+/** The stream demo (streaming.demo): what it plays, and its bar; see initStreamDemo(). */
 /**
  * @type {null | { label: string, text: string, cuts: number[], at: number, pages: Map<number, Blob>, frame: number,
  *   playing: boolean, waitUntil: number, lastTs: number }}
@@ -803,16 +811,25 @@ const els = {
   validationClose: document.getElementById("btn-validation-close"),
 };
 
-document.getElementById("demo-empty-link")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  loadDemo();
-});
+// Back to the start screen (its samples): the logo and title. Open files close, so unsaved changes are asked about
+// first, as when opening a sample.
+function goHome() {
+  if (!confirmDiscardEditor() || !confirmDiscardUnsavedFiles()) return;
+  resetViewer();
+}
 document.getElementById("home-link")?.addEventListener("click", (e) => {
   e.preventDefault();
-  resetViewer();
+  goHome();
+});
+// The start screen's "choose a file" opens the same dialog as the header's Open (which an embedding page may hide).
+document.getElementById("choose-file-link")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  document.getElementById("input-archive")?.click();
 });
 document.getElementById("input-archive")?.addEventListener("click", async (e) => {
-  if (!window.showOpenFilePicker) return;
+  // The file picker keeps a handle to save to; it offers DocLang files only, so with files a host takes as well the
+  // plain dialog opens (its `accept` lists both, see initFileTypeHints()).
+  if (!window.showOpenFilePicker || hostAccept.length) return;
   e.preventDefault();
   try {
     const handles = await window.showOpenFilePicker({
@@ -836,10 +853,13 @@ document.getElementById("input-archive")?.addEventListener("click", async (e) =>
   }
 });
 document.getElementById("input-archive")?.addEventListener("change", async (e) => {
-  const files = [...e.target.files].filter((f) => isArchiveFile(f) || isMarkupFile(f));
-  if (!files.length) return;
-  await addFilesToCatalog(files);
+  const files = [...e.target.files];
   e.target.value = "";
+  // As if dropped: DocLang files open, and files a host takes go to it.
+  const supported = files.filter((f) => isArchiveFile(f) || isMarkupFile(f));
+  const forHost = files.filter((f) => !supported.includes(f) && isHostFile(f));
+  if (forHost.length) await handOffToHost(forHost);
+  if (supported.length) await addFilesToCatalog(supported);
 });
 els.btnFirst?.addEventListener("click", () => goToPage(1));
 els.btnPrev?.addEventListener("click", () => goToPage(state.currentPage - 1));
@@ -1151,8 +1171,12 @@ initFilePaneCloseAll();
 initPageWheelNav();
 initPageViewControls();
 let demoLoadInProgress = false;
+/** The host's samples while it offers its own (configure's `samples`), else null: the viewer's. */
+let hostSamples = null;
 let suppressDemoLoad = false;
 let launchSource;
+/** The address the viewer was launched at, `source` included (takeLaunchSource() drops it from the address bar). */
+let launchHref;
 initFileHandling();
 initHostHandoff();
 
@@ -1162,52 +1186,101 @@ function setDemoLoading(loading) {
 
 // A file-handling launch (see initFileHandling) or an opener handoff (see
 // initHostHandoff) sets suppressDemoLoad synchronously, before this runs.
+renderSampleCards();
 setTimeout(() => {
   if (suppressDemoLoad) return;
-  if (startsOn("demo")) loadDemo();
-  else setDemoLoading(false); // the page starts out showing "Loading demo…": the start screen instead
+  const samples = viewerSamples();
+  if (startsOn("demo") && samples.length) openSamplesAtLaunch(samples);
+  else setDemoLoading(false); // the page starts out showing "Loading sample…": the start screen instead
 }, 0);
 
-async function loadDemo() {
+/**
+ * The start screen's samples: the deployment's (`samples` in config.js), else the built-in ones (demo-data.js).
+ * Each is `{title, subtitle, file, thumb}`: `file` the archive the card opens, `thumb` a picture for the card.
+ */
+function viewerSamples() {
+  const configured = window.DOCLANG_CONFIG?.samples;
+  const samples = Array.isArray(configured) ? configured : typeof DEFAULT_SAMPLES !== "undefined" ? DEFAULT_SAMPLES : [];
+  return samples.filter((sample) => typeof sample?.file === "string" && typeof sample.title === "string");
+}
+
+/** The sample cards: the host's, which it converts itself, or the viewer's, which open their archive. */
+function renderSampleCards() {
+  const box = document.getElementById("sample-cards");
+  if (!box) return;
+  const samples = hostSamples ?? viewerSamples();
+  box.replaceChildren(...samples.map((sample) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "sample-card";
+    const thumb = document.createElement("span");
+    thumb.className = "sample-card-thumb";
+    if (sample.thumb) {
+      const img = document.createElement("img");
+      img.src = sample.thumb;
+      img.alt = "";
+      img.loading = "lazy";
+      thumb.append(img);
+    }
+    const title = document.createElement("span");
+    title.className = "sample-card-title";
+    title.textContent = sample.title;
+    card.append(thumb, title);
+    if (sample.subtitle) {
+      const subtitle = document.createElement("span");
+      subtitle.className = "sample-card-subtitle";
+      subtitle.textContent = sample.subtitle;
+      card.append(subtitle);
+    }
+    card.addEventListener("click", () => (hostSamples ? requestHostSample(sample.id) : openSample(sample)));
+    return card;
+  }));
+  const section = document.getElementById("empty-state-samples"); // with its "or" and heading
+  if (section) section.hidden = samples.length === 0;
+}
+
+/**
+ * At launch (the `demo` feature), every sample: the first shown, the others open next to it. A sample that cannot be
+ * had is left out (only the first's failure is reported). A document that arrives meanwhile wins: none replaces it.
+ */
+async function openSamplesAtLaunch(samples) {
+  const [first, ...others] = samples;
+  await openSample(first, { atLaunch: true });
+  if (!fileCatalog.length) return; // the first failed, and was reported
+  for (const sample of others) {
+    if (suppressDemoLoad) return;
+    try {
+      const res = await fetch(sample.file, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buffer = await res.arrayBuffer();
+      if (suppressDemoLoad) return;
+      await addArchiveBufferToCatalog(buffer, sample.file.split("/").pop() || "sample.dclx", { activate: false });
+    } catch (err) {
+      console.warn(`Skipped the sample ${sample.title}: ${err.message}`);
+    }
+  }
+}
+
+/** Opens a sample's archive in place of the open files; at launch, unless a document arrives meanwhile. */
+async function openSample(sample, { atLaunch = false } = {}) {
   if (demoLoadInProgress) return;
-  // The demo takes the place of the open files: asked first, before anything is downloaded.
+  // The sample takes the place of the open files: asked first, before anything is downloaded.
   if (!confirmDiscardEditor() || !confirmDiscardUnsavedFiles()) return;
   demoLoadInProgress = true;
+  const label = document.getElementById("empty-state-loading-name");
+  if (label) label.textContent = sample.title;
   setDemoLoading(true);
   try {
-    const urls = typeof DEMO_ARCHIVE_URLS !== "undefined" && DEMO_ARCHIVE_URLS.length
-      ? DEMO_ARCHIVE_URLS
-      : [DEMO_ARCHIVE_URL];
-    // Always asks the server: a cached demo can otherwise stay stale for days after the file changes.
-    const primary = await fetch(urls[0], { cache: "no-cache" });
-    if (!primary.ok) throw new Error(`HTTP ${primary.status}`);
-    const primaryBuffer = await primary.arrayBuffer();
-    // A document may have arrived while the demo was downloading; don't replace it.
-    if (suppressDemoLoad) return;
-    await addArchiveBufferToCatalog(
-      primaryBuffer,
-      urls[0].split("/").pop() || "demo.dclx",
-      { replace: true },
-    );
-    for (const url of urls.slice(1)) {
-      if (suppressDemoLoad) return;
-      try {
-        const res = await fetch(url, { cache: "no-cache" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const buffer = await res.arrayBuffer();
-        if (suppressDemoLoad) return;
-        await addArchiveBufferToCatalog(
-          buffer,
-          url.split("/").pop() || "demo.dclx",
-          { replace: false, activate: false },
-        );
-      } catch (extraErr) {
-        console.warn(`Skipped demo archive ${url}: ${extraErr.message}`);
-      }
-    }
+    // Always asks the server: a cached sample can otherwise stay stale for days after the file changes.
+    const res = await fetch(sample.file, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    // At launch, a document may have arrived while the sample was downloading; don't replace it.
+    if (atLaunch && suppressDemoLoad) return;
+    await addArchiveBufferToCatalog(buffer, sample.file.split("/").pop() || "sample.dclx", { replace: true });
   } catch (err) {
     alert(
-      `Failed to load demo: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
+      `Failed to load the sample: ${err.message}\n\nServe this directory over HTTP (e.g. python3 -m http.server) and open the viewer from localhost.`,
     );
   } finally {
     demoLoadInProgress = false;
@@ -1235,6 +1308,7 @@ async function loadFromFileList(fileList) {
  */
 function takeLaunchSource() {
   if (launchSource === undefined) {
+    launchHref = location.href;
     const url = new URL(location.href);
     launchSource = url.searchParams.get("source");
     if (launchSource !== null) {
@@ -1267,29 +1341,34 @@ function initFileHandling() {
   });
 }
 
+/** The version of the host API (API.md), in `ready`: raised only by a change a host could break on. */
+const HOST_API_VERSION = 1;
+
 /**
- * Receive a document from the page that hosts the viewer: the page that opened it (`?source=opener`), e.g. the
- * docling-serve UI, which cannot pass its in-memory conversion result by URL, or the page that embeds it in an
- * iframe (`?source=embed`).
+ * The host API (API.md): the page that opened the viewer (`?source=opener`), e.g. the docling-serve UI, which cannot
+ * pass its in-memory conversion result by URL, or the page that embeds it in an iframe (`?source=embed`).
  *
- * The host posts `{type: "doclang-viewer:ping"}` until the viewer answers `{type: "doclang-viewer:ready"}`; it
- * then posts either
- * - `{type: "doclang-viewer:open", name, buffer}` with a file as an ArrayBuffer, or
- * - `{type: "doclang-viewer:show", name, markup, pages}` with DocLang markup as a string and, optionally, its page
- *   images as `{[pageNo]: Blob | ArrayBuffer}`. Posting `show` again with the same `name` replaces that document,
- *   so a host can show a document while it is still being written. A host that generated the markup can add the
- *   model's `tokens`, `[[text, id, special?], …]` in the order they were generated; the token lens then shows those
- *   instead of the viewer's own tokenization (see alignHostTokens()). `complete: true` says the document is done:
- *   only then is it validated, so a document still being written is not checked against the schema at every step.
- * It may also post `{type: "doclang-viewer:configure", theme, style, accept}` to fit the viewer into its own look,
- * and to take the files it can process (see applyHostConfig()). Those are handed back to it when the user drops or
- * opens one, as `{type: "doclang-viewer:file", name, buffer}`.
- * Only messages from the host window are accepted.
+ * The host posts `ping` until the viewer answers `ready` (with `api`, HOST_API_VERSION); it then posts
+ * - `open {name, buffer}`: a file as an ArrayBuffer;
+ * - `show {name, markup, pages, tokens, complete}`: DocLang markup as a string and its page images as
+ *   `{[pageNo]: Blob | ArrayBuffer}`. Posting `show` again with the same `name` replaces that document, so a host can
+ *   show a document while it is still being written, cut off anywhere (see closeStreamedMarkup()). `tokens`, the
+ *   model's own `[[text, id, special?], …]`, replace the viewer's tokenization (see alignHostTokens()). Only once
+ *   `complete` is the document validated;
+ * - `configure {theme, style, accept, samples}`: see applyHostConfig();
+ * - `close`: back to the start screen; `reset`: the saved settings cleared, reloaded as launched (a new handshake).
+ * The viewer posts `file {name, buffer}` for a file of a type the host takes (`accept`), and `sample {id}` for a host
+ * sample picked. All types are prefixed `doclang-viewer:`; unknown types and fields are ignored. Only messages from
+ * the host window are accepted.
  */
 function initHostHandoff() {
   const source = takeLaunchSource();
   const host = source === "opener" ? window.opener : source === "embed" && window.parent !== window ? window.parent : null;
-  if (!host) return;
+  // Embedded, the viewer stays hidden (index.html) until the page configures it or hands over a document, so its own
+  // look and samples don't flash first; a page that does neither gets it as it is, shortly.
+  const reveal = () => document.documentElement.classList.remove("host-pending");
+  if (!host) return reveal();
+  setTimeout(reveal, 1500);
   suppressDemoLoad = true;
   // An opener is about to hand over a file; an embedding page may never: the start screen, to drop one on.
   if (source === "embed") setDemoLoading(false);
@@ -1297,14 +1376,24 @@ function initHostHandoff() {
     if (event.source !== host) return;
     hostLink = { window: host, origin: event.origin };
     const { type, name, buffer, markup, pages, tokens, complete } = event.data ?? {};
+    if (type !== "doclang-viewer:ping") queueMicrotask(reveal); // after this message has been applied
     if (type === "doclang-viewer:ping") {
-      host.postMessage({ type: "doclang-viewer:ready" }, event.origin);
+      host.postMessage({ type: "doclang-viewer:ready", api: HOST_API_VERSION }, event.origin);
     } else if (type === "doclang-viewer:open" && buffer instanceof ArrayBuffer) {
       await loadFromFileList([new File([buffer], name || "document.dclx")]);
     } else if (type === "doclang-viewer:show" && typeof markup === "string") {
       await showLiveDocument({ name: name || "document.dclg", markup, pages, tokens, complete: complete === true });
     } else if (type === "doclang-viewer:configure") {
       applyHostConfig(event.data);
+    } else if (type === "doclang-viewer:close") {
+      // Back to the start screen, as the header's home link (which an embedding page may hide).
+      liveShowPending = null;
+      resetViewer();
+    } else if (type === "doclang-viewer:reset") {
+      // Settings' "Reset all settings" (which an embedding page may hide), asked there: the page reloads as it was
+      // launched, its URL parameters included, and the page shakes hands with it again.
+      clearSavedSettings();
+      location.replace(launchHref ?? location.href);
     }
   });
 }
@@ -1313,14 +1402,15 @@ function initHostHandoff() {
  * A host's look, for this visit only: `theme` ("light" or "dark") over the user's choice, and `style`, values for
  * the viewer's own colour variables (e.g. `{"--bg": "#fbf6ee"}`). Anything else is ignored: other names, and values
  * that could load something (`url(…)`) or reach past the one declaration. `accept` lists the extensions of the
- * files the host takes; the start screen and the Open dialog offer them next to the viewer's own.
+ * files the host takes; the start screen and the Open dialog offer them next to the viewer's own. `samples`: see
+ * setHostSamples().
  */
-function applyHostConfig({ theme, style, accept, indicator }) {
-  if (indicator === "dots" || indicator === "placeholder") liveIndicator = indicator;
+function applyHostConfig({ theme, style, accept, samples }) {
   if (Array.isArray(accept)) {
     hostAccept = accept.filter((ext) => typeof ext === "string" && /^\.[a-z0-9]+$/i.test(ext)).map((ext) => ext.toLowerCase());
     initFileTypeHints();
   }
+  if (Array.isArray(samples)) setHostSamples(samples);
   if (theme === "light" || theme === "dark") {
     hostTheme = theme;
     applyTheme();
@@ -1338,6 +1428,28 @@ function applyHostConfig({ theme, style, accept, indicator }) {
 function isHostFile(file) {
   const name = file.name.toLowerCase();
   return hostLink !== null && hostAccept.some((ext) => name.endsWith(ext));
+}
+
+/**
+ * The host's own samples, `[{id, title, subtitle, thumb}]` (configure's `samples`), in place of the viewer's: their
+ * cards ask the host for the sample, by `id`, and it converts it itself. `thumb` is an image URL (http(s) or a `data:`
+ * image) or a Blob.
+ */
+function setHostSamples(samples) {
+  for (const sample of hostSamples ?? []) if (sample.thumbUrl) URL.revokeObjectURL(sample.thumbUrl);
+  hostSamples = samples
+    .filter((sample) => typeof sample?.id === "string" && typeof sample.title === "string")
+    .map(({ id, title, subtitle, thumb }) => {
+      const thumbUrl = thumb instanceof Blob ? URL.createObjectURL(thumb) : null;
+      const safe = typeof thumb === "string" && /^(https?:|data:image\/)/i.test(thumb) ? thumb : null;
+      return { id, title, subtitle: typeof subtitle === "string" ? subtitle : "", thumb: thumbUrl ?? safe, thumbUrl };
+    });
+  renderSampleCards();
+}
+
+/** Asks the host for one of its samples: it shows it as it shows its conversions. */
+function requestHostSample(id) {
+  hostLink?.window.postMessage({ type: "doclang-viewer:sample", id }, hostLink.origin);
 }
 
 /** Files the viewer cannot open but the host takes (a page image to convert, say) go to the host. */
@@ -1465,8 +1577,8 @@ async function applyLiveDocument({ name, markup, pages, tokens, complete }) {
   const hostTokens = Array.isArray(tokens)
     ? tokens.filter((t) => Array.isArray(t) && typeof t[0] === "string" && Number.isInteger(t[1]))
     : null;
-  // While it is written, the host may hand it over cut off anywhere: the viewer closes what is open (`stream`).
-  const streamed = !complete && isAvailable("stream") ? closeStreamedMarkup(markup) : null;
+  // While it is written, the host may hand it over cut off anywhere: the viewer closes what is open.
+  const streamed = complete ? null : closeStreamedMarkup(markup);
   const source = {
     markupXml: streamed?.markup ?? markup,
     writtenXml: markup, // as written, for the Raw view
@@ -1588,7 +1700,7 @@ function writtenMarkupEnd(pane, page) {
 // preview, after what is written.
 
 /** The dots' pulse stays in step across rebuilds (a live document's views are built again with every version). */
-const LIVE_STEADY_ANIMATIONS = new Set(["live-waiting-dot", "live-waiting-shimmer"]);
+const LIVE_STEADY_ANIMATIONS = new Set(["live-waiting-dot"]);
 
 /** Whether `segment` is the page a document still being written is at. */
 function isLiveWritingSegment(segment) {
@@ -1607,24 +1719,13 @@ function keepLiveAnimationsInStep(node) {
   });
 }
 
-/**
- * How the previews show where a document is being written: pulsing dots, or a text placeholder (shimmering lines,
- * ragged like a paragraph's). A host picks it (configure's `indicator`).
- */
-let liveIndicator = "dots";
-
-/** The indicator; a placeholder of `lines` lines (one: a short one). */
-function buildLiveWaiting(lines = 3) {
+/** Where a document is being written, in the previews: pulsing dots. */
+function buildLiveWaiting() {
   const el = document.createElement("div");
-  el.className = `live-waiting${liveIndicator === "placeholder" ? " is-placeholder" : ""}`;
+  el.className = "live-waiting";
   el.setAttribute("role", "status");
   el.setAttribute("aria-label", "Writing");
-  if (liveIndicator === "placeholder") {
-    el.style.setProperty("--lines", String(lines));
-    for (const width of lines === 1 ? [100] : [100, 97, 62]) el.appendChild(document.createElement("span")).style.width = `${width}%`;
-  } else {
-    for (let i = 0; i < 3; i += 1) el.appendChild(document.createElement("span"));
-  }
+  for (let i = 0; i < 3; i += 1) el.appendChild(document.createElement("span"));
   keepLiveAnimationsInStep(el);
   return el;
 }
@@ -1650,17 +1751,12 @@ function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
     }
     last = union ?? last;
   }
-  // Heights in % of the page's: the dots a line high; the placeholder three lines of body text, or one where only one
-  // fits below.
-  const placeholder = liveIndicator === "placeholder";
-  const line = placeholder ? 1.6 : 2;
-  let lines = placeholder ? 3 : 1;
+  const line = 2; // the dots' height, in % of the page's
   let left = 8;
   let top = 5;
   let width = 84;
   const below = last ? 99 - (last.y1 * 100 + 1) : Infinity; // the room below the last element
-  if (placeholder && below < lines * line) lines = 1;
-  if (last && below >= lines * line) {
+  if (last && below >= line) {
     left = last.x0 * 100;
     width = Math.max(8, (last.x1 - last.x0) * 100);
     top = last.y1 * 100 + 1;
@@ -1672,8 +1768,8 @@ function applyPagedLiveProgress(canvas, segment, elementIds, boxes) {
     top = last.y1 * 100 - lastLine / 2 - line / 2;
     left = last.x1 * 100 + 1 + width <= 99 ? last.x1 * 100 + 1 : Math.max(1, last.x0 * 100 - 1 - width);
   }
-  const indicator = buildLiveWaiting(lines);
-  Object.assign(indicator.style, { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${lines * line}%` });
+  const indicator = buildLiveWaiting();
+  Object.assign(indicator.style, { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${line}%` });
   canvas.appendChild(indicator);
 }
 
@@ -1682,7 +1778,7 @@ function applyFlowingLiveProgress(root, segment) {
   if (isLiveWritingSegment(segment)) root.appendChild(buildLiveWaiting());
 }
 
-// --- The stream demo (`stream.demo`): an opened file played in as if a model were writing it ---
+// --- The stream demo (`streaming.demo`, for development only): an opened file played in as if a model were writing it ---
 //
 // It goes the way a host's document does (showLiveDocument()), cut off anywhere, so it shows the streaming mode
 // without a model: a copy of the file, written chunk by chunk (a tag, a few characters or a run of spaces, about a
@@ -1693,9 +1789,9 @@ function applyFlowingLiveProgress(root, segment) {
 function initStreamDemo() {
   const toggle = document.getElementById("toggle-stream-demo");
   if (toggle) {
-    toggle.checked = startsOn("stream.demo");
+    toggle.checked = startsOn("streaming.demo");
     toggle.addEventListener("change", () => {
-      saveFeatureChoice("stream.demo", toggle.checked);
+      saveFeatureChoice("streaming.demo", toggle.checked);
       if (!toggle.checked) stopStreamDemo();
       syncStreamDemoBar();
     });
@@ -1704,7 +1800,7 @@ function initStreamDemo() {
 
 function streamDemoOn() {
   const toggle = document.getElementById("toggle-stream-demo");
-  return isAvailable("stream.demo") && (toggle ? toggle.checked : startsOn("stream.demo"));
+  return isAvailable("streaming.demo") && (toggle ? toggle.checked : startsOn("streaming.demo"));
 }
 
 /** Whether the document shown is the one the demo plays in. */
@@ -8194,19 +8290,19 @@ function visiblePaneRatios(keys) {
 }
 
 /**
- * A page embedding the viewer picks what it shows by URL, e.g. `?panes=reading&reading=paged`: the panes (from
- * file, page, markup, reading) and the reading layout. Both hold for this visit only: the stored layout is left
- * as it is.
+ * A host picks what the viewer shows by URL, e.g. `?panes=preview&reading=paged`: the panes (from files, original,
+ * doclang, preview) and the Preview's layout (paged or flowing). Both hold for this visit only: the stored layout is
+ * left as it is.
  */
 function urlPaneKeys() {
   const raw = new URLSearchParams(location.search).get("panes");
-  const keys = raw?.split(",").map((key) => key.trim()).filter((key) => PANE_KEYS.includes(key)) ?? [];
+  const keys = raw?.split(",").map((name) => name.trim()).filter((name) => Object.hasOwn(URL_PANE_NAMES, name)).map((name) => URL_PANE_NAMES[name]) ?? [];
   return keys.length ? keys : null;
 }
 
 function urlReadingLayoutMode() {
-  const mode = new URLSearchParams(location.search).get("reading");
-  return mode === "paged" || mode === "pageless" ? mode : null;
+  const name = new URLSearchParams(location.search).get("reading");
+  return name && Object.hasOwn(URL_READING_NAMES, name) ? URL_READING_NAMES[name] : null;
 }
 
 /** `?header=hide`: the page embedding the viewer brings its own chrome, so the viewer's header goes. */
@@ -8900,6 +8996,12 @@ function resetAllSettings() {
       + "and reloads the page. Open files will be closed.",
   );
   if (!ok) return;
+  clearSavedSettings();
+  location.reload();
+}
+
+/** Every saved setting, of all panes and all deployments on this site. */
+function clearSavedSettings() {
   try {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith(SETTINGS_STORAGE_PREFIX)) localStorage.removeItem(key);
@@ -8907,7 +9009,6 @@ function resetAllSettings() {
   } catch {
     /* storage not accessible: nothing saved to clear */
   }
-  location.reload();
 }
 
 function initPaneSplitters() {
