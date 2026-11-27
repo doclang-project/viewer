@@ -4257,7 +4257,7 @@ function highlightReplayElement(id) {
   for (const el of targets) el?.classList.add("selected", "token-current");
   renderedEl?.scrollIntoView({ block: "nearest" });
   // While a document is being written, the skeleton after it too, in the Flowing preview (in the Paged one it is on the page).
-  if (renderedEl && tokenLens.live) livePaneRoot(els.renderedPane).querySelector(".rendered-doc > .live-waiting")?.scrollIntoView({ block: "nearest" });
+  if (renderedEl && isStreamingEntry(fileCatalog[activeFileIndex])) livePaneRoot(els.renderedPane).querySelector(".rendered-doc > .live-waiting")?.scrollIntoView({ block: "nearest" });
   applyBboxVisibility();
 }
 
@@ -4266,6 +4266,86 @@ function svgEl(tag, attrs = {}) {
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
   return el;
 }
+
+// --- A document streaming in, without its tokens shown: what is written, revealed as it is written ---
+//
+// With the tokens shown, the token trace does it (see tokenLens.live), token by token. Without them, it goes by
+// element: the Original is veiled but where the written elements are (each whole once it is started), the pages after
+// the one being written are veiled whole, and the element being written is highlighted in every pane.
+
+/** Whether the active document streams in and its tokens are not shown: the element-based effects apply. */
+function liveEffectsByElement() {
+  return isStreamingEntry(fileCatalog[activeFileIndex]) && !tokensShown();
+}
+
+/** The Original's veil, with a hole where each written element is; rebuilt whenever the page view is laid out. */
+function syncLiveVeil(img) {
+  img.parentElement?.querySelector("svg.live-veil")?.remove();
+  if (!liveEffectsByElement() || !state?.hasPageView || !img.naturalWidth) return;
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+  // Veiled from the start (no fade): it is rebuilt with every version of the document.
+  const svg = svgEl("svg", { class: "token-layer live-veil is-replaying", viewBox: `0 0 ${W} ${H}` });
+  const mask = svgEl("mask", { id: "live-veil-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: W, height: H });
+  mask.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "white" }));
+  for (const b of state.pageViewOverlay?.boxes ?? []) {
+    const r = boxPixelRect(b, img);
+    if (r.w > 0 && r.h > 0) mask.appendChild(svgEl("rect", { x: r.x, y: r.y, width: r.w, height: r.h, fill: "black" }));
+  }
+  // The bboxes' label badges show over the veil, as in the trace.
+  const imgRect = img.getBoundingClientRect();
+  if (imgRect.width && imgRect.height) {
+    const sx = W / imgRect.width;
+    const sy = H / imgRect.height;
+    for (const badge of img.parentElement?.querySelectorAll("svg.overlay .element-badge") ?? []) {
+      const r = badge.getBoundingClientRect();
+      if (!r.width) continue;
+      mask.appendChild(svgEl("rect", {
+        x: (r.left - imgRect.left) * sx, y: (r.top - imgRect.top) * sy, width: r.width * sx, height: r.height * sy, fill: "black",
+      }));
+    }
+  }
+  const defs = svgEl("defs");
+  defs.appendChild(mask);
+  svg.append(defs, svgEl("rect", { class: "token-veil", x: 0, y: 0, width: W, height: H, mask: "url(#live-veil-mask)" }));
+  img.parentElement.appendChild(svg); // above the bbox overlay; clicks pass through
+}
+
+/** The element being written: the innermost one still open at the end of what is written, else the last one. */
+function liveWritingElement() {
+  const open = fileCatalog[activeFileIndex]?.source.open ?? 0;
+  const lastElement = (node) => [...node.children].reverse().find((el) => localName(el) !== "page_break") ?? null;
+  let el = state?.docRoot ? lastElement(state.docRoot) : null;
+  for (let depth = 1; el && depth < open; depth += 1) el = lastElement(el) ?? el;
+  return el;
+}
+
+/**
+ * The element-based effects, after each version of a document streaming in (and once it is complete, to end them):
+ * the element being written highlighted, the pages after the one being written veiled (Original) and left empty
+ * (Paged Preview).
+ */
+function syncLiveEffects() {
+  const live = liveEffectsByElement();
+  if (live || liveEffectsShown) {
+    tokenLens.currentId = null; // the views are new: highlight again
+    let id = null;
+    if (live) {
+      const el = liveWritingElement();
+      for (const [elementId, candidate] of state.idToElement ?? []) if (candidate === el) id = resolveSelectionElementId(elementId);
+    }
+    highlightReplayElement(id);
+  }
+  liveEffectsShown = live;
+  const current = live && state ? liveWritingPage(state) : 0;
+  for (const { pageNum, wrap } of pageStream?.pages ?? []) {
+    if (live || !tokenLens.live) wrap.classList.toggle("token-upcoming", live && pageNum > current);
+  }
+  for (const { pageNum, el } of previewPageEls()) {
+    if (live || !tokenLens.live) el.classList.toggle("token-upcoming", live && pageNum > current);
+  }
+}
+let liveEffectsShown = false;
 
 /** Rebuilds the token layer for the current page; called whenever the page view is laid out. */
 function syncTokenLayer(img) {
@@ -5138,6 +5218,7 @@ function activateDocument(docState, entry) {
   renderPage(state.currentPage);
   syncLiveStreamRoom();
   if (tokenLens.live) updateTokenReplay();
+  else syncLiveEffects();
   streamRestore = null;
   if (pageStream) pageStream.entry = entry;
   updateFileView();
@@ -10649,6 +10730,7 @@ function applyPageImageSize(img, pane = els.pagePane) {
 function syncPageViewChrome(img) {
   syncOverlayBadges(img);
   syncTokenLayer(img);
+  syncLiveVeil(img);
   updatePagePanePanCursor();
   applyBboxVisibility();
   syncBboxHandles(); // their size is set in screen pixels: redraw for the new zoom
