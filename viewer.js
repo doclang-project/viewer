@@ -6,8 +6,8 @@
  *   off    — starts off, the user can switch it     never  — off for good: the feature is not there
  * The viewer decides each feature (FEATURE_DEFAULTS); a deployment's optional config.js (loaded before this
  * script) overrides what it mentions:
- *   window.DOCLANG_CONFIG = { features: { tokens: "always", "editing.ocr": "never" } };
- * A switchable feature (on/off) starts as the URL says (?tokens=on|off), else as the mode says, until the user switches
+ *   window.DOCLANG_CONFIG = { features: { editing: "never" } };
+ * A switchable feature (on/off) starts as the URL says (?editing=on|off), else as the mode says, until the user switches
  * it: from then on, as they last chose (saved per deployment path). The URL's always/never fix it for the visit; it
  * cannot change an `always` except to `never`, nor a `never`.
  * Only features with a switch in the UI (SWITCHABLE_FEATURES) can be on/off; for the others on means always and
@@ -19,13 +19,20 @@ const FEATURE_MODES = ["on", "off", "always", "never"];
 const FEATURE_DEFAULTS = {
   editing: "on",
   "editing.ocr": "always",
-  tokens: "off", // opt-in
+  tokens: "off", // the DocLang pane's Tokens view (on: it starts there); deprecated as a feature name, see API.md
   demo: "on", // the samples open when the viewer opens without a file; `never` also drops the sample cards
+  // A document a host streams in shows its tokens in the DocLang pane while it is written (see tokensShown()). No
+  // switch: a host or deployment turns it off (`never`, or `off`).
+  "streaming.tokens": "on",
   // For development only, not part of the documented features (it may change or go): plays an opened file in as if
-  // a model were writing it (see the stream demo below). Not a child: there is no `streaming` feature.
+  // a model were writing it (see the stream demo below). No switch: `?streaming.demo=on` turns it on for a visit.
   "streaming.demo": "off",
 };
-const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo", "streaming.demo"]);
+const SWITCHABLE_FEATURES = new Set(["editing", "tokens", "demo"]);
+// Development features without a switch, off unless the URL turns them on (on or always) for the visit.
+const URL_ENABLED_FEATURES = new Set(["streaming.demo"]);
+// What a feature needs besides the one before its dot, if any: `streaming.*` is a group, not a feature's children.
+const FEATURE_REQUIRES = { "streaming.tokens": "tokens" };
 // Saved per deployment path, so deployments under different paths of one domain keep their own choices.
 const FEATURE_CHOICES_STORAGE_KEY = `doclang-viewer-feature-choices:${location.pathname.replace(/[^/]*$/, "")}`;
 const resolvedFeatures = resolveFeatures();
@@ -40,8 +47,11 @@ function resolveFeatures() {
     const mode = FEATURE_MODES.includes(configured[name]) ? configured[name] : builtIn;
     let fixed = mode === "always" || mode === "never" || !SWITCHABLE_FEATURES.has(name);
     let on = mode === "on" || mode === "always";
-    const fromUrl = url.get(name);
-    if (fromUrl === "never") {
+    // `tokens` is also how `?markup=` starts the DocLang pane: the Tokens view is the tokens feature, on.
+    const markupView = name === "tokens" ? url.get("markup") : null;
+    const fromUrl = url.get(name) ?? (markupView === "tokens" ? "on" : markupView === "visual" || markupView === "raw" ? "off" : null);
+    // Without a switch, the URL's off means never, as in config.js.
+    if (fromUrl === "never" || (fromUrl === "off" && !SWITCHABLE_FEATURES.has(name))) {
       fixed = true;
       on = false;
     } else if (!fixed) {
@@ -50,8 +60,10 @@ function resolveFeatures() {
       if (fromUrl === "on" || fromUrl === "off") on = fromUrl === "on";
       if (typeof saved[name] === "boolean") on = saved[name];
       if (fromUrl === "always") fixed = on = true;
+    } else if (URL_ENABLED_FEATURES.has(name) && mode === "off" && (fromUrl === "on" || fromUrl === "always")) {
+      on = true;
     }
-    const parent = name.includes(".") ? resolved[name.slice(0, name.lastIndexOf("."))] : null;
+    const parent = resolved[FEATURE_REQUIRES[name] ?? name.slice(0, Math.max(0, name.lastIndexOf(".")))] ?? null;
     const present = (!fixed || on) && (!parent || parent.present);
     resolved[name] = { present, fixed, on: present && on };
   }
@@ -476,7 +488,7 @@ const MARKUP_VIEW_MODE_STORAGE_KEY = "doclang-viewer-markup-view-mode";
 const READING_OVERLAY_PREFS_STORAGE_KEY = "doclang-viewer-reading-overlay-prefs";
 const PANE_KEYS = ["file", "page", "markup", "reading"];
 /** The panes by the names the UI gives them, as the URL takes them (`?panes=original,preview`): their keys. */
-const URL_PANE_NAMES = { files: "file", original: "page", doclang: "markup", preview: "reading" };
+const URL_PANE_NAMES = { files: "file", original: "page", markup: "markup", preview: "reading" };
 /** The reading layouts by their UI names (`?reading=flowing`). */
 const URL_READING_NAMES = { paged: "paged", flowing: "pageless" };
 const DEFAULT_PANE_RATIOS = [1, 1, 1, 1];
@@ -525,7 +537,7 @@ let editingOn = startsOn("editing");
 /** Trace speeds, in tokens per second; the stream demo plays at them too. */
 const TRACE_SPEEDS = [5, 10, 50, 100, 500, 1000];
 const tokenLens = { active: startsOn("tokens"), cursor: -Infinity, playing: false, live: false, speed: 100, frame: 0, currentId: null, syncing: false, effects: false, lastTs: 0 };
-/** The stream demo (streaming.demo): what it plays, and its bar; see initStreamDemo(). */
+/** The stream demo (streaming.demo): what it plays, and its bar; see streamDemoOn(). */
 /**
  * @type {null | { label: string, text: string, cuts: number[], at: number, pages: Map<number, Blob>, frame: number,
  *   playing: boolean, waitUntil: number, lastTs: number }}
@@ -596,7 +608,6 @@ const OVERLAY_PREF_ACCESSORS = {
 };
 let pageSettingsOpen = false;
 let readingSettingsOpen = false;
-let markupSettingsOpen = false;
 let helpOverlayOpen = false;
 let pageZoomPercent = PAGE_ZOOM_DEFAULT;
 /** "single": one page at a time; "continuous": every page in one vertical stream, fit to the pane's width. */
@@ -686,10 +697,6 @@ const els = {
   showLayoutBadgesLabel: document.getElementById("show-layout-badges-label"),
   settingsToggle: document.getElementById("btn-settings-toggle"),
   readingSettingsToggle: document.getElementById("btn-reading-settings-toggle"),
-  markupSettingsToggle: document.getElementById("btn-markup-settings-toggle"),
-  markupSettingsLayer: document.getElementById("markup-settings-layer"),
-  markupSettingsScrim: document.getElementById("markup-settings-scrim"),
-  markupSettingsClose: document.getElementById("btn-markup-settings-close"),
   pageSettingsLayer: document.getElementById("page-settings-layer"),
   pageSettingsScrim: document.getElementById("page-settings-scrim"),
   pageSettingsClose: document.getElementById("btn-page-settings-close"),
@@ -749,7 +756,6 @@ const els = {
   emptyStateLoading: document.getElementById("empty-state-loading"),
   emptyStatePrompt: document.getElementById("empty-state-prompt"),
   markupPane: document.getElementById("markup-pane"),
-  tokenLensToggle: document.getElementById("toggle-tokens"),
   editingToggle: document.getElementById("toggle-editing"),
   tokenBar: document.getElementById("token-bar"),
   tokenPlayBtn: document.getElementById("btn-token-play"),
@@ -792,6 +798,7 @@ const els = {
   markupViewToggle: document.getElementById("markup-view-toggle"),
   viewVisualBtn: document.getElementById("btn-view-visual"),
   viewRawBtn: document.getElementById("btn-view-raw"),
+  viewTokensBtn: document.getElementById("btn-view-tokens"),
   saveBtn: document.getElementById("btn-save"),
   revertBtn: document.getElementById("btn-revert"),
   pageEditBar: document.getElementById("page-edit-bar"),
@@ -946,15 +953,30 @@ els.readingSettingsToggle?.addEventListener("click", () => setReadingSettingsOpe
 els.pageSettingsClose?.addEventListener("click", () => setPageSettingsOpen(false));
 els.pageSettingsScrim?.addEventListener("click", () => setPageSettingsOpen(false));
 els.readingSettingsClose?.addEventListener("click", () => setReadingSettingsOpen(false));
-els.markupSettingsToggle?.addEventListener("click", () => setMarkupSettingsOpen(!markupSettingsOpen));
-els.markupSettingsClose?.addEventListener("click", () => setMarkupSettingsOpen(false));
-els.markupSettingsScrim?.addEventListener("click", () => setMarkupSettingsOpen(false));
 els.readingSettingsScrim?.addEventListener("click", () => setReadingSettingsOpen(false));
 els.helpOverlayClose?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.helpOverlayScrim?.addEventListener("click", () => setHelpOverlayOpen(false));
 els.validateBtn?.addEventListener("click", onValidateClick);
-els.viewVisualBtn?.addEventListener("click", () => (editableEntry() ? applyEdit() : closeRawView()));
-els.viewRawBtn?.addEventListener("click", openRawView);
+// The DocLang pane's three views: Raw (the source), Visual (formatted), Tokens (formatted, with its tokens, and the
+// token overlays and bar elsewhere). The tokens are the tokens feature, switched here.
+async function showFormattedMarkup(withTokens) {
+  if (markupEditor && !(await (editableEntry() ? applyEdit() : (closeRawView(), true)))) return;
+  if (!markupEditor) setMarkupViewMode("visual");
+  if (tokenLens.active !== withTokens) {
+    setTokenLensActive(withTokens);
+    saveFeatureChoice("tokens", withTokens);
+  }
+  syncEditUi();
+}
+els.viewVisualBtn?.addEventListener("click", () => showFormattedMarkup(false));
+els.viewTokensBtn?.addEventListener("click", () => showFormattedMarkup(true));
+els.viewRawBtn?.addEventListener("click", () => {
+  if (tokenLens.active && isSwitchable("tokens")) {
+    setTokenLensActive(false);
+    saveFeatureChoice("tokens", false);
+  }
+  openRawView();
+});
 els.saveBtn?.addEventListener("click", saveActiveFile);
 els.revertBtn?.addEventListener("click", revertActiveFile);
 els.addParentBtn?.addEventListener("click", () => toggleAddElement("parent"));
@@ -988,7 +1010,6 @@ document.addEventListener("keydown", (e) => {
   else if (toolbarOptionsOpen) setToolbarOptionsOpen(false);
   else if (pageSettingsOpen) setPageSettingsOpen(false);
   else if (readingSettingsOpen) setReadingSettingsOpen(false);
-  else if (markupSettingsOpen) setMarkupSettingsOpen(false);
   else if (tokenLens.playing) {
     e.preventDefault(); // used: nothing else acts on this Esc
     stopTokenReplay(); // a pause, as Space: Space plays on from there
@@ -997,7 +1018,7 @@ document.addEventListener("keydown", (e) => {
 // Esc deselects the element (and so closes the inspector) once nothing else is using the key.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented || !selectedElementId || markupEditor || drawing) return;
-  if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen || markupSettingsOpen) return;
+  if (helpOverlayOpen || toolbarOptionsOpen || pageSettingsOpen || readingSettingsOpen) return;
   const active = document.activeElement;
   if (isTypingTarget(active)) {
     active.blur(); // finish typing first; the next Esc deselects
@@ -1141,7 +1162,6 @@ loadOverlayPrefs();
 removeUnavailableMarkup();
 initEditingToggle();
 initDemoToggle();
-initStreamDemo();
 initTheme();
 loadHotkeysPref();
 loadReadingLayoutMode();
@@ -1820,21 +1840,11 @@ function applyFlowingLiveProgress(root, segment) {
 // in for a model that is slow to start, or to get on.
 
 
-function initStreamDemo() {
-  const toggle = document.getElementById("toggle-stream-demo");
-  if (toggle) {
-    toggle.checked = startsOn("streaming.demo");
-    toggle.addEventListener("change", () => {
-      saveFeatureChoice("streaming.demo", toggle.checked);
-      if (!toggle.checked) stopStreamDemo();
-      syncStreamDemoBar();
-    });
-  }
-}
+/** The demo's bar, closed for the rest of the visit (there is no switch to turn it back on: reload with the URL). */
+let streamDemoClosed = false;
 
 function streamDemoOn() {
-  const toggle = document.getElementById("toggle-stream-demo");
-  return isAvailable("streaming.demo") && (toggle ? toggle.checked : startsOn("streaming.demo"));
+  return isAvailable("streaming.demo") && !streamDemoClosed;
 }
 
 /** Whether the document shown is the one the demo plays in. */
@@ -1955,11 +1965,10 @@ function buildStreamDemoBar() {
     streamDemoSettings.startDelay, (v) => { streamDemoSettings.startDelay = v; });
   const elementWait = buildStreamDemoPick("Wait after each element", [0, 1, 3].map((v) => [v ? `${v} s per element` : "no wait", v]),
     streamDemoSettings.elementWait, (v) => { streamDemoSettings.elementWait = v; });
-  const close = navButton("×", "Turn the stream demo off", () => {
-    const toggle = document.getElementById("toggle-stream-demo");
-    if (!toggle) return;
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event("change"));
+  const close = navButton("×", "Close the stream demo for this visit", () => {
+    streamDemoClosed = true;
+    stopStreamDemo();
+    syncStreamDemoBar();
   });
   close.classList.add("stream-demo-close");
   const title = document.createElement("span");
@@ -2493,7 +2502,9 @@ async function parseCatalogEntry(entry) {
       docState.sharedPageUrls = true; // the entry's, kept from one version to the next: see livePageImageUrls()
       if (entry.source.tokens?.length) docState.hostTokens = entry.source.tokens;
       // Tokens before the first paint: the trace's effects would otherwise flash off while they are worked out.
-      if (tokenLens.active) await ensureTokenData(docState).catch(() => {});
+      if (tokenLens.active || (isStreamingEntry(entry) && isAvailable("streaming.tokens"))) {
+        await ensureTokenData(docState).catch(() => {});
+      }
       return docState;
     }
     if (entry.kind === "folder") {
@@ -4110,11 +4121,11 @@ function isStreamingEntry(entry) {
 }
 
 /**
- * Whether the tokens show: as the Tokens switch says (the tokens feature), also while a document streams in: on, it is
- * traced as it is written; off, it just grows, and it is not tokenized at all.
+ * Whether the tokens show: in the DocLang pane's Tokens view (the tokens feature, on), and while a document streams in
+ * (`streaming.tokens`), whatever the view: it is then traced as it is written. Once it is complete, the view decides.
  */
 function tokensShown() {
-  return tokenLens.active;
+  return tokenLens.active || (isStreamingEntry(fileCatalog[activeFileIndex]) && isAvailable("streaming.tokens"));
 }
 
 function setTokenLensActive(active) {
@@ -4124,11 +4135,11 @@ function setTokenLensActive(active) {
   tokenLens.effects = false;
   highlightReplayElement(null);
   if (!active) stopTokenReplay();
-  if (els.tokenLensToggle) els.tokenLensToggle.checked = active;
   els.pagePane?.classList.toggle("token-lens", tokensShown());
   syncTokenLensControls();
   refreshPageViewLayout();
   syncMarkupTokens();
+  syncEditUi(); // the DocLang pane's Visual / Tokens
 }
 
 function pageTokenRange(data) {
@@ -4669,12 +4680,7 @@ function tokenReplayTick(ts) {
 }
 
 function initTokenLens() {
-  if (els.tokenLensToggle) els.tokenLensToggle.checked = tokenLens.active;
   els.pagePane?.classList.toggle("token-lens", tokenLens.active);
-  els.tokenLensToggle?.addEventListener("change", () => {
-    setTokenLensActive(els.tokenLensToggle.checked);
-    saveFeatureChoice("tokens", tokenLens.active);
-  });
   els.tokenPlayBtn?.addEventListener("click", toggleTokenReplay);
   els.tokenStartBtn?.addEventListener("click", () => {
     const range = currentTokenRange();
@@ -5274,7 +5280,8 @@ document.addEventListener("keydown", (e) => {
   if (isTypingTarget(document.activeElement) || hasShortcutModifier(e)) return;
   if (!state) return;
   e.preventDefault();
-  openRawView();
+  if (markupEditor) focusEditor();
+  else els.viewRawBtn?.click(); // as the Raw button: the tokens go with the formatted view
 });
 
 function syncEditUi() {
@@ -5282,11 +5289,13 @@ function syncEditUi() {
   const editing = !!markupEditor;
   // Raw is there for any document: the source to edit when it can be edited, to read when it cannot.
   if (els.markupViewToggle) els.markupViewToggle.hidden = !state;
-  els.viewVisualBtn?.setAttribute("aria-pressed", String(!editing));
+  els.viewVisualBtn?.setAttribute("aria-pressed", String(!editing && !tokenLens.active));
+  els.viewTokensBtn?.setAttribute("aria-pressed", String(!editing && tokenLens.active));
   els.viewRawBtn?.setAttribute("aria-pressed", String(editing));
+  // Tokens that cannot be switched off (`always`): no Visual without them.
+  if (els.viewVisualBtn) els.viewVisualBtn.hidden = isAvailable("tokens") && !isSwitchable("tokens") && startsOn("tokens");
   if (els.viewVisualBtn) els.viewVisualBtn.title = entry ? "Edit visually" : "Show the formatted DocLang";
   if (els.viewRawBtn) els.viewRawBtn.title = entry ? "Edit the raw DocLang source (E)" : "Show the raw DocLang source (E)";
-  syncMarkupSettingsToggle();
   syncHistoryButtons();
   syncAddButtons();
   els.filePane?.querySelectorAll(".file-view-item")[activeFileIndex]?.classList.toggle("is-dirty", !!entry?.dirty);
@@ -5362,8 +5371,11 @@ function initEditingToggle() {
 }
 
 function loadMarkupViewMode() {
+  // The URL's is how it starts (tokens: see resolveFeatures()); the user's own choice, once made, wins.
+  if (urlMarkupView() === "raw") markupViewMode = "raw";
   try {
-    if (localStorage.getItem(MARKUP_VIEW_MODE_STORAGE_KEY) === "raw") markupViewMode = "raw";
+    const stored = localStorage.getItem(MARKUP_VIEW_MODE_STORAGE_KEY);
+    if (stored === "raw" || stored === "visual") markupViewMode = stored;
   } catch {
     /* ignore unavailable storage */
   }
@@ -8293,19 +8305,6 @@ function setPageSettingsOpen(open) {
   if (els.settingsToggle) els.settingsToggle.setAttribute("aria-expanded", String(open));
 }
 
-/** The DocLang pane's overlays: the tokens, over the formatted view (Raw shows the source as it is). */
-function setMarkupSettingsOpen(open) {
-  markupSettingsOpen = open;
-  if (els.markupSettingsLayer) els.markupSettingsLayer.hidden = !open;
-  if (els.markupSettingsToggle) els.markupSettingsToggle.setAttribute("aria-expanded", String(open));
-}
-
-function syncMarkupSettingsToggle() {
-  const shown = Boolean(state) && !markupEditor && Boolean(els.tokenLensToggle?.isConnected);
-  if (els.markupSettingsToggle) els.markupSettingsToggle.hidden = !shown;
-  if (!shown && markupSettingsOpen) setMarkupSettingsOpen(false);
-}
-
 function setReadingSettingsOpen(open) {
   readingSettingsOpen = open;
   if (els.readingSettingsLayer) els.readingSettingsLayer.hidden = !open;
@@ -8412,9 +8411,9 @@ function visiblePaneRatios(keys) {
 }
 
 /**
- * A host picks what the viewer shows by URL, e.g. `?panes=preview&reading=paged`: the panes (from files, original,
- * doclang, preview) and the Preview's layout (paged or flowing). Both hold for this visit only: the stored layout is
- * left as it is.
+ * A host picks what the viewer shows by URL, e.g. `?panes=markup,preview&preview=paged&markup=tokens`: the panes (from
+ * files, original, markup, preview), for this visit only (the stored layout is left as it is), and how the Preview and
+ * the DocLang pane start (paged or flowing; visual, raw or tokens), until the user picks: their choice wins.
  */
 function urlPaneKeys() {
   const raw = new URLSearchParams(location.search).get("panes");
@@ -8423,8 +8422,14 @@ function urlPaneKeys() {
 }
 
 function urlReadingLayoutMode() {
-  const name = new URLSearchParams(location.search).get("reading");
+  const name = new URLSearchParams(location.search).get("preview");
   return name && Object.hasOwn(URL_READING_NAMES, name) ? URL_READING_NAMES[name] : null;
+}
+
+/** `?markup=visual|raw|tokens`: the DocLang pane's view to start in, until the user picks one. */
+function urlMarkupView() {
+  const name = new URLSearchParams(location.search).get("markup");
+  return ["visual", "raw", "tokens"].includes(name) ? name : null;
 }
 
 /** `?header=hide`: the page embedding the viewer brings its own chrome, so the viewer's header goes. */
@@ -8662,17 +8667,17 @@ function persistHotkeysPref() {
 }
 
 function loadReadingLayoutMode() {
+  // The URL's is how it starts; the user's own choice, once made, wins (an embedding page sets the URL at every load).
+  readingLayoutMode = urlReadingLayoutMode() ?? readingLayoutMode;
   try {
     const stored = localStorage.getItem(READING_LAYOUT_MODE_STORAGE_KEY);
     if (stored === "paged" || stored === "pageless") readingLayoutMode = stored;
   } catch {
     /* ignore invalid stored reading-layout-mode pref */
   }
-  readingLayoutMode = urlReadingLayoutMode() ?? readingLayoutMode;
 }
 
 function persistReadingLayoutMode() {
-  if (urlReadingLayoutMode()) return;
   try {
     localStorage.setItem(READING_LAYOUT_MODE_STORAGE_KEY, readingLayoutMode);
   } catch {

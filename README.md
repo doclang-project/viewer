@@ -40,9 +40,9 @@ A page can open the viewer with a file, or embed it and show its own documents i
 
 ## Features per deployment
 
-A deployment can switch the viewer's features (`editing`, `editing.ocr`, `tokens`, `demo`) on or off, with or without a switch for the user; see [Features](API.md#features).
+A deployment can switch the viewer's features (`editing`, `editing.ocr`, `demo`, `streaming.tokens`) on or off, with or without a switch for the user; see [Features](API.md#features). The DocLang pane shows the source **Visual** (formatted), **Raw**, or with its **Tokens**.
 
-For development only, `streaming.demo` (built-in `off`) adds **Stream demo** to Settings: it plays an opened file in as if a model were writing it, to see streaming without a model. It is not part of the API and may change or go; a public deployment sets it to `never`.
+For development only, `?streaming.demo=on` shows the **Stream demo** bar: it plays an opened file in as if a model were writing it, to see streaming without a model. It has no switch, is not part of the API, and may change or go.
 
 ## Files
 

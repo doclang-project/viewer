@@ -21,14 +21,16 @@ A deployment decides which features the viewer has. Each is in one of four modes
 | **on** | `on` (starts on) | `always` |
 | **off** | `off` (starts off) | `never` (the feature is not there) |
 
-| feature | what | built-in |
-|---|---|---|
-| `editing` | visual and source editing (inspector, bbox handles, add/remove, drag to reorder, the Raw view, save) | `on` |
-| `editing.ocr` | "Read from page" with Granite-Docling in the browser (downloads about 1.2 GB on first use); only while editing is on | `always` |
-| `tokens` | tokens in the DocLang source, token tracing, and the Tokens overlays | `off` |
-| `demo` | the [samples](#configjs) open when the viewer opens without a file (not when it opens with one), the first shown; `never` also drops the sample cards from the start screen | `on` |
+| feature | what | built-in | user switch |
+|---|---|---|---|
+| `editing` | visual and source editing (inspector, bbox handles, add/remove, drag to reorder, the Raw view, save) | `on` | Settings: **Editing** |
+| `editing.ocr` | "Read from page" with Granite-Docling in the browser (downloads about 1.2 GB on first use); only while editing is on | `always` | — |
+| `demo` | the [samples](#configjs) open when the viewer opens without a file (not when it opens with one), the first shown; `never` also drops the sample cards from the start screen | `on` | Settings: **Open samples on launch** |
+| `streaming.tokens` | a document a host [streams in](#showing-a-document-while-it-is-written) shows its tokens in the DocLang pane while it is written, whatever its view; once complete, the view decides | `on` | — |
 
-`editing`, `tokens` and `demo` have a switch in Settings when they are `on` or `off`; the user's choice is remembered (per deployment path). `editing.ocr` has no switch of its own, so for it `on` means `always` and `off` means `never`. A child like `editing.ocr` is not there when its parent isn't.
+With a user switch, `on`/`off` set how the feature starts and the user's choice is remembered (per deployment path). Without one, `on` means `always` and `off` means `never`: only `config.js` and the URL decide. A child like `editing.ocr` is not there when its parent isn't; `streaming.*` groups what applies while a document streams in (`streaming.tokens` needs the Tokens view, see below).
+
+*Deprecated:* `tokens`, from before the DocLang pane's Tokens view. It is still accepted: `on` or `always` start the DocLang pane in Tokens (as `markup=tokens`), `off` in Visual, and `never` leaves out the Tokens view altogether, and with it `streaming.tokens`.
 
 `config.js` sets a feature's mode for a deployment, the URL for a single visit (see below).
 
@@ -38,7 +40,7 @@ A deployment overrides what it needs by replacing [`config.js`](config.js), whic
 
 ```js
 window.DOCLANG_CONFIG = {
-  features: { tokens: "always", "editing.ocr": "never" },
+  features: { editing: "never" },
   samples: [{ title: "Report", subtitle: "Twelve pages", file: "samples/report.dclx", thumb: "samples/report.jpg" }],
 };
 ```
@@ -50,20 +52,21 @@ window.DOCLANG_CONFIG = {
 
 ## URL parameters
 
-They hold for the visit they are on: what the user has chosen and saved is left as it is.
+They hold for the visit they are on, and never change what the user has chosen and saved: where the user can pick (a view, a feature's switch), they set how it starts until the user does; from then on, the user's choice wins, also over a URL that says otherwise, such as an embedding page's at every load.
 
 | parameter | values | |
 |---|---|---|
 | `source` | `opener`, `embed` | the viewer was opened by a host, or is embedded in one: see [Messages](#messages). No sample opens. |
-| `panes` | from `files`, `original`, `doclang`, `preview`, comma-separated | the panes to show, e.g. `panes=doclang,preview` |
-| `reading` | `paged`, `flowing` | the Preview's layout |
+| `panes` | from `files`, `original`, `markup` (the DocLang pane), `preview`, comma-separated | the panes to show, e.g. `panes=markup,preview` |
+| `markup` | `visual`, `raw`, `tokens` | the DocLang pane's view: formatted, the source as it is, or formatted with its tokens |
+| `preview` | `paged`, `flowing` | the Preview's layout |
 | `header` | `hide` | leaves out the header, for a host that brings its own |
-| a feature's name | `on`, `off`, `always`, `never` | the feature's mode, e.g. `tokens=on`, or `editing=never` for a read-only link |
+| a feature's name | `on`, `off`, `always`, `never` | the feature's mode, e.g. `editing=never` for a read-only link |
 
-A feature's parameter cannot change an `always` from `config.js` except to `never`, nor bring back a `never`. `on`/`off` set how the feature starts until the user switches it; from then on, the user's choice wins (remembered per deployment path), also over a URL that says otherwise, such as an embedding page's at every load.
+A feature's parameter cannot change an `always` from `config.js` except to `never`, nor bring back a `never`.
 
 ```html
-<iframe src="https://doclang.ai/viewer/?source=embed&panes=original,doclang,preview&header=hide&editing=never&tokens=on"></iframe>
+<iframe src="https://doclang.ai/viewer/?source=embed&panes=original,markup,preview&preview=paged&header=hide&editing=never"></iframe>
 ```
 
 ## Messages
@@ -119,7 +122,8 @@ A page can embed the viewer in an `<iframe>` with `?source=embed`, shake hands t
 Until it is complete, `markup` can be cut off anywhere, as written: the viewer closes what is still open (a host can also send it closed itself), and
 
 - the views follow its end: the page being written becomes the current page, and the DocLang pane keeps its last written line in view (scrolled away, it stays);
-- while the `tokens` feature is on (its switch, under the DocLang pane's overlays), it shows its tokens and traces itself as it grows; off, it just grows, without being tokenized. A shown document has no trace playback, also once complete: it was traced as it was written;
+- the Original is veiled but where it is written, and the element being written is highlighted in every pane;
+- the DocLang pane shows its tokens as it grows (`streaming.tokens`, unless a host or deployment turns it off), in the Visual view as in Tokens; once it is complete, the view the user picked decides. A shown document has no trace playback, also once complete: it was traced as it was written;
 - it is validated only once it is complete.
 
 A version that is not well-formed even so (the model's own mistakes, such as a stray closing tag), or not DocLang, is not shown: the viewer keeps the last version that was, and its validation badge says **Not well-formed**, with the parser's message. Send the complete document all the same: the viewer then treats it as done.
