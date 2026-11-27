@@ -3470,8 +3470,7 @@ html.host-pending body {
 }
 
 .empty-state-inner {
-  width: 100%; /* the sample cards' grid fills it, a row of them, not a column */
-  max-width: 44rem;
+  width: 100%; /* the sample cards fill it, as many to a row as fit */
 }
 
 .empty-state-loading {
@@ -3577,14 +3576,16 @@ body.demo-loading .empty-state-prompt {
   color: var(--text);
 }
 
+/* As many cards to a row as fit, each row centered: a short last row too. */
 .sample-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, 8.5rem);
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 0.75rem;
 }
 
 .sample-card {
+  flex: 0 0 8.5rem;
   display: flex;
   flex-direction: column;
   align-items: stretch;
